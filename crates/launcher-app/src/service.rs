@@ -18,8 +18,11 @@ use gpui::{
 };
 use rmac_launcher_runtime::{CatalogUpdate, Registry, SettingsUpdate};
 
+use crate::view::requested_browse_mode;
 use crate::view::{LauncherView, OverlayEnvironment};
 pub(crate) use learning::learn;
+#[cfg(target_os = "linux")]
+pub(crate) use overlay::follow_compact;
 pub(crate) use overlay::release;
 #[cfg(target_os = "linux")]
 use overlay::route_activation;
@@ -49,6 +52,11 @@ struct LauncherService {
     active: Option<ActiveOverlay>,
     #[cfg(target_os = "linux")]
     catcher: Option<AnyWindowHandle>,
+    /// The catcher's hole while compact (the bar only): `follow_compact`
+    /// widens it to the expanded surface and narrows it back as the bar
+    /// itself grows and shrinks.
+    #[cfg(target_os = "linux")]
+    compact_hole: Option<Bounds<gpui::Pixels>>,
     #[cfg(target_os = "linux")]
     pending_dismiss: Option<u64>,
     next_overlay: u64,
@@ -166,6 +174,8 @@ pub fn start(cx: &mut App) {
         active: None,
         #[cfg(target_os = "linux")]
         catcher: None,
+        #[cfg(target_os = "linux")]
+        compact_hole: None,
         #[cfg(target_os = "linux")]
         pending_dismiss: None,
         next_overlay: 0,

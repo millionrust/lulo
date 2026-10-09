@@ -92,6 +92,49 @@ pub(crate) fn release(token: u64, cx: &mut App) {
     }
 }
 
+/// Spotlight `token` just became compact (the bar only) or expanded (bar
+/// plus results): move the catcher's hole to match. On Linux the surface
+/// itself opens at its expanded size and never resizes (`view::set_compact`
+/// instead widens or narrows the *window's own* input region to the bar or
+/// the whole surface), and Spotlight's own window maps after the catcher
+/// (so real presses inside Spotlight's current input region already reach
+/// it first, unlike Control Centre's and Notification Center's popovers,
+/// where the catcher maps last): real-click checks on a result row below
+/// the bar, and on the gap between the bar and a vertically centred 88 pt
+/// hole (`centered_bounds`, `route_activation`'s bug before this), found
+/// no case where a stale hole here caused a wrong dismiss. This keeps the
+/// hole correct anyway (UIA catcher audit) rather than leaving it
+/// pointing at the wrong 88 pt rectangle, which a future change to the
+/// window order could turn into the same bug Control Centre had.
+#[cfg(target_os = "linux")]
+pub(crate) fn follow_compact(token: u64, compact: bool, cx: &mut App) {
+    let update = cx.update_global::<LauncherService, _>(|service, _| {
+        if service
+            .active
+            .as_ref()
+            .is_none_or(|active| active.token != token)
+        {
+            return None;
+        }
+        let hole = service.compact_hole?;
+        let target = if compact {
+            hole
+        } else {
+            Bounds::new(
+                hole.origin,
+                size(
+                    hole.size.width,
+                    px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32),
+                ),
+            )
+        };
+        Some((service.catcher?, target))
+    });
+    if let Some((catcher, target)) = update {
+        rmac_ui::set_outside_click_catcher_hole(catcher, target, cx);
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn overlay_options(bounds: WindowBounds, margin_top: f64) -> WindowOptions {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
@@ -302,7 +345,22 @@ fn open_launcher(
                 cx,
             )
         });
-        cx.update_global::<LauncherService, _>(|service, _| service.catcher = catcher);
+        // Always the *compact* rectangle, whichever size the catcher's
+        // hole actually opened with (`excluded`): `follow_compact` widens
+        // it to the full surface and must be able to narrow it back.
+        let compact_hole = excluded.map(|excluded| {
+            Bounds::new(
+                excluded.origin,
+                size(
+                    excluded.size.width,
+                    px(rmac_launcher::surface::LOGICAL_HEIGHT as f32),
+                ),
+            )
+        });
+        cx.update_global::<LauncherService, _>(|service, _| {
+            service.catcher = catcher;
+            service.compact_hole = compact_hole;
+        });
     }
     let mut launcher = None;
     #[cfg(windows)]
@@ -436,20 +494,30 @@ pub(super) fn route_activation(
                 return;
             }
         };
-    let bounds =
-        match context.centered_bounds(description.logical_width, description.logical_height) {
-            Ok(bounds) => Bounds::new(
-                point(px(bounds.x), px(bounds.y)),
-                size(px(bounds.width), px(bounds.height)),
-            ),
-            Err(error) => {
-                eprintln!("Launcher surface bounds rejected: {error}");
-                return;
-            }
-        };
+    // Horizontally centred, `description.margin_top` below the output's
+    // top edge: where the bar (and the window around it) actually render,
+    // never full-screen-centred -- the mismatch an outside-click catcher
+    // placed by `centered_bounds` left (SPOT catcher audit).
+    let bounds = match context.top_centered_bounds(
+        description.logical_width,
+        description.logical_height,
+        description.margin_top,
+    ) {
+        Ok(bounds) => Bounds::new(
+            point(px(bounds.x), px(bounds.y)),
+            size(px(bounds.width), px(bounds.height)),
+        ),
+        Err(error) => {
+            eprintln!("Launcher surface bounds rejected: {error}");
+            return;
+        }
+    };
     // The surface opens at its expanded height and never resizes while
-    // typing (`view::set_compact`); the catcher still leaves only the
-    // compact bar's area to it.
+    // typing (`view::set_compact`); the catcher's hole starts at the same
+    // size `set_compact` gives the window's own input region, widening or
+    // narrowing with it (`follow_compact`) -- an app-drawer-style
+    // activation opens straight into the expanded view, not the compact
+    // bar.
     let surface_bounds = Bounds::new(
         bounds.origin,
         size(
@@ -457,6 +525,11 @@ pub(super) fn route_activation(
             px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32).max(bounds.size.height),
         ),
     );
+    let excluded = if requested_browse_mode(&event).is_some() {
+        surface_bounds
+    } else {
+        bounds
+    };
     // Captured before Spotlight's own window opens and takes focus, so
     // Escape (or an outside click) can hand focus back to it, as on the
     // Mac. `None` whenever nothing was focused (e.g. an empty desktop).
@@ -467,7 +540,7 @@ pub(super) fn route_activation(
             WindowBounds::Windowed(surface_bounds),
             description.margin_top,
         ),
-        Some(bounds),
+        Some(excluded),
         previous_window,
         cx,
     );

@@ -283,14 +283,26 @@ impl Render for NotificationCenterView {
         let widget_elements = widget_rows(&self.widgets, &self.widget_data);
 
         // Shrinks (or grows) the layer surface to the column's natural
-        // height after layout, as macOS sizes Notification Center to its cards.
+        // height after layout, as macOS sizes Notification Center to its
+        // cards; the surface opens at the tallest height and shrinks from
+        // there (main.rs's `follow_panel_height`). The outside-click
+        // catcher is another window: move its hole with the new height
+        // once the resize lands, or the gap left between the shrunk panel
+        // and the hole's stale, taller edge swallows a wallpaper click
+        // instead of dismissing the panel (UIA catcher audit).
+        #[cfg(target_os = "linux")]
+        let token = self.token;
         let measure = canvas(
-            |bounds, window, cx| {
+            move |bounds, window, cx| {
                 let wanted = panel_height(f32::from(bounds.size.height));
                 let current = f32::from(window.viewport_size().height);
                 if (wanted - current).abs() > 0.5 {
-                    window.defer(cx, move |window, _| {
+                    window.defer(cx, move |window, cx| {
                         window.resize(size(px(PANEL_WIDTH), px(wanted)));
+                        #[cfg(target_os = "linux")]
+                        crate::follow_panel_height(token, wanted, cx);
+                        #[cfg(not(target_os = "linux"))]
+                        let _ = cx;
                     });
                 }
             },

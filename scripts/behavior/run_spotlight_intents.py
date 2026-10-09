@@ -469,6 +469,7 @@ def wait_until(predicate, timeout: float, interval: float = 0.2):
 class BaseScenario:
     def __init__(self, args, work: Path):
         self.args = args
+        self.work = work
         data = {"title": "Spotlight intents", "steps": []}
         self.driver = run_lulo_journey.Driver(args, work, data, work / "out")
         self.config_home = Path(self.driver.session.env["XDG_CONFIG_HOME"])
@@ -478,6 +479,86 @@ class BaseScenario:
         # canonical, so this is a no-op there.
         self.service = (Path(args.bin_dir) / SERVICE).resolve()
         self.facts: dict[str, object] = {}
+
+    def enable_frame_trace(self, path: Path) -> None:
+        """Only `rmac-launcher` (Spotlight) traces its frames: sharing one
+        `RMAC_FRAME_TRACE` path across every resident process would have
+        each one's `File::create` truncate what an earlier one wrote
+        (shell/compat/gpui_linux .../frame_trace.rs opens for *create*, not
+        append), so this wraps just that one spawn call instead of setting
+        the variable for the whole private session."""
+
+        original_spawn = self.driver.session.spawn
+
+        def spawn_with_trace(argv, name, extra=None):
+            if name == "rmac-launcher":
+                extra = {**(extra or {}), "RMAC_FRAME_TRACE": str(path)}
+            return original_spawn(argv, name, extra)
+
+        self.driver.session.spawn = spawn_with_trace
+
+    def pending_request_frames(self, path: Path, typed_at: float) -> dict[str, float | int | None]:
+        """SPOT catcher audit / SPEED: how busy the UI thread kept drawing
+        while Lulo Intelligence answered, from the trace `enable_frame_trace`
+        wrote. `draws` and `renders` count every `draw_start` and
+        `launcher_render` (`Render::render` actually running) between
+        `typed_at` and the frame that showed the answer row
+        (`assist_row_applied`, then the next `present`) -- mixing in the
+        legitimate renders typing and search providers trickling in cause.
+        `tail_draws` is the narrower, cleaner signal: `draw_start`s after
+        the *last* render before that frame, which repaint the same cached
+        scene for nothing while nothing is left to type or search for --
+        Spotlight redrawing without re-rendering while a request is in
+        flight (op/ai-phase1-1, RMAC_FRAME_TRACE). `tail_after_shown` is
+        the same count *after* the answer's own frame presented: any of
+        those would mean the window kept redrawing once there was nothing
+        left to wait for, which is the unbounded, genuinely idle-cost form
+        of this bug."""
+
+        events = trace_events(path)
+        origin = next((moment for moment, event in events if event == "monotonic_origin"), None)
+        if origin is None:
+            return {key: None for key in (
+                "draws", "renders", "tail_draws", "tail_after_shown", "window_ms", "draw_rate_hz",
+            )}
+        start = typed_at * 1e6 - origin
+        applied = None
+        shown = None
+        for moment, event in events:
+            if moment < start:
+                continue
+            if applied is None and event == "assist_row_applied":
+                applied = moment
+            elif applied is not None and shown is None and event == "present":
+                shown = moment
+                break
+        if shown is None:
+            return {key: None for key in (
+                "draws", "renders", "tail_draws", "tail_after_shown", "window_ms", "draw_rate_hz",
+            )}
+        # `draw_start`/`present` are shared by every window this process
+        # hosts, including the outside-click catcher's own layer surface
+        # (`crates/rmac-ui/src/runtime.rs`); only `draw_window:<app id>`
+        # names which one actually drew, so that is what is counted here.
+        drawn = "draw_window:org.rmac.Launcher"
+        window = [(moment, event) for moment, event in events if start <= moment <= shown]
+        draws = sum(1 for _, event in window if event == drawn)
+        renders = sum(1 for _, event in window if event == "launcher_render")
+        last_render = max(
+            (moment for moment, event in window if event == "launcher_render"), default=start,
+        )
+        tail_draws = sum(1 for moment, event in window if event == drawn and moment > last_render)
+        tail_after_shown = sum(1 for moment, event in events if moment > shown and event == drawn)
+        window_s = (shown - start) / 1e6
+        rate = draws / window_s if window_s > 0 else None
+        return {
+            "draws": draws,
+            "renders": renders,
+            "tail_draws": tail_draws,
+            "tail_after_shown": tail_after_shown,
+            "window_ms": window_s * 1000,
+            "draw_rate_hz": rate,
+        }
 
     def showing(self) -> set[str]:
         import pyatspi
@@ -531,6 +612,8 @@ class Scenario(BaseScenario):
     def run(self) -> dict:
         errors: list[str] = []
         start_light(self.config_home)
+        trace_path = self.work / "launcher-frame-trace.csv"
+        self.enable_frame_trace(trace_path)
         self.driver.start()
 
         # 1. Off: no row, no service.
@@ -551,12 +634,36 @@ class Scenario(BaseScenario):
         set_enabled(self.config_home, True)
         before = theme_scheme(self.config_home)
         self.facts["scheme_before"] = before
+        typed_at = time.monotonic()
         self.open_and_type()
         shown = wait_until(lambda: ROW in self.showing(), 15)
         self.facts["row_shown"] = bool(shown)
         if not shown:
             errors.append(f"no {ROW!r} row; showing: {sorted(self.showing())[:40]}")
         else:
+            frames = self.pending_request_frames(trace_path, typed_at)
+            self.facts["pending_request_frames"] = frames
+            draws, renders = frames["draws"], frames["renders"]
+            # SPOT catcher audit / SPEED (op/ai-phase1-1, RMAC_FRAME_TRACE):
+            # Spotlight's own window (`draw_window:org.rmac.Launcher`,
+            # never the outside-click catcher's separate layer surface,
+            # which shares this process's trace) draws without a
+            # `Render::render` behind some of those draws while Lulo
+            # Intelligence answers and, intermittently, for a while after
+            # its row has shown -- under investigation (not yet isolated
+            # from this nested session's own AT-SPI observer, which this
+            # scenario's accessibility reads keep attached throughout, as
+            # a possible contributor; a real session has no such client).
+            # `tail_draws`/`tail_after_shown` (see `pending_request_frames`)
+            # are recorded for that follow-up. This assertion catches a
+            # gross regression -- draws running away unbounded relative to
+            # renders -- without failing CI on the still-open question.
+            if draws is not None and renders is not None and draws > renders * 3 + 10:
+                errors.append(
+                    f"Spotlight drew {draws} frames but only rendered {renders} while "
+                    f"Lulo Intelligence answered ({frames['draw_rate_hz']:.1f} Hz over "
+                    f"{frames['window_ms']:.0f} ms): far more than expected"
+                )
             self.driver.session.pointer.key("return")
             armed = wait_until(lambda: ARMED in self.showing(), 5)
             self.facts["armed"] = bool(armed)
@@ -589,23 +696,6 @@ class Scenario(BaseScenario):
 class RealModelScenario(BaseScenario):
     """`--real-model`: the real engine, the owner's own downloaded model,
     typed one request at a time, as a user would."""
-
-    def _enable_frame_trace(self, path: Path) -> None:
-        """Only `rmac-launcher` (Spotlight) traces its frames: sharing one
-        `RMAC_FRAME_TRACE` path across every resident process would have
-        each one's `File::create` truncate what an earlier one wrote
-        (shell/compat/gpui_linux .../frame_trace.rs opens for *create*, not
-        append), so this wraps just that one spawn call instead of setting
-        the variable for the whole private session."""
-
-        original_spawn = self.driver.session.spawn
-
-        def spawn_with_trace(argv, name, extra=None):
-            if name == "rmac-launcher":
-                extra = {**(extra or {}), "RMAC_FRAME_TRACE": str(path)}
-            return original_spawn(argv, name, extra)
-
-        self.driver.session.spawn = spawn_with_trace
 
     def _confirm_dark(self, record: dict) -> None:
         self.driver.session.pointer.key("return")
@@ -770,7 +860,7 @@ class RealModelScenario(BaseScenario):
         start_light(self.config_home)
         set_enabled(self.config_home, True)
         trace_path = Path(self.args.inner) / "launcher-frame-trace.csv"
-        self._enable_frame_trace(trace_path)
+        self.enable_frame_trace(trace_path)
         self.watcher = TraceWatcher(trace_path)
         self.actions = []
         self.driver.start()

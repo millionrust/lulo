@@ -434,6 +434,16 @@ fn bundled_icon(
 ) -> AnyElement {
     match decoded {
         Some(image) => img(image).size(px(size)).into_any_element(),
+        // On Windows the glyph waits for `warm_desktop_icons` (moments
+        // later): loading the 1024-point SVG by path rasterises it at
+        // 2048 × 2048 with its blur, about 50 MB at once, and GPUI's image
+        // cache keeps the result for the life of the process (WIN-OS-64).
+        #[cfg(windows)]
+        None => {
+            let _ = fallback;
+            div().size(px(size)).into_any_element()
+        }
+        #[cfg(not(windows))]
         None => img(fallback).size(px(size)).into_any_element(),
     }
 }

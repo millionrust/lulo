@@ -24,7 +24,8 @@ const PIXELS: u32 = 128;
 /// `lulo-shell --save-icon`: write the icon and exit.
 pub fn run_save() -> i32 {
     let mut arguments = std::env::args_os().skip(2);
-    let (Some(pixels), Some(source), Some(out)) = (arguments.next(), arguments.next(), arguments.next())
+    let (Some(pixels), Some(source), Some(out)) =
+        (arguments.next(), arguments.next(), arguments.next())
     else {
         return 2;
     };
@@ -38,7 +39,10 @@ pub fn run_save() -> i32 {
 fn cache() -> Option<PathBuf> {
     std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("LOCALAPPDATA").map(|local| PathBuf::from(local).join("Lulo").join("Cache")))
+        .or_else(|| {
+            std::env::var_os("LOCALAPPDATA")
+                .map(|local| PathBuf::from(local).join("Lulo").join("Cache"))
+        })
         .map(|cache| cache.join("lulo-icons"))
 }
 
@@ -46,7 +50,9 @@ fn cache() -> Option<PathBuf> {
 /// process when missing. Blocking.
 pub fn icon(source: &Path) -> Option<PathBuf> {
     let folder = cache()?;
-    let modified = std::fs::metadata(source).and_then(|metadata| metadata.modified()).ok();
+    let modified = std::fs::metadata(source)
+        .and_then(|metadata| metadata.modified())
+        .ok();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     source.hash(&mut hasher);
     modified.hash(&mut hasher);
@@ -84,7 +90,8 @@ pub fn ensure_running_entry(app_id: &str, exe_path: &str) {
     {
         return;
     }
-    let Some(applications) = rmac_apps::windows_apps::data_home().map(|home| home.join("applications"))
+    let Some(applications) =
+        rmac_apps::windows_apps::data_home().map(|home| home.join("applications"))
     else {
         return;
     };

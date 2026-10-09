@@ -3,7 +3,6 @@
 pub use rmac_shell_layer::windows::{appbar, power, surface};
 pub mod app_entries;
 pub mod catalog;
-pub mod shell_icons;
 pub mod desktop;
 pub mod events;
 pub mod folders;
@@ -12,6 +11,7 @@ pub mod launch;
 pub mod memory;
 pub mod registry;
 pub mod session;
+pub mod shell_icons;
 pub mod taskbar;
 pub mod wallpaper;
 

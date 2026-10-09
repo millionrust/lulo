@@ -7056,6 +7056,7 @@ dependencies = [
  "rmac-sound",
  "serde",
  "serde_json",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -8062,6 +8063,7 @@ dependencies = [
  "rmac-compositor-system",
  "rmac-desktop",
  "rmac-launcher-app",
+ "rmac-osd",
  "rmac-quick-settings-app",
  "rmac-shell-dock",
  "rmac-shell-layer",

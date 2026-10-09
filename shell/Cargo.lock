@@ -5934,6 +5934,7 @@ dependencies = [
  "rmac-sound",
  "serde",
  "serde_json",
+ "windows 0.61.3",
  "zbus",
 ]
 

@@ -16,7 +16,8 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Variant::{
-    VariantToInt32, VariantToStringAlloc, VARENUM, VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0, VT_I4,
+    VariantToInt32, VariantToStringAlloc, VARENUM, VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0,
+    VT_I4,
 };
 use windows::Win32::System::Wmi::{
     IEnumWbemClassObject, IWbemClassObject, IWbemLocator, IWbemServices, WbemLocator,
@@ -81,7 +82,8 @@ fn services() -> Option<IWbemServices> {
     // thread); the objects are released when dropped.
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let locator: IWbemLocator = CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER).ok()?;
+        let locator: IWbemLocator =
+            CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER).ok()?;
         locator
             .ConnectServer(
                 &BSTR::from("ROOT\\WMI"),
@@ -119,11 +121,16 @@ fn first(services: &IWbemServices, query: &str) -> Option<IWbemClassObject> {
 
 fn read_in_process() -> Option<u8> {
     let services = services()?;
-    let object = first(&services, "SELECT CurrentBrightness FROM WmiMonitorBrightness")?;
+    let object = first(
+        &services,
+        "SELECT CurrentBrightness FROM WmiMonitorBrightness",
+    )?;
     let mut value = VARIANT::default();
     // SAFETY: reads one property into a VARIANT this function owns.
     unsafe {
-        object.Get(w!("CurrentBrightness"), 0, &mut value, None, None).ok()?;
+        object
+            .Get(w!("CurrentBrightness"), 0, &mut value, None, None)
+            .ok()?;
         u8::try_from(VariantToInt32(&value).ok()?.clamp(0, 100)).ok()
     }
 }
@@ -152,7 +159,12 @@ fn write_in_process(level: u8) -> Option<u8> {
         let class: IWbemClassObject = class?;
         let mut signature = None;
         class
-            .GetMethod(w!("WmiSetBrightness"), 0, &mut signature, std::ptr::null_mut())
+            .GetMethod(
+                w!("WmiSetBrightness"),
+                0,
+                &mut signature,
+                std::ptr::null_mut(),
+            )
             .ok()?;
         let parameters = signature?.SpawnInstance(0).ok()?;
         let timeout = int_variant(1);

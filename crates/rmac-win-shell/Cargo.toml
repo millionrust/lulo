@@ -49,6 +49,8 @@ rmac-shell-settings.workspace = true
 # The shell's live design tokens (light or dark, accent), as each Lulo OS
 # shell process installs them.
 rmac-shell-ui.workspace = true
+# Control Centre's brightness, whose WMI calls run in a helper process.
+rmac-osd.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true
 rmac-wallpaper-system.workspace = true

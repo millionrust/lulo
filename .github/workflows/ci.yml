@@ -318,7 +318,7 @@ jobs:
         -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
         -p rmac-system-settings -p rmac-appearance-portal
         -p rmac-app-menu -p rmac-win-shell -p rmac-compositor-system
-        -p rmac-shell-runtime -p rmac-launcher-app -p rmac-quick-settings-app
+        -p rmac-shell-runtime -p rmac-launcher-app -p rmac-quick-settings-app -p rmac-osd
     defaults:
       run:
         shell: bash

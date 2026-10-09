@@ -367,6 +367,10 @@ pub fn run() -> i32 {
             // A desktop shortcut shows its target's icon, and a running
             // Windows app its program's, read out of process.
             rmac_shell_layer::system::file_icons::provide(crate::win::shell_icons::icon);
+            // Control Centre's brightness reads WMI in a helper process too.
+            if let Ok(exe) = std::env::current_exe() {
+                rmac_osd::windows::set_helper(exe);
+            }
             if std::env::var_os("RMAC_SHELL_SCENE").is_none()
                 && std::env::var_os("LULO_NO_WINDOWS_APPS").is_none()
             {

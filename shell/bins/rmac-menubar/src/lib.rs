@@ -1245,13 +1245,21 @@ mod bar {
                 return;
             };
             let screen = display.bounds().size;
-            let height = if expanded { screen.height } else { px(BAR_HEIGHT) };
+            let height = if expanded {
+                screen.height
+            } else {
+                px(BAR_HEIGHT)
+            };
             if window.bounds().size.height == height {
                 return;
             }
             let handle = window.window_handle();
             cx.defer(move |cx| {
-                rmac_shell_layer::windows::resize_layer(cx, handle, Size::new(screen.width, height));
+                rmac_shell_layer::windows::resize_layer(
+                    cx,
+                    handle,
+                    Size::new(screen.width, height),
+                );
             });
             window.refresh();
         }
@@ -4002,9 +4010,9 @@ mod bar {
             // On Windows the bar's window is only the bar until a menu
             // opens (`fit_window_to_menus`): menus measure the screen.
             #[cfg(windows)]
-            let screen_height = window
-                .display(cx)
-                .map_or(screen_height, |display| f32::from(display.bounds().size.height));
+            let screen_height = window.display(cx).map_or(screen_height, |display| {
+                f32::from(display.bounds().size.height)
+            });
             // A confirmation is a floating panel centred on screen, not a
             // dropdown anchored under the logo menu, as on the Mac.
             let menu_left = if let Some(confirmation) = &confirmation {

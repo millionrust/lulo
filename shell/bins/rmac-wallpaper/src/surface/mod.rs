@@ -714,7 +714,12 @@ fn prepare_surface(
     #[cfg(windows)]
     let (width, height, bgra, layout) = match screen_aligned(&surface, bgra) {
         Ok(aligned) => aligned,
-        Err(bgra) => (surface.image.width, surface.image.height, bgra, surface.layout),
+        Err(bgra) => (
+            surface.image.width,
+            surface.image.height,
+            bgra,
+            surface.layout,
+        ),
     };
     #[cfg(windows)]
     rmac_shell_layer::windows::backdrop::set_wallpaper(uuid, width, height, &bgra);
@@ -762,12 +767,19 @@ fn screen_aligned(
     let scaled = if source.dimensions() == (width, height) {
         source
     } else {
-        image::imageops::resize(&source, width, height, image::imageops::FilterType::Triangle)
+        image::imageops::resize(
+            &source,
+            width,
+            height,
+            image::imageops::FilterType::Triangle,
+        )
     };
     let mut out = vec![0u8; screen_width as usize * screen_height as usize * 4];
     let left = x.max(0) as u32;
     let skip = (-x).max(0) as u32;
-    let copy = width.saturating_sub(skip).min(screen_width.saturating_sub(left)) as usize;
+    let copy = width
+        .saturating_sub(skip)
+        .min(screen_width.saturating_sub(left)) as usize;
     for row in 0..screen_height {
         let source_row = row as i64 - y;
         if source_row < 0 || source_row >= i64::from(height) || copy == 0 {

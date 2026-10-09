@@ -823,7 +823,7 @@
         {
           "label": "Fill Screen",
           "action": "terminal::FillScreen",
-          "shortcut": "⌃⌥⌘L",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },

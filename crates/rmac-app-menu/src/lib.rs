@@ -1124,7 +1124,13 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             item!("Clear Scrollback", "terminal::ClearScrollback", "⌥⌘K"),
             // TRM-MENU-016: the same window-fill the green button's Move &
             // Resize ▸ Fill already does (`rmac_ui::fill_focused_window`).
-            item!("Fill Screen", "terminal::FillScreen", "⌃⌥⌘L"),
+            // The Mac's own ⌃⌥⌘L would show no differently from Clear
+            // Screen's ⌃⌘L above once mapped to Windows (both become
+            // Alt+Shift+L, per `control_primary_keystroke`'s documented
+            // ⌃⌘/⌃⌥⌘ collapse) — shown with no shortcut rather than a
+            // second, indistinguishable "Alt+Shift+L" menu row; the real
+            // ⌃⌥⌘L keybinding (`lifecycle.rs`) still works on Mac/Linux.
+            item!("Fill Screen", "terminal::FillScreen", ""),
             item!(
                 "Use Option as Meta Key",
                 "terminal::ToggleOptionAsMeta",

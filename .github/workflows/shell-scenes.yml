@@ -135,11 +135,16 @@ jobs:
             --output probes/normal-keep-windows.png --normal --keep-windows
           # shell_smoke.py's environment, one part at a time (WIN-OS-64).
           probe() { python scripts/windows/shell_scene.py --bin-dir target/debug --normal "$@"; }
-          probe --output probes/drop-shadows.png --drop-shadows
-          probe --output probes/desktop-items.png --desktop-items
-          probe --output probes/smoke-all.png --smoke-profile --env RMAC_GPUI_WAKE_TRACE=1 \
-            --env RMAC_GPUI_STARTUP_TRACE=1 --env LULO_PANEL_RELEASE_SECONDS=3 \
-            --drop-shadows --desktop-items
+          # What one use of Spotlight keeps once closed: open with a query,
+          # closed 4 s later, read after the settle trim.
+          probe --output probes/spotlight-used.png --settle 14 --open "spotlight:notes" \
+            --env RMAC_SHELL_SCENE_CLOSE_AFTER=4
+          probe --output probes/spotlight-empty.png --settle 14 --open "spotlight:" \
+            --env RMAC_SHELL_SCENE_CLOSE_AFTER=4
+          probe --output probes/spotlight-no-windows-apps.png --settle 14 --open "spotlight:notes" \
+            --env RMAC_SHELL_SCENE_CLOSE_AFTER=4 --no-windows-apps
+          probe --output probes/spotlight-calculator.png --settle 14 --open "spotlight:2+3" \
+            --env RMAC_SHELL_SCENE_CLOSE_AFTER=4
       - name: Upload the scene
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

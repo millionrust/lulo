@@ -315,6 +315,20 @@ pub fn open_scene(cx: &mut App) {
     {
         toggle(cx);
         overlay::set_scene_query(query, cx);
+        // A memory probe closes it again after this many seconds, as a
+        // user would with Escape (WIN-OS-64).
+        if let Some(seconds) = std::env::var("RMAC_SHELL_SCENE_CLOSE_AFTER")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(seconds))
+                    .await;
+                cx.update(overlay::dismiss_active);
+            })
+            .detach();
+        }
     }
 }
 

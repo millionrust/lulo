@@ -547,6 +547,20 @@ pub(super) fn route_activation(
 }
 
 /// Type `query` into the open Spotlight (the shell scene).
+/// Close the open Spotlight, as Escape does.
+#[cfg(not(target_os = "linux"))]
+pub(super) fn dismiss_active(cx: &mut App) {
+    let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+    let Some(active) = active else {
+        return;
+    };
+    if let Some(view) = active.view.upgrade() {
+        let _ = cx.update_window(active.window, |_, window, cx| {
+            view.update(cx, |view, cx| view.dismiss(window, cx));
+        });
+    }
+}
+
 pub(super) fn set_scene_query(query: String, cx: &mut App) {
     let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
     let Some(active) = active else {

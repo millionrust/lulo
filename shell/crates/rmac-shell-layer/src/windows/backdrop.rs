@@ -27,8 +27,10 @@ const SHRINK: u32 = 4;
 /// approximate a Gaussian of about niri's dual-Kawase spread.
 const PASSES: usize = 3;
 const RADIUS: usize = 3;
-/// niri's `saturation 1.5`.
-const SATURATION: f32 = 1.5;
+/// What the Lulo OS scene shows under the Dock's shelf matches the
+/// wallpaper's own colours (niri's `saturation 1.5` does not show at the
+/// shelf's tint), so the copy keeps them (`Shell scenes`, WIN-OS-59).
+const SATURATION: f32 = 1.0;
 
 struct Blurred {
     output: Uuid,
@@ -214,8 +216,11 @@ mod tests {
         let blurred = blur(width, height, &bgra).expect("blurred");
         assert_eq!(blurred.dimensions(), (16, 8));
         let pixel = blurred.get_pixel(5, 5).0;
-        // Grey-free colour gets more saturated, its order kept.
-        assert!(pixel[0] < 40 && pixel[2] > 120, "{pixel:?}");
+        // A flat colour stays that colour.
+        assert!(
+            pixel[0].abs_diff(40) <= 1 && pixel[1].abs_diff(80) <= 1 && pixel[2].abs_diff(120) <= 1,
+            "{pixel:?}"
+        );
         assert_eq!(pixel[3], 255);
     }
 

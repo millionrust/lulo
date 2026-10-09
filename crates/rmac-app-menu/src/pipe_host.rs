@@ -216,7 +216,19 @@ fn serve(pipe: File) {
 
 /// `pid` sent its menus: the first time it is published, as its bus name
 /// appearing is on Lulo OS; after that only a change is announced.
-fn published(pid: u32, app_id: &'static str, menus: Vec<Menu>) {
+fn published(pid: u32, app_id: &'static str, mut menus: Vec<Menu>) {
+    // Earlier app builds sent their in-window strip, whose app menu is
+    // titled with the app's name; still running after an upgrade, they
+    // would show that menu twice (once as the bar's own app menu). The
+    // menu that holds About is the app menu, whatever it is called.
+    if !menus.iter().any(|menu| menu.label == crate::APPLICATION_MENU) {
+        if let Some(menu) = menus
+            .iter_mut()
+            .find(|menu| menu.items.iter().any(|item| item.action == crate::ABOUT_ACTION))
+        {
+            menu.label = crate::APPLICATION_MENU.to_owned();
+        }
+    }
     let (first, changed, layout, owners) = with_host(|host| {
         let linked = host.apps.entry(pid).or_insert_with(|| Linked {
             app_id,

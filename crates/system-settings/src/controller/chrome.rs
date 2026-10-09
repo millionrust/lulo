@@ -196,7 +196,17 @@ impl Settings {
             );
         let query = self.search.read(cx).value().to_string();
         let searching = !query.trim().is_empty();
-        let search_matches = self.search_matches(cx);
+        // Ranking every category against the query is pointless when there
+        // is no query: every resize/activation/appearance refresh re-renders
+        // this cached view (GPUI's `window.refreshing` bypasses its own
+        // reuse check on any window-wide refresh, not just when this view's
+        // own bounds change), so skipping it here cuts real, avoidable work
+        // from the common (not searching) case's per-frame cost.
+        let search_matches = if searching {
+            self.search_matches(cx)
+        } else {
+            Vec::new()
+        };
         let no_search_results = searching && search_matches.is_empty();
         let active_search_result = self
             .search_selection
@@ -382,7 +392,12 @@ impl Settings {
                 };
                 list = list.child(
                     ListRow::new(
-                        SharedString::from(format!("cat-{si}-{ci}")),
+                        // A composite (tag, index) id, not a formatted
+                        // string: this row is rebuilt on every resize frame
+                        // (GPUI re-renders every cached view on any window
+                        // refresh), so this avoids a `format!` allocation
+                        // per row per frame for no visible difference.
+                        ("cat", si * 1000 + ci),
                         div()
                             .flex()
                             .items_center()

@@ -125,6 +125,10 @@ def main() -> int:
                         help="a memory probe: start Lulo as a user would, not in the fixed scene")
     parser.add_argument("--no-windows-apps", action="store_true",
                         help="a memory probe: leave out Windows' own apps (LULO_NO_WINDOWS_APPS)")
+    parser.add_argument("--drop-shadows", action="store_true",
+                        help="a memory probe: Windows' window shadows on, as shell_smoke.py turns them")
+    parser.add_argument("--desktop-items", action="store_true",
+                        help="a memory probe: a folder and a note on the desktop, as shell_smoke.py has")
     parser.add_argument("--smoke-profile", action="store_true",
                         help="a memory probe: profile folders as shell_smoke.py sets them "
                         "(APPDATA and LOCALAPPDATA private, no XDG overrides)")
@@ -167,6 +171,17 @@ def main() -> int:
         (settings / "shell.json").write_text(
             f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n', encoding="utf-8"
         )
+    shadows_were = None
+    if args.drop_shadows:
+        value = ctypes.c_int(0)
+        ctypes.windll.user32.SystemParametersInfoW(0x1024, 0, ctypes.byref(value), 0)
+        shadows_were = value.value
+        ctypes.windll.user32.SystemParametersInfoW(0x1025, 0, ctypes.c_void_p(1), 0)
+        print(f"window shadows on (were {shadows_were})")
+    if args.desktop_items:
+        desk = Path(environment["RMAC_DESKTOP_DIR"])
+        (desk / "Lulo Check Folder").mkdir(parents=True, exist_ok=True)
+        (desk / "Lulo Check Note.txt").write_text("Lulo mode's desktop check\n", encoding="utf-8")
     for pair in args.env:
         key, _, value = pair.partition("=")
         environment[key] = value
@@ -202,6 +217,8 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             session.kill()
         show_windows(hidden)
+        if shadows_were == 0:
+            ctypes.windll.user32.SystemParametersInfoW(0x1025, 0, ctypes.c_void_p(0), 0)
         text = log.read_text(errors='replace')
         for line in text.splitlines():
             if line.startswith("lulo-shell: memory"):

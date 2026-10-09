@@ -135,12 +135,11 @@ jobs:
             --output probes/normal-keep-windows.png --normal --keep-windows
           # shell_smoke.py's environment, one part at a time (WIN-OS-64).
           probe() { python scripts/windows/shell_scene.py --bin-dir target/debug --normal "$@"; }
-          probe --output probes/smoke-profile.png --smoke-profile
-          probe --output probes/wake-trace.png --env RMAC_GPUI_WAKE_TRACE=1
-          probe --output probes/startup-trace.png --env RMAC_GPUI_STARTUP_TRACE=1
-          probe --output probes/release-seconds.png --env LULO_PANEL_RELEASE_SECONDS=3
+          probe --output probes/drop-shadows.png --drop-shadows
+          probe --output probes/desktop-items.png --desktop-items
           probe --output probes/smoke-all.png --smoke-profile --env RMAC_GPUI_WAKE_TRACE=1 \
-            --env RMAC_GPUI_STARTUP_TRACE=1 --env LULO_PANEL_RELEASE_SECONDS=3
+            --env RMAC_GPUI_STARTUP_TRACE=1 --env LULO_PANEL_RELEASE_SECONDS=3 \
+            --drop-shadows --desktop-items
       - name: Upload the scene
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

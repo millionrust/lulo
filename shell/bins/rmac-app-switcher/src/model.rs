@@ -339,10 +339,161 @@ pub fn activation_actions(
         .collect()
 }
 
+/// The optimistic switch a ⌘Tab starts before the switcher knows whether ⌘
+/// is still held (SPEED-11): focus the session's first choice at once, so a
+/// quick tap does not wait for the surface's keyboard focus and then for
+/// niri's focus round trip, one after the other.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OptimisticPlan {
+    /// The application focused optimistically.
+    pub app_id: String,
+    /// The window that had focus before ⌘Tab, restored on cancel.
+    pub original: Option<WindowId>,
+    /// Plain focus changes only.
+    pub actions: Vec<Action>,
+}
+
+/// Plan the optimistic switch for a new session, or `None` when there is
+/// nothing to switch to (the first choice is already frontmost) or the
+/// switch would unhide windows: restoring a hidden app moves windows between
+/// workspaces, which a cancel could not undo invisibly, so those wait for
+/// the user's choice as before.
+pub fn optimistic_plan(snapshot: &Snapshot, session: &Session) -> Option<OptimisticPlan> {
+    let app = session.selected_app()?;
+    let original = snapshot.focus.window;
+    let frontmost = original
+        .and_then(|id| snapshot.windows.iter().find(|window| window.id == id))
+        .and_then(|window| window.app_id.as_deref());
+    if app.hidden || frontmost == Some(app.app_id.as_str()) {
+        return None;
+    }
+    let actions = activation_actions(snapshot, app, |_| None);
+    let plain_focus = !actions.is_empty()
+        && actions
+            .iter()
+            .all(|action| matches!(action, Action::FocusWindow { .. }));
+    plain_focus.then(|| OptimisticPlan {
+        app_id: app.app_id.clone(),
+        original,
+        actions,
+    })
+}
+
+/// Whether committing `selected` still has to activate it: not when the
+/// optimistic switch already focused that application, unless that switch
+/// failed (`outcome` is `Some(false)`; `None` means it is still in flight
+/// and will land) or the app was hidden with ⌘H while browsing.
+pub fn commit_needs_activation(
+    optimistic_app: Option<&str>,
+    outcome: Option<bool>,
+    selected: &RunningApp,
+) -> bool {
+    optimistic_app != Some(selected.app_id.as_str()) || outcome == Some(false) || selected.hidden
+}
+
+/// The action that undoes an optimistic switch on cancel: focus the window
+/// that was frontmost before ⌘Tab, if it still exists.
+pub fn restore_action(snapshot: &Snapshot, original: Option<WindowId>) -> Option<Action> {
+    let window = original?;
+    snapshot
+        .windows
+        .iter()
+        .any(|live| live.id == window)
+        .then_some(Action::FocusWindow { window })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rmac_compositor::{FocusState, Window, Workspace, PARKING_WORKSPACE};
+
+    fn running(snapshot: &Snapshot) -> Vec<RunningApp> {
+        Recency::default().applications(snapshot)
+    }
+
+    #[test]
+    fn optimistic_plan_focuses_the_previous_app_and_remembers_the_frontmost_window() {
+        let snapshot = snapshot(
+            vec![
+                window(1, "a", 1, 30),
+                window(2, "b", 1, 20),
+                window(3, "b", 1, 10),
+            ],
+            Some(1),
+        );
+        let session = Session::open(running(&snapshot), false).unwrap();
+        let plan = optimistic_plan(&snapshot, &session).unwrap();
+        assert_eq!(plan.app_id, "b");
+        assert_eq!(plan.original, Some(WindowId(1)));
+        assert_eq!(
+            plan.actions,
+            [
+                Action::FocusWindow {
+                    window: WindowId(3)
+                },
+                Action::FocusWindow {
+                    window: WindowId(2)
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn no_optimistic_switch_to_the_frontmost_or_a_hidden_app() {
+        let alone = snapshot(vec![window(1, "a", 1, 30)], Some(1));
+        let session = Session::open(running(&alone), false).unwrap();
+        assert_eq!(optimistic_plan(&alone, &session), None);
+
+        let hidden = snapshot(vec![window(1, "a", 1, 30), window(2, "b", 9, 20)], Some(1));
+        let session = Session::open(running(&hidden), false).unwrap();
+        assert_eq!(session.selected_app().unwrap().app_id, "b");
+        assert_eq!(optimistic_plan(&hidden, &session), None);
+    }
+
+    #[test]
+    fn a_commit_to_the_optimistic_app_activates_nothing_more() {
+        let app = |id: &str, hidden: bool| RunningApp {
+            app_id: id.into(),
+            windows: vec![],
+            hidden,
+        };
+        assert!(!commit_needs_activation(
+            Some("b"),
+            Some(true),
+            &app("b", false)
+        ));
+        assert!(!commit_needs_activation(Some("b"), None, &app("b", false)));
+        assert!(commit_needs_activation(
+            Some("b"),
+            Some(false),
+            &app("b", false)
+        ));
+        assert!(commit_needs_activation(
+            Some("b"),
+            Some(true),
+            &app("c", false)
+        ));
+        assert!(commit_needs_activation(None, None, &app("b", false)));
+        // ⌘H while browsing parked the optimistic app: committing unhides it.
+        assert!(commit_needs_activation(
+            Some("b"),
+            Some(true),
+            &app("b", true)
+        ));
+    }
+
+    #[test]
+    fn cancel_restores_the_original_window_only_while_it_exists() {
+        let snapshot = snapshot(vec![window(1, "a", 1, 30), window(2, "b", 1, 20)], Some(1));
+        assert_eq!(
+            restore_action(&snapshot, Some(WindowId(1))),
+            Some(Action::FocusWindow {
+                window: WindowId(1)
+            })
+        );
+        assert_eq!(restore_action(&snapshot, Some(WindowId(7))), None);
+        assert_eq!(restore_action(&snapshot, None), None);
+    }
 
     fn window(id: u64, app: &str, workspace: u64, focused_at: u64) -> Window {
         Window {

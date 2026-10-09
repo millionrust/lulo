@@ -354,15 +354,27 @@ pub fn run() -> i32 {
 
             // Lulo OS's views, as on Lulo OS: the desktop under every app
             // window, the menu bar, the Dock.
-            rmac_shell_wallpaper::start(cx);
+            // A memory probe leaves parts out (`LULO_PROBE_SKIP`, a
+            // comma-separated list): what each costs on a given PC.
+            let skip = std::env::var("LULO_PROBE_SKIP").unwrap_or_default();
+            let skipped = |part: &str| skip.split(',').any(|name| name.trim() == part);
+            if !skipped("desktop") {
+                rmac_shell_wallpaper::start(cx);
+            }
             memory::report("desktop started");
-            rmac_shell_menubar::start(cx);
+            if !skipped("menubar") {
+                rmac_shell_menubar::start(cx);
+            }
             memory::report("menu bar started");
-            let _dock = rmac_shell_dock::start(cx);
+            if !skipped("dock") {
+                let _dock = rmac_shell_dock::start(cx);
+            }
             memory::report("Dock started");
             // Spotlight and Control Centre open on demand: the hotkey and
             // the bar's buttons ask for them by name.
-            rmac_launcher_app::start(cx);
+            if !skipped("spotlight") {
+                rmac_launcher_app::start(cx);
+            }
             memory::report("Spotlight started");
             // A desktop shortcut shows its target's icon, and a running
             // Windows app its program's, read out of process.

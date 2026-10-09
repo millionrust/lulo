@@ -1230,6 +1230,32 @@ mod bar {
             }
         }
 
+        /// On Windows the bar's window is the bar alone while no menu is
+        /// open, and the whole screen while one is, as the layer surface
+        /// always is on Lulo OS: a window the screen's size costs a
+        /// screen-sized swap chain, which a real GPU's driver keeps in the
+        /// shell's memory (WIN-OS-64).
+        #[cfg(windows)]
+        fn fit_window_to_menus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            let expanded = self.open_menu.is_some()
+                || self.status_menu.is_some()
+                || self.capture_menu.is_some()
+                || self.capture_status.is_some();
+            let Some(display) = window.display(cx) else {
+                return;
+            };
+            let screen = display.bounds().size;
+            let height = if expanded { screen.height } else { px(BAR_HEIGHT) };
+            if window.bounds().size.height == height {
+                return;
+            }
+            let handle = window.window_handle();
+            cx.defer(move |cx| {
+                rmac_shell_layer::windows::resize_layer(cx, handle, Size::new(screen.width, height));
+            });
+            window.refresh();
+        }
+
         fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             if self.status_menu.take().is_some() {
                 self.status_dragging_volume = false;
@@ -3864,6 +3890,8 @@ mod bar {
             if let Some((kind, option)) = self.capture_status.take() {
                 self.open_status_menu(kind, option, window, cx);
             }
+            #[cfg(windows)]
+            self.fit_window_to_menus(window, cx);
             record_render_count(window, self.display_id, self.render_count);
             // Close a menu whose app is gone first, so this frame already
             // names the app that owns the bar now. The system and app menus
@@ -3971,6 +3999,12 @@ mod bar {
             // xdg-output, so fractional scales get the real height), and a
             // menu taller than the room left scrolls instead of being cut.
             let screen_height = f32::from(window.bounds().size.height);
+            // On Windows the bar's window is only the bar until a menu
+            // opens (`fit_window_to_menus`): menus measure the screen.
+            #[cfg(windows)]
+            let screen_height = window
+                .display(cx)
+                .map_or(screen_height, |display| f32::from(display.bounds().size.height));
             // A confirmation is a floating panel centred on screen, not a
             // dropdown anchored under the logo menu, as on the Mac.
             let menu_left = if let Some(confirmation) = &confirmation {

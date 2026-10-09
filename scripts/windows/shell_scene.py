@@ -125,6 +125,11 @@ def main() -> int:
                         help="a memory probe: start Lulo as a user would, not in the fixed scene")
     parser.add_argument("--no-windows-apps", action="store_true",
                         help="a memory probe: leave out Windows' own apps (LULO_NO_WINDOWS_APPS)")
+    parser.add_argument("--smoke-profile", action="store_true",
+                        help="a memory probe: profile folders as shell_smoke.py sets them "
+                        "(APPDATA and LOCALAPPDATA private, no XDG overrides)")
+    parser.add_argument("--env", action="append", default=[],
+                        help="a memory probe: KEY=VALUE added to the shell's environment")
     parser.add_argument("--keep-windows", action="store_true",
                         help="a memory probe: leave the runner's own windows showing")
     parser.add_argument("--real-status", action="store_true",
@@ -150,6 +155,21 @@ def main() -> int:
     }
     if args.open:
         environment["RMAC_SHELL_SCENE_OPEN"] = args.open
+    if args.smoke_profile:
+        for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
+            environment.pop(name, None)
+        environment["APPDATA"] = str(work / "Roaming")
+        environment["LOCALAPPDATA"] = str(work / "Local")
+        settings = work / "Roaming" / "Lulo" / "Config" / "rmac"
+        settings.mkdir(parents=True, exist_ok=True)
+        (work / "Local").mkdir(parents=True, exist_ok=True)
+        pins = ",".join(f'"{app}"' for app in SCENE_PINS)
+        (settings / "shell.json").write_text(
+            f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n', encoding="utf-8"
+        )
+    for pair in args.env:
+        key, _, value = pair.partition("=")
+        environment[key] = value
     if args.normal:
         environment.pop("RMAC_SHELL_SCENE", None)
         environment.pop("RMAC_SHELL_SCENE_TIME", None)

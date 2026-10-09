@@ -360,6 +360,21 @@ impl DirectXRenderer {
                 scene.surfaces.len(),
             ))?;
         }
+        // rmac: a window that drew paths once (a menu's rounded outline)
+        // gives their two window-sized textures back when a frame draws
+        // none: they are made again by the next path (WIN-OS-64; about
+        // 16 MB for a full-screen shell surface).
+        if scene.paths.is_empty() {
+            if let Some(resources) = self.resources.as_mut() {
+                if resources.path_intermediate_msaa_view.is_some() {
+                    crate::rmac_trace::startup("path_intermediates_released");
+                    resources.path_intermediate_texture = None;
+                    resources.path_intermediate_msaa_texture = None;
+                    resources.path_intermediate_msaa_view = None;
+                    resources.path_intermediate_srv = None;
+                }
+            }
+        }
         self.present()
     }
 

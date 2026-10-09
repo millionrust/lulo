@@ -21,8 +21,25 @@ use windows::Win32::UI::Shell::{
 /// `DRIVE_FIXED`.
 const FIXED: u32 = 3;
 
-/// How many items the Recycle Bin holds, across every drive.
+/// How many items the Recycle Bin holds, across every drive: the `$I`
+/// record files in the user's own bin folders, which a plain directory
+/// read counts without loading the shell's Recycle Bin namespace into the
+/// caller (WIN-OS-64); the shell's own count when there are no folders.
 pub(crate) fn item_count() -> Result<usize, String> {
+    let folders = folders();
+    if folders.is_empty() {
+        return shell_item_count();
+    }
+    Ok(folders
+        .iter()
+        .filter_map(|folder| std::fs::read_dir(folder).ok())
+        .flat_map(|entries| entries.flatten())
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("$I"))
+        .count())
+}
+
+/// The shell's own count of the Recycle Bin's items.
+fn shell_item_count() -> Result<usize, String> {
     let mut info = SHQUERYRBINFO {
         cbSize: std::mem::size_of::<SHQUERYRBINFO>() as u32,
         ..Default::default()

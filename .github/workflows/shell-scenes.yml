@@ -131,6 +131,8 @@ jobs:
           python scripts/windows/shell_scene.py --bin-dir target/debug --output probes/normal.png --normal
           python scripts/windows/shell_scene.py --bin-dir target/debug \
             --output probes/normal-no-windows-apps.png --normal --no-windows-apps
+          python scripts/windows/shell_scene.py --bin-dir target/debug \
+            --output probes/normal-keep-windows.png --normal --keep-windows
       - name: Upload the scene
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

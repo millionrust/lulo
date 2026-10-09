@@ -231,9 +231,39 @@ fn read_shared() -> domain::Snapshot {
             return snapshot.clone();
         }
     }
-    let snapshot = read_snapshot();
+    let snapshot = read_on_reader_thread();
     *last = Some((generation, snapshot.clone()));
     snapshot
+}
+
+/// Read the window list on one thread of its own: the COM objects and shell
+/// state that reading AUMIDs sets up stay on that thread, instead of on
+/// every executor thread a watcher happens to run on.
+fn read_on_reader_thread() -> domain::Snapshot {
+    type Request = std::sync::mpsc::Sender<domain::Snapshot>;
+    static READER: OnceLock<Option<Mutex<std::sync::mpsc::Sender<Request>>>> = OnceLock::new();
+    let reader = READER.get_or_init(|| {
+        let (requests, received) = std::sync::mpsc::channel::<Request>();
+        std::thread::Builder::new()
+            .name("lulo-window-list".into())
+            .spawn(move || {
+                while let Ok(reply) = received.recv() {
+                    let _ = reply.send(read_snapshot());
+                }
+            })
+            .ok()
+            .map(|_| Mutex::new(requests))
+    });
+    let Some(reader) = reader else {
+        return read_snapshot();
+    };
+    let (reply, answer) = std::sync::mpsc::channel();
+    if reader.lock().is_ok_and(|requests| requests.send(reply).is_ok()) {
+        if let Ok(snapshot) = answer.recv() {
+            return snapshot;
+        }
+    }
+    read_snapshot()
 }
 static HOOKS: OnceLock<Result<(), String>> = OnceLock::new();
 

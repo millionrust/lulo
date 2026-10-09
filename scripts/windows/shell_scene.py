@@ -125,6 +125,8 @@ def main() -> int:
                         help="a memory probe: start Lulo as a user would, not in the fixed scene")
     parser.add_argument("--no-windows-apps", action="store_true",
                         help="a memory probe: leave out Windows' own apps (LULO_NO_WINDOWS_APPS)")
+    parser.add_argument("--keep-windows", action="store_true",
+                        help="a memory probe: leave the runner's own windows showing")
     parser.add_argument("--real-status", action="store_true",
                         help="a memory probe: the machine's own Wi-Fi, sound and battery readings")
     parser.add_argument("--desktop", default="", help="a memory probe: show this folder on the desktop")
@@ -158,7 +160,7 @@ def main() -> int:
     if args.desktop:
         environment["RMAC_DESKTOP_DIR"] = args.desktop
     log = work / "session.log"
-    hidden = hide_other_windows()
+    hidden = [] if args.keep_windows else hide_other_windows()
     session = subprocess.Popen(
         [str(bin_dir / "lulo-session.exe")],
         env=environment,

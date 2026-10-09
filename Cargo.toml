@@ -30,7 +30,7 @@ chrono-tz = "0.10"
 base64 = "0.22"
 cosmic-text = "=0.14.2"
 flate2 = "=1.1.9"
-gpui = { version = "=0.2.2", git = "https://github.com/zed-industries/zed.git", package = "gpui" }
+gpui = { version = "=0.2.2", path = "shell/compat/gpui" }
 gpui_linux = { version = "0.1.0", path = "shell/compat/gpui_linux", default-features = false, features = ["wayland"] }
 gpui_platform = { version = "=0.1.0", git = "https://github.com/zed-industries/zed.git", package = "gpui_platform", features = ["font-kit", "wayland"] }
 gpui-component = { version = "=0.5.2", path = "vendor/gpui-component/crates/ui" }
@@ -232,6 +232,7 @@ strip = false
 
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "shell/compat/ztracing" }
+gpui = { path = "shell/compat/gpui" }
 gpui_linux = { path = "shell/compat/gpui_linux" }
 gpui_wgpu = { path = "shell/compat/gpui_wgpu" }
 gpui_windows = { path = "shell/compat/gpui_windows" }

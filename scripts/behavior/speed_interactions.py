@@ -51,10 +51,16 @@ from run_frame_timing import read_trace
 
 FRAME_BUDGET_MS = 1000.0 / 60.0
 FRAME_SHARE_TARGET = 0.99
+# An interactive resize relays out the whole window on every configure (no
+# upstream GPUI patch to avoid that yet, SPEED-12), so its own target is
+# looser than ordinary scrolling's 99 %.
+RESIZE_FRAME_SHARE_TARGET = 0.95
 TYPING_P95_TARGET_MS = 16.0
 SPOTLIGHT_RESULTS_TARGET_MS = 50.0
 FOLDER_OPEN_TARGET_MS = 100.0
 QUICK_LOOK_TARGET_MS = 100.0
+# A press-and-release ⌘Tab tap, as fast as the held path's reveal (SPEED-11).
+CMD_TAB_TAP_TARGET_MS = 50.0
 # A frame this long is a visible hitch (three missed vblanks at 60 Hz).
 STALL_MS = 50.0
 SETTLE_S = 0.3
@@ -829,7 +835,7 @@ class InteractionScenarios:
             switch_ms = statistics.median(done) if done else None
             return {"switches": switches, "switch_ms": switch_ms,
                     "switcher_first_frame_ms": statistics.median(frames) if frames else None,
-                    "pass": switch_ms is not None and switch_ms <= 100.0,
+                    "pass": switch_ms is not None and switch_ms <= CMD_TAB_TAP_TARGET_MS,
                     **({} if done else {"error": "Alt-Tab never switched apps"})}
         finally:
             for process, _trace, _app in apps:
@@ -1017,6 +1023,10 @@ class InteractionScenarios:
             self._settle(trace, 3.0)
             events = self._since(trace, mark)
             summary = {**frames_summary(events), **frame_split_ms(events)}
+            # An interactive resize's own, looser frame-share target
+            # (RESIZE_FRAME_SHARE_TARGET), not frames_summary's 99 %.
+            share = summary.get("within_16_7ms_share")
+            summary["pass"] = share is not None and share >= RESIZE_FRAME_SHARE_TARGET
             summary["configures"] = sum(1 for event, _ in events if event == "configure")
             summary["resizes"] = sum(1 for event, _ in events if event == "resize")
             # SPEED-12: swapchain rebuilds versus resizes drawn into the

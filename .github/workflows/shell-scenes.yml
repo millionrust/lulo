@@ -116,6 +116,10 @@ jobs:
         run: cargo build --locked -p rmac-win-shell -p rmac-system-settings --bins
       - name: Draw the scenes
         run: |
+          # The Lulo wallpaper's packaged artwork beside the executables, as
+          # the installer lays it out.
+          mkdir -p target/debug/wallpapers
+          cp packaging/rmac-session/wallpapers/*.jpg target/debug/wallpapers/
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/shell_scene.py --bin-dir target/debug --output scenes/windows.png
           python scripts/windows/shell_scene.py --bin-dir target/debug \

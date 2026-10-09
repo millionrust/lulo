@@ -757,7 +757,24 @@ fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
                     } => {
                         #[cfg(windows)]
                         rmac_shell_layer::windows::trace::trace(|| {
-                            format!("wallpaper rendered {} surfaces", rasterized.surfaces.len())
+                            let surfaces = rasterized
+                                .surfaces
+                                .iter()
+                                .map(|surface| {
+                                    format!(
+                                        "{:?}{} {}x{}",
+                                        surface.source,
+                                        if surface.fallback { " (fallback)" } else { "" },
+                                        surface.image.width,
+                                        surface.image.height
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!(
+                                "wallpaper rendered {surfaces}; issues {:?}",
+                                rasterized.issues
+                            )
                         });
                         let (surfaces, colors) = blocking::unblock(move || {
                             let mut prepared = BTreeMap::new();

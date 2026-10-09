@@ -364,6 +364,14 @@ pub fn run() -> i32 {
             // the bar's buttons ask for them by name.
             rmac_launcher_app::start(cx);
             memory::report("Spotlight started");
+            // A desktop shortcut shows its target's icon, and a running
+            // Windows app its program's, read out of process.
+            rmac_shell_layer::system::file_icons::provide(crate::win::shell_icons::icon);
+            if std::env::var_os("RMAC_SHELL_SCENE").is_none()
+                && std::env::var_os("LULO_NO_WINDOWS_APPS").is_none()
+            {
+                crate::win::shell_icons::watch_running(cx);
+            }
             rmac_quick_settings_app::start(cx);
             requests::register("launcher", rmac_launcher_app::toggle);
             requests::register("quick-settings", rmac_quick_settings_app::toggle);

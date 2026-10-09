@@ -17,6 +17,11 @@ fn main() {
         Some(rmac_win_shell::win::catalog::APPS_HELPER_SWITCH) => {
             std::process::exit(rmac_win_shell::win::catalog::run_apps_helper())
         }
+        // One icon written as a PNG (`win::shell_icons`), for the same
+        // reason.
+        Some(rmac_win_shell::win::shell_icons::SAVE_SWITCH) => {
+            std::process::exit(rmac_win_shell::win::shell_icons::run_save())
+        }
         _ => {}
     }
     std::process::exit(rmac_win_shell::run());

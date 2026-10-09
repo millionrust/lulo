@@ -99,7 +99,10 @@ def prepare_profile(home: Path) -> None:
 
 
 def scene_environment() -> dict[str, str]:
-    return {"RMAC_SHELL_SCENE": "1", "RMAC_SHELL_SCENE_TIME": SCENE_TIME}
+    environment = {"RMAC_SHELL_SCENE": "1", "RMAC_SHELL_SCENE_TIME": SCENE_TIME}
+    # The Lulo wallpaper's artwork, as the session package installs it.
+    environment["RMAC_WALLPAPER_DIR"] = str(REPO / "packaging/rmac-session/wallpapers")
+    return environment
 
 
 class Run:

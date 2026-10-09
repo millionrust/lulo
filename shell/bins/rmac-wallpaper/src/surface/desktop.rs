@@ -452,8 +452,26 @@ fn bundled_icon(
 /// generic document glyph: an image, within the size Finder still
 /// thumbnails inline rather than treating as a large file.
 fn is_previewable(item: &Item) -> bool {
+    if shell_icon(item) {
+        return true;
+    }
     let extension = extension(&item.name);
     PREVIEW_EXTENSIONS.contains(&extension.as_str()) && item.size_bytes <= PREVIEW_LIMIT
+}
+
+/// A Windows shortcut or program, shown with the icon Explorer shows
+/// (`rmac_shell_layer::system::file_icons`).
+fn shell_icon(item: &Item) -> bool {
+    item.kind != ItemKind::Directory
+        && rmac_shell_layer::system::file_icons::shows_shell_icon(&item.name)
+}
+
+/// Whether `thumbnail` still shows `item`.
+fn thumbnail_current(item: &Item, thumbnail: &std::path::Path) -> bool {
+    if shell_icon(item) {
+        return thumbnail.is_file();
+    }
+    rmac_thumbnails::is_current(&item.path, thumbnail)
 }
 
 fn item_icon(item: &Item, size: f32, thumbnails: &BTreeMap<PathBuf, PathBuf>) -> AnyElement {
@@ -469,7 +487,7 @@ fn item_icon(item: &Item, size: f32, thumbnails: &BTreeMap<PathBuf, PathBuf>) ->
         // decoding the full-size file inline.
         if let Some(thumbnail) = thumbnails
             .get(&item.path)
-            .filter(|thumbnail| rmac_thumbnails::is_current(&item.path, thumbnail))
+            .filter(|thumbnail| thumbnail_current(item, thumbnail))
         {
             return img(thumbnail.clone())
                 .size(px(size))
@@ -642,7 +660,7 @@ impl Wallpaper {
     /// behind, or blocks, the bundled folder/document icons that now paint
     /// synchronously on the first frame.
     fn gen_desktop_thumbnails(&mut self, items: &[Item], cx: &mut Context<Self>) {
-        let targets: Vec<PathBuf> = items
+        let targets: Vec<(PathBuf, bool)> = items
             .iter()
             .filter(|item| {
                 item.kind != ItemKind::Directory
@@ -652,14 +670,14 @@ impl Wallpaper {
                         .desk
                         .thumbnails
                         .get(&item.path)
-                        .is_some_and(|thumbnail| rmac_thumbnails::is_current(&item.path, thumbnail))
+                        .is_some_and(|thumbnail| thumbnail_current(item, thumbnail))
             })
-            .map(|item| item.path.clone())
+            .map(|item| (item.path.clone(), shell_icon(item)))
             .collect();
         if targets.is_empty() {
             return;
         }
-        for path in &targets {
+        for (path, _) in &targets {
             self.desk.pending_thumbnails.insert(path.clone());
         }
         cx.spawn(async move |this, cx| {
@@ -669,8 +687,12 @@ impl Wallpaper {
             let results = blocking::unblock(move || {
                 targets
                     .into_iter()
-                    .map(|path| {
-                        let thumbnail = rmac_thumbnails::generate(&path).ok();
+                    .map(|(path, shell_icon)| {
+                        let thumbnail = if shell_icon {
+                            rmac_shell_layer::system::file_icons::icon(&path)
+                        } else {
+                            rmac_thumbnails::generate(&path).ok()
+                        };
                         (path, thumbnail)
                     })
                     .collect::<Vec<_>>()
@@ -1774,7 +1796,7 @@ impl Wallpaper {
             ),
             Tile::Item { index, .. } => match layout.items.get(*index) {
                 Some(item) => (
-                    item.name.clone(),
+                    rmac_shell_layer::system::file_icons::display_name(&item.name).to_owned(),
                     item_icon(item, icon, &self.desk.thumbnails),
                     self.desk.selection.contains(&item.path),
                 ),

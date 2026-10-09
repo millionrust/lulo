@@ -173,3 +173,47 @@ pub mod extra_menu {
         ROWS.with(|rows| rows.borrow().clone())
     }
 }
+
+/// The icon the platform's own shell shows for a file (a shortcut's
+/// target, a program's icon), as a picture file, where the host provides
+/// one: the Windows shell reads it out of process (`lulo-shell`'s icon
+/// helper). Lulo OS has none; the views draw their own glyphs.
+pub mod file_icons {
+    use std::path::{Path, PathBuf};
+    use std::sync::OnceLock;
+
+    type Provider = fn(&Path) -> Option<PathBuf>;
+    static PROVIDER: OnceLock<Provider> = OnceLock::new();
+
+    /// Set the provider (once, by the host).
+    pub fn provide(provider: Provider) {
+        let _ = PROVIDER.set(provider);
+    }
+
+    /// The picture of `path`'s icon, if the host can give one. Blocking.
+    pub fn icon(path: &Path) -> Option<PathBuf> {
+        PROVIDER.get().and_then(|provider| provider(path))
+    }
+
+    /// Whether files named like `name` show the platform's own icon (and
+    /// hide their extension, as Explorer does for shortcuts).
+    pub fn shows_shell_icon(name: &str) -> bool {
+        cfg!(windows) && {
+            let lower = name.to_ascii_lowercase();
+            lower.ends_with(".lnk") || lower.ends_with(".url") || lower.ends_with(".exe")
+        }
+    }
+
+    /// `name` as Explorer shows it: a shortcut without its extension.
+    pub fn display_name(name: &str) -> &str {
+        if !cfg!(windows) {
+            return name;
+        }
+        let lower = name.to_ascii_lowercase();
+        if lower.ends_with(".lnk") || lower.ends_with(".url") {
+            &name[..name.len() - 4]
+        } else {
+            name
+        }
+    }
+}

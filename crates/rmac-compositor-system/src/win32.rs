@@ -162,7 +162,13 @@ pub async fn watch(sender: Sender<domain::Event>) -> Result<(), Error> {
     }
     let mut published: Option<domain::Snapshot> = None;
     loop {
-        let snapshot = blocking::unblock(read_shared).await;
+        // Every watcher wakes on the same change; only the first one reads
+        // (on the window-list thread), the others take its reading here
+        // without another thread hop.
+        let snapshot = match cached_reading() {
+            Some(snapshot) => snapshot,
+            None => blocking::unblock(read_shared).await,
+        };
         if published.as_ref() != Some(&snapshot) {
             published = Some(snapshot.clone());
             if sender
@@ -214,6 +220,13 @@ static SUBSCRIBERS: Mutex<Vec<Sender<()>>> = Mutex::new(Vec::new());
 /// once between them.
 static CHANGES: AtomicU64 = AtomicU64::new(1);
 static LAST_READ: Mutex<Option<(u64, domain::Snapshot)>> = Mutex::new(None);
+
+/// The last reading, if nothing changed since it was taken.
+fn cached_reading() -> Option<domain::Snapshot> {
+    let last = LAST_READ.try_lock().ok()?;
+    let (read_at, snapshot) = last.as_ref()?;
+    (*read_at == CHANGES.load(Ordering::Acquire)).then(|| snapshot.clone())
+}
 
 fn read_shared() -> domain::Snapshot {
     // Without the hooks nothing would say a reading went stale.

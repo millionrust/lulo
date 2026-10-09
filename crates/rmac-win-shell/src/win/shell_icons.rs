@@ -127,9 +127,9 @@ pub fn watch_running(cx: &mut gpui::App) {
     cx.background_executor()
         .spawn(async move {
             let mut seen = std::collections::HashSet::<String>::new();
-            while receiver.recv().await.is_ok() {
-                while receiver.try_recv().is_ok() {}
-                let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
+            while let Ok(event) = receiver.recv().await {
+                // The watch sends a snapshot only when the windows changed.
+                let rmac_compositor::Event::Snapshot { snapshot } = event else {
                     continue;
                 };
                 let fresh = snapshot

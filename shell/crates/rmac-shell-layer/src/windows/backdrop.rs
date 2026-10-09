@@ -152,22 +152,24 @@ pub fn element(window: &Window, cx: &App, radius: f32) -> Option<AnyElement> {
     let generation = GENERATION.load(Ordering::Acquire);
     let scale = window.scale_factor();
     let screen = display.bounds();
-    let bounds = window.bounds();
+    // Where Windows has the window (physical pixels): GPUI's own bounds of
+    // a layer window placed after it opened can still read its opening
+    // place, which sampled the wrong part of the wallpaper.
+    let mut placed = windows::Win32::Foundation::RECT::default();
+    let hwnd = super::surface::hwnd(window)?;
+    // SAFETY: reads the rectangle of a window this process owns.
+    unsafe { windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut placed) }.ok()?;
+    let origin_x = screen.origin.x.as_f32() * scale;
+    let origin_y = screen.origin.y.as_f32() * scale;
     // The window's rectangle on its screen, in the shrunk copy's pixels.
     let (small_width, small_height) = wallpaper.pixels.dimensions();
-    let to_small = |logical: gpui::Pixels, small: u32| {
-        ((logical.as_f32() * scale) / SHRINK as f32).clamp(0.0, small as f32)
+    let to_small = |physical: f32, origin: f32, small: u32| {
+        ((physical - origin) / SHRINK as f32).clamp(0.0, small as f32)
     };
-    let left = to_small(bounds.origin.x - screen.origin.x, small_width);
-    let top = to_small(bounds.origin.y - screen.origin.y, small_height);
-    let right = to_small(
-        bounds.origin.x + bounds.size.width - screen.origin.x,
-        small_width,
-    );
-    let bottom = to_small(
-        bounds.origin.y + bounds.size.height - screen.origin.y,
-        small_height,
-    );
+    let left = to_small(placed.left as f32, origin_x, small_width);
+    let top = to_small(placed.top as f32, origin_y, small_height);
+    let right = to_small(placed.right as f32, origin_x, small_width);
+    let bottom = to_small(placed.bottom as f32, origin_y, small_height);
     let rect = [
         left.floor() as u32,
         top.floor() as u32,

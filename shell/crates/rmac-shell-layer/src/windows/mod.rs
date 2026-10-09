@@ -203,7 +203,16 @@ pub fn open_layer_window<V: 'static + Render>(
         }
         // Win32 calls that send messages to this process's own windows run
         // outside GPUI's update, as `gpui_windows` does for its own.
-        cx.spawn(async move |_| place(raw)).detach();
+        cx.spawn(async move |cx| {
+            place(raw);
+            // A blurred material samples the wallpaper where it now is.
+            if blurred {
+                cx.update(|cx| {
+                    let _ = any.update(cx, |_, window, _| window.refresh());
+                });
+            }
+        })
+        .detach();
         if background {
             watch_desktop_foreground(cx);
         }
@@ -230,7 +239,13 @@ pub fn resize_layer(cx: &mut App, handle: AnyWindowHandle, requested: Size<Pixel
         (window.requested != requested).then(|| window.requested = requested)
     });
     if changed.is_some() {
-        cx.spawn(async move |_| place(raw)).detach();
+        cx.spawn(async move |cx| {
+            place(raw);
+            cx.update(|cx| {
+                let _ = handle.update(cx, |_, window, _| window.refresh());
+            });
+        })
+        .detach();
     }
 }
 

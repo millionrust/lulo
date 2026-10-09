@@ -1,0 +1,99 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-09T04:21:21Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 103.2295449404046,
+      "switcher_first_frame_ms": 21.284846938215196,
+      "switches": [
+        1333.039711927995,
+        99.12421507760882,
+        103.0032680137083,
+        103.2295449404046,
+        104.66318298131227
+      ]
+    },
+    "cmd-tab-hold": {
+      "commits": [
+        48.256292939186096,
+        54.94995298795402,
+        57.605818030424416,
+        76.14659797400236,
+        54.60514407604933
+      ],
+      "pass": true,
+      "release_to_switch_ms": 54.94995298795402,
+      "reveal_ms": 44.77756004780531,
+      "reveals": [
+        125.73876697570086,
+        41.65967693552375,
+        44.77756004780531,
+        49.65096397791058,
+        44.013883103616536
+      ]
+    },
+    "resize-drag-edge": {
+      "configure_to_present_max_ms": 49.48,
+      "configure_to_present_p95_ms": 35.194,
+      "configures": 96,
+      "final_size": [
+        723,
+        832
+      ],
+      "frame_p50_ms": 10.465,
+      "frame_p95_ms": 34.631,
+      "frames": 100,
+      "pass": false,
+      "render_p50_ms": 8.791,
+      "render_p95_ms": 27.67,
+      "resizes": 93,
+      "stalls": 0,
+      "start_size": [
+        723,
+        832
+      ],
+      "submit_p50_ms": 0.736,
+      "submit_p95_ms": 6.721,
+      "swapchain_kept": 94,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.71,
+      "worst_frame_ms": 49.434
+    },
+    "resize-drag-long": {
+      "configure_to_present_max_ms": 345.072,
+      "configure_to_present_p95_ms": 26.026,
+      "configures": 42,
+      "final_size": [
+        963,
+        832
+      ],
+      "frame_p50_ms": 16.214,
+      "frame_p95_ms": 30.874,
+      "frames": 49,
+      "pass": false,
+      "render_p50_ms": 14.45,
+      "render_p95_ms": 24.581,
+      "resizes": 41,
+      "stalls": 1,
+      "start_size": [
+        723,
+        832
+      ],
+      "submit_p50_ms": 0.773,
+      "submit_p95_ms": 8.386,
+      "swapchain_kept": 40,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.5510204081632653,
+      "worst_frame_ms": 55.926
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

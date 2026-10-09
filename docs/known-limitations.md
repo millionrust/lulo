@@ -119,6 +119,17 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   Centre and Notification Centre about 0.35 s to open. The targets are 0.3 s
   and 0.1 s. Oversized icon drawing is already fixed. Further speed fixes come
   in the first Beta updates (docs/perf/speed-sweep-2026-10-05.md).
+- **System Settings' live resize** stays at about 69–71 % of frames on time
+  during an interactive drag (target 95 %); worst frames dropped from
+  ~140–176 ms to ~50–56 ms this round, but the bulk of the gap is upstream
+  GPUI re-rendering every cached view on any window refresh, not something
+  fixable from this crate without vendoring GPUI itself. **⌘Tab's quick tap**
+  (press and release) stays at about 103–105 ms (target 50 ms, as the held
+  path already meets); it is dominated by two sequential niri round trips
+  (the switcher surface's own keyboard hand-over and niri's `FocusWindow`
+  action), not a fixable rmac-side cost without a riskier optimistic-switch
+  redesign. See docs/perf/speed-round-11-2026-10-09.md and parity rows
+  SPEED-11/SPEED-12.
 
 ## Feature limits
 

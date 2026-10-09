@@ -131,6 +131,13 @@
           "children": []
         },
         {
+          "label": "Duplicate",
+          "action": "preview::Duplicate",
+          "shortcut": "⇧⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Rename…",
           "action": "preview::RenameDocument",
           "shortcut": "",
@@ -663,6 +670,13 @@
           "label": "Show Inspector",
           "action": "preview::ShowInspector",
           "shortcut": "⌘I",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Magnifier",
+          "action": "preview::ShowMagnifier",
+          "shortcut": "`",
           "separator_before": false,
           "children": []
         },

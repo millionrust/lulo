@@ -99,6 +99,7 @@ gpui::actions!(
         AnnotateSpeechBubble,
         AnnotateMask,
         AnnotateLoupe,
+        ShowMagnifier,
         AnnotateNote,
         ManageSignatures,
         SelectAll,
@@ -114,6 +115,7 @@ gpui::actions!(
         TakeScreenshotWindow,
         TakeScreenshotEntireScreen,
         SaveAs,
+        Duplicate,
         ToggleToolbar,
         ToggleMarkup,
         EnterFullScreen,
@@ -200,6 +202,7 @@ fn bind_keys(cx: &mut App) {
             KeyBinding::new("shift-cmd-a", ToggleMarkup, context),
             KeyBinding::new("cmd-s", SaveMarkup, context),
             KeyBinding::new("alt-shift-cmd-s", SaveAs, context),
+            KeyBinding::new("shift-cmd-s", Duplicate, context),
             KeyBinding::new("alt-cmd-t", ToggleToolbar, context),
             KeyBinding::new("cmd-z", UndoMarkup, context),
             KeyBinding::new("shift-cmd-z", RedoMarkup, context),
@@ -240,6 +243,9 @@ fn bind_keys(cx: &mut App) {
             KeyBinding::new("ctrl-cmd-i", AnnotateLine, context),
             KeyBinding::new("ctrl-cmd-t", AnnotateText, context),
             KeyBinding::new("ctrl-cmd-l", AnnotateLoupe, context),
+            // Tools ▸ Show Magnifier: the same toggle as Annotate ▸ Loupe
+            // above, bound to its own Mac shortcut (backtick).
+            KeyBinding::new("`", ShowMagnifier, context),
             KeyBinding::new("ctrl-cmd-n", AnnotateNote, context),
             KeyBinding::new("cmd-,", ShowSettings, None),
             KeyBinding::new("alt-cmd-3", ShowTableOfContents, context),
@@ -347,15 +353,21 @@ fn clipboard_image() -> Option<(Vec<u8>, &'static str)> {
 
 /// A clipboard image is an independent document. Keep its backing bytes in
 /// the app cache until Save As gives it a permanent location.
+/// `$XDG_CACHE_HOME`, or `~/.cache`, or a last-resort temp dir — the base
+/// every cache-backed "unsaved document" path (clipboard paste, Duplicate)
+/// is rooted under.
+fn cache_root() -> PathBuf {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+        .unwrap_or_else(std::env::temp_dir)
+}
+
 fn open_clipboard_image(bytes: Vec<u8>, extension: &'static str, cx: &mut App) {
     static NEXT_CLIPBOARD_DOCUMENT: std::sync::atomic::AtomicU64 =
         std::sync::atomic::AtomicU64::new(1);
-    let cache = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
-        .unwrap_or_else(std::env::temp_dir);
     let id = NEXT_CLIPBOARD_DOCUMENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = cache
+    let path = cache_root()
         .join("rmac-preview/clipboard")
         .join(format!("{}-{id}/Untitled.{extension}", std::process::id()));
     cx.spawn(async move |cx| {
@@ -369,6 +381,55 @@ fn open_clipboard_image(bytes: Vec<u8>, extension: &'static str, cx: &mut App) {
         match result {
             Ok(path) => cx.update(|cx| open_window(vec![path], cx)),
             Err(error) => eprintln!("rmac-preview: could not open clipboard image: {error}"),
+        }
+    })
+    .detach();
+}
+
+/// File ▸ Duplicate (⇧⌘S, PRV-MENU-001): a new window opened on a fresh
+/// cache-backed copy of `source`'s current on-disk bytes, named "<name>
+/// copy" — unsaved, like Text Editor's own Duplicate (TE-01): the window
+/// this was invoked from keeps its own path untouched, and the duplicate
+/// prompts for a real location the first time it is saved. Unlike Save
+/// As, unsaved edits in the source window (a dirty image's rotation, a
+/// PDF's markup) are not carried into the duplicate — the same
+/// simplification `open_clipboard_image` already accepts for a pasted
+/// image, and duplicating an unmodified file (the common case) is
+/// unaffected.
+/// "<name> copy.<ext>" for `source`'s own file name, like Finder's own
+/// Duplicate names a copy — "Untitled copy" if `source` has no usable
+/// stem, a bare "<name> copy" if it has no extension.
+fn duplicate_name(source: &Path) -> String {
+    let stem = source
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("Untitled");
+    match source.extension().and_then(|ext| ext.to_str()) {
+        Some(extension) => format!("{stem} copy.{extension}"),
+        None => format!("{stem} copy"),
+    }
+}
+
+pub(crate) fn duplicate_document(source: PathBuf, cx: &mut App) {
+    static NEXT_DUPLICATE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let id = NEXT_DUPLICATE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = duplicate_name(&source);
+    let path = cache_root()
+        .join("rmac-preview/duplicate")
+        .join(format!("{}-{id}", std::process::id()))
+        .join(name);
+    cx.spawn(async move |cx| {
+        let result = blocking::unblock(move || -> std::io::Result<PathBuf> {
+            sweep_orphaned_clipboard_copies(path.parent().and_then(Path::parent));
+            let bytes = std::fs::read(&source)?;
+            std::fs::create_dir_all(path.parent().expect("duplicate path has a parent"))?;
+            std::fs::write(&path, bytes)?;
+            Ok(path)
+        })
+        .await;
+        match result {
+            Ok(path) => cx.update(|cx| open_window(vec![path], cx)),
+            Err(error) => eprintln!("rmac-preview: could not duplicate the document: {error}"),
         }
     })
     .detach();
@@ -822,6 +883,33 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_name_adds_copy_before_the_extension() {
+        // PRV-MENU-001: the same "<name> copy.<ext>" convention Finder
+        // uses for its own Duplicate.
+        assert_eq!(
+            duplicate_name(Path::new("/home/user/photo.png")),
+            "photo copy.png"
+        );
+        assert_eq!(
+            duplicate_name(Path::new("/home/user/report.final.pdf")),
+            "report.final copy.pdf"
+        );
+    }
+
+    #[test]
+    fn duplicate_name_without_an_extension_has_no_trailing_dot() {
+        assert_eq!(
+            duplicate_name(Path::new("/home/user/README")),
+            "README copy"
+        );
+    }
+
+    #[test]
+    fn duplicate_name_falls_back_to_untitled_for_an_unusable_stem() {
+        assert_eq!(duplicate_name(Path::new("/")), "Untitled copy");
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

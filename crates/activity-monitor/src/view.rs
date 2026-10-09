@@ -284,6 +284,10 @@ impl MonitorView {
         rmac_ui::set_menu_enabled("activity_monitor::JumpToSelection", has_selection, cx);
         for (action, filter) in [
             ("activity_monitor::ShowAllProcesses", ViewFilter::All),
+            (
+                "activity_monitor::ShowAllProcessesHierarchically",
+                ViewFilter::AllHierarchical,
+            ),
             ("activity_monitor::ShowMyProcesses", ViewFilter::MyProcesses),
             (
                 "activity_monitor::ShowSystemProcesses",

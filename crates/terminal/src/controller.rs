@@ -170,6 +170,7 @@ gpui::actions!(
         ShowProfiles,
         ResetTerminal,
         HardResetTerminal,
+        FillScreen,
         ShowSettings,
         ClearToPreviousMark,
         ClearToPreviousBookmark,
@@ -249,6 +250,27 @@ gpui::actions!(
         CancelEditBackgroundColour,
         // Application ▸ Quit and Keep Windows (TERM-22).
         QuitAndKeepWindows,
+        // Edit ▸ Copy Special ▸ Style for "Copy" Command
+        // (TRM-MENU-001..015): a session-wide radio choice of which
+        // profile's colours a plain Copy renders its styled clipboard
+        // content with.
+        // A disabled heading row, like Window ▸ Bookmarks' "No Bookmarks":
+        // never actually dispatched.
+        CopyStyleHeading,
+        CopyStyleDefault,
+        CopyStylePlainText,
+        CopyStyleBasic,
+        CopyStyleClearDark,
+        CopyStyleClearLight,
+        CopyStyleGrass,
+        CopyStyleHomebrew,
+        CopyStyleManPage,
+        CopyStyleNovel,
+        CopyStyleOcean,
+        CopyStylePro,
+        CopyStyleRedSands,
+        CopyStyleSilverAerogel,
+        CopyStyleSolidColors,
     ]
 );
 
@@ -298,6 +320,65 @@ pub(crate) fn register_windowless_actions(cx: &mut gpui::App) {
     open_profile!(TabRedSands, Some(profile_named("Red Sands")));
     open_profile!(TabSilverAerogel, Some(profile_named("Silver Aerogel")));
     open_profile!(TabSolidColors, Some(profile_named("Solid Colors")));
+    cx.on_action(|_: &CopyStyleHeading, _| {});
+    macro_rules! copy_style_action {
+        ($action:ty, $style:expr) => {
+            cx.on_action(|_: &$action, cx| {
+                profiles::set_copy_style($style);
+                publish_copy_style_menu_state(cx);
+            });
+        };
+    }
+    copy_style_action!(CopyStyleDefault, profiles::CopyStyle::Default);
+    copy_style_action!(CopyStylePlainText, profiles::CopyStyle::PlainText);
+    copy_style_action!(
+        CopyStyleBasic,
+        profiles::CopyStyle::Profile(profile_named("Basic"))
+    );
+    copy_style_action!(
+        CopyStyleClearDark,
+        profiles::CopyStyle::Profile(profile_named("Clear Dark"))
+    );
+    copy_style_action!(
+        CopyStyleClearLight,
+        profiles::CopyStyle::Profile(profile_named("Clear Light"))
+    );
+    copy_style_action!(
+        CopyStyleGrass,
+        profiles::CopyStyle::Profile(profile_named("Grass"))
+    );
+    copy_style_action!(
+        CopyStyleHomebrew,
+        profiles::CopyStyle::Profile(profile_named("Homebrew"))
+    );
+    copy_style_action!(
+        CopyStyleManPage,
+        profiles::CopyStyle::Profile(profile_named("Man Page"))
+    );
+    copy_style_action!(
+        CopyStyleNovel,
+        profiles::CopyStyle::Profile(profile_named("Novel"))
+    );
+    copy_style_action!(
+        CopyStyleOcean,
+        profiles::CopyStyle::Profile(profile_named("Ocean"))
+    );
+    copy_style_action!(
+        CopyStylePro,
+        profiles::CopyStyle::Profile(profile_named("Pro"))
+    );
+    copy_style_action!(
+        CopyStyleRedSands,
+        profiles::CopyStyle::Profile(profile_named("Red Sands"))
+    );
+    copy_style_action!(
+        CopyStyleSilverAerogel,
+        profiles::CopyStyle::Profile(profile_named("Silver Aerogel"))
+    );
+    copy_style_action!(
+        CopyStyleSolidColors,
+        profiles::CopyStyle::Profile(profile_named("Solid Colors"))
+    );
     cx.on_action(|_: &ShowSettings, cx| {
         if cx.windows().is_empty() {
             crate::settings_window::show(cx);
@@ -346,6 +427,75 @@ fn save_kept_windows(
 }
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
+
+/// Edit ▸ Copy Special ▸ Style for "Copy" Command: tick whichever choice
+/// matches the current global [`profiles::copy_style`], unticking every
+/// other one — a plain radio group, republished every render alongside
+/// Terminal's other menu checkmarks (`renderer.rs`) since the setting
+/// itself is process-wide, not tied to one window.
+pub(super) fn publish_copy_style_menu_state(cx: &mut gpui::App) {
+    // A heading row, like Edit ▸ Bookmarks' "No Bookmarks": never enabled.
+    rmac_ui::set_menu_enabled("terminal::CopyStyleHeading", false, cx);
+    let current = profiles::copy_style();
+    let choices = [
+        ("terminal::CopyStyleDefault", profiles::CopyStyle::Default),
+        (
+            "terminal::CopyStylePlainText",
+            profiles::CopyStyle::PlainText,
+        ),
+        (
+            "terminal::CopyStyleBasic",
+            profiles::CopyStyle::Profile(profile_named("Basic")),
+        ),
+        (
+            "terminal::CopyStyleClearDark",
+            profiles::CopyStyle::Profile(profile_named("Clear Dark")),
+        ),
+        (
+            "terminal::CopyStyleClearLight",
+            profiles::CopyStyle::Profile(profile_named("Clear Light")),
+        ),
+        (
+            "terminal::CopyStyleGrass",
+            profiles::CopyStyle::Profile(profile_named("Grass")),
+        ),
+        (
+            "terminal::CopyStyleHomebrew",
+            profiles::CopyStyle::Profile(profile_named("Homebrew")),
+        ),
+        (
+            "terminal::CopyStyleManPage",
+            profiles::CopyStyle::Profile(profile_named("Man Page")),
+        ),
+        (
+            "terminal::CopyStyleNovel",
+            profiles::CopyStyle::Profile(profile_named("Novel")),
+        ),
+        (
+            "terminal::CopyStyleOcean",
+            profiles::CopyStyle::Profile(profile_named("Ocean")),
+        ),
+        (
+            "terminal::CopyStylePro",
+            profiles::CopyStyle::Profile(profile_named("Pro")),
+        ),
+        (
+            "terminal::CopyStyleRedSands",
+            profiles::CopyStyle::Profile(profile_named("Red Sands")),
+        ),
+        (
+            "terminal::CopyStyleSilverAerogel",
+            profiles::CopyStyle::Profile(profile_named("Silver Aerogel")),
+        ),
+        (
+            "terminal::CopyStyleSolidColors",
+            profiles::CopyStyle::Profile(profile_named("Solid Colors")),
+        ),
+    ];
+    for (action, style) in choices {
+        rmac_ui::set_menu_checked(action, style == current, cx);
+    }
+}
 
 /// The index of the one built-in profile named exactly `name`, falling
 /// back to the default profile. The Shell ▸ New Window/New Tab submenus

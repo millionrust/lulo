@@ -305,6 +305,13 @@
           "children": []
         },
         {
+          "label": "All Processes, Hierarchically",
+          "action": "activity_monitor::ShowAllProcessesHierarchically",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "My Processes",
           "action": "activity_monitor::ShowMyProcesses",
           "shortcut": "",

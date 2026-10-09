@@ -33,7 +33,7 @@ impl RichTextFont {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Settings {
     pub(crate) width_chars: u16,
     pub(crate) height_lines: u16,
@@ -63,6 +63,14 @@ pub(crate) struct Settings {
     pub(crate) smart_links_default: bool,
     pub(crate) data_detectors_default: bool,
     pub(crate) text_replacement_default: bool,
+    /// Settings ▸ New Document ▸ Properties (TXT-SETTINGS-001/003/006):
+    /// the Author/Organisation/Copyright a freshly created rich document's
+    /// Document Properties sheet (`view/format_extras.rs`, TE-10) starts
+    /// with, instead of always blank. Like the Mac, these are plain text
+    /// defaults, not applied to a document already open.
+    pub(crate) author_default: String,
+    pub(crate) organisation_default: String,
+    pub(crate) copyright_default: String,
 }
 
 impl Default for Settings {
@@ -91,6 +99,9 @@ impl Default for Settings {
             smart_links_default: true,
             data_detectors_default: true,
             text_replacement_default: true,
+            author_default: String::new(),
+            organisation_default: String::new(),
+            copyright_default: String::new(),
         }
     }
 }
@@ -162,13 +173,23 @@ fn parse(contents: &str) -> Settings {
             "smart_links_default" => settings.smart_links_default = value == "true",
             "data_detectors_default" => settings.data_detectors_default = value == "true",
             "text_replacement_default" => settings.text_replacement_default = value == "true",
+            "author_default" => settings.author_default = value.to_string(),
+            "organisation_default" => settings.organisation_default = value.to_string(),
+            "copyright_default" => settings.copyright_default = value.to_string(),
             _ => {}
         }
     }
     settings
 }
 
-fn serialize(settings: Settings) -> String {
+/// A Properties default for the hand-rolled `key=value` line format: one
+/// line per setting, so an embedded newline would corrupt the next key —
+/// collapsed to a space, like a single-line AppKit text field would show.
+fn one_line(value: &str) -> String {
+    value.replace(['\n', '\r'], " ")
+}
+
+fn serialize(settings: &Settings) -> String {
     let encoding = match settings.default_encoding {
         TextEncoding::Utf8 => "utf8",
         TextEncoding::Utf8Bom => "utf8-bom",
@@ -180,7 +201,7 @@ fn serialize(settings: Settings) -> String {
         RichTextFont::JetBrainsMono => "jetbrains-mono",
     };
     format!(
-        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\ncheck_spelling_while_typing_default={}\ncheck_grammar_with_spelling_default={}\ncorrect_spelling_automatically_default={}\nsmart_copy_paste_default={}\nsmart_quotes_default={}\nsmart_dashes_default={}\nsmart_links_default={}\ndata_detectors_default={}\ntext_replacement_default={}\n",
+        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\ncheck_spelling_while_typing_default={}\ncheck_grammar_with_spelling_default={}\ncorrect_spelling_automatically_default={}\nsmart_copy_paste_default={}\nsmart_quotes_default={}\nsmart_dashes_default={}\nsmart_links_default={}\ndata_detectors_default={}\ntext_replacement_default={}\nauthor_default={}\norganisation_default={}\ncopyright_default={}\n",
         settings.width_chars,
         settings.height_lines,
         settings.font_size,
@@ -197,10 +218,13 @@ fn serialize(settings: Settings) -> String {
         settings.smart_links_default,
         settings.data_detectors_default,
         settings.text_replacement_default,
+        one_line(&settings.author_default),
+        one_line(&settings.organisation_default),
+        one_line(&settings.copyright_default),
     )
 }
 
-fn save(path: &Path, settings: Settings) -> io::Result<()> {
+fn save(path: &Path, settings: &Settings) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -231,7 +255,7 @@ pub(crate) fn initialize() {
                         next = newer;
                     }
                     if let Some(path) = &path {
-                        if let Err(error) = save(path, next) {
+                        if let Err(error) = save(path, &next) {
                             eprintln!("Text Editor could not save Settings: {error}");
                         }
                     }
@@ -247,12 +271,13 @@ pub(crate) fn initialize() {
 
 pub(crate) fn current() -> Settings {
     initialize();
-    *STORE
+    STORE
         .get()
         .expect("settings initialized")
         .current
         .lock()
         .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
 }
 
 pub(crate) fn update(edit: impl FnOnce(&mut Settings)) -> Settings {
@@ -264,9 +289,9 @@ pub(crate) fn update(edit: impl FnOnce(&mut Settings)) -> Settings {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         edit(&mut current);
-        *current
+        current.clone()
     };
-    let _ = store.writer.send(next);
+    let _ = store.writer.send(next.clone());
     next
 }
 
@@ -295,8 +320,11 @@ mod tests {
             smart_links_default: false,
             data_detectors_default: false,
             text_replacement_default: false,
+            author_default: "A. Writer".to_string(),
+            organisation_default: "Acme".to_string(),
+            copyright_default: "\u{a9} 2026 Acme".to_string(),
         };
-        assert_eq!(parse(&serialize(settings)), settings);
+        assert_eq!(parse(&serialize(&settings)), settings);
         let bounded =
             parse("width_chars=999\nheight_lines=1\nfont_size=255\nrich_text_font_size=255\n");
         assert_eq!(bounded.width_chars, 240);
@@ -321,5 +349,30 @@ mod tests {
         assert!(settings.smart_links_default);
         assert!(settings.data_detectors_default);
         assert!(settings.text_replacement_default);
+    }
+
+    #[test]
+    fn properties_defaults_start_blank() {
+        // TXT-SETTINGS-001/003/006: a fresh install's Document Properties
+        // defaults are empty, like the Mac's own, not some placeholder.
+        let settings = Settings::default();
+        assert_eq!(settings.author_default, "");
+        assert_eq!(settings.organisation_default, "");
+        assert_eq!(settings.copyright_default, "");
+    }
+
+    #[test]
+    fn properties_defaults_round_trip_and_collapse_newlines() {
+        let mut settings = Settings::default();
+        settings.author_default = "A. Writer".to_string();
+        settings.organisation_default = "Acme, Inc.".to_string();
+        settings.copyright_default = "line one\nline two".to_string();
+        let serialized = serialize(&settings);
+        let parsed = parse(&serialized);
+        assert_eq!(parsed.author_default, "A. Writer");
+        assert_eq!(parsed.organisation_default, "Acme, Inc.");
+        // A newline would corrupt the next `key=value` line, so it is
+        // collapsed to a space rather than written raw.
+        assert_eq!(parsed.copyright_default, "line one line two");
     }
 }

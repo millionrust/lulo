@@ -17,11 +17,12 @@ use crate::{
     JumpToSelection, Minimize, QuitAndKeepWindows, QuitProcess, RefreshEveryFiveSeconds,
     RefreshEverySecond, RefreshEveryTwoSeconds, SampleProcess, SendSignalToProcess,
     SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses, ShowAllProcesses,
-    ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess, ShowGpuHistoryWindow,
-    ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses,
-    ShowSelectedProcesses, ShowSystemProcesses, ToggleBytesReadColumn, ToggleBytesWrittenColumn,
-    ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn, ToggleMemoryColumn, TogglePidColumn,
-    ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
+    ShowAllProcessesHierarchically, ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess,
+    ShowGpuHistoryWindow, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
+    ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleBytesReadColumn,
+    ToggleBytesWrittenColumn, ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn,
+    ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
+    UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -123,6 +124,11 @@ impl Render for MonitorView {
             .on_action(cx.listener(|this, _: &ShowAllProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::All, cx);
             }))
+            .on_action(
+                cx.listener(|this, _: &ShowAllProcessesHierarchically, _, cx| {
+                    this.set_view_filter(ViewFilter::AllHierarchical, cx);
+                }),
+            )
             .on_action(cx.listener(|this, _: &ShowMyProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::MyProcesses, cx);
             }))

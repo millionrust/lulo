@@ -208,6 +208,14 @@ pub fn zoom_focused_window(cx: &mut App) {
     send_window_action(WindowAction::Zoom, cx);
 }
 
+/// Edit ▸ Fill Screen (⌃⌥⌘L, Terminal's own name for the green button's
+/// Fill): grow this process's focused window to the working area without
+/// the window-switching cost of real full screen, the same path the green
+/// button's Move & Resize ▸ Fill menu item already uses.
+pub fn fill_focused_window(cx: &mut App) {
+    send_window_action(WindowAction::Fill, cx);
+}
+
 /// ⌘H: hide this application, parking every visible window it owns the
 /// way the menu bar's Hide does, so Show All, the Dock and ⌘Tab bring them
 /// back. With `others`, ⌥⌘H parks every other application's windows instead.
@@ -273,6 +281,71 @@ pub fn quit_application(cx: &mut App) {
         }
     })
     .detach();
+}
+
+/// Window ▸ Cycle Through Windows (⌘`): focus the next of this app's own
+/// windows after the one currently focused, wrapping back to the first. A
+/// no-op with fewer than two windows. Some apps (Files) keep every window
+/// in one process; others (Terminal) open a fresh process per window, so
+/// "this app's windows" is resolved the same way Hide (⌥⌘H) resolves its
+/// own application: this process's windows, plus every other window
+/// sharing its app id.
+pub fn cycle_through_windows(cx: &mut App) {
+    #[cfg(not(unix))]
+    native::cycle_through_windows(cx);
+    #[cfg(unix)]
+    cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+        let pid = std::process::id() as i32;
+        let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+            eprintln!("could not read windows to cycle");
+            return;
+        };
+        let Some(window) = next_window_to_cycle_to(&snapshot, pid) else {
+            return;
+        };
+        let action = rmac_compositor::Action::FocusWindow { window };
+        if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+            eprintln!("could not focus the next window: {error:?}");
+        }
+    })
+    .detach();
+}
+
+/// This app's own windows (there must be at least two: this process's own,
+/// plus any other process sharing its app id, as `hidden_windows` already
+/// resolves "this application" for ⌘H), most-recently focused first (a
+/// missing timestamp sorts last) — the window after the currently focused
+/// one in that order, wrapping to the front. The Mac's Cycle Through
+/// Windows walks a fixed stacking order; most-recently-used is the closest
+/// niri's snapshot can give without a real z-order list.
+#[cfg(unix)]
+fn next_window_to_cycle_to(
+    snapshot: &rmac_compositor::Snapshot,
+    pid: i32,
+) -> Option<rmac_compositor::WindowId> {
+    let own_app = snapshot
+        .windows
+        .iter()
+        .find(|window| window.pid == Some(pid))
+        .and_then(|window| window.app_id.clone());
+    let mut own: Vec<&rmac_compositor::Window> = snapshot
+        .windows
+        .iter()
+        .filter(|window| window.pid == Some(pid) || (own_app.is_some() && window.app_id == own_app))
+        .collect();
+    if own.len() < 2 {
+        return None;
+    }
+    own.sort_by_key(|window| {
+        std::cmp::Reverse(
+            window
+                .focus_timestamp
+                .map(|stamp| (stamp.seconds, stamp.nanoseconds)),
+        )
+    });
+    let current = own.iter().position(|window| window.focused).unwrap_or(0);
+    let next = (current + 1) % own.len();
+    Some(own[next].id)
 }
 
 /// Every window, hidden or not, that ⌘Q closes for the process `pid`, or
@@ -978,6 +1051,23 @@ mod native {
         }
     }
 
+    /// Cycle Through Windows: GPUI's own window list is this process's
+    /// complete window set on Windows (no compositor snapshot to ask), so
+    /// focus the next one after whichever is currently active, by id.
+    pub(super) fn cycle_through_windows(cx: &mut App) {
+        let mut windows = cx.windows();
+        if windows.len() < 2 {
+            return;
+        }
+        windows.sort_by_key(|handle| handle.window_id());
+        let active = cx.active_window();
+        let current = active
+            .and_then(|active| windows.iter().position(|handle| *handle == active))
+            .unwrap_or(0);
+        let next = (current + 1) % windows.len();
+        let _ = windows[next].update(cx, |_, window, _| window.activate_window());
+    }
+
     /// ⌘Q closes each window through its own close guard, as on Linux, so
     /// an edited document still asks Save / Don't Save / Cancel.
     pub(super) fn quit_application(cx: &mut App) {
@@ -1087,5 +1177,103 @@ mod tests {
         );
         // A process with no window of its own hides nothing.
         assert!(hidden_windows(&snapshot, 999, false).is_empty());
+    }
+
+    fn window_with_timestamp(
+        id: u64,
+        pid: i32,
+        focused: bool,
+        focus_timestamp: Option<rmac_compositor::Timestamp>,
+    ) -> rmac_compositor::Window {
+        rmac_compositor::Window {
+            id: WindowId(id),
+            title: None,
+            app_id: Some("org.rmac.Files".into()),
+            pid: Some(pid),
+            workspace: Some(WorkspaceId(1)),
+            focused,
+            floating: true,
+            urgent: false,
+            focus_timestamp,
+            layout: WindowLayout::default(),
+        }
+    }
+
+    fn stamp(seconds: u64) -> rmac_compositor::Timestamp {
+        rmac_compositor::Timestamp {
+            seconds,
+            nanoseconds: 0,
+        }
+    }
+
+    #[test]
+    fn cycle_moves_to_the_next_most_recently_used_window_of_this_process() {
+        let snapshot = Snapshot {
+            windows: vec![
+                // Currently focused, most recently used.
+                window_with_timestamp(10, 100, true, Some(stamp(30))),
+                window_with_timestamp(11, 100, false, Some(stamp(20))),
+                window_with_timestamp(12, 100, false, Some(stamp(10))),
+                // Another process of the same app is not this process.
+                window_with_timestamp(13, 101, false, Some(stamp(40))),
+            ],
+            ..Snapshot::default()
+        };
+        // From the focused (most recent) window, cycle to the next most
+        // recent: 11.
+        assert_eq!(next_window_to_cycle_to(&snapshot, 100), Some(WindowId(11)));
+    }
+
+    #[test]
+    fn cycle_wraps_from_the_oldest_window_back_to_the_most_recent() {
+        let snapshot = Snapshot {
+            windows: vec![
+                window_with_timestamp(10, 100, false, Some(stamp(30))),
+                window_with_timestamp(11, 100, false, Some(stamp(20))),
+                // The oldest window is the one currently focused.
+                window_with_timestamp(12, 100, true, Some(stamp(10))),
+            ],
+            ..Snapshot::default()
+        };
+        assert_eq!(next_window_to_cycle_to(&snapshot, 100), Some(WindowId(10)));
+    }
+
+    #[test]
+    fn cycle_treats_a_missing_timestamp_as_least_recent() {
+        let snapshot = Snapshot {
+            windows: vec![
+                window_with_timestamp(10, 100, true, None),
+                window_with_timestamp(11, 100, false, Some(stamp(5))),
+            ],
+            ..Snapshot::default()
+        };
+        // The focused window has no timestamp, so it sorts last; the next
+        // after it wraps to the one real timestamp, 11.
+        assert_eq!(next_window_to_cycle_to(&snapshot, 100), Some(WindowId(11)));
+    }
+
+    #[test]
+    fn cycle_spans_every_process_sharing_this_apps_id() {
+        // Terminal opens a fresh process per window; the focused shortcut
+        // only reaches one of them, so cycling must reach across to the
+        // sibling process the same way Hide already does.
+        let snapshot = Snapshot {
+            windows: vec![
+                window_with_timestamp(10, 100, true, Some(stamp(20))),
+                window_with_timestamp(11, 101, false, Some(stamp(10))),
+            ],
+            ..Snapshot::default()
+        };
+        assert_eq!(next_window_to_cycle_to(&snapshot, 100), Some(WindowId(11)));
+    }
+
+    #[test]
+    fn cycle_does_nothing_with_fewer_than_two_windows() {
+        let snapshot = Snapshot {
+            windows: vec![window_with_timestamp(10, 100, true, Some(stamp(1)))],
+            ..Snapshot::default()
+        };
+        assert_eq!(next_window_to_cycle_to(&snapshot, 100), None);
+        assert_eq!(next_window_to_cycle_to(&snapshot, 999), None);
     }
 }

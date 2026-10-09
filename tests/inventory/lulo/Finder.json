@@ -534,6 +534,13 @@
           "children": []
         },
         {
+          "label": "Show Preview Options",
+          "action": "finder::ShowPreviewOptions",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Show All Tabs",
           "action": "finder::ShowAllTabs",
           "shortcut": "⇧⌘\\",
@@ -551,6 +558,13 @@
           "label": "Hide Toolbar",
           "action": "finder::ToggleToolbar",
           "shortcut": "⌥⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Customise Toolbar…",
+          "action": "finder::CustomiseToolbar",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -654,6 +668,13 @@
           "label": "Computer",
           "action": "finder::GoComputer",
           "shortcut": "⇧⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Network",
+          "action": "finder::GoNetwork",
+          "shortcut": "⇧⌘K",
           "separator_before": false,
           "children": []
         },
@@ -934,6 +955,13 @@
           "label": "Show Progress Window",
           "action": "finder::ShowProgressWindow",
           "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Cycle Through Windows",
+          "action": "rmac_ui::CycleThroughWindows",
+          "shortcut": "⌘`",
           "separator_before": true,
           "children": []
         },

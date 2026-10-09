@@ -278,6 +278,18 @@ pub(super) struct FinderSettings {
     pub(super) tags: Vec<TagSetting>,
     pub(super) sidebar: SidebarSettings,
     pub(super) advanced: AdvancedSettings,
+    /// View ▸ Customise Toolbar… (FIL-MENU-005): named toolbar groups the
+    /// owner has hidden ("navigation", "view-control", "search"), shared
+    /// by every open Files window, like the Mac's own toolbar
+    /// customisation.
+    pub(super) hidden_toolbar_items: Vec<String>,
+    /// View ▸ Show Preview Options (FIL-MENU-006): which extra fields the
+    /// Column view's preview pane shows under "Information", from
+    /// `PREVIEW_INFO_FIELDS`. Defaults to exactly what the preview always
+    /// showed before this setting existed ("Modified" only), so turning
+    /// the setting on for the first time changes nothing until the owner
+    /// adds a field.
+    pub(super) preview_info_fields: Vec<String>,
 }
 
 impl Default for FinderSettings {
@@ -287,9 +299,14 @@ impl Default for FinderSettings {
             tags: default_tags(),
             sidebar: SidebarSettings::default(),
             advanced: AdvancedSettings::default(),
+            hidden_toolbar_items: Vec::new(),
+            preview_info_fields: vec!["Modified".to_string()],
         }
     }
 }
+
+/// View ▸ Show Preview Options' offered fields, in the popover's order.
+pub(super) const PREVIEW_INFO_FIELDS: [&str; 4] = ["Created", "Modified", "Last Opened", "Tags"];
 
 #[derive(Deserialize, Serialize)]
 struct StoredSettings {

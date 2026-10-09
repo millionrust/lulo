@@ -442,6 +442,111 @@
               "shortcut": "⌃⇧⌘C",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Style for “Copy” Command",
+              "action": "terminal::CopyStyleHeading",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Terminal’s Settings (Default)",
+              "action": "terminal::CopyStyleDefault",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Plain Text",
+              "action": "terminal::CopyStylePlainText",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Basic",
+              "action": "terminal::CopyStyleBasic",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Clear Dark",
+              "action": "terminal::CopyStyleClearDark",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Clear Light",
+              "action": "terminal::CopyStyleClearLight",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Grass",
+              "action": "terminal::CopyStyleGrass",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Homebrew",
+              "action": "terminal::CopyStyleHomebrew",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Man Page",
+              "action": "terminal::CopyStyleManPage",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Novel",
+              "action": "terminal::CopyStyleNovel",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Ocean",
+              "action": "terminal::CopyStyleOcean",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Pro",
+              "action": "terminal::CopyStylePro",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Red Sands",
+              "action": "terminal::CopyStyleRedSands",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Silver Aerogel",
+              "action": "terminal::CopyStyleSilverAerogel",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Solid Colors",
+              "action": "terminal::CopyStyleSolidColors",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
         },
@@ -712,6 +817,13 @@
           "label": "Clear Scrollback",
           "action": "terminal::ClearScrollback",
           "shortcut": "⌥⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fill Screen",
+          "action": "terminal::FillScreen",
+          "shortcut": "⌃⌥⌘L",
           "separator_before": false,
           "children": []
         },
@@ -1074,6 +1186,13 @@
           "label": "Remove Window from Set",
           "action": "window::remove-from-set",
           "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Cycle Through Windows",
+          "action": "rmac_ui::CycleThroughWindows",
+          "shortcut": "⌘`",
           "separator_before": true,
           "children": []
         },

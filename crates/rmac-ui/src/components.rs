@@ -29,7 +29,8 @@ gpui::actions!(
         ZoomWindow,
         HideApplication,
         HideOtherApplications,
-        QuitApplication
+        QuitApplication,
+        CycleThroughWindows
     ]
 );
 
@@ -59,6 +60,11 @@ pub(crate) fn init(cx: &mut App) {
                 HideOtherApplications,
                 None,
             ),
+            KeyBinding::new(
+                crate::shortcuts::CYCLE_THROUGH_WINDOWS.keystroke,
+                CycleThroughWindows,
+                None,
+            ),
         ],
     );
     cx.on_action(|_: &MinimizeWindow, cx| crate::chrome::minimize_focused_window(cx));
@@ -66,6 +72,7 @@ pub(crate) fn init(cx: &mut App) {
     cx.on_action(|_: &HideApplication, cx| crate::chrome::hide_application(false, cx));
     cx.on_action(|_: &HideOtherApplications, cx| crate::chrome::hide_application(true, cx));
     cx.on_action(|_: &QuitApplication, cx| crate::chrome::quit_application(cx));
+    cx.on_action(|_: &CycleThroughWindows, cx| crate::chrome::cycle_through_windows(cx));
     cx.on_action(|_: &PasteAndMatchStyle, cx| {
         // InputState is unstyled. Its ordinary Paste applies the target
         // field's style, including when the menu bar temporarily owns focus.

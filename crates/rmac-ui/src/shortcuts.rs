@@ -201,6 +201,9 @@ pub const ZOOM_WINDOW: Shortcut = Shortcut::new("ctrl-cmd-z", "⌃⌘Z");
 pub const HIDE: Shortcut = Shortcut::new("cmd-h", "⌘H");
 pub const HIDE_OTHERS: Shortcut = Shortcut::new("cmd-alt-h", "⌥⌘H");
 pub const QUIT: Shortcut = Shortcut::new("cmd-q", "⌘Q");
+/// Window ▸ Cycle Through Windows: focus the next of this app's own
+/// windows, like every Mac app that keeps more than one window open.
+pub const CYCLE_THROUGH_WINDOWS: Shortcut = Shortcut::new("cmd-`", "⌘`");
 
 pub const ENTER: Shortcut = Shortcut::new("enter", "↩");
 pub const ESCAPE: Shortcut = Shortcut::new("escape", "Esc");

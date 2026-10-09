@@ -95,6 +95,7 @@ impl FinderView {
         layout: crate::view::responsive_layout::ResponsiveLayout,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let hidden_toolbar_items = Self::hidden_toolbar_items();
         let can_go_back = self.trash_view || self.applications_view || !self.back.is_empty();
         let can_go_forward = !self.fwd.is_empty();
         let view = cx.entity();
@@ -350,7 +351,12 @@ impl FinderView {
             .when_some(leading, |toolbar, leading| {
                 toolbar.child(leading.mr(px(TOOLBAR_LEADING_GAP)))
             })
-            .child(navigation_control)
+            // FIL-MENU-005: View ▸ Customise Toolbar… can hide each of
+            // these three groups.
+            .when(
+                Self::toolbar_item_shown(&hidden_toolbar_items, "navigation"),
+                |toolbar| toolbar.child(navigation_control),
+            )
             .when(layout.title_visible, |toolbar| {
                 toolbar.child(
                     div()
@@ -380,43 +386,50 @@ impl FinderView {
                 )
             })
             .child(div().flex_1())
-            .when(layout.view_control_visible, |toolbar| {
-                toolbar
-                    .child(view_control)
-                    .child(div().w(px(VIEW_TO_GROUP_GAP)).flex_none())
-                    .child(rmac_ui::KeyboardAction::new(
-                        "sort-keyboard",
-                        sort_control,
-                        {
-                            let view = view.clone();
-                            move |window, cx| {
-                                view.update(cx, |this, cx| {
-                                    let width =
-                                        f32::from(rmac_ui::window_content_size(window).width);
-                                    let x = width
-                                        - TRAILING_MARGIN
-                                        - CAPSULE_BUTTON
-                                        - TRAILING_GAP
-                                        - CAPSULE_BUTTON
-                                        - TRAILING_GAP
-                                        - GROUP_CAPSULE_WIDTH / 2.0;
-                                    this.menu_purpose = MenuPurpose::Sort;
-                                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                                        gpui::point(px(x), px(TOOLBAR_HEIGHT)),
-                                        &this.focus,
-                                        window,
-                                        cx,
-                                    ));
-                                    cx.notify();
-                                });
-                            }
-                        },
-                    ))
-                    .child(div().w(px(TRAILING_GAP)).flex_none())
-            })
+            .when(
+                layout.view_control_visible
+                    && Self::toolbar_item_shown(&hidden_toolbar_items, "view-control"),
+                |toolbar| {
+                    toolbar
+                        .child(view_control)
+                        .child(div().w(px(VIEW_TO_GROUP_GAP)).flex_none())
+                        .child(rmac_ui::KeyboardAction::new(
+                            "sort-keyboard",
+                            sort_control,
+                            {
+                                let view = view.clone();
+                                move |window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        let width =
+                                            f32::from(rmac_ui::window_content_size(window).width);
+                                        let x = width
+                                            - TRAILING_MARGIN
+                                            - CAPSULE_BUTTON
+                                            - TRAILING_GAP
+                                            - CAPSULE_BUTTON
+                                            - TRAILING_GAP
+                                            - GROUP_CAPSULE_WIDTH / 2.0;
+                                        this.menu_purpose = MenuPurpose::Sort;
+                                        this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                            gpui::point(px(x), px(TOOLBAR_HEIGHT)),
+                                            &this.focus,
+                                            window,
+                                            cx,
+                                        ));
+                                        cx.notify();
+                                    });
+                                }
+                            },
+                        ))
+                        .child(div().w(px(TRAILING_GAP)).flex_none())
+                },
+            )
             .child(action_control)
             .child(div().w(px(TRAILING_GAP)).flex_none())
-            .child(search)
+            .when(
+                Self::toolbar_item_shown(&hidden_toolbar_items, "search"),
+                |toolbar| toolbar.child(search),
+            )
     }
 
     pub(in crate::view) fn title(&self) -> SharedString {

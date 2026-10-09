@@ -193,6 +193,33 @@ pub(crate) fn resolved(index: usize) -> &'static Profile {
     }
 }
 
+/// Edit ▸ Copy Special ▸ Style for "Copy" Command (TRM-MENU-001..015): which
+/// colours a plain Edit ▸ Copy renders its styled (HTML/RTF) clipboard
+/// content with, independent of what the window is actually displaying.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CopyStyle {
+    /// "Terminal's Settings (Default)": the window's own live profile —
+    /// what you see is what a styled paste carries.
+    Default,
+    /// "Plain Text": Copy carries no styling at all, like Copy Plain Text.
+    PlainText,
+    /// One specific named built-in profile, by its index into `PROFILES`,
+    /// regardless of which profile the window is actually showing.
+    Profile(usize),
+}
+
+thread_local! {
+    static COPY_STYLE: std::cell::Cell<CopyStyle> = const { std::cell::Cell::new(CopyStyle::Default) };
+}
+
+pub(crate) fn set_copy_style(style: CopyStyle) {
+    COPY_STYLE.with(|cell| cell.set(style));
+}
+
+pub(crate) fn copy_style() -> CopyStyle {
+    COPY_STYLE.with(|cell| cell.get())
+}
+
 /// Terminal ▸ Settings… ▸ Text ▸ "Use bright colours for bold text", applied
 /// to plain (non-ANSI-coloured) bold text: lightens `rgb` toward white by
 /// the same fraction regardless of how dark or light it starts, so it stays

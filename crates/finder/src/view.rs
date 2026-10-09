@@ -14,6 +14,7 @@ mod clean_up_controller;
 mod clipboard_window;
 mod conflict_controller;
 mod content_presentation;
+mod customise_toolbar;
 mod dialog_presentation;
 mod filesystem_helpers;
 mod finder_behaviour;
@@ -33,6 +34,7 @@ mod permanent_delete_controller;
 mod presentation;
 mod presentation_persistence;
 mod presentation_support;
+mod preview_options;
 mod progress_window;
 mod quick_look_controller;
 mod recovery_controller;
@@ -154,6 +156,7 @@ actions!(
         GoUtilities,
         GoDownloads,
         GoShared,
+        GoNetwork,
         GoTrash,
         ToggleHidden,
         EnterFullScreen,
@@ -174,6 +177,8 @@ actions!(
         ViewAsColumns,
         ViewAsGallery,
         ShowViewOptions,
+        ShowPreviewOptions,
+        CustomiseToolbar,
         TogglePreview,
         SortByName,
         SortByDate,
@@ -449,6 +454,14 @@ struct FinderView {
     browse_view: Option<ViewMode>,
     view_options_open: bool,
     view_options_window: Option<gpui::WindowHandle<Root>>,
+    /// View ▸ Show Preview Options (FIL-MENU-006): the Column view
+    /// preview pane's own small options popover, independent of
+    /// `view_options_window` above.
+    preview_options_open: bool,
+    preview_options_window: Option<gpui::WindowHandle<Root>>,
+    /// View ▸ Customise Toolbar… (FIL-MENU-005).
+    customise_toolbar_open: bool,
+    customise_toolbar_window: Option<gpui::WindowHandle<Root>>,
     col_stack: Vec<PathBuf>,
     /// Column view can select an item several directories below `cwd`, so an
     /// index into `entries` is not sufficient. Keep the selected entry itself

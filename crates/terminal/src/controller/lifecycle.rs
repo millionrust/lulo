@@ -276,6 +276,7 @@ impl TerminalView {
                 ),
                 KeyBinding::new("alt-cmd-r", ResetTerminal, Some("Terminal")),
                 KeyBinding::new("ctrl-alt-cmd-r", HardResetTerminal, Some("Terminal")),
+                KeyBinding::new("ctrl-alt-cmd-l", FillScreen, Some("Terminal")),
                 KeyBinding::new("cmd-l", ClearToPreviousMark, Some("Terminal")),
                 KeyBinding::new("alt-cmd-l", ClearToPreviousBookmark, Some("Terminal")),
                 KeyBinding::new("shift-cmd-n", NewCommand, Some("Terminal")),

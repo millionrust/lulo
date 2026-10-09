@@ -17,7 +17,22 @@ impl EditorView {
         let rich = cx.new(|cx| {
             let mut editor = rich::RichTextEditor::new(window, cx);
             editor.set_default_style(rich_style.clone());
-            editor.set_document(rich::Document::empty(&rich_style), cx);
+            let mut document = rich::Document::empty(&rich_style);
+            if initial_path.is_none() {
+                // Settings ▸ New Document ▸ Properties
+                // (TXT-SETTINGS-001/003/006): a brand-new document starts
+                // with these defaults; an opened file loads its own saved
+                // properties instead (elsewhere in this window's startup),
+                // overwriting this. Set directly on the document rather
+                // than through `set_document_attributes`, so seeding a
+                // default is not itself an undoable edit.
+                let mut attributes = document.attributes().clone();
+                attributes.properties.author = settings.author_default.clone();
+                attributes.properties.organisation = settings.organisation_default.clone();
+                attributes.properties.copyright = settings.copyright_default.clone();
+                document.set_attributes(attributes);
+            }
+            editor.set_document(document, cx);
             editor
         });
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));

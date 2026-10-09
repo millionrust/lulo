@@ -33,18 +33,19 @@ use crate::{
     AnnotateRectangle, AnnotateSignature, AnnotateSpeechBubble, AnnotateStar,
     AnnotateStrikeThrough, AnnotateText, AnnotateUnderline, AutomaticSelection, Back,
     BrowseSavedVersions, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, ContactSheet,
-    ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, EnterFullScreen, ExportAs,
-    ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal, FlipVertical, Forward, GoToPage,
-    HideSidebar, InvertSelection, JumpToSelection, ManageSignatures, MoveToFolder, MoveToTrash,
-    NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
-    RectangularSelection, Redact, RedoMarkup, RenameDocument, RevertMarkup, RotateLeft,
-    RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes,
-    ShowImageBackground, ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents,
-    ShowThumbnails, SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
-    TakeScreenshotSelection, TakeScreenshotWindow, ToggleCheckGrammarWithSpelling,
-    ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleMarkup,
-    ToggleToolbar, TwoPages, UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn,
-    ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit, ZoomToSelection,
+    ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, Duplicate, EnterFullScreen,
+    ExportAs, ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal, FlipVertical, Forward,
+    GoToPage, HideSidebar, InvertSelection, JumpToSelection, ManageSignatures, MoveToFolder,
+    MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem,
+    PrintDocument, RectangularSelection, Redact, RedoMarkup, RenameDocument, RevertMarkup,
+    RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks,
+    ShowHighlightsAndNotes, ShowImageBackground, ShowInspector, ShowMagnifier,
+    ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails, SinglePage, Slideshow,
+    StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen, TakeScreenshotSelection,
+    TakeScreenshotWindow, ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
+    ToggleCorrectSpellingAutomatically, ToggleMarkup, ToggleToolbar, TwoPages, UndoMarkup,
+    UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn,
+    ZoomOut, ZoomToFit, ZoomToSelection,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -137,6 +138,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::PrintDocument",
         "preview::ExportAsPdf",
         "preview::SaveAs",
+        "preview::Duplicate",
         "preview::ToggleToolbar",
         "preview::ToggleMarkup",
         "preview::SaveMarkup",
@@ -586,12 +588,13 @@ impl Drop for Slot {
     }
 }
 
-/// The private `rmac-preview/clipboard/<pid>-<n>` folder holding a New from
-/// Clipboard document, when `path` is one.
+/// The private `rmac-preview/{clipboard,duplicate}/<pid>-<n>` folder
+/// holding a New from Clipboard document or a File ▸ Duplicate (PRV-MENU-001)
+/// copy, when `path` is one of either.
 pub(crate) fn clipboard_cache_folder(path: &Path) -> Option<&Path> {
     let folder = path.parent()?;
     let name = folder.file_name()?.to_str()?;
-    let clipboard = folder.parent()?;
+    let kind = folder.parent()?;
     let valid_name = name.split_once('-').is_some_and(|(pid, id)| {
         !pid.is_empty()
             && !id.is_empty()
@@ -599,8 +602,11 @@ pub(crate) fn clipboard_cache_folder(path: &Path) -> Option<&Path> {
             && id.bytes().all(|byte| byte.is_ascii_digit())
     });
     (valid_name
-        && clipboard.file_name()? == "clipboard"
-        && clipboard.parent()?.file_name()? == "rmac-preview")
+        && matches!(
+            kind.file_name().and_then(|name| name.to_str()),
+            Some("clipboard" | "duplicate")
+        )
+        && kind.parent()?.file_name()? == "rmac-preview")
         .then_some(folder)
 }
 
@@ -3702,6 +3708,20 @@ impl PreviewView {
     }
 
     // ---- export -------------------------------------------------------------
+
+    /// File ▸ Duplicate (⇧⌘S, PRV-MENU-001): opens a new window on a fresh
+    /// copy of this document's current on-disk bytes, under its own
+    /// cache-backed path (`main::duplicate_document`) — unsaved, leaving
+    /// this window's own path and dirty state untouched. Distinct from
+    /// Save As (⌥⇧⌘S) above, which keeps editing the SAME window under a
+    /// new real path.
+    fn duplicate_document(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.slot() else { return };
+        if slot.loaded().is_none() {
+            return;
+        }
+        crate::duplicate_document(slot.path.clone(), cx);
+    }
 
     /// File ▸ Save As… writes a new document and makes it the active path.
     /// A PDF with markup keeps a clean backing copy so later saves do not
@@ -7079,6 +7099,7 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_checked(action, self.markup_tool == tool, cx);
             }
             rmac_ui::set_menu_checked("preview::AnnotateLoupe", self.loupe_active, cx);
+            rmac_ui::set_menu_checked("preview::ShowMagnifier", self.loupe_active, cx);
             rmac_ui::set_menu_checked("preview::ToggleMarkup", self.markup_shown, cx);
             rmac_ui::set_menu_checked("preview::ToggleToolbar", self.toolbar_shown, cx);
             #[cfg(target_os = "linux")]
@@ -7179,6 +7200,7 @@ impl Render for PreviewView {
             );
             rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
             rmac_ui::set_menu_enabled("preview::SaveAs", loaded && !self.save_as_busy, cx);
+            rmac_ui::set_menu_enabled("preview::Duplicate", loaded, cx);
             let pdf = self
                 .slot()
                 .is_some_and(|slot| slot.kind() == Some(Kind::Pdf));
@@ -7233,6 +7255,7 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_enabled(action, pdf, cx);
             }
             rmac_ui::set_menu_enabled("preview::AnnotateLoupe", loaded, cx);
+            rmac_ui::set_menu_enabled("preview::ShowMagnifier", loaded, cx);
             rmac_ui::set_menu_enabled("preview::Slideshow", loaded, cx);
             let is_image = self
                 .slot()
@@ -7433,6 +7456,7 @@ impl Render for PreviewView {
                 this.export_as_pdf(window, cx);
             }))
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save_as(window, cx)))
+            .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate_document(cx)))
             .on_action(cx.listener(|this, _: &ToggleToolbar, _, cx| {
                 this.toolbar_shown = !this.toolbar_shown;
                 cx.notify();
@@ -7510,6 +7534,7 @@ impl Render for PreviewView {
                 this.choose_annotation(Tool::Note, cx);
             }))
             .on_action(cx.listener(|this, _: &AnnotateLoupe, _, cx| this.toggle_loupe(cx)))
+            .on_action(cx.listener(|this, _: &ShowMagnifier, _, cx| this.toggle_loupe(cx)))
             .on_action(cx.listener(|this, _: &ManageSignatures, _, cx| {
                 this.open_manage_signatures(cx);
             }))
@@ -7705,6 +7730,13 @@ mod tests {
         assert_eq!(
             clipboard_cache_folder(cache),
             Some(Path::new("/home/user/.cache/rmac-preview/clipboard/4242-7"))
+        );
+        // File ▸ Duplicate (PRV-MENU-001) uses the same unsaved-cache
+        // convention, under its own "duplicate" subfolder.
+        let duplicate = Path::new("/home/user/.cache/rmac-preview/duplicate/4242-7/photo copy.png");
+        assert_eq!(
+            clipboard_cache_folder(duplicate),
+            Some(Path::new("/home/user/.cache/rmac-preview/duplicate/4242-7"))
         );
         for kept in [
             "/home/user/Pictures/Untitled.png",

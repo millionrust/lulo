@@ -408,6 +408,16 @@ def read_settings_window(app_display_name: str) -> dict:
                 if key not in seen:
                     seen.add(key)
                     labels.append({"kind": "control", "label": unit})
+            # text_row's label is a variable inside the helper (`.child(label)`,
+            # `.aria_label(label.trim_end_matches(':'))`), not a literal the
+            # generic scanners above can see — only its call site names it
+            # (TXT-SETTINGS-001/003/006, the Author/Organisation/Copyright
+            # Properties defaults).
+            for label in re.findall(r'Self::text_row\(\s*"([^"]+)"', text):
+                key = ("control", label)
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": label})
         if app_display_name == "Text Editor" and path.name == "settings.rs":
             # The default window dimensions appear as text input values.
             for field in ("width_chars", "height_lines"):

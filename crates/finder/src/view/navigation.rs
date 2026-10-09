@@ -231,6 +231,22 @@ impl FinderView {
         }
     }
 
+    /// Go ▸ Network (FIL-MENU-007): GNOME's GVFS publishes already-mounted
+    /// network shares (SMB, FTP, SFTP…) under `$XDG_RUNTIME_DIR/gvfs` — a
+    /// real, already-connected-shares folder, the closest analogue Linux
+    /// has to the Mac's Network window. Linux has no built-in server
+    /// *discovery* browser to list servers not yet connected, so unlike
+    /// the Mac this shows nothing until something is mounted there, rather
+    /// than Go ▸ Connect to Server…, which has no groundwork at all
+    /// (docs/parity.md).
+    pub(super) fn go_network(&mut self, cx: &mut Context<Self>) {
+        if let Some(network) = network_path(std::env::var_os("XDG_RUNTIME_DIR")) {
+            // `navigate` already no-ops for a path that doesn't exist, the
+            // common case with nothing currently mounted.
+            self.navigate(network, cx);
+        }
+    }
+
     pub(super) fn navigate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if !path.is_dir() || (path == self.cwd && !self.trash_view && !self.applications_view) {
             return;
@@ -474,5 +490,32 @@ impl FinderView {
             });
         })
         .detach();
+    }
+}
+
+/// Go ▸ Network (FIL-MENU-007): `$XDG_RUNTIME_DIR/gvfs`, or `None` when the
+/// session has no `XDG_RUNTIME_DIR` to anchor it to. Pure path arithmetic;
+/// `navigate` itself checks whether the folder actually exists.
+fn network_path(runtime_dir: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    runtime_dir.map(|dir| PathBuf::from(dir).join("gvfs"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::network_path;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    #[test]
+    fn network_path_joins_gvfs_onto_the_runtime_dir() {
+        assert_eq!(
+            network_path(Some(OsString::from("/run/user/1000"))),
+            Some(PathBuf::from("/run/user/1000/gvfs"))
+        );
+    }
+
+    #[test]
+    fn network_path_is_none_without_a_runtime_dir() {
+        assert_eq!(network_path(None), None);
     }
 }

@@ -22,7 +22,7 @@ AT-SPI surfaces for its *menus* -- the global top bar (AT-SPI application
 All) and a "View menu" (Find/Clear/zoom), each a real AT-SPI button with
 accessible name "{label} menu" and each item a real AT-SPI menuitem with the
 item's exact label as its name (crates/rmac-app-menu/src/lib.rs:103-131
-TERMINAL_MENUS; rendering in shell/bins/rmac-menubar/src/main.rs:1566-1569,
+TERMINAL_MENUS; rendering in shell/bins/rmac-menubar/src/lib.rs:1566-1569,
 1727-1728). Clicking these really dispatches the terminal's own GPUI actions
 end-to-end over D-Bus (crates/rmac-ui/src/runtime.rs:172-195
 install_app_menu; crates/terminal/src/controller/renderer/interactions.rs:70-

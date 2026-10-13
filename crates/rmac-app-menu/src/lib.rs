@@ -25,12 +25,22 @@ use zbus::object_server::SignalEmitter;
 use zbus::{interface, Connection};
 
 pub mod pipe;
+#[cfg(windows)]
+pub mod pipe_host;
 pub mod recent;
 pub mod unsaved;
 pub mod windows_keys;
 mod wire;
 
 pub use wire::{flags, WireItem, WireItemV2, WireLayout, WireMenu, WireMenuV2, WireMenus};
+
+// On Windows the menu bar reads Lulo apps' menus from its own pipe host
+// rather than the session bus; the API is the same.
+#[cfg(windows)]
+pub use pipe_host::{
+    activate, fetch, fetch_layout, watch_layout_changes, watch_menu_owners, LayoutChanges,
+    MenuOwners,
+};
 
 pub const OBJECT_PATH: &str = "/org/rmac/AppMenu1";
 pub const INTERFACE_NAME: &str = "org.rmac.AppMenu1";
@@ -3388,6 +3398,7 @@ fn forget_closed_session(error: &zbus::Error) {
     }
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn call_error(name: &'static str, method: &'static str) -> impl Fn(zbus::Error) -> Error {
     move |error| {
         forget_closed_session(&error);
@@ -3408,12 +3419,14 @@ pub struct Layout {
     pub menus: Vec<Menu>,
 }
 
+#[cfg(not(windows))]
 pub async fn fetch(app_id: &str) -> Result<Vec<Menu>, Error> {
     fetch_layout(app_id).await.map(|layout| layout.menus)
 }
 
 /// The app's validated menu tree, from `org.rmac.AppMenu2`, or its flat
 /// menus from `org.rmac.AppMenu1` when it predates version 2.
+#[cfg(not(windows))]
 pub async fn fetch_layout(app_id: &str) -> Result<Layout, Error> {
     let name = bus_name(app_id).ok_or(Error::Unsupported)?;
     let connection = session().await?;
@@ -3446,6 +3459,7 @@ pub async fn fetch_layout(app_id: &str) -> Result<Layout, Error> {
     })
 }
 
+#[cfg(not(windows))]
 async fn fetch_v1(connection: &Connection, name: &'static str) -> Result<Vec<Menu>, Error> {
     let reply = connection
         .call_method(Some(name), OBJECT_PATH, Some(INTERFACE_NAME), "Menus", &())
@@ -3459,6 +3473,7 @@ async fn fetch_v1(connection: &Connection, name: &'static str) -> Result<Vec<Men
 }
 
 /// The app is running but does not serve `org.rmac.AppMenu2`.
+#[cfg(not(windows))]
 fn is_unknown_interface(error: &zbus::Error) -> bool {
     const UNKNOWN: [&str; 3] = [
         "org.freedesktop.DBus.Error.UnknownInterface",
@@ -3479,10 +3494,12 @@ fn is_unknown_interface(error: &zbus::Error) -> bool {
 
 /// `LayoutChanged` signals from every first-party app, so a menu bar can
 /// re-read the active app's menus when its state changes them.
+#[cfg(not(windows))]
 pub struct LayoutChanges {
     stream: zbus::MessageStream,
 }
 
+#[cfg(not(windows))]
 pub async fn watch_layout_changes() -> Result<LayoutChanges, Error> {
     let rule_error =
         |error: zbus::Error| Error::Bus(format!("could not build the menu change match: {error}"));
@@ -3502,6 +3519,7 @@ pub async fn watch_layout_changes() -> Result<LayoutChanges, Error> {
     Ok(LayoutChanges { stream })
 }
 
+#[cfg(not(windows))]
 impl LayoutChanges {
     /// Waits for the next change; `false` once the bus connection closes.
     pub async fn next(&mut self) -> bool {
@@ -3517,6 +3535,7 @@ impl LayoutChanges {
     }
 }
 
+#[cfg(not(windows))]
 pub async fn activate(app_id: &str, action: &str) -> Result<(), Error> {
     let name = bus_name(app_id).ok_or(Error::Unsupported)?;
     if !valid_action(action) {
@@ -3539,12 +3558,14 @@ pub async fn activate(app_id: &str, action: &str) -> Result<(), Error> {
 /// Menu endpoints appearing and disappearing on the session bus, so a menu bar
 /// can fetch an app's menus once the app has published them and drop them when
 /// the app exits, without polling.
+#[cfg(not(windows))]
 pub struct MenuOwners {
     stream: zbus::MessageStream,
 }
 
 /// Subscribe to owner changes of the `org.rmac.*` names on the shared
 /// connection.
+#[cfg(not(windows))]
 pub async fn watch_menu_owners() -> Result<MenuOwners, Error> {
     let rule_error =
         |error: zbus::Error| Error::Bus(format!("could not build the menu owner match: {error}"));
@@ -3566,6 +3587,7 @@ pub async fn watch_menu_owners() -> Result<MenuOwners, Error> {
     Ok(MenuOwners { stream })
 }
 
+#[cfg(not(windows))]
 impl MenuOwners {
     /// The next app whose menu endpoint appeared (`true`) or went away
     /// (`false`); `None` once the bus connection closes.
@@ -3592,6 +3614,7 @@ impl MenuOwners {
 
 /// The bus has no owner for the app's menu name: the app is not running or
 /// has not published its menu yet.
+#[cfg_attr(windows, allow(dead_code))]
 fn is_unowned(error: &zbus::Error) -> bool {
     const UNOWNED: [&str; 2] = [
         "org.freedesktop.DBus.Error.ServiceUnknown",

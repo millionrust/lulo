@@ -14,7 +14,7 @@ futures-util.workspace = true
 rmac-audio.workspace = true
 rmac-bluetooth.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
+rmac-compositor-system.workspace = true
 rmac-focus-linux.workspace = true
 rmac-focus-runtime.workspace = true
 rmac-network.workspace = true
@@ -26,3 +26,18 @@ rmac-shell-settings.workspace = true
 rmac-shell-status.workspace = true
 rmac-shell-status-linux.workspace = true
 rmac-sound.workspace = true
+
+# Windows' own status sources (`windows.rs`): WLAN, power and Core Audio.
+[target.'cfg(windows)'.dependencies]
+# `#[implement]` (the volume callback) names `windows_core` directly.
+windows-core = "0.61"
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_NetworkManagement_WiFi",
+    "Win32_System_Com",
+    "Win32_System_Power",
+    "Win32_System_SystemServices",
+    "Win32_UI_WindowsAndMessaging",
+] }

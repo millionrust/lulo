@@ -3,6 +3,7 @@
 //! the user's Allow choice in `$XDG_CONFIG_HOME/rmac/clipboard.json`.
 
 use std::fs::{self, DirBuilder};
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
@@ -55,21 +56,22 @@ impl Store {
     /// A symlink in its place is refused.
     pub fn prepare(&self) -> Result<(), Error> {
         if let Some(parent) = self.dir.parent() {
-            DirBuilder::new()
+            private_dir_builder()
                 .recursive(true)
-                .mode(0o700)
                 .create(parent)
                 .map_err(|_| Error::Store)?;
         }
         match fs::symlink_metadata(&self.dir) {
             Ok(metadata) if metadata.file_type().is_dir() => {}
             Ok(_) => return Err(Error::Store),
-            Err(_) => DirBuilder::new()
-                .mode(0o700)
+            Err(_) => private_dir_builder()
                 .create(&self.dir)
                 .map_err(|_| Error::Store)?,
         }
-        fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o700)).map_err(|_| Error::Store)
+        #[cfg(unix)]
+        fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o700))
+            .map_err(|_| Error::Store)?;
+        Ok(())
     }
 
     /// The saved history with its bounds re-applied. Payload files that no
@@ -148,15 +150,24 @@ impl Store {
 
     pub fn set_enabled(&self, enabled: bool) -> Result<(), Error> {
         if let Some(parent) = self.config.parent() {
-            DirBuilder::new()
+            private_dir_builder()
                 .recursive(true)
-                .mode(0o700)
                 .create(parent)
                 .map_err(|_| Error::Store)?;
         }
         let bytes = serde_json::to_vec(&Config { enabled }).map_err(|_| Error::Store)?;
         write_private(&self.config, &bytes)
     }
+}
+
+/// A directory builder that creates 0700 directories (on Windows, the
+/// profile's own ACL already keeps them private).
+fn private_dir_builder() -> DirBuilder {
+    #[allow(unused_mut)]
+    let mut builder = DirBuilder::new();
+    #[cfg(unix)]
+    builder.mode(0o700);
+    builder
 }
 
 /// Write through a 0600 temporary file and rename it into place.

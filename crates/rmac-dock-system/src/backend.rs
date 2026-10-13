@@ -20,7 +20,7 @@ impl Backend for SystemBackend {
         window: rmac_compositor::WindowId,
     ) -> BackendFuture<'_, Result<(), BackendError>> {
         Box::pin(async move {
-            rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+            rmac_compositor_system::execute(rmac_compositor::ActionRequest {
                 id: request_id,
                 action: rmac_compositor::Action::FocusWindow { window },
             })
@@ -36,7 +36,7 @@ impl Backend for SystemBackend {
         window: rmac_compositor::WindowId,
     ) -> BackendFuture<'_, Result<(), BackendError>> {
         Box::pin(async move {
-            rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+            rmac_compositor_system::execute(rmac_compositor::ActionRequest {
                 id: request_id,
                 action: rmac_compositor::Action::CloseWindow { window },
             })
@@ -65,7 +65,7 @@ impl Backend for SystemBackend {
                 // which is where a Mac restores a window whose Space is gone.
                 None => {
                     let snapshot = blocking::unblock(|| {
-                        futures_lite::future::block_on(rmac_compositor_niri::snapshot())
+                        futures_lite::future::block_on(rmac_compositor_system::snapshot())
                     })
                     .await
                     .map_err(|error| {
@@ -76,7 +76,7 @@ impl Backend for SystemBackend {
                     })?
                 }
             };
-            rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+            rmac_compositor_system::execute(rmac_compositor::ActionRequest {
                 id: request_id,
                 action: rmac_compositor::Action::RestoreWindow { window, workspace },
             })
@@ -95,7 +95,7 @@ impl Backend for SystemBackend {
         Box::pin(async move {
             // The niri snapshot reader is not Send; read it on its own thread.
             let snapshot = blocking::unblock(|| {
-                futures_lite::future::block_on(rmac_compositor_niri::snapshot())
+                futures_lite::future::block_on(rmac_compositor_system::snapshot())
             })
             .await
             .map_err(|error| BackendError::new(FailureKind::Unavailable, format!("{error:?}")))?;
@@ -112,7 +112,7 @@ impl Backend for SystemBackend {
             })?;
             let mut failure = None;
             for window in windows {
-                let result = rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+                let result = rmac_compositor_system::execute(rmac_compositor::ActionRequest {
                     id: request_id,
                     action: rmac_compositor::Action::MinimizeWindow { window },
                 })
@@ -135,7 +135,7 @@ impl Backend for SystemBackend {
         window: rmac_compositor::WindowId,
     ) -> BackendFuture<'_, Result<(), BackendError>> {
         Box::pin(async move {
-            rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+            rmac_compositor_system::execute(rmac_compositor::ActionRequest {
                 id: request_id,
                 action: rmac_compositor::Action::FocusWindow { window },
             })

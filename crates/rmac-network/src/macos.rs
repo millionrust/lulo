@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 impl WifiService for SystemWifiService {
     fn snapshot(&self) -> Result<WifiSnapshot, Error> {
         let Some(device) = macos_wifi_device()? else {
@@ -127,7 +127,7 @@ impl WifiService for SystemWifiService {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn macos_network_snapshot() -> Result<NetworkSnapshot, Error> {
     let default_route = network_command("route", &["-n", "get", "default"])?;
     let route_field = |key: &str| {
@@ -219,7 +219,7 @@ pub(super) fn macos_network_snapshot() -> Result<NetworkSnapshot, Error> {
     })
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn macos_vpn_snapshot() -> Result<VpnSnapshot, Error> {
     let output = network_command("scutil", &["--nc", "list"])?;
     Ok(VpnSnapshot {
@@ -228,7 +228,7 @@ pub(super) fn macos_vpn_snapshot() -> Result<VpnSnapshot, Error> {
     })
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn macos_set_vpn_enabled(
     id: &VpnProfileId,
     enabled: bool,
@@ -240,7 +240,7 @@ pub(super) fn macos_set_vpn_enabled(
     macos_vpn_snapshot()
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn network_command(program: &'static str, arguments: &[&str]) -> Result<String, Error> {
     let output = Command::new(program)
         .args(arguments)
@@ -255,7 +255,7 @@ pub(super) fn network_command(program: &'static str, arguments: &[&str]) -> Resu
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn macos_wifi_device() -> Result<Option<String>, Error> {
     let output = command("networksetup", &["-listallhardwareports"])?;
     let mut wifi = false;
@@ -271,7 +271,7 @@ pub(super) fn macos_wifi_device() -> Result<Option<String>, Error> {
     Ok(None)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(super) fn command(program: &'static str, arguments: &[&str]) -> Result<String, Error> {
     let output = Command::new(program)
         .args(arguments)

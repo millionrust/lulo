@@ -1,6 +1,32 @@
-//! Framework-neutral Apps contracts.
+//! Apps: a searchable grid of installed applications. Linux runs it as its
+//! own process (`rmac-app-drawer`); the Windows shell hosts the same view
+//! in `lulo-shell` ([`start`], [`toggle`]; ADR 0023, "Phase 3 revised:
+//! shared shell views").
 
 pub mod accessibility;
+mod catalog;
+mod drag_endpoint;
+mod search;
+mod service;
+mod view;
+
+pub use service::{asset, run_service, run_standalone};
+#[cfg(windows)]
+pub use service::{open_scene, start, toggle};
+
+gpui::actions!(
+    app_drawer,
+    [
+        MoveLeft,
+        MoveRight,
+        MoveUp,
+        MoveDown,
+        Launch,
+        ClearSearch,
+        OpenApp,
+        RevealInFinder
+    ]
+);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunMode {

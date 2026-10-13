@@ -1,12 +1,17 @@
-//! The Lulo layer on Windows (ADR 0023 phase 3): Lulo's menu bar, Dock and
-//! Spotlight running on top of the Windows desktop, beside Explorer.
+//! Lulo on Windows (ADR 0023 phase 3, "Phase 3 revised: shared shell
+//! views"): Lulo OS's own menu bar, Dock and desktop views, running over
+//! the Windows desktop beside Explorer.
 //!
-//! - `model` holds what the surfaces show, as plain data built from plain
-//!   data, so it is unit-tested on every platform.
-//! - `win` wraps the Win32 pieces: AppBars, the taskbar, the window list
-//!   and its WinEvent hooks, the global hotkey, launching, the app and file
-//!   catalogue, status readings, power commands and the menu pipe.
-//! - `ui` draws the surfaces with GPUI and rmac-ui.
+//! - The views are `shell/bins`' libraries, the same code as on Lulo OS;
+//!   `shell` starts them in one process over Windows' backends.
+//! - `share` lays out the Lulo apps' desktop entries and artwork as on
+//!   Lulo OS.
+//! - `model` holds plain data (Spotlight's hotkey choice, the Windows app
+//!   catalogue's entries), unit-tested on every platform.
+//! - `win` wraps the Win32 pieces only Windows has: the taskbar and
+//!   Explorer's desktop icons, the session watchdog, the hotkey, Use Files
+//!   for Folders, the registry records, memory trims, the Windows app
+//!   catalogue and icon helpers, and the wallpaper layer.
 //!
 //! Nothing polls: every update arrives as a Windows event, a pipe message
 //! or a change notification, and an idle Lulo layer uses no CPU (the
@@ -15,10 +20,11 @@
 pub mod model;
 
 #[cfg(windows)]
+pub mod share;
+#[cfg(windows)]
+mod shell;
+#[cfg(windows)]
 pub mod win;
 
 #[cfg(windows)]
-mod ui;
-
-#[cfg(windows)]
-pub use ui::run;
+pub use shell::run;

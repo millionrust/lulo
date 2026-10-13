@@ -310,6 +310,134 @@ fn is_file_path(source: &str) -> bool {
     !source.starts_with("shell:") && !source.starts_with("::")
 }
 
+/// Read the icon of `source` (in this process: the Apps folder helper's)
+/// and keep it as a PNG at `path`, no larger than `pixels` square. True
+/// when it was written.
+pub(crate) fn save_png(source: &str, pixels: u32, path: &std::path::Path) -> bool {
+    let Some((width, height, mut bytes)) = load(source, pixels as i32, false) else {
+        return false;
+    };
+    // BGRA from Windows; PNG wants RGBA.
+    for pixel in bytes.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    let Some(image) = image::RgbaImage::from_raw(width, height, bytes) else {
+        return false;
+    };
+    fit_icon_grid(image, pixels)
+        .save_with_format(path, image::ImageFormat::Png)
+        .is_ok()
+}
+
+/// The share of its square an icon's body may fill in Lulo's icon grid:
+/// Lulo's own art draws its squircle at 824/1024 of the image, as macOS's
+/// grid does.
+const GRID_BODY: f32 = 824.0 / 1024.0;
+
+/// `image` at most `pixels` square, its body fitted into Lulo's icon grid.
+/// A Windows program's icon often fills its whole square, where Lulo's (and
+/// a Lulo OS theme's) icons keep the grid's margin, so the Dock, Apps and
+/// the desktop drew it larger than every other icon (WIN-OS-71). An icon
+/// whose body already fits keeps its own size and place; a larger body is
+/// scaled down into the grid and centred, as macOS fits an icon that
+/// ignores its grid.
+pub(crate) fn fit_icon_grid(image: image::RgbaImage, pixels: u32) -> image::RgbaImage {
+    let (width, height) = image.dimensions();
+    let side = width.max(height).max(1);
+    let out = side.min(pixels);
+    let mut bounds: Option<(u32, u32, u32, u32)> = None;
+    for (x, y, pixel) in image.enumerate_pixels() {
+        if pixel[3] > 16 {
+            bounds = Some(match bounds {
+                None => (x, y, x, y),
+                Some((left, top, right, bottom)) => {
+                    (left.min(x), top.min(y), right.max(x), bottom.max(y))
+                }
+            });
+        }
+    }
+    let downscaled = |image: image::RgbaImage| {
+        if width > pixels || height > pixels {
+            image::imageops::thumbnail(&image, pixels, pixels)
+        } else {
+            image
+        }
+    };
+    let Some((left, top, right, bottom)) = bounds else {
+        return downscaled(image);
+    };
+    let (body_width, body_height) = (right - left + 1, bottom - top + 1);
+    let extent = body_width.max(body_height) as f32 / side as f32;
+    if extent <= GRID_BODY + 0.01 {
+        return downscaled(image);
+    }
+    let scale = out as f32 / side as f32 * GRID_BODY / extent;
+    let body = image::imageops::crop_imm(&image, left, top, body_width, body_height).to_image();
+    let fitted_width = ((body_width as f32 * scale).round() as u32).max(1);
+    let fitted_height = ((body_height as f32 * scale).round() as u32).max(1);
+    let body = image::imageops::resize(
+        &body,
+        fitted_width,
+        fitted_height,
+        image::imageops::FilterType::CatmullRom,
+    );
+    let mut canvas = image::RgbaImage::new(out, out);
+    image::imageops::overlay(
+        &mut canvas,
+        &body,
+        i64::from((out - fitted_width) / 2),
+        i64::from((out - fitted_height) / 2),
+    );
+    canvas
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::*;
+
+    fn body_extent(image: &image::RgbaImage) -> (u32, u32) {
+        let opaque: Vec<(u32, u32)> = image
+            .enumerate_pixels()
+            .filter(|(_, _, pixel)| pixel[3] > 16)
+            .map(|(x, y, _)| (x, y))
+            .collect();
+        let width = opaque.iter().map(|p| p.0).max().unwrap()
+            - opaque.iter().map(|p| p.0).min().unwrap()
+            + 1;
+        let height = opaque.iter().map(|p| p.1).max().unwrap()
+            - opaque.iter().map(|p| p.1).min().unwrap()
+            + 1;
+        (width, height)
+    }
+
+    #[test]
+    fn a_full_square_icon_is_fitted_into_the_grid_and_centred() {
+        let full = image::RgbaImage::from_pixel(256, 256, image::Rgba([120, 60, 220, 255]));
+        let fitted = fit_icon_grid(full, 96);
+        assert_eq!(fitted.dimensions(), (96, 96));
+        let (width, height) = body_extent(&fitted);
+        // 824/1024 of 96 is 77.25.
+        assert!(
+            (76..=78).contains(&width) && (76..=78).contains(&height),
+            "{width}x{height}"
+        );
+        assert_eq!(fitted.get_pixel(0, 0)[3], 0);
+        assert_eq!(fitted.get_pixel(48, 48)[3], 255);
+    }
+
+    #[test]
+    fn an_icon_inside_the_grid_keeps_its_size() {
+        let mut icon = image::RgbaImage::new(96, 96);
+        for y in 20..76 {
+            for x in 20..76 {
+                icon.put_pixel(x, y, image::Rgba([10, 20, 30, 255]));
+            }
+        }
+        let fitted = fit_icon_grid(icon.clone(), 96);
+        assert_eq!(fitted, icon);
+    }
+}
+
 fn load(source: &str, pixels: i32, thumbnail: bool) -> Option<Pixels> {
     if !thumbnail && is_file_path(source) {
         if let Some(icon) = load_from_image_list(source, pixels) {

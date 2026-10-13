@@ -23,7 +23,7 @@ crates/platform-lab/src/lab.rs:8
 crates/platform-lab/src/main.rs:1
 crates/player/src/main.rs:3
 crates/preview/src/main.rs:3
-crates/quick-settings-app/src/main.rs:2
+crates/quick-settings-app/src/lib.rs:2
 crates/rmac-editor/src/lib.rs:1
 crates/rmac-file-chooser/src/main.rs:3
 crates/rmac-quick-look/src/panel.rs:1

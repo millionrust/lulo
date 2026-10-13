@@ -23,7 +23,7 @@ rmac-appearance-portal.workspace = true
 rmac-gtk-settings.workspace = true
 rmac-media.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
+rmac-compositor-system.workspace = true
 rmac-osd.workspace = true
 rmac-quick-settings.workspace = true
 rmac-quick-settings-system.workspace = true
@@ -33,3 +33,8 @@ rmac-shortcuts.workspace = true
 rmac-theme.workspace = true
 rmac-ui.workspace = true
 rust-embed.workspace = true
+
+# The Windows shell hosts this surface; `rmac-shell-layer` places it as
+# the layer surface it is on Linux (ADR 0023).
+[target.'cfg(windows)'.dependencies]
+rmac-shell-layer.workspace = true

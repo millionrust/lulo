@@ -1,4 +1,4 @@
-#![cfg_attr(target_os = "macos", allow(dead_code))]
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
 use std::fmt;
 use std::sync::{Arc, Condvar, Mutex};
@@ -6,20 +6,20 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroize as _;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use zbus::blocking::{connection::Builder, Connection, Proxy};
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use zbus::message::Header;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use zbus::zvariant::OwnedObjectPath;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const SERVICE: &str = "org.bluez";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const AGENT_PATH: &str = "/org/rmac/SystemSettings/BluetoothAgent";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const AGENT_MANAGER_PATH: &str = "/org/bluez";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const AGENT_MANAGER_INTERFACE: &str = "org.bluez.AgentManager1";
 const PROMPT_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -393,7 +393,7 @@ enum RequestFailure {
     TimedOut,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 #[derive(Debug, PartialEq, zbus::DBusError)]
 #[zbus(prefix = "org.bluez.Error", impl_display = true)]
 enum PairingAgentError {
@@ -401,7 +401,7 @@ enum PairingAgentError {
     Canceled(String),
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl From<RequestFailure> for PairingAgentError {
     fn from(failure: RequestFailure) -> Self {
         match failure {
@@ -412,7 +412,7 @@ impl From<RequestFailure> for PairingAgentError {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 struct PairingAgent {
     device: OwnedObjectPath,
     session: PairingSession,
@@ -420,7 +420,7 @@ struct PairingAgent {
     service_owner: String,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl PairingAgent {
     fn new(device: OwnedObjectPath, session: PairingSession, service_owner: String) -> Self {
         Self {
@@ -458,7 +458,7 @@ impl PairingAgent {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 #[zbus::interface(name = "org.bluez.Agent1")]
 impl PairingAgent {
     fn release(&self, #[zbus(header)] header: Header<'_>) {
@@ -581,17 +581,17 @@ impl PairingAgent {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) struct RegisteredPairingAgent {
     connection: Connection,
 }
 
 /// Outgoing calls on this connection (to apps, portals or the bus) give up
 /// after this long, so a peer that never replies cannot hold a call open.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl RegisteredPairingAgent {
     pub(super) fn register(device: OwnedObjectPath, session: PairingSession) -> zbus::Result<Self> {
         let connection = Builder::system()?.method_timeout(CALL_TIMEOUT).build()?;
@@ -612,7 +612,7 @@ impl RegisteredPairingAgent {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl Drop for RegisteredPairingAgent {
     fn drop(&mut self) {
         if let (Ok(proxy), Ok(path)) = (
@@ -624,7 +624,7 @@ impl Drop for RegisteredPairingAgent {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn agent_manager(connection: &Connection) -> zbus::Result<Proxy<'_>> {
     Proxy::new(
         connection,

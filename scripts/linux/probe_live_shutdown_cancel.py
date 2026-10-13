@@ -25,7 +25,7 @@ except ImportError:  # pragma: no cover - available on the Linux reference host
 
 
 TIMEOUT_SECONDS = 8.0
-# The top bar's Lulo mark (shell/bins/rmac-menubar/src/main.rs `LULO_MENU_LABEL`).
+# The top bar's Lulo mark (shell/bins/rmac-menubar/src/lib.rs `LULO_MENU_LABEL`).
 LULO_MENU = "Lulo menu"
 POLL_SECONDS = 0.2
 TOP_BAR_NAMES = {"rmac-top-bar", "top-bar", "rmac-menubar"}

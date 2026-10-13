@@ -16,6 +16,21 @@ impl AppDrawer {
             })
             .detach();
         }
+        // The apps' pictures (PNG icons; SVGs live in `rmac_ui::svg_icon`'s
+        // own bounded cache) are decoded into the process-wide image cache,
+        // which keeps them for good: drop them with the panel, so a closed
+        // Apps costs nothing (WIN-OS-64).
+        cx.on_release(|this: &mut AppDrawer, cx| {
+            for path in this.apps.iter().filter_map(|app| app.icon.as_ref()) {
+                let svg = path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"));
+                if !svg {
+                    gpui::ImageSource::from(path.clone()).remove_asset(cx);
+                }
+            }
+        })
+        .detach();
 
         // Typing in the search field re-anchors the cursor to the first match
         // and is the redraw trigger for live filtering.

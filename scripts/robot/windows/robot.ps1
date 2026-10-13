@@ -204,8 +204,8 @@ function Items-Of($menuNode) {
         while ($c) {
             $cur = $c.Current
             if ($cur.ControlType.ProgrammaticName -eq 'ControlType.MenuItem') {
-                $r = $cur.BoundingRectangle
-                $items += [pscustomobject]@{ Name = $cur.Name; Enabled = $cur.IsEnabled; X = $r.X + $r.Width / 2; Y = $r.Y + $r.Height / 2; Element = $c }
+                $rect = $cur.BoundingRectangle
+                $items += [pscustomobject]@{ Name = $cur.Name; Enabled = $cur.IsEnabled; X = $rect.X + $rect.Width / 2; Y = $rect.Y + $rect.Height / 2; Element = $c }
             }
             $c = $walker.GetNextSibling($c)
         }
@@ -747,10 +747,10 @@ function Exercise-Shell {
     # The Lulo menu: listed and its harmless items opened.
     $lulo = $buttons | Where-Object { $_.Name -eq 'Lulo menu' } | Select-Object -First 1
     if ($lulo) {
-        $r = Shell-Observe 'lulo-menu' { $c = Center $lulo; Click $c[0] $c[1] } 'the Lulo menu'
-        $measures['shell.lulo_menu'] = $r.Items -join ' | '
+        $res = Shell-Observe 'lulo-menu' { $c = Center $lulo; Click $c[0] $c[1] } 'the Lulo menu'
+        $measures['shell.lulo_menu'] = $res.Items -join ' | '
         Close-ShellMenus
-        foreach ($name in $r.Items) {
+        foreach ($name in $res.Items) {
             if (-not $name -or $name -match $Deny -or $name -notmatch '(?i)^about') { continue }
             $res = Shell-Observe "lulo-menu-$name" {
                 $c = Center $lulo; Click $c[0] $c[1]; Start-Sleep -Milliseconds 600
@@ -764,21 +764,21 @@ function Exercise-Shell {
     # Status items: open each, look, close. Nothing inside them is clicked.
     foreach ($b in $buttons | Where-Object { $_.Name -notmatch ' menu$' }) {
         $short = ($b.Name -split '[ ,:]')[0]
-        $r = Shell-Observe "status-$short" { $c = Center $b; Click $c[0] $c[1] } "a panel for '$($b.Name)'"
-        foreach ($w in $r.New) { if ($R::PidOf($w) -eq $pidShell) { Check-ShellPanel $w "status-$short" } }
+        $res = Shell-Observe "status-$short" { $c = Center $b; Click $c[0] $c[1] } "a panel for '$($b.Name)'"
+        foreach ($w in $res.New) { if ($R::PidOf($w) -eq $pidShell) { Check-ShellPanel $w "status-$short" } }
         Escape-All
         Start-Sleep -Milliseconds 300
-        $still = @($r.New | Where-Object { $R::Alive($_) -and $R::Visible($_) -and $R::PidOf($_) -eq $pidShell })
-        if ($still.Count) { Add-Finding 'medium' 'close' 'Lulo layer' "Esc did not close the panel opened by '$($b.Name)'" '' (Shot "shell-status-$short-stuck"); Click ($R::Screen().Width / 2) ($R::Screen().Height / 2 - 100); Escape-All }
+        $still = @($res.New | Where-Object { $R::Alive($_) -and $R::Visible($_) -and $R::PidOf($_) -eq $pidShell })
+        if ($still.Count) { Add-Finding 'medium' 'close' 'Lulo layer' "Esc did not close the panel opened by '$($b.Name)'" '' (Shot "shell-status-$short-stuck"); Escape-All }
     }
     # Spotlight from the keyboard.
-    $r = Shell-Observe 'spotlight-alt-space' { Keys @(0x12, 0x20) } 'Spotlight'
-    if (-not ($r.New | Where-Object { $R::PidOf($_) -eq $pidShell })) {
+    $res = Shell-Observe 'spotlight-alt-space' { Keys @(0x12, 0x20) } 'Spotlight'
+    if (-not ($res.New | Where-Object { $R::PidOf($_) -eq $pidShell })) {
         Add-Finding 'medium' 'spotlight' 'Lulo layer' 'Alt+Space did not open a Spotlight window'
     } else {
         Guard; $R::Type('calcul'); Mark; Start-Sleep -Milliseconds 900
         [void](Shot 'shell-spotlight-typed')
-        foreach ($w in $r.New) { if ($R::PidOf($w) -eq $pidShell) { Check-ShellPanel $w 'spotlight' } }
+        foreach ($w in $res.New) { if ($R::PidOf($w) -eq $pidShell) { Check-ShellPanel $w 'spotlight' } }
     }
     Escape-All
     # The Dock: one Lulo app opened from its tile and closed; a right-click menu looked at.
@@ -811,8 +811,8 @@ function Exercise-Shell {
             } else { Add-Finding 'high' 'dock' 'Lulo layer' 'clicking the Text Editor tile opened no window in 20 s' '' $shot }
         }
         if ($editor) {
-            $r = Shell-Observe 'dock-right-click' { $c = Center $editor; RClick $c[0] $c[1] } 'the tile menu'
-            $measures['shell.dock_tile_menu'] = $r.Items -join ' | '
+            $res = Shell-Observe 'dock-right-click' { $c = Center $editor; RClick $c[0] $c[1] } 'the tile menu'
+            $measures['shell.dock_tile_menu'] = $res.Items -join ' | '
             Close-ShellMenus; Escape-All
         }
     } else { Add-Finding 'high' 'dock' 'Lulo layer' 'no Dock found' }
@@ -823,8 +823,8 @@ function Exercise-Shell {
     if ($covered) { Write-Host "robot: the desktop point is covered by another window; skipping desktop clicks" }
     else {
         [void](Shell-Observe 'desktop-click' { Click $x $y } 'nothing (selection cleared)')
-        $r = Shell-Observe 'desktop-right-click' { RClick $x $y } 'the desktop menu'
-        $measures['shell.desktop_menu'] = $r.Items -join ' | '
+        $res = Shell-Observe 'desktop-right-click' { RClick $x $y } 'the desktop menu'
+        $measures['shell.desktop_menu'] = $res.Items -join ' | '
         Close-ShellMenus; Escape-All
     }
     # A folder double-clicked in Files (the scratch folder stands in for the desktop: the user's Desktop is not ours to touch).

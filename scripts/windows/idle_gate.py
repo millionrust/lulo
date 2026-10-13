@@ -213,6 +213,25 @@ def world_tick_failures(results: dict[str, dict], max_ticks: float | None) -> li
     return []
 
 
+def after_panels_failures(results: dict, budget_mb: float | None) -> list[str]:
+    """lulo-shell's private bytes once Alt+Tab's switcher and Notification
+    Centre (with a banner) have been used and closed
+    (`after_switcher_nc_private_mb`; ADR 0023)."""
+    if budget_mb is None:
+        return []
+    shell = results.get("lulo-shell", {})
+    after = shell.get("after_switcher_nc_private_mb")
+    print(f"idle gate: lulo-shell private memory after the switcher and Notification Centre: {after} MB")
+    if after is None:
+        return ["lulo-shell: no memory reading after the switcher and Notification Centre"]
+    if after > budget_mb:
+        return [
+            f"lulo-shell: {after} MB private after the switcher and Notification Centre closed, "
+            f"over {budget_mb} MB"
+        ]
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("results", type=Path)
@@ -241,6 +260,13 @@ def main() -> int:
         type=float,
         default=None,
         help="Fail when lulo-shell's private bytes after use grew more than this over idle.",
+    )
+    parser.add_argument(
+        "--shell-after-panels-private-mb",
+        type=float,
+        default=None,
+        help="Fail when lulo-shell's private bytes after the switcher and Notification Centre "
+        "were used and closed are over this many MB.",
     )
     parser.add_argument(
         "--shell-max-wakes",
@@ -298,6 +324,7 @@ def main() -> int:
         failures += after_use_failures(
             results, arguments.shell_after_use_private_mb, arguments.shell_after_use_growth_mb
         )
+    failures += after_panels_failures(results, arguments.shell_after_panels_private_mb)
     tick = results.get("rmac-clock", {}).get("world_tick")
     if tick is not None:
         print(

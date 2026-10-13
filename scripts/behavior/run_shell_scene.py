@@ -277,6 +277,13 @@ class Run:
                         print("FAIL Spotlight did not draw", flush=True)
                 elif self.args.open == "control-centre":
                     self.spawn([str(apps / "rmac-quick-settings")], "quick-settings", panel_env)
+                elif self.args.open == "notification-centre":
+                    # The notification authority first (its session-bus
+                    # names), then the Center panel reading its history.
+                    self.spawn([str(apps / "rmac-notification-center")], "notification-center", panel_env)
+                    time.sleep(2.0)
+                    self.spawn([str(apps / "rmac-notification-center-panel")], "notification-center-panel",
+                               panel_env)
                 elif self.args.open == "apps":
                     self.spawn([str(apps / "rmac-app-drawer"), "--service", "--show"], "apps", panel_env)
                 else:
@@ -375,7 +382,8 @@ def main() -> int:
     parser.add_argument("--output", required=True, help="where the scene's PNG goes")
     parser.add_argument("--settle", type=float, default=6.0, help="seconds after the surfaces are up")
     parser.add_argument("--open", default="",
-                        help="spotlight:<query> or control-centre: open that panel in the scene")
+                        help="spotlight:<query>, control-centre, apps or notification-centre: "
+                             "open that panel in the scene")
     parser.add_argument("--app-bin-dir", default="",
                         help="directory with rmac-launcher and rmac-quick-settings (for --open)")
     parser.add_argument("--default-dock", action="store_true",

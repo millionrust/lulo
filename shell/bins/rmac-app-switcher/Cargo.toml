@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+# The switcher's service and panel are a library shared by Lulo OS's
+# `app-switcher` binary and the Windows shell (`rmac-win-shell`); ADR 0023,
+# "Notification Centre and the app switcher on Windows".
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "app-switcher"
 path = "src/main.rs"
@@ -23,7 +29,16 @@ gpui_platform.workspace = true
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
+rmac-compositor-system.workspace = true
 rmac-shell-layer.workspace = true
 rmac-shell-ui.workspace = true
 uuid.workspace = true
+
+# Alt+Tab's low-level keyboard hook (`alt_tab`).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }

@@ -649,7 +649,7 @@ fn desktop_overlays_are_linux_layer_surfaces_without_window_chrome() {
             "namespace: rmac_quick_settings::surface::NAMESPACE",
         ),
         (
-            include_str!("../../notification-center-app/src/main.rs"),
+            include_str!("../../notification-center-app/src/lib.rs"),
             "fn panel_options(",
             "namespace: rmac_notifications_linux::center_surface::NAMESPACE",
         ),

@@ -16,7 +16,7 @@ use gpui::{
 use rmac_shell_ui::tokens;
 
 use crate::force_quit::{self, layout, Entry, List};
-use crate::linux_wayland::Service;
+use crate::service::Service;
 
 // Measured on macOS 26.2 dark mode (design-lab/force-quit.html).
 const DARK_BACKGROUND: u32 = 0x2023_2DFF;

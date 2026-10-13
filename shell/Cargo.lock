@@ -6071,10 +6071,11 @@ dependencies = [
  "rmac-app-launch",
  "rmac-apps",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-shell-layer",
  "rmac-shell-ui",
  "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]

@@ -6315,6 +6315,7 @@ dependencies = [
  "iana-time-zone",
  "image",
  "notify",
+ "rmac-notifications",
  "rmac-sound",
  "rmac-spelling",
  "rmac-storage",
@@ -7051,7 +7052,7 @@ dependencies = [
  "rmac-appearance-portal",
  "rmac-apps",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-desktop",
  "rmac-desktop-widgets",
  "rmac-locale",
@@ -7061,9 +7062,11 @@ dependencies = [
  "rmac-notifications-runtime",
  "rmac-notifications-store",
  "rmac-shell-activation-runtime",
+ "rmac-shell-layer",
  "rmac-shortcuts",
  "rmac-ui",
  "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -7462,6 +7465,24 @@ dependencies = [
  "rmac-shell-invocation",
  "rmac-shell-invocation-runtime",
  "rmac-shortcuts",
+]
+
+[[package]]
+name = "rmac-shell-app-switcher"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "blocking",
+ "gpui",
+ "gpui_platform",
+ "rmac-app-launch",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-system",
+ "rmac-shell-layer",
+ "rmac-shell-ui",
+ "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -8148,8 +8169,10 @@ dependencies = [
  "rmac-compositor-system",
  "rmac-desktop",
  "rmac-launcher-app",
+ "rmac-notification-center-app",
  "rmac-osd",
  "rmac-quick-settings-app",
+ "rmac-shell-app-switcher",
  "rmac-shell-dock",
  "rmac-shell-layer",
  "rmac-shell-menubar",

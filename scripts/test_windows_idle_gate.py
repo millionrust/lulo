@@ -298,6 +298,16 @@ class ShellTraceTests(unittest.TestCase):
             self.assertIsNotNone(log.wait_for(r"running$", 0.1, after=2))
 
 
+class AfterPanelsTests(unittest.TestCase):
+    def test_memory_after_the_switcher_and_notification_centre_is_gated(self) -> None:
+        within = {"lulo-shell": {"after_switcher_nc_private_mb": 52.0}}
+        over = {"lulo-shell": {"after_switcher_nc_private_mb": 61.0}}
+        self.assertEqual(idle_gate.after_panels_failures(within, 60.0), [])
+        self.assertEqual(idle_gate.after_panels_failures(within, None), [])
+        self.assertEqual(len(idle_gate.after_panels_failures(over, 60.0)), 1)
+        self.assertEqual(len(idle_gate.after_panels_failures({}, 60.0)), 1)
+
+
 class ShellIdleWindowTests(unittest.TestCase):
     def test_the_idle_window_holds_no_minute_boundary(self) -> None:
         for now in [0.0, 12.3, 37.4, 38.0, 45.0, 59.9, 1_000_000.25]:

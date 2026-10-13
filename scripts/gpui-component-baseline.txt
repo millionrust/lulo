@@ -15,7 +15,7 @@ crates/launcher-app/src/assets.rs:2
 crates/launcher-app/src/view/render.rs:4
 crates/notes/src/main.rs:1
 crates/notes/src/presentation.rs:1
-crates/notification-center-app/src/daemon/main.rs:1
+crates/notification-center-app/src/lib.rs:1
 crates/notification-center-app/src/daemon/surface.rs:2
 crates/notification-center-app/src/render.rs:1
 crates/notification-center-app/src/render/history.rs:1

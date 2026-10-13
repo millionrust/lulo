@@ -44,10 +44,10 @@ impl NotificationCenterView {
         time: &str,
         date: &str,
     ) -> Result<
-        rmac_notification_center_app::accessibility::NotificationCenterAccessibilitySnapshot,
-        rmac_notification_center_app::accessibility::AccessibilityProjectionError,
+        crate::accessibility::NotificationCenterAccessibilitySnapshot,
+        crate::accessibility::AccessibilityProjectionError,
     > {
-        use rmac_notification_center_app::accessibility::{
+        use crate::accessibility::{
             project_notification_center, HeaderText, PanelBusy, PanelStatus,
         };
 
@@ -231,7 +231,7 @@ impl NotificationCenterView {
                 let action = rmac_compositor::Action::FocusWindow {
                     window: previous_window,
                 };
-                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                     eprintln!("could not return focus from Notification Centre: {error:?}");
                 }
             })

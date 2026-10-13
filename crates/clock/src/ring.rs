@@ -33,8 +33,9 @@ enum Ringing {
     },
 }
 
-// Only the Linux notification path reports how a ringing alert was answered.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+// Lulo OS's session bus and Windows' notification pipe report how a ringing
+// alert was answered.
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Outcome {
     Stop,
@@ -153,6 +154,17 @@ fn snooze(id: u64) {
 /// Open the Clock window in its own transient unit: a child of this service
 /// would be stopped with it.
 fn open_clock() {
+    // Windows: the ringer is a scheduled task's process, not a service, so
+    // the window can be its own child.
+    #[cfg(windows)]
+    if let Ok(executable) = std::env::current_exe() {
+        let _ = std::process::Command::new(executable)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        return;
+    }
     if let Ok(executable) = std::env::current_exe() {
         let _ = std::process::Command::new("systemd-run")
             .args(["--user", "--collect", "--quiet", "--"])
@@ -288,7 +300,53 @@ mod notification {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the same ringing notification through Lulo's Notification
+/// Centre, which `lulo-shell` hosts and serves on the notification pipe
+/// (`rmac_notifications::pipe`; ADR 0023). Without a Lulo layer running
+/// the alarm only sounds.
+#[cfg(windows)]
+mod notification {
+    use std::sync::mpsc::{channel, Receiver};
+
+    use rmac_notifications::pipe::{self, Answer, Post};
+
+    use super::Outcome;
+
+    pub fn post(summary: &str, body: &str, snooze: bool) -> Option<(u32, Receiver<Outcome>)> {
+        let mut actions = vec![
+            ("default".to_owned(), "Open".to_owned()),
+            ("stop".to_owned(), "Stop".to_owned()),
+        ];
+        if snooze {
+            actions.push(("snooze".to_owned(), "Snooze".to_owned()));
+        }
+        let (id, answers) = pipe::post(&Post {
+            summary: summary.to_owned(),
+            body: body.to_owned(),
+            actions,
+            urgency: 2,
+            resident: true,
+            transient: false,
+            suppress_sound: true,
+        })?;
+        let (sender, outcomes) = channel();
+        std::thread::spawn(move || {
+            for answer in answers {
+                let outcome = match answer {
+                    Answer::Action(action) if action == "snooze" => Outcome::Snooze,
+                    Answer::Action(action) if action == "default" => Outcome::Open,
+                    Answer::Action(_) | Answer::Closed(_) => Outcome::Stop,
+                    Answer::Posted(_) => continue,
+                };
+                let _ = sender.send(outcome);
+                break;
+            }
+        });
+        Some((id, outcomes))
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 mod notification {
     use std::sync::mpsc::Receiver;
 

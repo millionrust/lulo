@@ -119,6 +119,13 @@ pub enum Command {
     Cancel,
     /// Open Force Quit Applications, or bring it forward.
     ForceQuit,
+    /// The switch key was released: switch to the selection (Windows'
+    /// Alt+Tab hook; Lulo OS's panel sees ⌘ go up itself).
+    Commit,
+    /// ⌘Q (Alt+Q on Windows) while the panel is open.
+    QuitSelected,
+    /// ⌘H (Alt+H on Windows) while the panel is open.
+    HideSelected,
 }
 
 impl Command {
@@ -128,6 +135,9 @@ impl Command {
             "previous" => Some(Self::Previous),
             "cancel" => Some(Self::Cancel),
             "force-quit" => Some(Self::ForceQuit),
+            "commit" => Some(Self::Commit),
+            "quit-selected" => Some(Self::QuitSelected),
+            "hide-selected" => Some(Self::HideSelected),
             _ => None,
         }
     }
@@ -138,6 +148,9 @@ impl Command {
             Self::Previous => "previous",
             Self::Cancel => "cancel",
             Self::ForceQuit => "force-quit",
+            Self::Commit => "commit",
+            Self::QuitSelected => "quit-selected",
+            Self::HideSelected => "hide-selected",
         }
     }
 }
@@ -667,8 +680,13 @@ mod tests {
             Command::Previous,
             Command::Cancel,
             Command::ForceQuit,
+            Command::Commit,
+            Command::QuitSelected,
+            Command::HideSelected,
         ] {
             assert_eq!(Command::parse(command.as_str()), Some(command));
+            // Every word fits the Lulo OS endpoint's datagram.
+            assert!(command.as_str().len() <= 16);
         }
         assert_eq!(Command::parse("next;quit"), None);
         assert_eq!(Command::parse(""), None);

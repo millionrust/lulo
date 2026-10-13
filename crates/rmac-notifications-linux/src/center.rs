@@ -194,7 +194,18 @@ pub fn applications() -> Result<Vec<ApplicationPolicy>, Error> {
     decode_applications(proxy.applications().map_err(call_error)?)
 }
 
+/// The bus-less service in this process (Windows: `lulo-shell` runs the
+/// service and the Center panel together; `crate::service::local`).
+#[cfg(windows)]
+fn local() -> Option<&'static crate::service::ServiceHandle> {
+    crate::service::local::center()
+}
+
 pub fn snapshot() -> Result<Snapshot, Error> {
+    #[cfg(windows)]
+    if let Some(local) = local() {
+        return local.center_snapshot();
+    }
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     let (history, applications) = proxy.snapshot().map_err(call_error)?;
@@ -229,7 +240,7 @@ pub fn attach_origins(snapshot: &mut Snapshot, origins: Vec<crate::origin::WireO
     }
 }
 
-fn decode_snapshot(
+pub(crate) fn decode_snapshot(
     history: Vec<WireHistoryRecord>,
     applications: Vec<(String, WireAppPolicy)>,
 ) -> Result<Snapshot, Error> {
@@ -325,19 +336,35 @@ fn decode_applications(
 }
 
 pub fn mark_read(app_id: Option<&str>) -> Result<Indicator, Error> {
+    #[cfg(windows)]
+    if let Some(local) = local() {
+        return local.center_mark_read(app_id);
+    }
     mutate(|proxy| proxy.mark_read(app_id.unwrap_or_default()))
 }
 
 pub fn clear(app_id: Option<&str>) -> Result<Indicator, Error> {
+    #[cfg(windows)]
+    if let Some(local) = local() {
+        return local.center_clear(app_id);
+    }
     mutate(|proxy| proxy.clear(app_id.unwrap_or_default()))
 }
 
 /// Removes one record from history, like the × on a single macOS card.
 pub fn remove(id: NotificationId) -> Result<Indicator, Error> {
+    #[cfg(windows)]
+    if let Some(local) = local() {
+        return local.center_remove(id);
+    }
     mutate(|proxy| proxy.remove(id.get()))
 }
 
 pub fn set_policy(app_id: &str, policy: AppPolicy) -> Result<Indicator, Error> {
+    #[cfg(windows)]
+    if let Some(local) = local() {
+        return local.center_set_policy(app_id, policy);
+    }
     mutate(|proxy| proxy.set_policy(app_id, encode_policy(policy)))
 }
 
@@ -346,6 +373,11 @@ pub fn invoke(
     selection: ActionSelection,
     activation_token: Option<&str>,
 ) -> Result<(), Error> {
+    #[cfg(windows)]
+    if let Some(local) = local() {
+        let _ = activation_token;
+        return async_io::block_on(local.center_invoke(id, selection));
+    }
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     let (kind, index) = match selection {
@@ -450,6 +482,10 @@ pub async fn watch_applications(
 }
 
 pub async fn watch_snapshot(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error> {
+    #[cfg(windows)]
+    if let Some(local) = local() {
+        return local.center_watch_snapshot(&sender).await;
+    }
     loop {
         let error = match watch_snapshot_once(&sender).await {
             Ok(()) if sender.is_closed() => return Ok(()),

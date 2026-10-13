@@ -9,6 +9,7 @@ use std::fmt;
 
 pub mod banner;
 mod model;
+pub mod pipe;
 pub mod protocol;
 mod reducer;
 #[cfg(test)]

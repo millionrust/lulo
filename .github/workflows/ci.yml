@@ -415,8 +415,13 @@ jobs:
       - name: Run Clippy
         run: |
           cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
+          # Notification Centre on Windows (ADR 0023): its views, the
+          # bus-less service and the notification pipe.
+          cargo clippy --locked --keep-going -p rmac-notification-center-app \
+            -p rmac-notifications -p rmac-notifications-linux --all-targets -- -D warnings
           (cd shell && cargo clippy --locked --keep-going \
             -p rmac-shell-layer -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper \
+            -p rmac-shell-app-switcher \
             --lib --tests -- -D warnings)
 
   windows-tests:
@@ -447,7 +452,9 @@ jobs:
       - name: Run tests
         run: |
           cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
-          (cd shell && cargo test --locked --no-fail-fast -p rmac-shell-layer --lib)
+          (cd shell && cargo test --locked --no-fail-fast -p rmac-shell-layer -p rmac-shell-app-switcher --lib)
+          # The notification pipe's wire format (ADR 0023).
+          cargo test --locked --no-fail-fast -p rmac-notifications --lib
           # The settings store's own tests assume Unix files; the Windows
           # Dock migration is checked on its own.
           cargo test --locked -p rmac-shell-settings --lib a_windows_dock_saved_before_apps
@@ -538,6 +545,7 @@ jobs:
               --shell-memory-mb 60 --shell-idle-private-mb 60
               --shell-after-use-private-mb 60 --shell-after-use-growth-mb 4
               --shell-max-wakes 4
+              --shell-after-panels-private-mb 60
             expect: lulo-shell lulo-session
             installer: true
     defaults:

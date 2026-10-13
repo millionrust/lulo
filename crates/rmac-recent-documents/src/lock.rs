@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use super::{Error, ErrorKind, Operation};
 
-const ATTEMPTS: usize = 200;
+// 5 s in all: eight writers on a loaded CI runner starved the last one past 1 s.
+const ATTEMPTS: usize = 1000;
 const RETRY: Duration = Duration::from_millis(5);
 
 pub(super) struct FileLock {

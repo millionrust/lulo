@@ -1224,6 +1224,12 @@ impl MailView {
             .on_action(
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
             )
+            // Settings… (⌘,) opens with no account too, as on the Mac: it
+            // is where accounts are added. Before the 2026-10-13 live robot
+            // run, the menu row and ⌘, did nothing until an account existed.
+            .on_action(cx.listener(|_, _: &crate::ShowSettings, _, cx| {
+                cx.defer(crate::settings_view::show);
+            }))
             .child(self.toolbar(cx))
             .child(
                 div()

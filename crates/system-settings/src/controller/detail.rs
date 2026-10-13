@@ -151,6 +151,16 @@ impl Settings {
 
         // The toolbar carries the subpage title and the back button, as on
         // the Mac; the body starts directly under it.
-        div().v_flex().pt(px(style::FIRST_SECTION_TOP)).child(body)
+        // General's subpages (About, Software Update, Storage) replace the
+        // General list, which owns `general_focus` — the handle selecting
+        // General focuses. Without a rendered owner that focus was lost, so
+        // ⌘F, typing and every Settings shortcut did nothing on About (found
+        // by the live robot, 2026-10-13). The subpage keeps the handle.
+        let general = self.current().name.as_ref() == "General";
+        div()
+            .v_flex()
+            .pt(px(style::FIRST_SECTION_TOP))
+            .when(general, |page| page.track_focus(&self.general_focus))
+            .child(body)
     }
 }

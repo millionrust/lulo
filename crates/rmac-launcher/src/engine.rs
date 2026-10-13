@@ -68,7 +68,7 @@ pub(crate) fn score(query: &str, result: &SearchResult, learned: u16) -> Option<
         1_000
     } else {
         match_quality(query, &title)
-            .or_else(|| match_quality(query, &subtitle).map(|score| score.saturating_sub(80)))?
+            .or_else(|| secondary_quality(query, &subtitle).map(|score| score.saturating_sub(80)))?
     };
     Some(
         textual
@@ -82,8 +82,20 @@ pub fn query_matches(query: &str, title: &str, subtitle: Option<&str>) -> bool {
     let query = normalize(query);
     query.is_empty()
         || match_quality(&query, &normalize(title)).is_some()
-        || subtitle.is_some_and(|subtitle| match_quality(&query, &normalize(subtitle)).is_some())
+        || subtitle
+            .is_some_and(|subtitle| secondary_quality(&query, &normalize(subtitle)).is_some())
 }
+
+/// [`match_quality`] for secondary text (a subtitle, an app's keywords and
+/// categories): whole, prefix, word-prefix or substring matches only. A
+/// scattered-letter (subsequence) match in long secondary text matches
+/// nearly anything: "notes" listed Disks, Language Support and Passwords
+/// and Keys under Notes (live robot, 2026-10-13).
+fn secondary_quality(query: &str, value: &str) -> Option<u16> {
+    match_quality(query, value).filter(|&quality| quality > SUBSEQUENCE_QUALITY)
+}
+
+const SUBSEQUENCE_QUALITY: u16 = 300;
 
 pub(crate) fn match_quality(query: &str, value: &str) -> Option<u16> {
     if value == query {
@@ -98,7 +110,7 @@ pub(crate) fn match_quality(query: &str, value: &str) -> Option<u16> {
     } else if value.contains(query) {
         Some(550)
     } else if is_subsequence(query, value) {
-        Some(300)
+        Some(SUBSEQUENCE_QUALITY)
     } else {
         None
     }

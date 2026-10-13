@@ -2,7 +2,7 @@ use gpui::{SharedString, WindowBounds, WindowDecorations, WindowOptions};
 
 use super::{
     app_id, native_window_title,
-    window::{outer_window_size, window_options_for_app_with_bounds},
+    window::{outer_window_size, window_corner_radius, window_options_for_app_with_bounds},
 };
 
 fn native_title(options: &WindowOptions) -> Option<&SharedString> {
@@ -94,4 +94,37 @@ fn app_windows_open_at_the_visible_size_plus_the_client_frame() {
     } else {
         assert_eq!((width, height), (580.0, 385.0));
     }
+}
+
+#[test]
+fn windows_corners_are_the_ones_niri_gives_each_app() {
+    // Lulo OS's niri rounds the unified-toolbar apps at the toolbar radius
+    // and every other window at the title-bar radius; Windows draws the
+    // same corners itself, so the two lists must agree.
+    let niri = include_str!("../../../packaging/rmac-session/shell.kdl");
+    let rule = niri
+        .lines()
+        .find(|line| line.contains(r"^org\.rmac\.(Files|"))
+        .expect("the toolbar apps' window rule");
+    let names = rule
+        .split('(')
+        .nth(1)
+        .and_then(|rest| rest.split(')').next())
+        .expect("the toolbar apps' names");
+    let radii = rmac_design::Radii::default();
+    for name in names.split('|') {
+        let app_id = format!("org.rmac.{name}");
+        assert_eq!(
+            window_corner_radius(&app_id, radii.window, radii.window_toolbar),
+            radii.window_toolbar,
+            "{app_id}"
+        );
+    }
+    assert_eq!(names.split('|').count(), 6);
+    assert_eq!(
+        window_corner_radius("org.rmac.TextEditor", radii.window, radii.window_toolbar),
+        radii.window
+    );
+    assert_eq!(radii.window, 16.0);
+    assert_eq!(radii.window_toolbar, 27.0);
 }

@@ -101,7 +101,7 @@ COMPOSITOR_BINDS = {
 }
 # Apps the robot may launch with no arguments to push the Dock's recent-apps
 # section back into shape (quick to open, no personal data, no Open panel).
-RECENTS_FILLERS = ("System Monitor", "Clock", "Calculator", "Weather", "Terminal")
+RECENTS_FILLERS = ("System Monitor", "Clock", "Calculator", "Weather")  # not kept in the Dock
 # Items whose effect is invisible by design (the clipboard).
 INVISIBLE_ITEMS = {"Copy", "Copy Path", "Copy Link"}
 
@@ -277,41 +277,52 @@ class Robot:
         back by relaunching the original apps in order (the Dock only reads
         its state file at start), unless the owner is back."""
 
-        current = live.dock_recents(self.home)
-        if current == self.recents_start:
-            return
-        fillers = [APPS[name]["app_id"] + ".desktop" for name in RECENTS_FILLERS]
-        order = live.recents_launch_order(self.recents_start, current, fillers)
-        if not order or live.owner_input_count() != self.owner_count or self.input is None:
-            self.finding("medium", "shell", "state", "Dock recent apps changed and were not restored",
-                         f"{self.recents_start} -> {current}")
-            return
-        self.log(f"restoring the Dock's recent apps {self.recents_start} by launching {order}")
         by_desktop = {plan["app_id"] + ".desktop": plan for plan in APPS.values()}
-        for desktop in order:
-            plan = by_desktop.get(desktop)
-            if plan is None:
-                self.finding("medium", "shell", "state", f"cannot relaunch {desktop} to restore Dock recents")
+        fillers = [APPS[name]["app_id"] + ".desktop" for name in RECENTS_FILLERS]
+        for _round in range(2):
+            current = live.dock_recents(self.home)
+            if current == self.recents_start:
                 return
-            known = {w["id"] for w in self.niri.windows()}
-            self.niri.spawn([plan["exec"][0]])
-            window = self.wait_window(plan["app_id"], known)
-            if window is None:
-                continue
-            time.sleep(0.8)
-            self.focus(window)
-            pid = window.get("pid")
-            self.input.key("cmd-w" if plan["bin"] == "rmac-files" else "cmd-q", 0.8)
-            end = time.monotonic() + 5
-            while pid and Path(f"/proc/{pid}").exists() and time.monotonic() < end:
-                time.sleep(0.2)
-            if pid and Path(f"/proc/{pid}").exists():
-                os.kill(pid, signal.SIGTERM)
-            time.sleep(1.0)
+            order = live.recents_launch_order(self.recents_start, current, fillers)
+            if not order or live.owner_input_count() != self.owner_count or self.input is None:
+                self.finding("medium", "shell", "state", "Dock recent apps changed and were not restored",
+                             f"{self.recents_start} -> {current}")
+                return
+            self.log(f"restoring the Dock's recent apps {self.recents_start} from {current} by launching {order}")
+            for desktop in order:
+                plan = by_desktop.get(desktop)
+                if plan is None:
+                    self.finding("medium", "shell", "state", f"cannot relaunch {desktop} to restore Dock recents")
+                    return
+                if desktop in live.dock_recents(self.home):
+                    continue  # launching it would change nothing
+                self.relaunch_for_recents(plan, desktop)
         final = live.dock_recents(self.home)
         if final != self.recents_start:
             self.finding("medium", "shell", "state", "Dock recent apps could not be restored",
                          f"{self.recents_start} -> {final}")
+
+    def relaunch_for_recents(self, plan: dict, desktop: str) -> None:
+        """Open one app until the Dock has recorded it, then quit it."""
+
+        known = {w["id"] for w in self.niri.windows()}
+        self.niri.spawn([plan["exec"][0]])
+        window = self.wait_window(plan["app_id"], known)
+        if window is None:
+            return
+        end = time.monotonic() + 5
+        while desktop not in live.dock_recents(self.home) and time.monotonic() < end:
+            time.sleep(0.2)
+        time.sleep(0.5)
+        self.focus(window)
+        pid = window.get("pid")
+        self.input.key("cmd-w" if plan["bin"] == "rmac-files" else "cmd-q", 0.8)
+        end = time.monotonic() + 5
+        while pid and Path(f"/proc/{pid}").exists() and time.monotonic() < end:
+            time.sleep(0.2)
+        if pid and Path(f"/proc/{pid}").exists():
+            os.kill(pid, signal.SIGTERM)
+        time.sleep(1.0)
 
     def scan_journal(self) -> None:
         lines = live.journal_since(self.env, self.started_wall)
@@ -404,10 +415,17 @@ class Robot:
                 phase()
         finally:
             self.quit_app(name, plan, window)
+        # Names held by helpers an app started (portals, activated services)
+        # take a few seconds to go after it quits: re-sample before judging.
         bus_after = live.bus_count(self.env)
+        end = time.monotonic() + 8
+        while bus_after > bus_before + 1 and time.monotonic() < end:
+            time.sleep(1.0)
+            bus_after = live.bus_count(self.env)
         self.step(name, "D-Bus names", before=bus_before, after=bus_after)
         if bus_after > bus_before + 1:
             self.finding("high", name, "dbus-growth", "D-Bus names grew after quitting", f"{bus_before} -> {bus_after}")
+        if bus_after > self.bus_start + 6:
             raise live.RobotAbort("D-Bus connections are climbing")
 
     def alive(self, name: str, window: dict) -> bool:

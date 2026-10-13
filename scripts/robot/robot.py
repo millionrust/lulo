@@ -86,6 +86,21 @@ APPS: dict[str, dict[str, Any]] = {
 }
 SPECIAL_MENUS = {"Application", "Window", "Help"}
 
+# niri runs its key binds only for physical keyboards: keys from a
+# zwp_virtual_keyboard_v1 go straight to the focused client. So the robot
+# reaches the shell's global shortcuts by spawning exactly what the bind
+# spawns (packaging/rmac-session/shell.kdl and the generated shortcuts).
+DISPATCH = "/usr/libexec/rmac/rmac-shortcut-dispatch"
+COMPOSITOR_BINDS = {
+    "ctrl-f2": [DISPATCH, "menu-bar-focus"],
+    "cmd-space": [DISPATCH, "launcher"],
+    "cmd-ctrl-n": [DISPATCH, "notification-center"],
+    "ctrl-f3": ["/usr/libexec/rmac/rmac-dock", "focus"],
+    "ctrl-up": ["/usr/libexec/rmac/rmac-mission-control", "mission-control"],
+}
+# Items whose effect is invisible by design (the clipboard).
+INVISIBLE_ITEMS = {"Copy", "Copy Path", "Copy Link"}
+
 
 def now_iso() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -179,6 +194,9 @@ class Robot:
         assert self.input is not None
         if chord.startswith("type:"):
             self.input.type(chord[5:])
+        elif chord in COMPOSITOR_BINDS:
+            self.niri.spawn(COMPOSITOR_BINDS[chord])
+            time.sleep(max(pause, 0.5))
         else:
             self.input.key(chord, pause)
 
@@ -468,7 +486,9 @@ class Robot:
         toggled = [a for a in state_after if a in state_before and state_after[a] != state_before[a]]
         self.step(name, "item", item=label, changed=round(changed, 4), new_windows=[w["app_id"] for w in new],
                   toggled=toggled)
-        if not new and not toggled and changed < 0.0008:
+        already_checked = state_before.get(item["action"], (False, ""))[0]
+        if not new and not toggled and changed < 0.0008 and not already_checked \
+                and item["label"] not in INVISIBLE_ITEMS:
             self.finding("medium", name, "no-effect", f"{label} did nothing visible",
                          f"changed {changed * 100:.3f}% of the screen, no window, no state change", path)
         if box:

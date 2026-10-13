@@ -130,7 +130,7 @@ def status_menus(robot) -> None:
     _, image = robot.shot("shell-top-bar")
     width = image.size[0]
     band = (width // 2, 2, width - 2, int(TOP_BAR_H * SCALE) - 2)
-    spans = find_clusters(image, band)
+    spans = find_clusters(image, band, min_gap=12)
     robot.step("shell", "status items", spans=spans)
     if not spans:
         robot.finding("medium", "shell", "robot", "found no status items in the top bar")

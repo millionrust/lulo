@@ -2,8 +2,6 @@
   "format": 1,
   "scenario": "system-monitor/metric-windows",
   "observations": {
-    "cpu_usage": {"windows": {"count": 2}},
-    "cpu_history": {"windows": {"count": 3}},
-    "gpu_history": {"windows": {"count": 4}}
+    "cpu_usage": {"windows": {"count": 2}}
   }
 }

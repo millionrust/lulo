@@ -1325,6 +1325,22 @@ fn open_switcher(service: &Entity<Service>, backwards: bool, cx: &mut App) {
             .iter()
             .map(|app| (app.app_id.clone(), state.item(app)))
             .collect::<BTreeMap<_, _>>();
+        // What the Windows CI checks read (`LULO_SHELL_TRACE=1`).
+        #[cfg(windows)]
+        rmac_shell_layer::windows::trace::trace(|| {
+            format!(
+                "switcher open: apps {}, selected {}, focused window {:?}, switch ahead {:?}",
+                session
+                    .apps
+                    .iter()
+                    .map(|app| format!("{}{:?}", app.app_id, app.windows))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                session.selected,
+                snapshot.focus.window,
+                plan.as_ref().map(|plan| &plan.actions),
+            )
+        });
         (session, items, state.focused_output(), plan)
     };
     // SPEED-11: the switcher focuses this app as soon as it holds the

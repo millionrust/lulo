@@ -1797,6 +1797,8 @@ def check_switcher(
         started[app] = found
         time.sleep(1.5)
     calculator, notes = started["rmac-calculator"][0], started["rmac-notes"][0]
+    first_line = len(log.lines())
+    failures_before = len(failures)
     bring_to_front(started["rmac-notes"][1])
     if not foreground_is(notes):
         print(f"shell: switcher: Notes is not in front ({foreground_pid_and_class()}); continuing")
@@ -1852,6 +1854,18 @@ def check_switcher(
     print(f"shell: switcher Esc: Notes {'still in front' if kept else 'NOT in front'}")
     if not kept:
         failures.append("Esc in the switcher did not keep the app that was in front (Notes)")
+    if len(failures) > failures_before:
+        # What the switcher saw and did, to tell a stale window list from a
+        # refused activation.
+        print(f"shell: switcher: Calculator pid {calculator} window {started['rmac-calculator'][1]}, "
+              f"Notes pid {notes} window {started['rmac-notes'][1]}, "
+              f"front now {foreground_pid_and_class()} window {user32().GetForegroundWindow()}")
+        for line in log.lines()[first_line:]:
+            if "switcher" in line or line.startswith("window list read") or "app-switcher" in line:
+                print(f"shell: switcher trace: {line}")
+        for line in log.text().splitlines():
+            if "app switcher could not" in line:
+                print(f"shell: switcher error: {line}")
     for app in ("rmac-calculator", "rmac-notes"):
         for pid in processes_named(f"{app}.exe"):
             terminate(pid)

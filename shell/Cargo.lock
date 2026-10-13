@@ -5823,6 +5823,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-hardware"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "libc",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+ "windows 0.61.3",
+]
+
+[[package]]
 name = "rmac-icon"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -6158,6 +6170,7 @@ dependencies = [
  "raw-window-handle",
  "rmac-compositor",
  "rmac-compositor-system",
+ "rmac-hardware",
  "uuid",
  "windows 0.61.3",
 ]
@@ -6294,6 +6307,7 @@ dependencies = [
  "rmac-compositor-system",
  "rmac-focus-linux",
  "rmac-focus-runtime",
+ "rmac-hardware",
  "rmac-network",
  "rmac-notifications",
  "rmac-notifications-linux",

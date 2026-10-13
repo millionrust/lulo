@@ -26,6 +26,9 @@ param(
     [switch]$Toggle,
     [ValidateSet('auto', 'strip')][string]$MenuMode = 'auto',
     [string]$Bin = "$env:LOCALAPPDATA\Programs\Lulo",
+    # The installed Lulo layer: turned off and on by -Toggle and restored at
+    # the end, even when -Bin points at a test build of the apps.
+    [string]$Install = "$env:LOCALAPPDATA\Programs\Lulo",
     [string]$Scratch = 'E:\lulo\robot-scratch',
     [int]$MaxMinutes = 10,
     [int]$IdleWaitMinutes = 10
@@ -140,7 +143,8 @@ function Other-TestRunning {
     if ((Get-ScheduledTask -TaskName LuloCheck -ErrorAction SilentlyContinue).State -eq 'Running') { return 'LuloCheck task' }
     $foreign = Get-CimInstance Win32_Process | Where-Object {
         $_.Name -match '^(lulo|rmac)-' -and $_.ExecutablePath -and
-        -not $_.ExecutablePath.StartsWith($Bin, [StringComparison]::OrdinalIgnoreCase)
+        -not $_.ExecutablePath.StartsWith($Bin, [StringComparison]::OrdinalIgnoreCase) -and
+        -not $_.ExecutablePath.StartsWith("$env:LOCALAPPDATA\Programs\Lulo", [StringComparison]::OrdinalIgnoreCase)
     }
     if ($foreign) { return ($foreign | ForEach-Object { $_.ExecutablePath }) -join ', ' }
     return $null
@@ -917,7 +921,7 @@ function Toggle-Lulo {
     if (-not $session) { Add-Finding 'info' 'toggle' 'Lulo layer' 'Lulo mode was off; the toggle check needs it on and was skipped'; return }
     $onState = Lulo-State
     [void](Shot 'toggle-on-before')
-    $exe = Join-Path $Bin 'lulo-session.exe'
+    $exe = Join-Path $Install 'lulo-session.exe'
     & $exe --stop 2>&1 | Out-Null
     $t0 = Get-Date
     while (((Get-Date) - $t0).TotalSeconds -lt 20 -and (Get-Process lulo-session, lulo-shell -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 100 }
@@ -993,11 +997,11 @@ try {
     try { Close-ShellMenus } catch { }
     if ($initial -and $initial.on -and -not (Get-Process lulo-session -ErrorAction SilentlyContinue)) {
         "robot: Lulo mode was on; starting it again"
-        Start-Process -FilePath (Join-Path $Bin 'lulo-session.exe') -WorkingDirectory $Bin
+        Start-Process -FilePath (Join-Path $Install 'lulo-session.exe') -WorkingDirectory $Install
     }
     if ($initial -and -not $initial.on -and (Get-Process lulo-session -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -gt $started })) {
         "robot: Lulo mode was off; turning it off again"
-        & (Join-Path $Bin 'lulo-session.exe') --stop 2>&1 | Out-Null
+        & (Join-Path $Install 'lulo-session.exe') --stop 2>&1 | Out-Null
     }
     if ($clip) { Restore-Clipboard $clip }
     Scan-EventLog

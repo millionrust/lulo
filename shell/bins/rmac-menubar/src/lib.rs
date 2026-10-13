@@ -1393,8 +1393,12 @@ mod bar {
                 // this behaviour suite) waits for Escape to give a window
                 // back its keyboard.
                 for attempt in 0..30 {
-                    let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
-                        return;
+                    let snapshot = match rmac_compositor_system::snapshot().await {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            eprintln!("could not read the compositor to return focus: {error:?}");
+                            return;
+                        }
                     };
                     // The window niri's layout still has active under the
                     // bar's on-demand layer focus, queried fresh right now,
@@ -1415,7 +1419,29 @@ mod bar {
                         .iter()
                         .find(|workspace| workspace.focused)
                         .and_then(|workspace| workspace.active_window);
-                    let Some(target) = live.or(remembered) else {
+                    // niri reports no active window for a workspace whose
+                    // floating layer is not the active one, which is where a
+                    // window sits while the bar holds the on-demand grab (the
+                    // nested niri on CI, where the probe is floating), and
+                    // can report no workspace as focused at that moment
+                    // either. The window the keyboard was last on is then
+                    // the most recently focused one that is not parked.
+                    let latest = || {
+                        snapshot
+                            .windows
+                            .iter()
+                            .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
+                            .max_by_key(|window| {
+                                window.focus_timestamp.map(|t| (t.seconds, t.nanoseconds))
+                            })
+                            .map(|window| window.id)
+                    };
+                    let Some(target) = live.or(remembered).or_else(latest) else {
+                        eprintln!(
+                            "focus return: no window to return to ({} windows, {} workspaces)",
+                            snapshot.windows.len(),
+                            snapshot.workspaces.len()
+                        );
                         return;
                     };
                     // A click gave the bar niri's on-demand layer focus,
@@ -1441,13 +1467,23 @@ mod bar {
                     let Ok(check) = rmac_compositor_system::snapshot().await else {
                         return;
                     };
+                    // The workspace's active window never changes while the
+                    // bar holds the on-demand grab, so it cannot confirm
+                    // anything; ask whether the window itself has the keyboard.
                     let settled = check
-                        .workspaces
+                        .windows
                         .iter()
-                        .find(|workspace| workspace.focused)
-                        .and_then(|workspace| workspace.active_window);
-                    if settled == Some(target) {
+                        .any(|candidate| candidate.id == target && candidate.focused);
+                    if attempt == 0 || settled {
+                        eprintln!(
+                            "focus return: attempt {attempt}, window {target:?} focused: {settled}"
+                        );
+                    }
+                    if settled {
                         return;
+                    }
+                    if attempt == 29 {
+                        eprintln!("focus was not returned to window {target:?} after 30 attempts");
                     }
                     if attempt < 29 {
                         cx.background_executor()

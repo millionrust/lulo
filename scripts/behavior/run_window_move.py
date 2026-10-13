@@ -558,6 +558,21 @@ class Run:
         window = self.window(app_id)
         if not window:
             return
+        # The previous step (a resize or move) can still be settling in niri;
+        # a baseline read mid-resize makes the "grew" comparison and the
+        # title-bar point wrong. Wait until the frame stops changing.
+        last = None
+        stable_since = time.monotonic()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            current = self.window(app_id) or window
+            geometry = self.geometry(current)
+            if geometry != last:
+                last, stable_since = geometry, time.monotonic()
+            elif time.monotonic() - stable_since >= 1.0:
+                break
+            time.sleep(0.2)
+        window = self.window(app_id) or window
         x, y, width, height = self.geometry(window)
         # Same point `assert_move`'s title-bar drag already proves lands on
         # the drag region (not a shadow margin or a toolbar control).
@@ -605,8 +620,30 @@ class Run:
         # cannot consume the whole wait budget after the resize request.
         zoomed = self.wait_for(
             lambda: self.window_matching(app_id, grew_substantially),
-            15.0,
+            8.0,
         )
+        history_file = self.runtime / "rmac" / "tile-history.json"
+        if not zoomed and app_id != "org.rmac.Calculator":
+            # Zoom is a toggle: Mission Control records the window's frame
+            # in the tile history on Fill and restores it on the next Zoom.
+            # Only repeat the gesture when no Zoom was recorded (the press
+            # pair never reached the service, e.g. swallowed by a pointer
+            # focus transfer); a recorded Zoom that has not shown up yet must
+            # not be toggled back by a second double-click.
+            history = history_file.read_text() if history_file.exists() else "missing"
+            recorded = history.strip() not in ("missing", "", "{}", "[]", '{"windows":{}}')
+            print(f"double-click on {title} did not zoom in 8 s; history={history!r}; "
+                  f"window={self.window(app_id)}", flush=True)
+            if not recorded:
+                retry = self.window(app_id) or window
+                rx, ry, rw, _ = self.geometry(retry)
+                self.double_click((rx + rw * 0.5, ry + 18))
+            zoomed = self.wait_for(
+                lambda: self.window_matching(app_id, grew_substantially),
+                15.0,
+            )
+            if not zoomed:
+                print(f"still not zoomed; window={self.window(app_id)}", flush=True)
         if zoomed:
             time.sleep(2)
             zoomed = self.window(app_id) or zoomed

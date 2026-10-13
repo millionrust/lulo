@@ -471,6 +471,7 @@ pub fn run() -> i32 {
                             // settle a few seconds later.
                             executor.timer(Duration::from_secs(6)).await;
                             memory::trim("settled after start-up");
+                            crate::win::settle::started();
                         }
                     })
                     .detach();

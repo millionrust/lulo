@@ -30,8 +30,7 @@ and, for Lulo mode (ADR 0023 "Lulo mode", WIN-OS-41 on):
   icons are hidden while Lulo runs, and the user's Desktop folder shows as
   Lulo icons that open (a folder in Files), rename, drag, show a context
   menu and follow new files;
-- a Lulo app window has a shadow (pixels just outside its edge darken) and
-  DWM non-client rendering;
+- a Lulo app window has a shadow (pixels just outside its edge darken);
 - Spotlight opens as the search bar alone, in the upper third, and grows
   with results;
 - an app opened from the Dock or Spotlight comes to the front over a
@@ -727,7 +726,14 @@ class Log:
         return self.path.read_text(encoding="utf-8", errors="replace")
 
     def lines(self, prefix: str = "lulo-shell: ") -> list[str]:
-        return [line[len(prefix) :] for line in self.text().splitlines() if line.startswith(prefix)]
+        # The shell, its apps and helpers share the log, so another
+        # process's write can land in front of a trace line on the same
+        # physical line; the trace line still starts at its prefix.
+        return [
+            line[line.index(prefix) + len(prefix) :]
+            for line in self.text().splitlines()
+            if prefix in line
+        ]
 
     def wait_for(self, pattern: str, timeout: float = STEP_TIMEOUT_SECONDS, after: int = 0):
         """The first shell trace line from index `after` on that matches
@@ -749,6 +755,24 @@ class Log:
             if match:
                 return match
         return None
+
+
+#: Settling after lulo-shell's `settled` mark before the idle window: its
+#: last frames park within a few vblanks.
+SHELL_IDLE_SETTLE_SECONDS = 2.0
+#: The idle window's length (launch_smoke.py's IDLE_WINDOW_SECONDS).
+IDLE_WINDOW_SECONDS = 20.0
+
+
+def clear_of_minute(now: float, settle: float, window: float, margin: float = 0.5) -> float:
+    """How long to settle from `now` (seconds since the epoch) so that a
+    `window`-second measurement after it holds no minute boundary, where
+    the bar's clock redraws: at least `settle`, or until just after the
+    next minute."""
+    start = (now + settle) % 60.0
+    if start < margin or start + window + margin > 60.0:
+        return settle + (60.0 - start + margin) % 60.0
+    return settle
 
 
 def wait_until(predicate, timeout: float = STEP_TIMEOUT_SECONDS, interval: float = 0.05):
@@ -959,12 +983,21 @@ def check_shell(
         if files_tile is None:
             failures.append("the Dock has no Files tile")
 
-        # 2. Idle, before any input, once start-up's own work is done:
-        # Windows' Apps folder read into desktop entries by its helper
-        # process (slow on the runner), which the catalogue watchers follow.
+        # 2. Idle, before any input, from the moment lulo-shell says its
+        # start-up work is done (`settled`: Windows' Apps folder read into
+        # desktop entries by its helper process, slow on the runner; the
+        # icon helpers ended; the start-up memory trims), not after a fixed
+        # delay. The bar's clock redraws once a minute, at the minute, so
+        # the window is placed to hold no minute boundary.
         apps = log.wait_for(r"^windows apps: \d+ entries", 90.0)
         print(f"shell: {apps.group(0) if apps else 'windows apps: not read within 90 s'}")
-        time.sleep(3.0)
+        settled_at = time.monotonic()
+        settled = log.wait_for(r"^settled$", 90.0)
+        if settled is None:
+            failures.append("lulo-shell never traced `settled`: some start-up work did not end")
+        else:
+            print(f"shell: settled {time.monotonic() - settled_at:.1f} s after the Apps folder was read")
+        idle_settle = clear_of_minute(time.time(), SHELL_IDLE_SETTLE_SECONDS, IDLE_WINDOW_SECONDS)
         phases = startup_phases(log.text())
         for name, pid in (("lulo-shell", shell_pid), ("lulo-session", session.pid)):
             measurement: dict = {"launch_ms": round(launch_ms), "startup": phases if name == "lulo-shell" else []}
@@ -973,7 +1006,7 @@ def check_shell(
             measurements[name] = measurement
         # The session is measured over the same window as the shell.
         session_before = process_cpu_time_100ns(session.pid)
-        idle_shell = measure_idle_cpu(shell_pid, log=log_path)
+        idle_shell = measure_idle_cpu(shell_pid, settle=idle_settle, log=log_path)
         session_after = process_cpu_time_100ns(session.pid)
         idle_session = None
         if session_before is not None and session_after is not None:
@@ -1003,9 +1036,14 @@ def check_shell(
             for count, source in wakes:
                 print(f"shell: {name}:   {count:5d} x {source}")
             if name == "lulo-shell" and total:
-                # Every wake-up in order, to name what woke an idle shell.
-                for line in [line for line in trace.splitlines() if line.startswith(wake_prefix)][:150]:
-                    print(f"shell: lulo-shell idle: {line[len(wake_prefix):]}")
+                # Every wake-up in order, and what the shell itself traced
+                # meanwhile (window events and whose they were, helpers), to
+                # name what woke an idle shell.
+                for line in trace.splitlines()[:300]:
+                    if line.startswith(wake_prefix):
+                        print(f"shell: lulo-shell idle: {line[len(wake_prefix):]}")
+                    elif not line.startswith("gpui_windows cpu: "):
+                        print(f"shell: lulo-shell idle trace: {line}")
             for thread, thread_ticks in threads[:6]:
                 print(f"shell: {name}:   thread {thread} used {thread_ticks:.2f} ticks")
 
@@ -1441,8 +1479,9 @@ def check_window_shadow(hwnd: int, name: str, screenshots: Path | None, failures
         f"just outside its edges the window darkens the screen by {darker} (luminance)"
     )
     save(screenshots, "window-shadow")
-    if rendering is False:
-        failures.append(f"{name}'s window has DWM non-client rendering off: no shadow")
+    # Lulo app windows draw their own frame and shadow (ADR 0023 "Window
+    # chrome: Lulo's own corners and shadow"), with DWM's non-client
+    # rendering off; the darkening below is what counts.
     # Windows Server's DWM shadow is fainter than a PC's; any clear
     # darkening just outside the edge is the shadow.
     if max(darker) < 1.5:

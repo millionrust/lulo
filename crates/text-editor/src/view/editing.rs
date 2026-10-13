@@ -188,6 +188,22 @@ impl EditorView {
         cx.notify();
     }
 
+    /// Edit ▸ Complete (⌥⎋): complete the word before the caret, or move to
+    /// its next completion (see `rmac_ui::text_complete`).
+    pub(super) fn complete_word(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_blocked() {
+            return;
+        }
+        let changed = if self.rich_text {
+            rmac_ui::text_complete::complete(&self.rich, &mut self.completion, window, cx)
+        } else {
+            rmac_ui::text_complete::complete(&self.input, &mut self.completion, window, cx)
+        };
+        if changed {
+            cx.notify();
+        }
+    }
+
     pub(super) fn transform_selection(
         &mut self,
         transformation: rmac_ui::TextTransformation,
@@ -581,6 +597,7 @@ impl EditorView {
             "text_editor::InsertLineBreak",
             "text_editor::InsertParagraphBreak",
             "text_editor::InsertPageBreak",
+            "text_editor::Complete",
         ] {
             rmac_ui::set_menu_enabled(action, can_insert, cx);
         }

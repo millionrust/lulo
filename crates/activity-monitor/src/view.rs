@@ -218,6 +218,7 @@ impl MonitorView {
     /// Refresh the table snapshot and recompute the summary aggregates.
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.sampler.refresh(&self.table, cx);
+        self.fetch_windowed_pids(cx);
         if self.dock_icon_mode != crate::dock_icon::DockIconMode::Application {
             crate::dock_icon::publish(
                 self.dock_icon_mode,
@@ -306,6 +307,14 @@ impl MonitorView {
                 ViewFilter::InactiveProcesses,
             ),
             (
+                "activity_monitor::ShowWindowedProcesses",
+                ViewFilter::WindowedProcesses,
+            ),
+            (
+                "activity_monitor::ShowGpuProcesses",
+                ViewFilter::GpuProcesses,
+            ),
+            (
                 "activity_monitor::ShowSelectedProcesses",
                 ViewFilter::SelectedProcesses,
             ),
@@ -334,6 +343,30 @@ impl MonitorView {
                 "activity_monitor::ToggleBytesWrittenColumn",
                 ColKey::BytesWritten,
             ),
+            ("activity_monitor::ToggleFootprintColumn", ColKey::Footprint),
+            (
+                "activity_monitor::ToggleRealPrivateColumn",
+                ColKey::RealPrivate,
+            ),
+            (
+                "activity_monitor::ToggleRealSharedColumn",
+                ColKey::RealShared,
+            ),
+            (
+                "activity_monitor::ToggleCompressedColumn",
+                ColKey::Compressed,
+            ),
+            ("activity_monitor::ToggleKindColumn", ColKey::Kind),
+            ("activity_monitor::ToggleSandboxColumn", ColKey::Sandbox),
+            (
+                "activity_monitor::ToggleIdleWakeUpsColumn",
+                ColKey::IdleWakeUps,
+            ),
+            (
+                "activity_monitor::ToggleGpuPercentColumn",
+                ColKey::GpuPercent,
+            ),
+            ("activity_monitor::ToggleGpuTimeColumn", ColKey::GpuTime),
         ] {
             rmac_ui::set_menu_checked(action, visible.contains(&column), cx);
         }
@@ -561,7 +594,84 @@ impl MonitorView {
             resync_selection(state, cx);
             state.refresh(cx);
         });
+        self.fetch_windowed_pids(cx);
         cx.notify();
+    }
+
+    /// While View ▸ Windowed Processes is on, ask the compositor which
+    /// processes own a window and show only those. Runs with the sampling
+    /// tick, never while another filter is chosen.
+    fn fetch_windowed_pids(&mut self, cx: &mut Context<Self>) {
+        if self.view_filter(cx) != ViewFilter::WindowedProcesses {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let pids = rmac_ui::windowed_process_ids().await;
+            let _ = this.update(cx, |view, cx| {
+                let Some(pids) = pids else { return };
+                view.table.update(cx, |state, cx| {
+                    state
+                        .delegate_mut()
+                        .set_windowed_pids(pids.into_iter().collect());
+                    resync_selection(state, cx);
+                    state.refresh(cx);
+                });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// File ▸ Print… (⌘P): the process list as shown, through the print
+    /// portal.
+    fn print_processes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (titles, rows) = self.table.read(cx).delegate().printable();
+        let text = crate::process_print::table_text(&titles, &rows);
+        #[cfg(target_os = "linux")]
+        {
+            let raw_window = raw_window_handle::HasWindowHandle::window_handle(window)
+                .map(|handle| handle.as_raw());
+            let raw_display = raw_window_handle::HasDisplayHandle::display_handle(window)
+                .map(|handle| handle.as_raw());
+            let (Ok(raw_window), Ok(raw_display)) = (raw_window, raw_display) else {
+                self.persistence_error = Some(
+                    "Could not open the print dialog: printing needs the window to be shown."
+                        .into(),
+                );
+                cx.notify();
+                return;
+            };
+            let request = rmac_print_linux::PrintDocument {
+                window: raw_window,
+                display: raw_display,
+                window_generation: 1,
+                document_generation: 0,
+                current_document_generation: std::sync::Arc::new(
+                    std::sync::atomic::AtomicU64::new(0),
+                ),
+                title: "System Monitor".to_owned(),
+                text,
+                rich: None,
+            };
+            cx.spawn_in(window, async move |this, cx| {
+                let result = rmac_print_linux::print_document(request).await;
+                let _ = this.update(cx, |view, cx| {
+                    if let Err(error) = result {
+                        view.persistence_error =
+                            Some(format!("Could not print the process list: {error}.").into());
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (window, text);
+            self.persistence_error =
+                Some("Printing is available in the Lulo OS session on Linux.".into());
+            cx.notify();
+        }
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {

@@ -19,7 +19,8 @@ use sysinfo::{
 
 use crate::columns::{self, ColKey};
 use crate::metrics::{format_duration, format_mem, Tab};
-use crate::view_filter::ViewFilter;
+use crate::proc_extra::{self, ProcExtra};
+use crate::view_filter::{RowSignals, ViewFilter};
 use crate::{ForceQuitProcess, QuitProcess};
 
 /// True for a Linux thread-group leader — a real process, in the sense the
@@ -170,6 +171,10 @@ pub(crate) struct ProcRow {
     /// (MON-MENU-022): 0 for a row with no parent in the visible set, or a
     /// parent's `depth + 1` otherwise. Always 0 outside that filter.
     pub(crate) depth: u32,
+    /// The optional `/proc` figures behind the Memory, Real Private/Shared
+    /// Memory, Compressed Memory, Kind, Sandbox and Idle Wake Ups columns;
+    /// empty unless one of those columns is visible.
+    pub(crate) extra: ProcExtra,
 }
 
 impl ProcRow {
@@ -206,7 +211,42 @@ impl ProcRow {
             ColKey::Vmem => format_mem(self.vmem),
             ColKey::RunTime => format_duration(self.run_time),
             ColKey::Status => self.status.to_string(),
+            ColKey::Footprint => self.extra_bytes(|rollup| rollup.pss),
+            ColKey::RealPrivate => self.extra_bytes(|rollup| rollup.private),
+            ColKey::RealShared => self.extra_bytes(|rollup| rollup.shared),
+            ColKey::Compressed => self.extra_bytes(|rollup| rollup.swapped),
+            ColKey::Kind => self.extra.kind.unwrap_or("—").to_string(),
+            ColKey::Sandbox => match self.extra.sandboxed {
+                Some(true) => "Yes".to_string(),
+                Some(false) => "No".to_string(),
+                None => "—".to_string(),
+            },
+            ColKey::IdleWakeUps => self
+                .extra
+                .wakeups
+                .map(|count| count.to_string())
+                .unwrap_or_else(|| "—".to_string()),
+            ColKey::GpuPercent => self
+                .extra
+                .gpu_percent
+                .map(|percent| format!("{percent:.1}"))
+                .unwrap_or_else(|| "—".to_string()),
+            ColKey::GpuTime => self
+                .extra
+                .gpu
+                .as_ref()
+                .and_then(proc_extra::GpuUsage::total_nanoseconds)
+                .map(|nanoseconds| format_duration(nanoseconds / 1_000_000_000))
+                .unwrap_or_else(|| "—".to_string()),
         }
+    }
+
+    fn extra_bytes(&self, pick: impl Fn(&proc_extra::SmapsRollup) -> u64) -> String {
+        self.extra
+            .rollup
+            .as_ref()
+            .map(|rollup| format_mem(pick(rollup)))
+            .unwrap_or_else(|| "—".to_string())
     }
 }
 
@@ -273,6 +313,18 @@ pub(crate) struct ProcessTableDelegate {
     /// lookup into the snapshot just taken); `None` only if the platform can't
     /// report it or our own pid is somehow absent from the snapshot.
     current_uid: Option<u32>,
+    /// Voluntary context-switch counters from the previous sample, keyed by
+    /// pid, so Idle Wake Ups can be a per-interval delta. Only filled while
+    /// that column is visible.
+    previous_switches: std::collections::HashMap<u32, u64>,
+    /// Process ids that own a window, from the compositor, for View ▸
+    /// Windowed Processes. Only fetched while that filter is on.
+    windowed_pids: std::collections::HashSet<u32>,
+    /// Each process's graphics usage at the previous sample and when it was
+    /// taken, so % GPU can be a rate. Only filled while a GPU column or the
+    /// GPU Processes filter is on.
+    previous_gpu: std::collections::HashMap<u32, proc_extra::GpuUsage>,
+    last_gpu_sample: Option<std::time::Instant>,
 }
 
 /// A placeholder snapshot for before the first refresh, or if a projection
@@ -322,6 +374,10 @@ impl ProcessTableDelegate {
             tab_columns,
             view_filter: ViewFilter::All,
             current_uid: None,
+            previous_switches: std::collections::HashMap::new(),
+            windowed_pids: std::collections::HashSet::new(),
+            previous_gpu: std::collections::HashMap::new(),
+            last_gpu_sample: None,
         };
         delegate.refresh();
         delegate
@@ -343,6 +399,19 @@ impl ProcessTableDelegate {
         self.current_tab = tab;
         self.visible = self.tab_columns[Self::tab_index(tab)].clone();
         self.columns = self.visible.iter().map(|key| key.to_column()).collect();
+        self.fill_extras();
+    }
+
+    /// The visible columns' titles and the cells of every shown row, for
+    /// File ▸ Print….
+    pub(crate) fn printable(&self) -> (Vec<&'static str>, Vec<Vec<String>>) {
+        let titles = self.visible.iter().map(|key| key.title()).collect();
+        let rows = self
+            .rows
+            .iter()
+            .map(|row| self.visible.iter().map(|&key| row.cell_text(key)).collect())
+            .collect();
+        (titles, rows)
     }
 
     /// Set the selected PID and keep the AT-SPI projection's per-row
@@ -406,12 +475,21 @@ impl ProcessTableDelegate {
         }
         self.columns = self.visible.iter().map(|key| key.to_column()).collect();
         self.tab_columns[Self::tab_index(self.current_tab)] = self.visible.clone();
+        self.fill_extras();
         true
+    }
+
+    /// The compositor's current window owners, for View ▸ Windowed
+    /// Processes; reapplies the view.
+    pub(crate) fn set_windowed_pids(&mut self, pids: std::collections::HashSet<u32>) {
+        self.windowed_pids = pids;
+        self.apply_view();
     }
 
     /// Change the View menu's process filter (MON-03) and reapply it.
     pub(crate) fn set_view_filter(&mut self, filter: ViewFilter) {
         self.view_filter = filter;
+        self.fill_extras();
         self.apply_view();
     }
 
@@ -496,6 +574,7 @@ impl ProcessTableDelegate {
                     threads: thread_group_size(process.tasks().map(|tasks| tasks.len())),
                     uid,
                     depth: 0,
+                    extra: ProcExtra::default(),
                 }
             })
             .collect();
@@ -507,7 +586,81 @@ impl ProcessTableDelegate {
             .and_then(|process| process.user_id())
             .map(|uid| **uid);
 
+        self.fill_extras();
         self.apply_view();
+    }
+
+    /// True while any column that needs the extra `/proc` reads is shown.
+    fn wants_extra(&self) -> bool {
+        self.visible.iter().any(|key| key.needs_extra())
+            || self.view_filter == ViewFilter::GpuProcesses
+    }
+
+    /// Read the optional per-process figures for every row, but only the ones
+    /// a visible column needs, and nothing at all when none is visible.
+    pub(crate) fn fill_extras(&mut self) {
+        if !self.wants_extra() {
+            self.previous_switches.clear();
+            self.previous_gpu.clear();
+            self.last_gpu_sample = None;
+            for row in &mut self.all_rows {
+                row.extra = ProcExtra::default();
+            }
+            return;
+        }
+        let memory = self.visible.iter().any(|key| {
+            matches!(
+                key,
+                ColKey::Footprint | ColKey::RealPrivate | ColKey::RealShared | ColKey::Compressed
+            )
+        });
+        let kind = self.visible.contains(&ColKey::Kind);
+        let wakeups = self.visible.contains(&ColKey::IdleWakeUps);
+        let status = wakeups || self.visible.contains(&ColKey::Sandbox);
+        let gpu = self.view_filter == ViewFilter::GpuProcesses
+            || self.visible.contains(&ColKey::GpuPercent)
+            || self.visible.contains(&ColKey::GpuTime);
+        let now = std::time::Instant::now();
+        let elapsed_nanoseconds = self
+            .last_gpu_sample
+            .map_or(0, |taken| now.duration_since(taken).as_nanos() as u64);
+        let mut gpu_now = std::collections::HashMap::new();
+        let mut switches = std::collections::HashMap::new();
+        for row in &mut self.all_rows {
+            let mut extra = ProcExtra::default();
+            if gpu {
+                extra.gpu = proc_extra::read_gpu(row.pid);
+                if let Some(usage) = &extra.gpu {
+                    extra.gpu_percent = self.previous_gpu.get(&row.pid).and_then(|before| {
+                        proc_extra::gpu_percent(before, usage, elapsed_nanoseconds)
+                    });
+                    gpu_now.insert(row.pid, usage.clone());
+                }
+            }
+            if memory {
+                extra.rollup = proc_extra::read_rollup(row.pid);
+            }
+            if kind {
+                extra.kind = proc_extra::read_kind(row.pid);
+            }
+            if status {
+                let (count, sandboxed) = proc_extra::read_status(row.pid);
+                extra.sandboxed = sandboxed;
+                if wakeups {
+                    if let Some(count) = count {
+                        extra.wakeups = proc_extra::wakeup_delta(
+                            self.previous_switches.get(&row.pid).copied(),
+                            count,
+                        );
+                        switches.insert(row.pid, count);
+                    }
+                }
+            }
+            row.extra = extra;
+        }
+        self.previous_switches = switches;
+        self.previous_gpu = gpu_now;
+        self.last_gpu_sample = gpu.then_some(now);
     }
 
     /// Rebuild the bounded visible rows from the complete snapshot.
@@ -516,6 +669,7 @@ impl ProcessTableDelegate {
         let view_filter = self.view_filter;
         let current_uid = self.current_uid;
         let selected_pid = self.selected_pid;
+        let windowed_pids = &self.windowed_pids;
         Self::sort_rows(&mut self.all_rows, self.sort_key, self.sort_asc);
         self.rows = self
             .all_rows
@@ -531,6 +685,10 @@ impl ProcessTableDelegate {
                         row.status.as_ref(),
                         current_uid,
                         selected_pid,
+                        RowSignals {
+                            has_window: windowed_pids.contains(&row.pid),
+                            uses_gpu: row.extra.gpu.is_some(),
+                        },
                     )
             })
             .take(300)
@@ -628,6 +786,46 @@ impl ProcessTableDelegate {
                 ColKey::RunTime => left.run_time.cmp(&right.run_time),
                 ColKey::Status => left.status.cmp(&right.status),
                 ColKey::Threads => left.threads.cmp(&right.threads),
+                ColKey::Footprint => left
+                    .extra
+                    .rollup
+                    .map(|rollup| rollup.pss)
+                    .cmp(&right.extra.rollup.map(|rollup| rollup.pss)),
+                ColKey::RealPrivate => left
+                    .extra
+                    .rollup
+                    .map(|rollup| rollup.private)
+                    .cmp(&right.extra.rollup.map(|rollup| rollup.private)),
+                ColKey::RealShared => left
+                    .extra
+                    .rollup
+                    .map(|rollup| rollup.shared)
+                    .cmp(&right.extra.rollup.map(|rollup| rollup.shared)),
+                ColKey::Compressed => left
+                    .extra
+                    .rollup
+                    .map(|rollup| rollup.swapped)
+                    .cmp(&right.extra.rollup.map(|rollup| rollup.swapped)),
+                ColKey::Kind => left.extra.kind.cmp(&right.extra.kind),
+                ColKey::Sandbox => left.extra.sandboxed.cmp(&right.extra.sandboxed),
+                ColKey::IdleWakeUps => left.extra.wakeups.cmp(&right.extra.wakeups),
+                ColKey::GpuPercent => left
+                    .extra
+                    .gpu_percent
+                    .partial_cmp(&right.extra.gpu_percent)
+                    .unwrap_or(Ordering::Equal),
+                ColKey::GpuTime => left
+                    .extra
+                    .gpu
+                    .as_ref()
+                    .and_then(proc_extra::GpuUsage::total_nanoseconds)
+                    .cmp(
+                        &right
+                            .extra
+                            .gpu
+                            .as_ref()
+                            .and_then(proc_extra::GpuUsage::total_nanoseconds),
+                    ),
             };
             if ascending {
                 ordering
@@ -973,6 +1171,7 @@ mod tests {
         selection_projection, thread_group_size, ColKey, ProcRow, ProcessTableDelegate,
     };
     use crate::metrics::{format_duration, format_mem};
+    use crate::proc_extra::ProcExtra;
     use rmac_ui::ColumnSort;
     use sysinfo::ThreadKind;
 
@@ -1106,6 +1305,7 @@ mod tests {
             threads: 1,
             uid: None,
             depth: 0,
+            extra: ProcExtra::default(),
         }
     }
 
@@ -1133,6 +1333,7 @@ mod tests {
             threads: 1,
             uid: None,
             depth: 0,
+            extra: ProcExtra::default(),
         }
     }
 

@@ -37,6 +37,7 @@ gpui::actions!(
         InsertLineBreak,
         InsertParagraphBreak,
         InsertPageBreak,
+        Complete,
         SaveGoToFolder,
         CloseBar,
         ToggleMono,

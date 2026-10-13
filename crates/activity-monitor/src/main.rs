@@ -7,7 +7,9 @@ mod floating_windows;
 mod gpu_stats;
 mod host_stats;
 mod metrics;
+mod proc_extra;
 mod process_action;
+mod process_print;
 mod process_signal;
 mod process_table;
 mod quit_and_keep_windows;
@@ -27,6 +29,7 @@ gpui::actions!(
     activity_monitor,
     [
         QuitProcess,
+        PrintProcesses,
         ForceQuitProcess,
         FocusSearch,
         FilterProcesses,
@@ -45,6 +48,7 @@ gpui::actions!(
         ShowOtherUsersProcesses,
         ShowActiveProcesses,
         ShowInactiveProcesses,
+        ShowWindowedProcesses,
         ShowSelectedProcesses,
         ShowMainWindow,
         EnterFullScreen,
@@ -57,6 +61,16 @@ gpui::actions!(
         ToggleCpuTimeColumn,
         ToggleBytesReadColumn,
         ToggleBytesWrittenColumn,
+        ToggleFootprintColumn,
+        ToggleRealPrivateColumn,
+        ToggleRealSharedColumn,
+        ToggleCompressedColumn,
+        ToggleKindColumn,
+        ToggleSandboxColumn,
+        ToggleIdleWakeUpsColumn,
+        ToggleGpuPercentColumn,
+        ToggleGpuTimeColumn,
+        ShowGpuProcesses,
         ShowDeltasForProcess,
         SetDockIconApplication,
         SetDockIconCpuUsage,

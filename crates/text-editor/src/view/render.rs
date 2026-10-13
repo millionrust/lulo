@@ -17,7 +17,7 @@ use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
     document, ActualSize, AlignCentre, AlignJustify, AlignLeft, AlignRight, CheckDocumentNow,
-    ClearRecentMenu, CloseAll, CloseBar, CloseWindow, CopyRuler, CopyStyle, DecreaseFont,
+    ClearRecentMenu, CloseAll, CloseBar, CloseWindow, Complete, CopyRuler, CopyStyle, DecreaseFont,
     DuplicateDocument, EnterFullScreen, ExportPdf, FindNext, FindPrev, HighlightAccent,
     HighlightBlue, HighlightMint, HighlightNone, HighlightOrange, HighlightPink, HighlightPurple,
     IncreaseFont, InsertLineBreak, InsertPageBreak, InsertParagraphBreak, JumpToSelection,
@@ -279,6 +279,9 @@ impl Render for EditorView {
             }))
             .on_action(cx.listener(|this, _: &InsertParagraphBreak, window, cx| {
                 this.insert_break("\n", window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &Complete, window, cx| {
+                this.complete_word(window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertPageBreak, window, cx| {
                 this.insert_break("\u{000c}", window, cx)

@@ -14,14 +14,17 @@ use crate::view_filter::ViewFilter;
 use crate::{
     process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, EnterFullScreen,
     FilterProcesses, FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess,
-    JumpToSelection, Minimize, QuitAndKeepWindows, QuitProcess, RefreshEveryFiveSeconds,
-    RefreshEverySecond, RefreshEveryTwoSeconds, SampleProcess, SendSignalToProcess,
-    SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses, ShowAllProcesses,
-    ShowAllProcessesHierarchically, ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess,
-    ShowGpuHistoryWindow, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
-    ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleBytesReadColumn,
-    ToggleBytesWrittenColumn, ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn,
-    ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
+    JumpToSelection, Minimize, PrintProcesses, QuitAndKeepWindows, QuitProcess,
+    RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds, SampleProcess,
+    SendSignalToProcess, SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses,
+    ShowAllProcesses, ShowAllProcessesHierarchically, ShowCpuHistoryWindow, ShowCpuUsageWindow,
+    ShowDeltasForProcess, ShowGpuHistoryWindow, ShowGpuProcesses, ShowInactiveProcesses,
+    ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses, ShowSelectedProcesses,
+    ShowSystemProcesses, ShowWindowedProcesses, ToggleBytesReadColumn, ToggleBytesWrittenColumn,
+    ToggleCompressedColumn, ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn,
+    ToggleFootprintColumn, ToggleGpuPercentColumn, ToggleGpuTimeColumn, ToggleIdleWakeUpsColumn,
+    ToggleKindColumn, ToggleMemoryColumn, TogglePidColumn, ToggleRealPrivateColumn,
+    ToggleRealSharedColumn, ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn,
     UseSelectionForFind,
 };
 
@@ -103,6 +106,27 @@ impl Render for MonitorView {
             .on_action(cx.listener(|this, _: &ToggleBytesWrittenColumn, _, cx| {
                 this.toggle_column(ColKey::BytesWritten, cx);
             }))
+            .on_action(cx.listener(|this, _: &ToggleFootprintColumn, _, cx| {
+                this.toggle_column(ColKey::Footprint, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleRealPrivateColumn, _, cx| {
+                this.toggle_column(ColKey::RealPrivate, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleRealSharedColumn, _, cx| {
+                this.toggle_column(ColKey::RealShared, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCompressedColumn, _, cx| {
+                this.toggle_column(ColKey::Compressed, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleKindColumn, _, cx| {
+                this.toggle_column(ColKey::Kind, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSandboxColumn, _, cx| {
+                this.toggle_column(ColKey::Sandbox, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleIdleWakeUpsColumn, _, cx| {
+                this.toggle_column(ColKey::IdleWakeUps, cx);
+            }))
             .on_action(cx.listener(|this, _: &ShowDeltasForProcess, _, cx| {
                 this.toggle_show_deltas(cx);
             }))
@@ -143,6 +167,21 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ShowInactiveProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::InactiveProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PrintProcesses, window, cx| {
+                this.print_processes(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowGpuProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::GpuProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleGpuPercentColumn, _, cx| {
+                this.toggle_column(ColKey::GpuPercent, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleGpuTimeColumn, _, cx| {
+                this.toggle_column(ColKey::GpuTime, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowWindowedProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::WindowedProcesses, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowSelectedProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::SelectedProcesses, cx);

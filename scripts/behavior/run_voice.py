@@ -385,19 +385,21 @@ class RealModelScenario(Scenario):
             self.clip.symlink_to(source)
             seconds = wav_seconds(source)
             self.start_hud()
+            pressed = time.monotonic()
             self.hold()
-            intents.wait_until(lambda: "Listening…" in self.hud_names(), 8, 0.05)
+            intents.TraceWatcher(self.hud_trace).wait_for("voice_listening", pressed, 8)
             time.sleep(seconds + 0.4)
             released = time.monotonic()
             self.release()
-            opened = intents.wait_until(self.spotlight_open, 10, 0.1)
-            row = None
-            if opened and launcher.wait_for("assist_row_applied", released, 8 if not warm else 25):
-                time.sleep(0.3)
-                row = next((name for name in self.showing()
-                            if name.endswith(intents.ASSIST_SUFFIX)), None)
-            else:
-                time.sleep(1.0)
+            # Follow Spotlight's own trace, never the accessibility tree,
+            # while the models work: walking the tree ten times a second
+            # competes for the same two cores (ADR 0024 "Phase 1.1").
+            if launcher.wait_for("voice_query", released, 10):
+                launcher.wait_for("assist_reply", released, 25 if warm else 10)
+            time.sleep(0.5)
+            opened = self.spotlight_open()
+            row = next((name for name in self.showing()
+                        if name.endswith(intents.ASSIST_SUFFIX)), None) if opened else None
             launcher._read()
             hud = intents.TraceWatcher(self.hud_trace)
             hud.wait_for("voice_handed", released, 3)

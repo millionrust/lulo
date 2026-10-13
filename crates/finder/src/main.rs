@@ -9,6 +9,7 @@ mod directory_state;
 mod file_ops;
 mod operation_journal;
 mod recovery_ui;
+mod redo;
 #[cfg(any(target_os = "linux", all(test, unix)))]
 mod trash_store;
 mod undo_journal;

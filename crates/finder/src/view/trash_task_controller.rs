@@ -62,6 +62,7 @@ impl FinderView {
                 self.operation_journal = None;
             }
         }
+        self.sync_redo();
         // A housekeeping check runs after every Trash task to verify the
         // journal; it is independent of whether the requested items were
         // actually moved/restored/deleted. When at least one item did

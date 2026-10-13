@@ -31,6 +31,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             UndoOperation,
             Some("Finder"),
         ),
+        KeyBinding::new("cmd-shift-z", RedoOperation, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::DUPLICATE.keystroke,
             Duplicate,

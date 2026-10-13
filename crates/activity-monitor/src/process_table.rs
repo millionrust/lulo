@@ -19,6 +19,7 @@ use sysinfo::{
 
 use crate::columns::{self, ColKey};
 use crate::metrics::{format_duration, format_mem, Tab};
+use crate::proc_extra::{self, ProcExtra};
 use crate::view_filter::ViewFilter;
 use crate::{ForceQuitProcess, QuitProcess};
 
@@ -170,6 +171,10 @@ pub(crate) struct ProcRow {
     /// (MON-MENU-022): 0 for a row with no parent in the visible set, or a
     /// parent's `depth + 1` otherwise. Always 0 outside that filter.
     pub(crate) depth: u32,
+    /// The optional `/proc` figures behind the Memory, Real Private/Shared
+    /// Memory, Compressed Memory, Kind, Sandbox and Idle Wake Ups columns;
+    /// empty unless one of those columns is visible.
+    pub(crate) extra: ProcExtra,
 }
 
 impl ProcRow {
@@ -206,7 +211,30 @@ impl ProcRow {
             ColKey::Vmem => format_mem(self.vmem),
             ColKey::RunTime => format_duration(self.run_time),
             ColKey::Status => self.status.to_string(),
+            ColKey::Footprint => self.extra_bytes(|rollup| rollup.pss),
+            ColKey::RealPrivate => self.extra_bytes(|rollup| rollup.private),
+            ColKey::RealShared => self.extra_bytes(|rollup| rollup.shared),
+            ColKey::Compressed => self.extra_bytes(|rollup| rollup.swapped),
+            ColKey::Kind => self.extra.kind.unwrap_or("—").to_string(),
+            ColKey::Sandbox => match self.extra.sandboxed {
+                Some(true) => "Yes".to_string(),
+                Some(false) => "No".to_string(),
+                None => "—".to_string(),
+            },
+            ColKey::IdleWakeUps => self
+                .extra
+                .wakeups
+                .map(|count| count.to_string())
+                .unwrap_or_else(|| "—".to_string()),
         }
+    }
+
+    fn extra_bytes(&self, pick: impl Fn(&proc_extra::SmapsRollup) -> u64) -> String {
+        self.extra
+            .rollup
+            .as_ref()
+            .map(|rollup| format_mem(pick(rollup)))
+            .unwrap_or_else(|| "—".to_string())
     }
 }
 
@@ -273,6 +301,10 @@ pub(crate) struct ProcessTableDelegate {
     /// lookup into the snapshot just taken); `None` only if the platform can't
     /// report it or our own pid is somehow absent from the snapshot.
     current_uid: Option<u32>,
+    /// Voluntary context-switch counters from the previous sample, keyed by
+    /// pid, so Idle Wake Ups can be a per-interval delta. Only filled while
+    /// that column is visible.
+    previous_switches: std::collections::HashMap<u32, u64>,
 }
 
 /// A placeholder snapshot for before the first refresh, or if a projection
@@ -322,6 +354,7 @@ impl ProcessTableDelegate {
             tab_columns,
             view_filter: ViewFilter::All,
             current_uid: None,
+            previous_switches: std::collections::HashMap::new(),
         };
         delegate.refresh();
         delegate
@@ -343,6 +376,7 @@ impl ProcessTableDelegate {
         self.current_tab = tab;
         self.visible = self.tab_columns[Self::tab_index(tab)].clone();
         self.columns = self.visible.iter().map(|key| key.to_column()).collect();
+        self.fill_extras();
     }
 
     /// Set the selected PID and keep the AT-SPI projection's per-row
@@ -406,6 +440,7 @@ impl ProcessTableDelegate {
         }
         self.columns = self.visible.iter().map(|key| key.to_column()).collect();
         self.tab_columns[Self::tab_index(self.current_tab)] = self.visible.clone();
+        self.fill_extras();
         true
     }
 
@@ -496,6 +531,7 @@ impl ProcessTableDelegate {
                     threads: thread_group_size(process.tasks().map(|tasks| tasks.len())),
                     uid,
                     depth: 0,
+                    extra: ProcExtra::default(),
                 }
             })
             .collect();
@@ -507,7 +543,59 @@ impl ProcessTableDelegate {
             .and_then(|process| process.user_id())
             .map(|uid| **uid);
 
+        self.fill_extras();
         self.apply_view();
+    }
+
+    /// True while any column that needs the extra `/proc` reads is shown.
+    fn wants_extra(&self) -> bool {
+        self.visible.iter().any(|key| key.needs_extra())
+    }
+
+    /// Read the optional per-process figures for every row, but only the ones
+    /// a visible column needs, and nothing at all when none is visible.
+    pub(crate) fn fill_extras(&mut self) {
+        if !self.wants_extra() {
+            self.previous_switches.clear();
+            for row in &mut self.all_rows {
+                row.extra = ProcExtra::default();
+            }
+            return;
+        }
+        let memory = self.visible.iter().any(|key| {
+            matches!(
+                key,
+                ColKey::Footprint | ColKey::RealPrivate | ColKey::RealShared | ColKey::Compressed
+            )
+        });
+        let kind = self.visible.contains(&ColKey::Kind);
+        let wakeups = self.visible.contains(&ColKey::IdleWakeUps);
+        let status = wakeups || self.visible.contains(&ColKey::Sandbox);
+        let mut switches = std::collections::HashMap::new();
+        for row in &mut self.all_rows {
+            let mut extra = ProcExtra::default();
+            if memory {
+                extra.rollup = proc_extra::read_rollup(row.pid);
+            }
+            if kind {
+                extra.kind = proc_extra::read_kind(row.pid);
+            }
+            if status {
+                let (count, sandboxed) = proc_extra::read_status(row.pid);
+                extra.sandboxed = sandboxed;
+                if wakeups {
+                    if let Some(count) = count {
+                        extra.wakeups = proc_extra::wakeup_delta(
+                            self.previous_switches.get(&row.pid).copied(),
+                            count,
+                        );
+                        switches.insert(row.pid, count);
+                    }
+                }
+            }
+            row.extra = extra;
+        }
+        self.previous_switches = switches;
     }
 
     /// Rebuild the bounded visible rows from the complete snapshot.
@@ -628,6 +716,29 @@ impl ProcessTableDelegate {
                 ColKey::RunTime => left.run_time.cmp(&right.run_time),
                 ColKey::Status => left.status.cmp(&right.status),
                 ColKey::Threads => left.threads.cmp(&right.threads),
+                ColKey::Footprint => left
+                    .extra
+                    .rollup
+                    .map(|rollup| rollup.pss)
+                    .cmp(&right.extra.rollup.map(|rollup| rollup.pss)),
+                ColKey::RealPrivate => left
+                    .extra
+                    .rollup
+                    .map(|rollup| rollup.private)
+                    .cmp(&right.extra.rollup.map(|rollup| rollup.private)),
+                ColKey::RealShared => left
+                    .extra
+                    .rollup
+                    .map(|rollup| rollup.shared)
+                    .cmp(&right.extra.rollup.map(|rollup| rollup.shared)),
+                ColKey::Compressed => left
+                    .extra
+                    .rollup
+                    .map(|rollup| rollup.swapped)
+                    .cmp(&right.extra.rollup.map(|rollup| rollup.swapped)),
+                ColKey::Kind => left.extra.kind.cmp(&right.extra.kind),
+                ColKey::Sandbox => left.extra.sandboxed.cmp(&right.extra.sandboxed),
+                ColKey::IdleWakeUps => left.extra.wakeups.cmp(&right.extra.wakeups),
             };
             if ascending {
                 ordering
@@ -1106,6 +1217,7 @@ mod tests {
             threads: 1,
             uid: None,
             depth: 0,
+            extra: ProcExtra::default(),
         }
     }
 
@@ -1133,6 +1245,7 @@ mod tests {
             threads: 1,
             uid: None,
             depth: 0,
+            extra: ProcExtra::default(),
         }
     }
 

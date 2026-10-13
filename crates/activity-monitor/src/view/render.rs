@@ -21,8 +21,9 @@ use crate::{
     ShowGpuHistoryWindow, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
     ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleBytesReadColumn,
     ToggleBytesWrittenColumn, ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn,
-    ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
-    UseSelectionForFind,
+    ToggleCompressedColumn, ToggleFootprintColumn, ToggleIdleWakeUpsColumn, ToggleKindColumn,
+    ToggleMemoryColumn, TogglePidColumn, ToggleRealPrivateColumn, ToggleRealSharedColumn,
+    ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -102,6 +103,27 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ToggleBytesWrittenColumn, _, cx| {
                 this.toggle_column(ColKey::BytesWritten, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleFootprintColumn, _, cx| {
+                this.toggle_column(ColKey::Footprint, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleRealPrivateColumn, _, cx| {
+                this.toggle_column(ColKey::RealPrivate, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleRealSharedColumn, _, cx| {
+                this.toggle_column(ColKey::RealShared, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCompressedColumn, _, cx| {
+                this.toggle_column(ColKey::Compressed, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleKindColumn, _, cx| {
+                this.toggle_column(ColKey::Kind, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSandboxColumn, _, cx| {
+                this.toggle_column(ColKey::Sandbox, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleIdleWakeUpsColumn, _, cx| {
+                this.toggle_column(ColKey::IdleWakeUps, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowDeltasForProcess, _, cx| {
                 this.toggle_show_deltas(cx);

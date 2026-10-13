@@ -844,6 +844,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &CutItems, _, cx| this.cut(cx)))
             .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
             .on_action(cx.listener(|this, _: &UndoOperation, _, cx| this.start_undo(cx)))
+            .on_action(cx.listener(|this, _: &RedoOperation, _, cx| this.start_redo(cx)))
             .on_action(cx.listener(|this, _: &MakeAlias, _, cx| this.make_alias(cx)))
             .on_action(cx.listener(|this, _: &ShowOriginal, _, cx| this.show_original(cx)))
             .on_action(cx.listener(|this, _: &TagRed, _, cx| this.set_selected_tag("red", cx)))

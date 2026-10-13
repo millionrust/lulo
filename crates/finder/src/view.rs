@@ -54,6 +54,7 @@ mod trash_controller;
 mod trash_recovery_controller;
 mod trash_task_controller;
 mod trash_updates;
+mod redo_controller;
 mod undo_controller;
 mod updates;
 mod view_options;
@@ -101,7 +102,7 @@ use crate::watchers::{
 };
 #[cfg(target_os = "linux")]
 use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
-use crate::{directory_state, file_ops, operation_journal, undo_journal};
+use crate::{directory_state, file_ops, operation_journal, redo, undo_journal};
 use filesystem_helpers::*;
 use finder_behaviour::*;
 use finder_style::*;
@@ -146,6 +147,7 @@ actions!(
         CutItems,
         PasteItems,
         UndoOperation,
+        RedoOperation,
         SelectAll,
         GoBack,
         GoForward,
@@ -512,6 +514,7 @@ struct FinderView {
     operation_journal: Option<Arc<operation_journal::Journal>>,
     journal_loading: bool,
     undo_available: Option<undo_journal::UndoAvailability>,
+    redo: redo::RedoStack,
     undo_operation: Option<ActiveUndo>,
     pending_operations: usize,
     recovery_reviews: Vec<operation_journal::RecoveryReview>,

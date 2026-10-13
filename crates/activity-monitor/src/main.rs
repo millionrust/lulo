@@ -9,6 +9,7 @@ mod host_stats;
 mod metrics;
 mod process_action;
 mod process_signal;
+mod proc_extra;
 mod process_table;
 mod quit_and_keep_windows;
 mod row_icons;
@@ -57,6 +58,13 @@ gpui::actions!(
         ToggleCpuTimeColumn,
         ToggleBytesReadColumn,
         ToggleBytesWrittenColumn,
+        ToggleFootprintColumn,
+        ToggleRealPrivateColumn,
+        ToggleRealSharedColumn,
+        ToggleCompressedColumn,
+        ToggleKindColumn,
+        ToggleSandboxColumn,
+        ToggleIdleWakeUpsColumn,
         ShowDeltasForProcess,
         SetDockIconApplication,
         SetDockIconCpuUsage,

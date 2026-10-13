@@ -241,6 +241,7 @@ impl FinderView {
             operation_journal: None,
             journal_loading: true,
             undo_available: None,
+            redo: redo::RedoStack::default(),
             undo_operation: None,
             pending_operations: 0,
             recovery_reviews: Vec::new(),

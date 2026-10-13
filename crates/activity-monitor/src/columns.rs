@@ -32,12 +32,27 @@ pub(crate) enum ColKey {
     RunTime,
     Status,
     Threads,
+    /// Proportional footprint (MON-MENU-016): the Mac's "Memory", where
+    /// `Mem` is its "Real Memory" (resident size).
+    Footprint,
+    /// Memory only this process maps (MON-MENU-006).
+    RealPrivate,
+    /// Memory shared with other processes (MON-MENU-007).
+    RealShared,
+    /// Pages held in swap or zram (MON-MENU-017).
+    Compressed,
+    /// Executable architecture (MON-MENU-008).
+    Kind,
+    /// Seccomp-confined (MON-MENU-009).
+    Sandbox,
+    /// Wake-ups since the last sample (MON-MENU-011).
+    IdleWakeUps,
 }
 
 impl ColKey {
     /// Canonical order, also the order shown in the chooser. Process Name
     /// leads, matching the Mac (MON-02); PID moves later rather than first.
-    pub(crate) const ALL: [Self; 15] = [
+    pub(crate) const ALL: [Self; 22] = [
         Self::Name,
         Self::Cpu,
         Self::CpuTime,
@@ -53,6 +68,13 @@ impl ColKey {
         Self::Vmem,
         Self::RunTime,
         Self::Status,
+        Self::Footprint,
+        Self::RealPrivate,
+        Self::RealShared,
+        Self::Compressed,
+        Self::Kind,
+        Self::Sandbox,
+        Self::IdleWakeUps,
     ];
 
     pub(crate) fn id(self) -> &'static str {
@@ -72,6 +94,13 @@ impl ColKey {
             Self::RunTime => "runtime",
             Self::Status => "status",
             Self::Threads => "threads",
+            Self::Footprint => "footprint",
+            Self::RealPrivate => "real_private",
+            Self::RealShared => "real_shared",
+            Self::Compressed => "compressed",
+            Self::Kind => "kind",
+            Self::Sandbox => "sandbox",
+            Self::IdleWakeUps => "idle_wakeups",
         }
     }
 
@@ -102,6 +131,13 @@ impl ColKey {
             Self::RunTime => 110.0,
             Self::Status => 110.0,
             Self::Threads => 90.0,
+            Self::Footprint => 100.0,
+            Self::RealPrivate => 150.0,
+            Self::RealShared => 150.0,
+            Self::Compressed => 150.0,
+            Self::Kind => 110.0,
+            Self::Sandbox => 80.0,
+            Self::IdleWakeUps => 120.0,
         }
     }
 
@@ -120,6 +156,26 @@ impl ColKey {
                 | Self::Vmem
                 | Self::RunTime
                 | Self::Threads
+                | Self::Footprint
+                | Self::RealPrivate
+                | Self::RealShared
+                | Self::Compressed
+                | Self::IdleWakeUps
+        )
+    }
+
+    /// True for the columns filled from the extra `/proc` reads in
+    /// `proc_extra`, which are skipped while none of them is visible.
+    pub(crate) fn needs_extra(self) -> bool {
+        matches!(
+            self,
+            Self::Footprint
+                | Self::RealPrivate
+                | Self::RealShared
+                | Self::Compressed
+                | Self::Kind
+                | Self::Sandbox
+                | Self::IdleWakeUps
         )
     }
 
@@ -158,6 +214,13 @@ impl From<ColKey> for ProcessColumn {
             ColKey::RunTime => Self::RunTime,
             ColKey::Status => Self::Status,
             ColKey::Threads => Self::Threads,
+            ColKey::Footprint => Self::Footprint,
+            ColKey::RealPrivate => Self::RealPrivateMemory,
+            ColKey::RealShared => Self::RealSharedMemory,
+            ColKey::Compressed => Self::CompressedMemory,
+            ColKey::Kind => Self::Kind,
+            ColKey::Sandbox => Self::Sandbox,
+            ColKey::IdleWakeUps => Self::IdleWakeUps,
         }
     }
 }
@@ -180,6 +243,13 @@ impl From<ProcessColumn> for ColKey {
             ProcessColumn::RunTime => Self::RunTime,
             ProcessColumn::Status => Self::Status,
             ProcessColumn::Threads => Self::Threads,
+            ProcessColumn::Footprint => Self::Footprint,
+            ProcessColumn::RealPrivateMemory => Self::RealPrivate,
+            ProcessColumn::RealSharedMemory => Self::RealShared,
+            ProcessColumn::CompressedMemory => Self::Compressed,
+            ProcessColumn::Kind => Self::Kind,
+            ProcessColumn::Sandbox => Self::Sandbox,
+            ProcessColumn::IdleWakeUps => Self::IdleWakeUps,
         }
     }
 }
@@ -360,6 +430,38 @@ mod tests {
         // Read/Written split the combined Disk column on the Disk tab.
         assert!(cpu.contains(&ColKey::CpuTime));
         assert!(disk.contains(&ColKey::BytesRead) && disk.contains(&ColKey::BytesWritten));
+    }
+
+    #[test]
+    fn extra_columns_have_mac_titles_and_round_trip() {
+        let expected = vec![
+            ColKey::Name,
+            ColKey::Footprint,
+            ColKey::RealPrivate,
+            ColKey::RealShared,
+            ColKey::Compressed,
+            ColKey::Kind,
+            ColKey::Sandbox,
+            ColKey::IdleWakeUps,
+        ];
+        assert_eq!(parse(&format(&expected)).unwrap(), expected);
+        let titles: Vec<_> = expected.iter().map(|key| key.title()).collect();
+        assert_eq!(
+            titles,
+            [
+                "Process Name",
+                "Memory",
+                "Real Private Memory",
+                "Real Shared Memory",
+                "Compressed Memory",
+                "Kind",
+                "Sandbox",
+                "Idle Wake Ups"
+            ]
+        );
+        // The resident-size column keeps the Mac's other name.
+        assert_eq!(ColKey::Mem.title(), "Real Memory");
+        assert!(ColKey::Footprint.needs_extra() && !ColKey::Mem.needs_extra());
     }
 
     #[test]

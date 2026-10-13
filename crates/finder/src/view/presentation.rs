@@ -731,6 +731,19 @@ impl FinderView {
             self.undo_available.is_some() && self.undo_operation.is_none(),
             cx,
         );
+        rmac_ui::set_menu_label(
+            "finder::RedoOperation",
+            self.redo_ready()
+                .map(|entry| entry.label())
+                .as_deref()
+                .unwrap_or("Redo"),
+            cx,
+        );
+        rmac_ui::set_menu_enabled(
+            "finder::RedoOperation",
+            self.redo_ready().is_some() && self.undo_operation.is_none(),
+            cx,
+        );
         #[cfg(any(target_os = "linux", all(test, unix)))]
         let empty_bin_available = self.trash_store.is_some() && self.trash_operation.is_none();
         #[cfg(not(any(target_os = "linux", all(test, unix))))]

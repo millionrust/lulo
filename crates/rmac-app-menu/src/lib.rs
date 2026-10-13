@@ -1191,6 +1191,15 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             ),
             item!("Show Previous Tab", "terminal::PrevTab", "⇧⌘[", separator),
             item!("Show Next Tab", "terminal::NextTab", "⇧⌘]"),
+            // TRM-MENU-011: back to Settings ▸ Window ▸ Size. Return All to
+            // Default Size stays out: every Terminal window is its own
+            // process, with no channel to resize the others' windows.
+            item!(
+                "Return to Default Size",
+                "terminal::ReturnToDefaultSize",
+                "",
+                separator
+            ),
         ],
     },
     MenuSpec {
@@ -1588,6 +1597,8 @@ const FILES_MENUS: &[MenuSpec] = &[
         label: "Edit",
         items: &[
             item!("Undo", "finder::UndoOperation", "⌘Z"),
+            // FILES-32: repeats the operation Undo just reversed.
+            item!("Redo", "finder::RedoOperation", "⇧⌘Z"),
             item!("Cut", "finder::CutItems", "⌘X", separator),
             item!("Copy", "finder::CopyItems", "⌘C"),
             // ⌥ alternates of Copy and Paste on the Mac.
@@ -1802,6 +1813,31 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                     item!(
                         "Bytes Written",
                         "activity_monitor::ToggleBytesWrittenColumn",
+                        ""
+                    ),
+                    // MON-MENU-006/007/008/009/011/016/017: filled from /proc
+                    // only while one of them is shown.
+                    item!("Memory", "activity_monitor::ToggleFootprintColumn", ""),
+                    item!(
+                        "Real Private Memory",
+                        "activity_monitor::ToggleRealPrivateColumn",
+                        ""
+                    ),
+                    item!(
+                        "Real Shared Memory",
+                        "activity_monitor::ToggleRealSharedColumn",
+                        ""
+                    ),
+                    item!(
+                        "Compressed Memory",
+                        "activity_monitor::ToggleCompressedColumn",
+                        ""
+                    ),
+                    item!("Kind", "activity_monitor::ToggleKindColumn", ""),
+                    item!("Sandbox", "activity_monitor::ToggleSandboxColumn", ""),
+                    item!(
+                        "Idle Wake Ups",
+                        "activity_monitor::ToggleIdleWakeUpsColumn",
                         ""
                     ),
                 ]

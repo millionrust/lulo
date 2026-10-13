@@ -171,6 +171,7 @@ gpui::actions!(
         ResetTerminal,
         HardResetTerminal,
         FillScreen,
+        ReturnToDefaultSize,
         ShowSettings,
         ClearToPreviousMark,
         ClearToPreviousBookmark,

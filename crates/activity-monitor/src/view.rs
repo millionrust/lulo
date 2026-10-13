@@ -334,6 +334,25 @@ impl MonitorView {
                 "activity_monitor::ToggleBytesWrittenColumn",
                 ColKey::BytesWritten,
             ),
+            ("activity_monitor::ToggleFootprintColumn", ColKey::Footprint),
+            (
+                "activity_monitor::ToggleRealPrivateColumn",
+                ColKey::RealPrivate,
+            ),
+            (
+                "activity_monitor::ToggleRealSharedColumn",
+                ColKey::RealShared,
+            ),
+            (
+                "activity_monitor::ToggleCompressedColumn",
+                ColKey::Compressed,
+            ),
+            ("activity_monitor::ToggleKindColumn", ColKey::Kind),
+            ("activity_monitor::ToggleSandboxColumn", ColKey::Sandbox),
+            (
+                "activity_monitor::ToggleIdleWakeUpsColumn",
+                ColKey::IdleWakeUps,
+            ),
         ] {
             rmac_ui::set_menu_checked(action, visible.contains(&column), cx);
         }

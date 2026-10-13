@@ -463,7 +463,13 @@ impl QuickSettingsView {
     }
 
     /// The whole detail view, `top` below the surface edge.
-    pub(super) fn detail_view(&self, panel: &Panel, top: f32, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn detail_view(
+        &self,
+        panel: &Panel,
+        left: f32,
+        top: f32,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let (placed, height) = panel.layout();
         let mut children: Vec<AnyElement> = vec![line(
             g::INSET,
@@ -581,7 +587,7 @@ impl QuickSettingsView {
             .role(Role::Group)
             .aria_label(panel.detail.title())
             .absolute()
-            .left(px(g::PANEL_LEFT))
+            .left(px(left))
             .top(px(top))
             .w(px(g::PANEL_WIDTH))
             .h(px(height))

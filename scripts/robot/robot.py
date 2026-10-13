@@ -243,7 +243,8 @@ class Robot:
     def baseline(self) -> None:
         self.shell_pids = {name: live.live_session_pid(name, self.env) for name in live.SHELL_PROCESSES}
         self.health = live.session_health()
-        self.bus_start = live.bus_count(self.env)
+        self.bus_owners_start = live.bus_owners(self.env)
+        self.bus_start = sum(self.bus_owners_start.values())
         self.windows_start = {w["id"] for w in self.niri.windows()}
         self.volume_start = live.volume(self.env)
         self.brightness_start = live.brightness()
@@ -299,10 +300,12 @@ class Robot:
         left = {w["id"] for w in self.niri.windows()} - self.windows_start
         if left:
             self.finding("medium", "shell", "state", "robot windows left open", f"window ids {sorted(left)}")
-        bus_end = live.bus_count(self.env)
+        owners_end = live.bus_owners(self.env)
+        bus_end = sum(owners_end.values())
         if bus_end > self.bus_start + 3:
+            growth = live.owner_growth(self.bus_owners_start, owners_end)
             self.finding("high", "shell", "dbus-growth", "D-Bus connections grew over the run",
-                         f"{self.bus_start} -> {bus_end}")
+                         f"{self.bus_start} -> {bus_end}; by process {growth}")
         self.dismiss_crash_reporter()
         self.collect_crash_reports()
         self.scan_journal()

@@ -394,6 +394,10 @@ struct Tab {
 /// default list length.
 const RECENT_FOLDERS_CAP: usize = 10;
 
+/// The key context of Files' own auxiliary windows (Settings, the Progress
+/// window): ⌘W there is `CloseTab`, which closes that window.
+pub(crate) const PANEL_CONTEXT: &str = "FilesPanel";
+
 struct FinderView {
     cwd: PathBuf,
     tabs: Vec<Tab>,

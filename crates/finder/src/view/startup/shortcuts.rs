@@ -133,6 +133,13 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             Some("Finder"),
         ),
         KeyBinding::new("alt-cmd-w", CloseAll, Some("Finder")),
+        // ⌘W in Files' Settings and Progress windows closes that window
+        // (`crate::view::PANEL_CONTEXT`).
+        KeyBinding::new(
+            rmac_ui::shortcuts::CLOSE.keystroke,
+            CloseTab,
+            Some(crate::view::PANEL_CONTEXT),
+        ),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("Finder")),
         KeyBinding::new("ctrl-tab", NextTab, Some("Finder")),
         KeyBinding::new("cmd-shift-[", PreviousTab, Some("Finder")),

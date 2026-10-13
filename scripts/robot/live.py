@@ -152,8 +152,24 @@ def screenshot(env: dict[str, str], path: Path) -> Path:
 
 
 def bus_count(env: dict[str, str]) -> int:
+    return sum(bus_owners(env).values())
+
+
+def bus_owners(env: dict[str, str]) -> dict[str, int]:
+    """Session-bus names per owning process name (unowned activatable names
+    under "-"), so growth can be pinned on a process."""
+
     result = run(["busctl", "--user", "list", "--no-legend"], env)
-    return len([line for line in result.stdout.splitlines() if line.strip()])
+    owners: dict[str, int] = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) >= 3:
+            owners[fields[2]] = owners.get(fields[2], 0) + 1
+    return owners
+
+
+def owner_growth(before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
+    return {name: after[name] - before.get(name, 0) for name in after if after[name] > before.get(name, 0)}
 
 
 def pids_of(name: str) -> list[int]:

@@ -193,6 +193,9 @@ fn show_progress_window(cx: &mut gpui::App) {
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| ProgressWindow::new(window, cx));
+        // Focus inside the window so ⌘W and Esc reach it (2026-10-13 robot).
+        let focus = view.read(cx).focus.clone();
+        window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
     });
     match opened {
@@ -342,6 +345,15 @@ impl Render for ProgressWindow {
         };
         div()
             .track_focus(&self.focus)
+            .key_context(crate::view::PANEL_CONTEXT)
+            .on_action(
+                cx.listener(|_, _: &crate::view::CloseTab, window, _| window.remove_window()),
+            )
+            .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, _| {
+                if event.keystroke.key == "escape" {
+                    window.remove_window();
+                }
+            }))
             .size_full()
             .v_flex()
             .bg(rmac_ui::mac::window())

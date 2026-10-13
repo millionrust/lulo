@@ -176,8 +176,17 @@ pub fn parse_hint(hint: &str) -> Option<(bool, bool, bool, bool, String)> {
         "⎋" | "Esc" => "escape".to_owned(),
         "←" => "left".to_owned(),
         "→" => "right".to_owned(),
-        "↑" => "up".to_owned(),
-        "↓" => "down".to_owned(),
+        // AppKit's function-key characters, kept as the Mac recorded them
+        // (Preview's Go menu): without these, Windows menus showed
+        // "Up []" and "Previous Document [Alt+]" (found by the robot).
+        "\u{F700}" | "↑" => "up".to_owned(),
+        "\u{F701}" | "↓" => "down".to_owned(),
+        "\u{F702}" => "left".to_owned(),
+        "\u{F703}" => "right".to_owned(),
+        "\u{F729}" => "home".to_owned(),
+        "\u{F72B}" => "end".to_owned(),
+        "\u{F72C}" => "pageup".to_owned(),
+        "\u{F72D}" => "pagedown".to_owned(),
         "−" => "-".to_owned(),
         "⇞" => "pageup".to_owned(),
         "⇟" => "pagedown".to_owned(),
@@ -252,6 +261,39 @@ mod tests {
         assert_eq!(windows_hint("Space"), "Space");
         assert_eq!(windows_hint("⌃K"), "");
         assert_eq!(windows_hint(""), "");
+    }
+
+    #[test]
+    fn appkit_function_key_characters_read_as_keys() {
+        // Preview's Go menu keeps the Mac's private-use key characters.
+        assert_eq!(windows_hint("\u{F72C}"), "Page Up");
+        assert_eq!(windows_hint("⌥\u{F72D}"), "Alt+Page Down");
+        assert_eq!(windows_hint("\u{F700}"), "Up");
+        assert_eq!(windows_hint("⌥\u{F701}"), "Alt+Down");
+        assert_eq!(windows_hint("\u{F702}"), "Left");
+        assert_eq!(windows_hint("\u{F703}"), "Right");
+        assert_eq!(windows_hint("\u{F729}"), "Home");
+        assert_eq!(windows_hint("\u{F72B}"), "End");
+        // Every hint in every app's menus reads as a key on Windows: none is
+        // left with an empty key name ("Alt+") or an unprintable character.
+        for app_id in crate::MENU_APPS {
+            for menu in crate::static_definition(app_id).unwrap_or_default() {
+                let mut items = menu.items.clone();
+                while let Some(item) = items.pop() {
+                    items.extend(item.children.clone());
+                    let shown = windows_hint(&item.shortcut);
+                    assert!(
+                        !shown.ends_with('+')
+                            && !shown
+                                .chars()
+                                .any(|c| ('\u{F700}'..='\u{F8FF}').contains(&c)),
+                        "{app_id} {}: {:?} shows as {shown:?}",
+                        item.label,
+                        item.shortcut
+                    );
+                }
+            }
+        }
     }
 
     #[test]

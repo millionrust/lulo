@@ -57,9 +57,14 @@ fn send_window_action(action: WindowAction, _cx: &mut App) {
 }
 
 /// Windows carries out the same request through GPUI (see [`native`]).
+///
+/// Deferred, like Hide, Quit and Cycle Through Windows below: a key press
+/// (Ctrl+M) runs its action while GPUI has the focused window leased for
+/// dispatch, so updating that window there fails silently and the key did
+/// nothing. A menu command arrives outside any window update and worked.
 #[cfg(not(unix))]
 fn send_window_action(action: WindowAction, cx: &mut App) {
-    native::perform(action, cx);
+    cx.defer(move |cx| native::perform(action, cx));
 }
 
 /// The command word Mission Control's resident service
@@ -221,7 +226,7 @@ pub fn fill_focused_window(cx: &mut App) {
 /// back. With `others`, ⌥⌘H parks every other application's windows instead.
 pub fn hide_application(others: bool, cx: &mut App) {
     #[cfg(not(unix))]
-    native::hide_application(others, cx);
+    cx.defer(move |cx| native::hide_application(others, cx));
     #[cfg(unix)]
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
@@ -255,7 +260,7 @@ pub fn hide_application(others: bool, cx: &mut App) {
 /// asks Save / Don't Save / Cancel. Files, like Finder, never quits.
 pub fn quit_application(cx: &mut App) {
     #[cfg(not(unix))]
-    native::quit_application(cx);
+    cx.defer(native::quit_application);
     #[cfg(unix)]
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
@@ -292,7 +297,7 @@ pub fn quit_application(cx: &mut App) {
 /// sharing its app id.
 pub fn cycle_through_windows(cx: &mut App) {
     #[cfg(not(unix))]
-    native::cycle_through_windows(cx);
+    cx.defer(native::cycle_through_windows);
     #[cfg(unix)]
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;

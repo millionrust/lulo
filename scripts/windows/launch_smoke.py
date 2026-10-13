@@ -13,7 +13,9 @@ never reads or writes a real profile. For each app the check:
    panel opens (a menu command reaches the app);
 4. presses Ctrl+N, the Windows spelling of ⌘N, and checks the app answers:
    Text Editor opens a second window, the others stay running;
-5. for Text Editor, launches the app a second time with no arguments and
+5. presses Ctrl+M and checks the window minimises (and, for Calculator,
+   that Zoom leaves the fixed-size window alone);
+6. for Text Editor, launches the app a second time with no arguments and
    checks that launch hands off to the running process (it exits and a
    window opens in the first one) instead of starting a second app.
 
@@ -98,6 +100,7 @@ VK_CONTROL = 0x11
 VK_ESCAPE = 0x1B
 VK_DOWN = 0x28
 VK_RETURN = 0x0D
+VK_SHIFT = 0x10
 KEYEVENTF_KEYUP = 0x0002
 
 # How often `launch()` polls for the first visible window: the resolution
@@ -654,6 +657,115 @@ def check_new_shortcut(
     return None
 
 
+def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
+    """Ctrl+M minimises the window, and Calculator ignores Zoom.
+
+    Found by the robot (scripts/robot/windows): a window key's action ran
+    while GPUI had the window leased for key dispatch, so Ctrl+M, Ctrl+H,
+    Ctrl+Q and Ctrl+` did nothing from the keyboard (the menu items worked).
+    And Window ▸ Zoom (⌃⌘Z, Alt+Shift+Z here) maximised the fixed-size
+    Calculator to the whole monitor, over the Lulo bar and Dock."""
+    if not bring_forward(hwnd):
+        return "could not bring the window forward to test Ctrl+M"
+    if app == "rmac-calculator":
+        before = window_rect(hwnd)
+        key(VK_MENU)
+        key(VK_SHIFT)
+        tap(ord("Z"))
+        key(VK_SHIFT, up=True)
+        key(VK_MENU, up=True)
+        time.sleep(KEY_SETTLE_SECONDS)
+        after = window_rect(hwnd)
+        print(f"{app}: Alt+Shift+Z (Zoom): {before} -> {after}")
+        if after != before:
+            user32().ShowWindow(hwnd, 9)  # SW_RESTORE
+            return f"Zoom resized the fixed-size Calculator window from {before} to {after}"
+    if app == "rmac-terminal":
+        # Ctrl+letter keys belong to the shell in Terminal (Ctrl+M is Return).
+        return None
+    chord(VK_CONTROL, "m")
+    deadline = time.monotonic() + KEY_SETTLE_SECONDS * 2
+    minimised = False
+    while time.monotonic() < deadline and not minimised:
+        time.sleep(0.1)
+        minimised = bool(user32().IsIconic(hwnd))
+    print(f"{app}: Ctrl+M: minimised={minimised}")
+    bring_forward(hwnd)
+    if process.poll() is not None:
+        return f"exited with {process.returncode} after Ctrl+M"
+    if not minimised:
+        return "Ctrl+M did not minimise the window"
+    return None
+
+
+def check_open_panel(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
+    """Ctrl+O shows Windows' Open dialog, and Esc cancels it.
+
+    Found by the robot: Preview's File ▸ Open… asked the Linux desktop
+    portal on every platform, so on Windows it did nothing."""
+    if not bring_forward(hwnd):
+        return "could not bring the window forward to test Ctrl+O"
+    before = {window for window, _ in visible_windows(process.pid)}
+    chord(VK_CONTROL, "o")
+    dialog = None
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and dialog is None:
+        time.sleep(0.2)
+        for window, _title in visible_windows(process.pid):
+            if window not in before:
+                buffer = ctypes.create_unicode_buffer(64)
+                user32().GetClassNameW(window, buffer, 64)
+                if buffer.value == "#32770":
+                    dialog = window
+    print(f"{app}: Ctrl+O: open dialog {'shown' if dialog else 'not shown'}")
+    if dialog is None:
+        return "Ctrl+O showed no Open dialog"
+    user32().SetForegroundWindow(dialog)
+    time.sleep(0.3)
+    tap(VK_ESCAPE)
+    time.sleep(KEY_SETTLE_SECONDS)
+    bring_forward(hwnd)
+    if process.poll() is not None:
+        return f"exited with {process.returncode} after the Open dialog was cancelled"
+    return None
+
+
+WM_NCHITTEST = 0x0084
+HTCLIENT = 1
+#: Clock's tab capsule (crates/clock/src/metrics.rs): centred, 396 pt wide,
+#: 7 pt from the top, 38 pt tall.
+CLOCK_TABS_CENTRE_Y = 7 + 38 / 2
+
+
+def check_clock_tabs(app: str, hwnd: int) -> str | None:
+    """Clock's tabs take clicks: the pointer over a tab hit-tests as client
+    area, not as the caption of the title-area drag region beneath them.
+
+    Found by the robot: clicking World Clock, Alarms, Stopwatch or Timers
+    did nothing on Windows (the click started a window move instead)."""
+    if not bring_forward(hwnd):
+        return "could not bring Clock forward to test its tabs"
+    left, top, right, _bottom = window_rect(hwnd)
+    origin_x, origin_y = client_origin(hwnd)
+    try:
+        scale = (user32().GetDpiForWindow(hwnd) or 96) / 96.0
+    except AttributeError:
+        scale = 1.0
+    x = (left + right) // 2 - int(120 * scale)  # the first tab, World Clock
+    # The in-window menu strip sits above the content here (no Lulo bar).
+    y = origin_y + int((STRIP_HEIGHT + CLOCK_TABS_CENTRE_Y) * scale)
+    user32().SetCursorPos(x, y)
+    time.sleep(0.4)
+    user32().SendMessageW.restype = ctypes.c_ssize_t
+    result = user32().SendMessageW(
+        wintypes.HWND(hwnd), WM_NCHITTEST, 0, wintypes.LPARAM(((y & 0xFFFF) << 16) | (x & 0xFFFF))
+    )
+    print(f"{app}: hit test over the World Clock tab at ({x}, {y}): {result} (origin {origin_x}, {origin_y})")
+    if result != HTCLIENT:
+        return f"Clock's tabs hit-test as {result}, not client area: clicks on them move the window"
+    return None
+
+
 def check_single_instance(
     binary: Path, environment: dict[str, str], process: subprocess.Popen, log: Path
 ) -> str | None:
@@ -782,11 +894,20 @@ def launch(
                 check_menu_strip(app, hwnd, screenshots),
                 check_menu_command(app, process, hwnd),
                 check_new_shortcut(app, process, screenshots),
+                check_window_keys(app, process, hwnd),
             )
             if error
         ]
         if app == "rmac-preview" and arguments:
             error = check_preview_pdf(hwnd, screenshots)
+            if error:
+                errors.append(error)
+        if app == "rmac-clock":
+            error = check_clock_tabs(app, hwnd)
+            if error:
+                errors.append(error)
+        if app == "rmac-preview":
+            error = check_open_panel(app, process, hwnd)
             if error:
                 errors.append(error)
         if app == "rmac-text-editor" and not errors:

@@ -891,6 +891,12 @@ impl PlatformWindow for WindowsWindow {
     }
 
     fn zoom(&self) {
+        // rmac: a fixed-size window (Calculator) does not zoom, as on the Mac.
+        // Without WS_THICKFRAME, SW_MAXIMIZE would size it to the whole
+        // monitor, over the Lulo bar and Dock, with its content in a corner.
+        if !self.0.is_resizable {
+            return;
+        }
         unsafe {
             if IsWindowVisible(self.0.hwnd).as_bool() {
                 ShowWindowAsync(self.0.hwnd, SW_MAXIMIZE).ok().log_err();

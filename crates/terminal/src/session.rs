@@ -1337,11 +1337,20 @@ impl Session {
                 return Err(SessionControlError);
             }
         }
-        self.killer
-            .as_mut()
-            .ok_or(SessionControlError)?
-            .kill()
-            .map_err(|_| SessionControlError)
+        let killed = self.killer.as_mut().ok_or(SessionControlError)?.kill();
+        // Windows: the pseudo console's killer reports failure even when the
+        // shell did end ("The shell exited with status 1"), and the window
+        // then refused to close with "Terminal could not terminate every
+        // shell safely" (found by the robot). An ended shell is a success.
+        #[cfg(windows)]
+        if killed.is_err()
+            && self
+                .shell_pid
+                .is_some_and(crate::shell_children::has_exited)
+        {
+            return Ok(());
+        }
+        killed.map_err(|_| SessionControlError)
     }
 
     pub(super) fn write(&mut self, bytes: &[u8]) -> Result<(), SessionWriteError> {

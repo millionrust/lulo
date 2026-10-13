@@ -33,6 +33,36 @@ pub(crate) fn shell_has_job(shell: u32) -> Option<bool> {
     Some(has_job(shell, &snapshot()?))
 }
 
+/// Whether the process `pid` has ended (or is gone), waiting up to half a
+/// second for one that was just told to stop. Only on a close's failure path.
+#[cfg(windows)]
+pub(crate) fn has_exited(pid: u32) -> bool {
+    use std::ffi::c_void;
+
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    const WAIT_OBJECT_0: u32 = 0;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+        fn WaitForSingleObject(handle: *mut c_void, milliseconds: u32) -> u32;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    // SAFETY: the handle is checked and closed; waiting on a process handle
+    // has no other effect.
+    unsafe {
+        let handle = OpenProcess(SYNCHRONIZE, 0, pid);
+        if handle.is_null() {
+            // No such process any more.
+            return true;
+        }
+        let ended = WaitForSingleObject(handle, 500) == WAIT_OBJECT_0;
+        CloseHandle(handle);
+        ended
+    }
+}
+
 #[cfg(windows)]
 fn snapshot() -> Option<Vec<(u32, u32, String)>> {
     use std::ffi::c_void;

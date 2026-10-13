@@ -36,6 +36,7 @@ mod presentation;
 mod presentation_persistence;
 mod presentation_support;
 mod preview_options;
+mod print_controller;
 mod progress_window;
 mod quick_look_controller;
 mod recovery_controller;
@@ -172,6 +173,7 @@ actions!(
         QuickLook,
         Slideshow,
         Compress,
+        PrintSelection,
         GetInfo,
         ShowInspector,
         GetSummaryInfo,

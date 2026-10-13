@@ -43,10 +43,10 @@ use crate::{
     ShowHighlightsAndNotes, ShowImageBackground, ShowInspector, ShowMagnifier,
     ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails, SinglePage, Slideshow,
     StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen, TakeScreenshotSelection,
-    TakeScreenshotWindow, ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
-    ToggleCorrectSpellingAutomatically, ToggleMarkup, ToggleToolbar, TwoPages, UndoMarkup,
-    UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn,
-    ZoomOut, ZoomToFit, ZoomToSelection,
+    TakeScreenshotWindow, TextSelection, ToggleCheckGrammarWithSpelling,
+    ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleMarkup,
+    ToggleToolbar, TwoPages, UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn,
+    ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit, ZoomToSelection,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -98,6 +98,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::InsertPageFromFile",
         "preview::RectangularSelection",
         "preview::AutomaticSelection",
+        "preview::TextSelection",
         "preview::InvertSelection",
         "preview::Crop",
         "preview::Redact",
@@ -156,6 +157,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
     rmac_ui::set_menu_checked("preview::ToggleMarkup", false, cx);
     rmac_ui::set_menu_checked("preview::RectangularSelection", false, cx);
     rmac_ui::set_menu_checked("preview::AutomaticSelection", false, cx);
+    rmac_ui::set_menu_checked("preview::TextSelection", false, cx);
     rmac_ui::set_menu_checked("preview::HideSidebar", false, cx);
     rmac_ui::set_menu_checked("preview::ShowThumbnails", false, cx);
     rmac_ui::set_menu_label("preview::EnterFullScreen", "Enter Full Screen", cx);
@@ -3098,11 +3100,9 @@ impl PreviewView {
     // kept-size crop): Tools ▸ Rectangular Selection is a checkable tool
     // that turns the image into a drag target; dragging on it sets
     // `Slot::selection`, and Tools ▸ Crop (⌘K) crops to whatever that
-    // selection currently is. Automatic Selection and Text Selection, the
-    // Mac's other two tools in this group, need an object-aware cutout and
-    // on-image OCR respectively — real algorithms this change doesn't
-    // implement, so they stay out of the menu rather than appear as items
-    // that would do nothing.
+    // selection currently is. Text Selection, the Mac's default tool, is the
+    // pointer mode a PDF already has; choosing it hands the pointer back
+    // from the two image selection tools.
 
     /// Tools ▸ Rectangular Selection: toggles the drag-to-select tool.
     /// Turning it off drops any selection in progress, like the Mac
@@ -3112,6 +3112,22 @@ impl PreviewView {
         if self.selection_tool_active {
             self.automatic_selection_tool_active = false;
         } else {
+            self.selection_drag = None;
+            if let Some(slot) = self.slot_mut() {
+                slot.selection = None;
+            }
+        }
+        cx.notify();
+    }
+
+    /// Tools ▸ Text Selection: the Mac's default pointer tool. It hands the
+    /// pointer back from Rectangular and Automatic Selection (dropping the
+    /// image selection they made, as switching tools does) to plain text
+    /// selection, which is how a PDF always behaves.
+    fn select_text_tool(&mut self, cx: &mut Context<Self>) {
+        if self.selection_tool_active || self.automatic_selection_tool_active {
+            self.selection_tool_active = false;
+            self.automatic_selection_tool_active = false;
             self.selection_drag = None;
             if let Some(slot) = self.slot_mut() {
                 slot.selection = None;
@@ -7649,6 +7665,16 @@ impl Render for PreviewView {
                 cx,
             );
             rmac_ui::set_menu_enabled("preview::AutomaticSelection", is_image, cx);
+            rmac_ui::set_menu_enabled("preview::TextSelection", loaded, cx);
+            rmac_ui::set_menu_checked(
+                "preview::TextSelection",
+                loaded
+                    && text_selection_tool_current(
+                        self.selection_tool_active,
+                        self.automatic_selection_tool_active,
+                    ),
+                cx,
+            );
             rmac_ui::set_menu_checked(
                 "preview::AutomaticSelection",
                 is_image && self.automatic_selection_tool_active,
@@ -7971,6 +7997,9 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &RectangularSelection, _, cx| {
                 this.toggle_selection_tool(cx);
             }))
+            .on_action(cx.listener(|this, _: &TextSelection, _, cx| {
+                this.select_text_tool(cx);
+            }))
             .on_action(cx.listener(|this, _: &AutomaticSelection, _, cx| {
                 this.toggle_automatic_selection_tool(cx);
             }))
@@ -8240,5 +8269,23 @@ mod tests {
         assert!(edits.redo(pixels(0)).is_none());
         assert!(!edits.dirty);
         assert_eq!(edits.revision, 0);
+    }
+}
+
+/// Whether Tools ▸ Text Selection is the current tool: it is whenever
+/// neither image selection tool has taken the pointer.
+fn text_selection_tool_current(rectangular: bool, automatic: bool) -> bool {
+    !rectangular && !automatic
+}
+
+#[cfg(test)]
+mod text_selection_tool_tests {
+    use super::text_selection_tool_current;
+
+    #[test]
+    fn text_selection_is_current_only_when_no_image_tool_is_active() {
+        assert!(text_selection_tool_current(false, false));
+        assert!(!text_selection_tool_current(true, false));
+        assert!(!text_selection_tool_current(false, true));
     }
 }

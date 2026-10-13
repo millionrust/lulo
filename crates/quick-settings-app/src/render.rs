@@ -191,6 +191,7 @@ impl Render for QuickSettingsView {
         };
         if (height - self.surface_height).abs() > 0.5 {
             self.surface_height = height;
+            rmac_ui::trace_mark(&format!("quick_settings_resize:height={height}"));
             window.resize(size(px(layout::SURFACE_WIDTH as f32), px(height)));
             // The outside-click catcher is another window: update it once
             // this render is done.

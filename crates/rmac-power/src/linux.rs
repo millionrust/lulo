@@ -699,13 +699,25 @@ pub(super) fn read_signal(
     match message {
         Some(Ok(message)) => {
             let header = message.header();
-            Ok(sent_by_service(
-                header.sender().map(|sender| sender.as_str()),
-            ))
+            Ok(
+                sent_by_service(header.sender().map(|sender| sender.as_str()))
+                    && !is_mock_call_log(header.interface().map(|interface| interface.as_str())),
+            )
         }
         Some(Err(error)) => Err(Error::new(operation, error.to_string())),
         None => Err(Error::new(operation, "the signal stream ended")),
     }
+}
+
+/// python-dbusmock announces every method call a mocked service answers as
+/// a `MethodCalled` signal on this interface. Reading UPower to publish a
+/// change therefore produced the signal that asked for the next change: in
+/// the nested behaviour sessions the wallpaper re-read UPower about 190
+/// times a second for as long as the session ran. Real services never emit
+/// it, and it carries no power state.
+#[cfg(any(not(target_os = "macos"), test))]
+pub(super) fn is_mock_call_log(interface: Option<&str>) -> bool {
+    interface == Some("org.freedesktop.DBus.Mock")
 }
 
 /// Whether a signal came from a service rather than the message bus itself.

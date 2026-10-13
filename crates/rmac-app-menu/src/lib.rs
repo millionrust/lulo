@@ -1682,6 +1682,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             // The Mac shows this as Move to Bin's ⌥ alternate; the menu bar
             // has no alternates yet, so it is listed after it.
             item!("Delete Immediately…", "finder::DeletePermanently", "⌥⌘⌫"),
+            item!("Print", "finder::PrintSelection", "⌘P", separator),
             item!("Find", "finder::Find", "⌘F", separator),
             item!("Find by Name…", "finder::FindByName", "⌃⇧⌘F"),
         ],
@@ -2580,6 +2581,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             // separately (`PreviewView::toggle_loupe`).
             item!("Show Magnifier", "preview::ShowMagnifier", "`"),
             item!("Adjust Size…", "preview::AdjustSize", "", separator),
+            item!("Text Selection", "preview::TextSelection", ""),
             item!("Rectangular Selection", "preview::RectangularSelection", ""),
             // PRV-MENU-013: a real 4-connected flood fill by colour
             // similarity (`rmac_preview::selection::flood_fill`), stored

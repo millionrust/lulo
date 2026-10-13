@@ -89,7 +89,7 @@ no console).
 |---|---|---|
 | Menu bar | The battery item only when the PC has a battery (a UPS or a peripheral's cell reported by UPower does not count). | `rmac-shell-runtime` coordinator |
 | Control Centre | The Wi-Fi and Bluetooth pills only with their radios; the half-width modules close up beside Now Playing, and the panel opens at that height. Display brightness keeps following the backlight it reads. | `rmac-quick-settings::layout`, `quick-settings-app` |
-| Low-spec, Windows | Solid materials: the wallpaper's average colour instead of the blurred copy under the Dock, menus and Control Centre. | `rmac-shell-layer::windows::backdrop` |
+| Low-spec, Windows | Solid materials: the wallpaper's average colour, drawn as a plain fill (not an image, which cost the shell 46 MB on the runner), instead of the blurred copy under the Dock, menus and Control Centre. | `rmac-shell-layer::windows::backdrop` |
 | Low-spec, Lulo OS | niri's blur at one pass instead of three, through `niri/hardware-generated.kdl`, which the session now includes after the shell's configuration. | `store::compositor_include`, `rmac-wayland-session` |
 | Low-spec, both | Control Centre's detail views open without the grow-out motion. | `quick-settings-app` |
 
@@ -110,6 +110,20 @@ not touch them. They can adopt the profile with:
 - `Adaptations::keyboard_brightness`, `nearby_sharing`: the Keyboard Brightness
   and AirDrop-like Control Centre modules, once those modules exist.
 - `Adaptations::touch_targets`: larger hit targets on a touchscreen.
+
+## Measured (2026-10-14, debug builds)
+
+| Machine | Profile | First / best detection |
+|---|---|---|
+| Ubuntu laptop, EliteBook 840 G2 (read-only run) | low-spec (4 threads); 2 cores/4 threads, 6.7 GB, Intel 8086:1616 integrated, internal eDP-1 1920x1080 @60 Hz, 1 battery, backlight, touchscreen, precision touchpad, pointing stick, fingerprint (VFS495, fprintd), webcam, microphone, speakers, Bluetooth, Wi-Fi, Ethernet | 3.4 / 2.9 ms |
+| Ruban's HP 245 G10, Windows 11 (interactive session) | standard; 4 cores/8 threads, 7.2 GB, AMD Radeon integrated, internal 1366x768 @60 Hz scale 1.00, 1 battery, backlight, precision touchpad, webcam, microphone, speakers, Bluetooth, Wi-Fi | 28.2 / 6.4 ms |
+| windows-latest runner (CI 38465757316) | low-spec (4 threads); 16 GB, Microsoft Basic Render Driver, 1024x768 @64 Hz, Ethernet | 8.1 / 1.8 ms |
+| Linux runner (runtime 38465757291) | low-spec (4 threads); 15.6 GB, Hyper-V virtual GPU, 1024x768, Ethernet | 1.1 / 0.8 ms |
+
+The cold first detection on Ruban's PC (28 ms in a debug build) includes loading
+SetupAPI and DXGI; in `lulo-shell` DXGI is already loaded by GPUI, and it runs on
+the detection thread, never the UI thread. The `--check` budget applies to the
+warm figure.
 
 ## Not done
 

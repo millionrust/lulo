@@ -385,6 +385,8 @@ impl EditorView {
         let recovery_directory = std::env::temp_dir().join("rmac-text-editor-recovery-pending");
         let recovery_path = recovery::fresh_record_path(&recovery_directory);
 
+        // Edit ▸ Complete reads the system word list; have it cached already.
+        rmac_ui::text_complete::warm_word_list();
         let view = Self {
             alert: None,
             // TXT-SETTINGS-003/004/006/007/012..015/017: seeded from the

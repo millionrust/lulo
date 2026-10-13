@@ -111,14 +111,17 @@ pub fn candidates(text: &str, caret: usize, dictionary: &[String]) -> (usize, Ve
     found.truncate(MAX_CANDIDATES);
     // Keep the case the person typed: `Gra` completes to `Grand`, `gra` to
     // `grand`, whichever case the source word had.
-    let found = found
-        .into_iter()
-        .map(|word| {
-            let tail: String = word.chars().skip(prefix.chars().count()).collect();
-            format!("{prefix}{tail}")
-        })
-        .collect();
-    (start, found)
+    let mut shown: Vec<String> = Vec::new();
+    for word in found {
+        let tail: String = word.chars().skip(prefix.chars().count()).collect();
+        let completed = format!("{prefix}{tail}");
+        // `Grand` and `grand` in the document are one suggestion once the
+        // typed case is applied.
+        if !shown.contains(&completed) {
+            shown.push(completed);
+        }
+    }
+    (start, shown)
 }
 
 /// Words from a word list file that begin with `prefix`, read until enough
@@ -142,6 +145,20 @@ pub fn dictionary_matches(path: &Path, prefix: &str) -> Vec<String> {
         }
     }
     matches
+}
+
+/// Read the system word list once, off the UI thread, so the operating
+/// system has it cached by the time Complete is first used and the read on
+/// that press is a memory copy. Nothing is kept in memory.
+pub fn warm_word_list() {
+    static WARMED: std::sync::Once = std::sync::Once::new();
+    WARMED.call_once(|| {
+        let _ = std::thread::Builder::new()
+            .name("word-list-warmup".to_owned())
+            .spawn(|| {
+                let _ = dictionary_matches(Path::new(SYSTEM_WORD_LIST), "\u{0}");
+            });
+    });
 }
 
 /// The state of a run of Complete presses on one word.
@@ -283,6 +300,12 @@ mod tests {
         assert_eq!(words, ["Grand", "Grandfather"]);
         let (_, words) = candidates("Grandfather gra", 15, &[]);
         assert_eq!(words, ["grandfather"]);
+    }
+
+    #[test]
+    fn words_that_differ_only_in_case_are_offered_once() {
+        let (_, words) = candidates("Grand grand gra", 15, &[]);
+        assert_eq!(words, ["grand"]);
     }
 
     #[test]

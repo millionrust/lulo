@@ -312,8 +312,10 @@ mod tests {
                 while let Some(item) = items.pop() {
                     items.extend(item.children.clone());
                     let shown = windows_hint(&item.shortcut);
+                    // "Ctrl++" (Zoom In) is a real key; "Alt+" is not.
+                    let no_key = shown.ends_with('+') && !shown.ends_with("++");
                     assert!(
-                        !shown.ends_with('+')
+                        !no_key
                             && !shown
                                 .chars()
                                 .any(|c| ('\u{F700}'..='\u{F8FF}').contains(&c)),

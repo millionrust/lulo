@@ -409,7 +409,27 @@ class RealModelScenario(Scenario):
                             if event == "assist_row_applied" and moment >= released), None)
             presented = next((moment for moment, event in launcher.events
                               if applied is not None and event == "present" and moment >= applied), None)
+            def first(watcher, name, after):
+                return next((moment for moment, event in watcher.events
+                             if event.startswith(name) and after is not None and moment >= after), None)
+
+            def gap(start, end):
+                return round((end - start) * 1000) if start is not None and end is not None else None
+
+            handed = first(hud, "voice_handed_to_spotlight", released_mark)
+            transcribed = first(hud, "voice_transcript", released_mark)
+            query_mark = first(launcher, "voice_query", released_mark)
+            asked = first(launcher, "assist_asked", query_mark)
+            replied = first(launcher, "assist_reply", asked)
             record = {
+                "steps_ms": {
+                    "release_to_transcript": gap(released_mark, transcribed),
+                    "transcript_to_handoff": gap(transcribed, handed),
+                    "handoff_to_spotlight_query": gap(handed, query_mark),
+                    "query_to_model_asked": gap(query_mark, asked),
+                    "model_asked_to_reply": gap(asked, replied),
+                    "reply_to_row_drawn": gap(replied, presented),
+                },
                 "file": entry["file"], "accent": entry.get("accent"),
                 "reference": entry["text"], "query": self.spotlight_query() if opened else None,
                 "row": row, "want": entry.get("intent"),

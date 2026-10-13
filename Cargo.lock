@@ -6006,7 +6006,9 @@ dependencies = [
  "rmac-print-linux",
  "rmac-storage",
  "rmac-ui",
+ "rmac-windows-resource-build",
  "sysinfo 0.33.1",
+ "windows 0.61.3",
  "zbus",
 ]
 

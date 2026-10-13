@@ -123,6 +123,9 @@ pub enum TopBarIndicatorKind {
     Bluetooth,
     Sound,
     Battery,
+    /// An app is recording from the microphone (BAR-09): the Mac's orange
+    /// privacy dot.
+    Microphone,
     Notifications,
 }
 
@@ -220,6 +223,13 @@ pub fn top_bar_indicator_labels(
             accessible: format!("Wi-Fi {}{strength}", network_state_label(network.state)),
         });
     }
+    if let Some(microphone) = &snapshot.microphone {
+        labels.push(TopBarIndicatorLabel {
+            kind: TopBarIndicatorKind::Microphone,
+            visible: String::new(),
+            accessible: format!("Microphone in use by {}", microphone.apps.join(", ")),
+        });
+    }
     if let Some(notifications) = snapshot
         .notifications
         .filter(|notifications| notifications.unread_count > 0)
@@ -254,6 +264,20 @@ mod tests {
             tabular_font_features().tag_value_list(),
             &[("tnum".into(), 1), ("cv08".into(), 1), ("ss03".into(), 1),]
         );
+    }
+
+    #[test]
+    fn a_recording_app_shows_the_microphone_indicator() {
+        let mut snapshot = rmac_shell_status::Snapshot::default();
+        assert!(top_bar_indicator_labels(&snapshot).is_empty());
+        snapshot.microphone = Some(rmac_shell_status::MicrophoneIndicator {
+            apps: vec!["Lulo Voice".into()],
+        });
+        let labels = top_bar_indicator_labels(&snapshot);
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].kind, TopBarIndicatorKind::Microphone);
+        assert_eq!(labels[0].accessible, "Microphone in use by Lulo Voice");
+        assert!(labels[0].visible.is_empty());
     }
 
     #[test]

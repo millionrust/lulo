@@ -12,6 +12,8 @@
 //!   light typo correction for app names.
 //! - [`writing`]: Writing Tools' fixed prompts, limits and clean-up;
 //!   [`writing_eval`]: its evaluation set and scoring.
+//! - [`voice`]: hold-to-talk speech to text (ADR 0024 §8): the pinned
+//!   Moonshine files, audio helpers and the hand-off to Spotlight.
 //! - `client` (feature `client`): the session-bus client.
 
 pub mod config;
@@ -28,6 +30,7 @@ pub mod prefix_state;
 pub mod prompt;
 mod task;
 pub mod verify;
+pub mod voice;
 pub mod writing;
 pub mod writing_eval;
 

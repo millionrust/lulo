@@ -119,6 +119,10 @@ SESSION_BINARIES = (
     # checksum-verified downloader. The model itself is never packaged.
     "rmac-intelligence-service",
     "rmac-intelligence-fetch",
+    # Lulo voice (ADR 0024 §8): the on-demand speech-to-text service and the
+    # talk key's listening pill. The voice model is never packaged either.
+    "rmac-voice-service",
+    "rmac-voice-hud",
     "rmac-file-chooser",
     "rmac-shortcut-broker",
     "rmac-shortcut-dispatch",
@@ -233,7 +237,17 @@ PACKAGE_SPECS = (
         # keyd and pkexec serve the opt-in "Use Mac shortcuts in all apps"
         # (docs/decisions/0017-mac-keyboard.md); the Qt platform theme gives Qt
         # apps the rmac look (docs/decisions/0019-third-party-toolkit-theming.md).
-        recommends=("gdm3", "keyd", "pkexec", "qt6-gtk-platformtheme"),
+        # libonnxruntime1.23 (MIT, Ubuntu universe) runs Talk to Lulo's
+        # speech-to-text model (ADR 0024 §8); rmac-voice-service loads it
+        # with dlopen only while the talk key is held, and says so in
+        # Settings when it is missing.
+        recommends=(
+            "gdm3",
+            "keyd",
+            "libonnxruntime1.23",
+            "pkexec",
+            "qt6-gtk-platformtheme",
+        ),
         summary="niri-based rmac Wayland desktop session",
         description=(
             "Provides the supervised rmac shell services, GDM session entry, "

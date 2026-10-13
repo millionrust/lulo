@@ -25,6 +25,9 @@ pub struct Config {
     /// default.
     pub tier: Option<String>,
     pub calibration: Option<CalibrationRecord>,
+    /// "Talk to Lulo": hold the talk key and speak (ADR 0024 §8). Off by
+    /// default, and only with Lulo Intelligence itself on.
+    pub voice: bool,
 }
 
 /// A measured decode speed, and the hardware it was measured on: a new CPU

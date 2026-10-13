@@ -519,3 +519,35 @@ fn full_laptop_dump_has_exactly_one_default_output_at_its_real_level() {
     assert_eq!(graph_devices(&graph, DeviceKind::Input).len(), 1);
     assert_eq!(graph.nodes.len(), 2);
 }
+
+#[test]
+fn running_microphone_streams_are_recording_and_monitors_are_not() {
+    let graph = parse_pw_dump_metadata(
+        r#"[
+            {"id":70,"type":"PipeWire:Interface:Node","info":{"state":"running","props":{
+                "media.class":"Stream/Input/Audio","application.name":"Lulo Voice",
+                "node.name":"pw-record"
+            }}},
+            {"id":71,"type":"PipeWire:Interface:Node","info":{"state":"running","props":{
+                "media.class":"Stream/Input/Audio","node.name":"peak-detect",
+                "stream.monitor":true
+            }}},
+            {"id":72,"type":"PipeWire:Interface:Node","info":{"state":"suspended","props":{
+                "media.class":"Stream/Input/Audio","application.name":"Paused Recorder"
+            }}},
+            {"id":73,"type":"PipeWire:Interface:Node","info":{"state":"running","props":{
+                "media.class":"Stream/Input/Audio","node.name":"screen-recorder",
+                "stream.capture.sink":"true"
+            }}},
+            {"id":74,"type":"PipeWire:Interface:Node","info":{"state":"running","props":{
+                "media.class":"Stream/Input/Audio","application.name":"Lulo Voice"
+            }}},
+            {"id":75,"type":"PipeWire:Interface:Node","info":{"state":"running","props":{
+                "media.class":"Stream/Output/Audio","application.name":"Music"
+            }}}
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(graph.recording, ["Lulo Voice"]);
+    assert!(graph.nodes.is_empty(), "streams are not devices");
+}

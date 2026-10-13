@@ -400,6 +400,19 @@ fn check_parked_windows(all_windows: &RwLock<SmallVec<[SafeHwnd; 4]>>) {
     }
 }
 
+/// rmac: `dwExtraInfo` of the Alt tap `activate` simulates to be allowed to
+/// take the foreground ("LULO").
+pub(crate) const ACTIVATION_ALT_MARK: usize = 0x4c55_4c4f;
+
+/// rmac: the simulated activation Alt, which no window should see as a key.
+fn is_activation_alt(msg: &MSG) -> bool {
+    matches!(
+        msg.message,
+        WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP
+    ) && msg.wParam.0 == usize::from(VK_MENU.0)
+        && unsafe { GetMessageExtraInfo() }.0 as usize == ACTIVATION_ALT_MARK
+}
+
 fn translate_accelerator(msg: &MSG) -> Option<()> {
     if msg.message != WM_KEYDOWN && msg.message != WM_SYSKEYDOWN {
         return None;
@@ -467,6 +480,9 @@ impl Platform for WindowsPlatform {
         unsafe {
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                 crate::rmac_trace::wake("message", format_args!("{:#06x}", msg.message));
+                if is_activation_alt(&msg) {
+                    continue;
+                }
                 if translate_accelerator(&msg).is_none() {
                     _ = TranslateMessage(&msg);
                     DispatchMessageW(&msg);
@@ -1033,6 +1049,9 @@ impl WindowsPlatformInner {
                     // if we don't we might not for example process window quit events
                     let mut msg = MSG::default();
                     let process_message = |msg: &_| {
+                        if is_activation_alt(msg) {
+                            return;
+                        }
                         if translate_accelerator(msg).is_none() {
                             _ = unsafe { TranslateMessage(msg) };
                             unsafe { DispatchMessageW(msg) };

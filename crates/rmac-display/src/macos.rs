@@ -49,7 +49,11 @@ pub(super) fn validate_layout(_: &Layout, _: &Snapshot) -> Result<(), Error> {
 }
 
 #[cfg(target_os = "macos")]
-pub(super) fn run_niri_output(_: &str, _: &[&str], operation: &'static str) -> Result<(), Error> {
+pub(super) fn system_apply_output(
+    _: &str,
+    _: OutputChange<'_>,
+    operation: &'static str,
+) -> Result<(), Error> {
     Err(Error::new(
         operation,
         "display configuration is only available in the niri session",

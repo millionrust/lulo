@@ -108,7 +108,10 @@ impl Settings {
         // Target display: every saved override plus every enabled output.
         let mut output_ids = std::collections::BTreeSet::new();
         output_ids.extend(wallpaper.per_output.keys().cloned());
-        if let WallpaperTarget::Output(output) = &self.wallpaper_target {
+        // Per-output state comes from niri, Lulo OS's compositor; Windows
+        // has no compositor connection to report on.
+        let compositor = cfg!(not(windows));
+        if let (true, WallpaperTarget::Output(output)) = (compositor, &self.wallpaper_target) {
             output_ids.insert(output.clone());
         }
         output_ids.extend(
@@ -274,7 +277,9 @@ impl Settings {
                 ));
             }
         }
-        if self.dock_compositor.connection != rmac_compositor::ConnectionState::Connected {
+        if compositor
+            && self.dock_compositor.connection != rmac_compositor::ConnectionState::Connected
+        {
             notes.push(note_card(
                 "niri is not connected in this process. Saved per-output choices remain editable, but live output availability cannot be confirmed.",
             ));

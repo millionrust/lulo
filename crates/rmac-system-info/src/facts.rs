@@ -1,23 +1,29 @@
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use std::fs;
+#[cfg(not(windows))]
 use std::io::Read;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use std::path::Path;
+#[cfg(not(windows))]
 use std::process::{Command, ExitStatus, Stdio};
 
 use crate::api::valid_fact;
 
+#[cfg(not(windows))]
 const MAX_COMMAND_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
+#[cfg(not(windows))]
 const COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const MAX_GRAPHICS_DEVICES: usize = 16;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const MAX_DRM_ENTRIES: usize = 128;
 
+#[cfg(not(windows))]
 pub(crate) fn command(program: &str, args: &[&str]) -> Option<String> {
     command_text(program, args).and_then(safe_fact)
 }
 
+#[cfg(not(windows))]
 pub(crate) fn command_text(program: &str, args: &[&str]) -> Option<String> {
     let mut command = Command::new(program);
     command.args(args);
@@ -31,22 +37,22 @@ pub(crate) fn command_text(program: &str, args: &[&str]) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn read_trimmed(path: impl AsRef<Path>) -> Option<String> {
     read_bounded(path, 64 * 1024).and_then(safe_fact)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn environment_value(name: &str) -> Option<String> {
     std::env::var(name).ok().and_then(safe_fact)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn read_os_release(key: &str) -> Option<String> {
     read_bounded("/etc/os-release", 64 * 1024).and_then(|contents| os_release_value(&contents, key))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn read_bounded(path: impl AsRef<Path>, limit: u64) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     if file.metadata().ok()?.len() > limit {
@@ -65,7 +71,7 @@ pub(crate) fn safe_fact(value: String) -> Option<String> {
     valid_fact(value).then(|| value.to_string())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn os_release_value(contents: &str, key: &str) -> Option<String> {
     contents.lines().find_map(|line| {
         let (candidate, value) = line.split_once('=')?;
@@ -75,6 +81,7 @@ pub(crate) fn os_release_value(contents: &str, key: &str) -> Option<String> {
     })
 }
 
+#[cfg(any(not(windows), test))]
 pub(crate) fn colon_value(contents: &str, key: &str) -> Option<String> {
     contents.lines().find_map(|line| {
         let (candidate, value) = line.split_once(':')?;
@@ -84,14 +91,14 @@ pub(crate) fn colon_value(contents: &str, key: &str) -> Option<String> {
     })
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn processor_from_cpuinfo(contents: &str) -> Option<String> {
     ["model name", "Hardware", "Processor"]
         .into_iter()
         .find_map(|key| colon_value(contents, key))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn memory_from_meminfo(contents: &str) -> Option<String> {
     colon_value(contents, "MemTotal")
         .and_then(|value| value.split_whitespace().next()?.parse::<u64>().ok())
@@ -110,11 +117,13 @@ pub(crate) fn architecture_label(architecture: &str) -> &str {
     }
 }
 
+#[cfg(not(windows))]
 struct BoundedCommandOutput {
     status: ExitStatus,
     stdout: Vec<u8>,
 }
 
+#[cfg(not(windows))]
 fn bounded_command_output(command: &mut Command) -> Option<BoundedCommandOutput> {
     command
         .stdin(Stdio::null())
@@ -156,6 +165,7 @@ fn bounded_command_output(command: &mut Command) -> Option<BoundedCommandOutput>
     Some(BoundedCommandOutput { status, stdout })
 }
 
+#[cfg(not(windows))]
 fn drain_bounded(mut reader: impl Read) -> std::io::Result<(Vec<u8>, bool)> {
     let mut bytes = Vec::new();
     reader
@@ -169,7 +179,7 @@ fn drain_bounded(mut reader: impl Read) -> std::io::Result<(Vec<u8>, bool)> {
     Ok((bytes, truncated))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn linux_graphics() -> Option<String> {
     let mut devices = fs::read_dir("/sys/class/drm")
         .ok()?
@@ -184,7 +194,7 @@ pub(crate) fn linux_graphics() -> Option<String> {
     safe_fact(devices.join(" · "))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn linux_graphics_device(card: &Path) -> Option<String> {
     let device = card.join("device");
     let driver = fs::read_link(device.join("driver"))
@@ -199,21 +209,21 @@ pub(crate) fn linux_graphics_device(card: &Path) -> Option<String> {
     graphics_label(driver.as_deref(), vendor.as_deref(), product.as_deref())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn is_drm_card_name(name: &str) -> bool {
     name.strip_prefix("card").is_some_and(|suffix| {
         !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
     })
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn normalize_pci_id(value: String) -> Option<String> {
     let value = value.strip_prefix("0x").unwrap_or(&value);
     (value.len() == 4 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .then(|| value.to_ascii_lowercase())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn graphics_label(
     driver: Option<&str>,
     vendor: Option<&str>,

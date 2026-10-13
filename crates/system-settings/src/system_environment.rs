@@ -1,3 +1,4 @@
+#[cfg(not(windows))]
 use std::process::Command;
 
 /// Read-only system data that is slow enough to keep off the first-frame path.
@@ -84,11 +85,17 @@ fn is_executable_file(path: &std::path::Path) -> bool {
 }
 
 fn account_name() -> String {
-    command_output("id", &["-F"])
+    #[cfg(windows)]
+    let full_name = None;
+    #[cfg(not(windows))]
+    let full_name = command_output("id", &["-F"]);
+    full_name
         .or_else(|| std::env::var("USER").ok())
+        .or_else(|| std::env::var("USERNAME").ok())
         .unwrap_or_else(|| "User".into())
 }
 
+#[cfg(not(windows))]
 fn command_output(program: &str, args: &[&str]) -> Option<String> {
     Command::new(program)
         .args(args)

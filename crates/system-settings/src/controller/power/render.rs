@@ -157,10 +157,15 @@ impl Settings {
                     "Recent battery history could not be read from UPower. Current battery state remains authoritative.",
                 ));
             }
+            // Windows keeps no charge history an app can read, and has no
+            // charge limit to set: those parts of the pane are simply absent
+            // there, not explained in terms of Lulo OS's UPower.
             rmac_power::BatteryHistoryAvailability::Unsupported => {
-                cards.push(note_card(
-                    "Recent battery history is unavailable because UPower does not provide it for this battery.",
-                ));
+                if cfg!(not(windows)) {
+                    cards.push(note_card(
+                        "Recent battery history is unavailable because UPower does not provide it for this battery.",
+                    ));
+                }
             }
         }
 
@@ -196,9 +201,11 @@ impl Settings {
                 ));
             }
             rmac_power::ChargeThresholdAvailability::Unsupported => {
-                cards.push(footnote(
-                    "Optimised charging is unavailable because UPower reports no writable charge limit for this battery.",
-                ));
+                if cfg!(not(windows)) {
+                    cards.push(footnote(
+                        "Optimised charging is unavailable because UPower reports no writable charge limit for this battery.",
+                    ));
+                }
             }
         }
         cards.push(footer);

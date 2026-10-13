@@ -12,6 +12,11 @@
 //! Secrets live in [`Secret`], which zeroizes on drop and never prints. The
 //! calls here block; callers own a worker thread.
 
+#[cfg(unix)]
+pub mod accounts;
+/// On Windows the pane shows the signed-in Windows account, read-only.
+#[cfg(windows)]
+#[path = "accounts_windows.rs"]
 pub mod accounts;
 pub mod crypt;
 pub mod model;

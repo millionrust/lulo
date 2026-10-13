@@ -225,21 +225,25 @@ impl Settings {
         // macOS 26.2 puts this pop-up, with the Mac's own wording, under
         // "Desktop & Stage Manager". rmac has no Stage Manager, so its
         // choices are Always and Never (design-lab/reveal-desktop.html).
-        cards.push(section_header("Desktop"));
-        let reveal = snapshot.settings.click_wallpaper_to_reveal;
-        let reveal_choices = rmac_shell_settings::ClickWallpaperToReveal::ALL
-            .into_iter()
-            .map(|value| {
-                let reveal_view = view.clone();
-                choice(value.title(), value == reveal, move |_, cx| {
-                    reveal_view.update(cx, |settings, cx| {
-                        settings.apply_click_wallpaper_to_reveal(value, cx)
-                    });
+        // Click-to-reveal, the title-bar double-click and hot corners are
+        // Lulo OS's window manager (niri and Mission Control); Windows keeps
+        // its own title bars and corners, so those sections are left out.
+        if cfg!(not(windows)) {
+            cards.push(section_header("Desktop"));
+            let reveal = snapshot.settings.click_wallpaper_to_reveal;
+            let reveal_choices = rmac_shell_settings::ClickWallpaperToReveal::ALL
+                .into_iter()
+                .map(|value| {
+                    let reveal_view = view.clone();
+                    choice(value.title(), value == reveal, move |_, cx| {
+                        reveal_view.update(cx, |settings, cx| {
+                            settings.apply_click_wallpaper_to_reveal(value, cx)
+                        });
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
-        let reveal_value = popup_value(&reveal_choices, reveal.title());
-        cards.push(card(vec![popup_row(
+                .collect::<Vec<_>>();
+            let reveal_value = popup_value(&reveal_choices, reveal.title());
+            cards.push(card(vec![popup_row(
             "click-wallpaper-to-reveal",
             "Click wallpaper to show desktop",
             Some(
@@ -251,62 +255,64 @@ impl Settings {
             enabled,
         )]));
 
-        // macOS keeps this in a "Windows" group along with several rmac does
-        // not yet implement (prefer tabs, ask to keep changes, tiling drags
-        // -- SET-89). SET-33: only the double-click action is wired so far.
-        cards.push(section_header("Windows"));
-        let double_click = snapshot.settings.double_click_title_bar;
-        let double_click_choices = rmac_shell_settings::DoubleClickTitleBarAction::ALL
-            .into_iter()
-            .map(|value| {
-                let double_click_view = view.clone();
-                choice(value.title(), value == double_click, move |_, cx| {
-                    double_click_view.update(cx, |settings, cx| {
-                        settings.apply_double_click_title_bar(value, cx)
-                    });
-                })
-            })
-            .collect::<Vec<_>>();
-        let double_click_value = popup_value(&double_click_choices, double_click.title());
-        cards.push(card(vec![popup_row(
-            "double-click-title-bar",
-            "Double-click a window's title bar to",
-            None,
-            double_click_value,
-            double_click_choices,
-            enabled,
-        )]));
-
-        // macOS keeps these behind a "Hot Corners…" sheet; rmac lists the
-        // four pop-ups in the pane. Only actions rmac can perform are
-        // offered (rmac_shell_settings::HotCornerAction).
-        cards.push(section_header("Hot Corners"));
-        let corners = snapshot.settings.hot_corners;
-        let mut corner_rows = Vec::new();
-        for corner in HotCorner::ALL {
-            let current = corner.get(&corners);
-            let choices = rmac_shell_settings::HotCornerAction::ALL
+            // macOS keeps this in a "Windows" group along with several rmac does
+            // not yet implement (prefer tabs, ask to keep changes, tiling drags
+            // -- SET-89). SET-33: only the double-click action is wired so far.
+            cards.push(section_header("Windows"));
+            let double_click = snapshot.settings.double_click_title_bar;
+            let double_click_choices = rmac_shell_settings::DoubleClickTitleBarAction::ALL
                 .into_iter()
-                .map(|action| {
-                    let corner_view = view.clone();
-                    choice(action.title(), action == current, move |_, cx| {
-                        corner_view.update(cx, |settings, cx| {
-                            settings.apply_hot_corner_change(HotCornerChange { corner, action }, cx)
+                .map(|value| {
+                    let double_click_view = view.clone();
+                    choice(value.title(), value == double_click, move |_, cx| {
+                        double_click_view.update(cx, |settings, cx| {
+                            settings.apply_double_click_title_bar(value, cx)
                         });
                     })
                 })
                 .collect::<Vec<_>>();
-            let value = popup_value(&choices, current.title());
-            corner_rows.push(popup_row(
-                corner.id(),
-                corner.title(),
+            let double_click_value = popup_value(&double_click_choices, double_click.title());
+            cards.push(card(vec![popup_row(
+                "double-click-title-bar",
+                "Double-click a window's title bar to",
                 None,
-                value,
-                choices,
+                double_click_value,
+                double_click_choices,
                 enabled,
-            ));
+            )]));
+
+            // macOS keeps these behind a "Hot Corners…" sheet; rmac lists the
+            // four pop-ups in the pane. Only actions rmac can perform are
+            // offered (rmac_shell_settings::HotCornerAction).
+            cards.push(section_header("Hot Corners"));
+            let corners = snapshot.settings.hot_corners;
+            let mut corner_rows = Vec::new();
+            for corner in HotCorner::ALL {
+                let current = corner.get(&corners);
+                let choices = rmac_shell_settings::HotCornerAction::ALL
+                    .into_iter()
+                    .map(|action| {
+                        let corner_view = view.clone();
+                        choice(action.title(), action == current, move |_, cx| {
+                            corner_view.update(cx, |settings, cx| {
+                                settings
+                                    .apply_hot_corner_change(HotCornerChange { corner, action }, cx)
+                            });
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let value = popup_value(&choices, current.title());
+                corner_rows.push(popup_row(
+                    corner.id(),
+                    corner.title(),
+                    None,
+                    value,
+                    choices,
+                    enabled,
+                ));
+            }
+            cards.push(card(corner_rows));
         }
-        cards.push(card(corner_rows));
 
         if snapshot.recovered_from_last_good || snapshot.migrated_from.is_some() {
             cards.push(note_card(snapshot.detail.clone().unwrap_or_else(|| {
@@ -316,7 +322,7 @@ impl Settings {
                 )
             })));
         }
-        if !outputs_live {
+        if !outputs_live && cfg!(not(windows)) {
             cards.push(note_card(
                 "niri is not connected in this process. Output-specific choices are limited to currently known outputs; saved Dock policy remains editable and is applied when the Lulo OS niri session is available.",
             ));

@@ -1,14 +1,12 @@
 //! Cross-platform system audio state and controls.
 
-use std::process::Command;
-
 #[cfg(any(test, feature = "test-support"))]
 pub mod contract;
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake;
 #[cfg(any(target_os = "linux", test))]
 mod linux;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 mod macos;
 mod model;
 #[cfg(any(target_os = "linux", test))]
@@ -16,15 +14,19 @@ mod monitor_filter;
 mod notification;
 #[cfg(test)]
 mod tests;
+#[cfg(windows)]
+mod win;
 
 #[cfg(any(target_os = "linux", test))]
 use linux::*;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 use macos::*;
 pub use model::*;
 #[cfg(any(target_os = "linux", test))]
 pub use monitor_filter::MonitorChanges;
 pub use notification::*;
+#[cfg(windows)]
+use win::*;
 
 pub fn snapshot() -> Result<Snapshot, Error> {
     system_snapshot()
@@ -68,12 +70,13 @@ pub async fn watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Erro
     system_watch(sender).await
 }
 
+#[cfg(not(windows))]
 fn command(
     program: &'static str,
     arguments: &[&str],
     operation: &'static str,
 ) -> Result<String, Error> {
-    use std::process::Stdio;
+    use std::process::{Command, Stdio};
 
     const OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
     let mut child = Command::new(program)
@@ -123,6 +126,7 @@ fn command(
     Ok(String::from_utf8_lossy(&stdout).trim().to_string())
 }
 
+#[cfg(any(not(windows), test))]
 fn drain_bounded(mut reader: impl std::io::Read, limit: usize) -> std::io::Result<(Vec<u8>, bool)> {
     let mut captured = Vec::with_capacity(limit.min(8192));
     let mut buffer = [0_u8; 8192];

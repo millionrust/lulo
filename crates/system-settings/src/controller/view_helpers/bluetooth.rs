@@ -50,36 +50,41 @@ pub(in crate::controller) fn bluetooth_device_row(
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(
-                    push_button(
-                        SharedString::from(format!("bluetooth-device-action-{connect_id}")),
-                        action,
+                // Windows connects a paired device's profiles itself and
+                // gives apps no connect or disconnect call, so a paired
+                // device there offers only Forget.
+                .when(!(device.paired && cfg!(windows)), |actions| {
+                    actions.child(
+                        push_button(
+                            SharedString::from(format!("bluetooth-device-action-{connect_id}")),
+                            action,
+                        )
+                        .disabled(busy)
+                        .when(device.paired, |button| {
+                            button.on_click(move |_, _, cx| {
+                                connect_view.update(cx, |settings, cx| {
+                                    settings.set_bluetooth_device_connected(
+                                        connect_id.clone(),
+                                        connect,
+                                        cx,
+                                    );
+                                });
+                            })
+                        })
+                        .when(!device.paired, |button| {
+                            button.on_click(move |_, window, cx| {
+                                pair_view.update(cx, |settings, cx| {
+                                    settings.begin_bluetooth_pairing(
+                                        pair_id.clone(),
+                                        pair_name.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                });
+                            })
+                        }),
                     )
-                    .disabled(busy)
-                    .when(device.paired, |button| {
-                        button.on_click(move |_, _, cx| {
-                            connect_view.update(cx, |settings, cx| {
-                                settings.set_bluetooth_device_connected(
-                                    connect_id.clone(),
-                                    connect,
-                                    cx,
-                                );
-                            });
-                        })
-                    })
-                    .when(!device.paired, |button| {
-                        button.on_click(move |_, window, cx| {
-                            pair_view.update(cx, |settings, cx| {
-                                settings.begin_bluetooth_pairing(
-                                    pair_id.clone(),
-                                    pair_name.clone(),
-                                    window,
-                                    cx,
-                                );
-                            });
-                        })
-                    }),
-                )
+                })
                 .when(device.paired, |actions| {
                     actions.child(
                         push_button(

@@ -187,14 +187,14 @@ fn prepare_picture(source: &std::path::Path) -> Result<PathBuf, &'static str> {
         .unwrap_or_else(std::env::temp_dir);
     let target = directory.join(format!("lulo-account-picture-{}.png", std::process::id()));
     {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        let file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&target)
-            .map_err(|_| UNREADABLE)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let file = options.open(&target).map_err(|_| UNREADABLE)?;
         let mut writer = std::io::BufWriter::new(file);
         square
             .to_rgba8()
@@ -776,6 +776,7 @@ mod tests {
             (decoded.width(), decoded.height()),
             (PICTURE_SIZE, PICTURE_SIZE)
         );
+        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
             let mode = std::fs::metadata(&prepared).unwrap().permissions().mode();

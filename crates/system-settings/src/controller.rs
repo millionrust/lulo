@@ -333,33 +333,39 @@ pub(crate) fn run() {
         style::WINDOW_HEIGHT,
         arguments,
         |window, cx| {
-            cx.bind_keys([
-                KeyBinding::new(
-                    rmac_ui::shortcuts::BACK.keystroke,
-                    GoBack,
-                    Some("SystemSettings"),
-                ),
-                // ⌘] replays a page left with Back, as on the Mac.
-                KeyBinding::new("cmd-]", GoForward, Some("SystemSettings")),
-                // ⌘F focuses the sidebar search field, as on the Mac's
-                // View ▸ Search.
-                KeyBinding::new("cmd-f", FocusSearch, Some("SystemSettings")),
-                // ⌘W closes the window; already handled by on_action in
-                // shell_render.rs, just never had a keystroke bound to it.
-                KeyBinding::new(
-                    rmac_ui::shortcuts::CLOSE.keystroke,
-                    rmac_ui::RequestClose,
-                    Some("SystemSettings"),
-                ),
-                // System Settings is a single window, so ⌘Q and ⌘W both
-                // just need to close it -- reuse the same guarded handler
-                // (it already declines to close mid-VPN-import, etc.).
-                KeyBinding::new("cmd-q", rmac_ui::RequestClose, Some("SystemSettings")),
-                KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("SystemSettings")),
-                // ⌘M minimizes the window, the same as the yellow traffic
-                // light.
-                KeyBinding::new("cmd-m", Minimize, Some("SystemSettings")),
-            ]);
+            // `rmac_ui::bind_keys` also binds each ⌘ chord's Ctrl twin,
+            // which is what Windows keyboards press (ADR 0023): without it
+            // Ctrl+W never closed Settings on Windows.
+            rmac_ui::bind_keys(
+                cx,
+                [
+                    KeyBinding::new(
+                        rmac_ui::shortcuts::BACK.keystroke,
+                        GoBack,
+                        Some("SystemSettings"),
+                    ),
+                    // ⌘] replays a page left with Back, as on the Mac.
+                    KeyBinding::new("cmd-]", GoForward, Some("SystemSettings")),
+                    // ⌘F focuses the sidebar search field, as on the Mac's
+                    // View ▸ Search.
+                    KeyBinding::new("cmd-f", FocusSearch, Some("SystemSettings")),
+                    // ⌘W closes the window; already handled by on_action in
+                    // shell_render.rs, just never had a keystroke bound to it.
+                    KeyBinding::new(
+                        rmac_ui::shortcuts::CLOSE.keystroke,
+                        rmac_ui::RequestClose,
+                        Some("SystemSettings"),
+                    ),
+                    // System Settings is a single window, so ⌘Q and ⌘W both
+                    // just need to close it -- reuse the same guarded handler
+                    // (it already declines to close mid-VPN-import, etc.).
+                    KeyBinding::new("cmd-q", rmac_ui::RequestClose, Some("SystemSettings")),
+                    KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("SystemSettings")),
+                    // ⌘M minimizes the window, the same as the yellow traffic
+                    // light.
+                    KeyBinding::new("cmd-m", Minimize, Some("SystemSettings")),
+                ],
+            );
             let mut settings = Settings::new(window, cx);
             // The Mac's own System Settings opens with keyboard focus
             // already on the search field. Focus it before the first frame:

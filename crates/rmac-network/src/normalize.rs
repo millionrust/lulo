@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(super) struct RawNetwork {
     pub(super) id: WifiNetworkId,
     pub(super) strength: u8,
@@ -10,7 +10,7 @@ pub(super) struct RawNetwork {
     pub(super) connected: bool,
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(super) fn normalize_networks(network_data: Vec<RawNetwork>) -> Vec<WifiNetwork> {
     let mut networks = HashMap::<WifiNetworkId, WifiNetwork>::new();
     for raw in network_data {
@@ -49,7 +49,7 @@ pub(super) fn normalize_networks(network_data: Vec<RawNetwork>) -> Vec<WifiNetwo
     networks
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(super) fn normalize_saved_networks(
     profiles: impl IntoIterator<Item = (WifiNetworkId, u64)>,
 ) -> Vec<WifiSavedNetwork> {
@@ -81,7 +81,7 @@ pub(super) fn normalize_saved_networks(
     saved.into_iter().map(|(network, _)| network).collect()
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(super) fn display_ssid(ssid: &[u8]) -> String {
     let display = String::from_utf8_lossy(ssid)
         .chars()
@@ -124,7 +124,7 @@ pub(super) fn device_state_from_network_manager(value: u32) -> DeviceState {
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(super) fn format_address(address: &str, prefix: Option<u32>) -> String {
     prefix.map_or_else(
         || address.to_string(),
@@ -132,7 +132,7 @@ pub(super) fn format_address(address: &str, prefix: Option<u32>) -> String {
     )
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(super) fn sort_devices(devices: &mut [NetworkDevice]) {
     devices.sort_by(|left, right| {
         right
@@ -144,7 +144,7 @@ pub(super) fn sort_devices(devices: &mut [NetworkDevice]) {
     });
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 pub(super) fn device_kind_order(kind: DeviceKind) -> u8 {
     match kind {
         DeviceKind::Ethernet => 0,
@@ -196,6 +196,7 @@ pub(super) fn vpn_service_label(connection_type: &str, service_type: Option<&str
     }
 }
 
+#[cfg(any(not(windows), test))]
 pub(super) fn sort_vpn_profiles(profiles: &mut [VpnProfile]) {
     profiles.sort_by(|left, right| {
         right
@@ -207,7 +208,7 @@ pub(super) fn sort_vpn_profiles(profiles: &mut [VpnProfile]) {
     });
 }
 
-#[cfg(any(not(target_os = "linux"), test))]
+#[cfg(any(not(any(target_os = "linux", windows)), test))]
 pub(super) fn parse_macos_vpn_profiles(output: &str) -> Vec<VpnProfile> {
     let mut profiles = output
         .lines()

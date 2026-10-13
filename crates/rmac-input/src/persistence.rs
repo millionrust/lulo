@@ -27,6 +27,12 @@ pub(super) fn validate_settings(settings: &InputSettings) -> Result<(), Error> {
             ));
         }
     }
+    if settings.double_click_ms.is_some() || settings.wheel_scroll_lines.is_some() {
+        return Err(Error::new(
+            "validate pointer settings",
+            "niri has no double-click time or wheel scroll-lines setting",
+        ));
+    }
     if settings.touch.map_to_output.as_ref().is_some_and(|output| {
         output.is_empty()
             || output.len() > 128

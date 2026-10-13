@@ -19,3 +19,15 @@ async-io.workspace = true
 futures-util.workspace = true
 rmac-dbus.workspace = true
 zbus.workspace = true
+
+# WinRT Bluetooth (Windows.Devices.Bluetooth, Enumeration and Radios) for
+# the Windows backend in src/win.rs.
+[target.'cfg(windows)'.dependencies]
+futures-util.workspace = true
+windows = { workspace = true, features = [
+    "Devices_Bluetooth",
+    "Devices_Enumeration",
+    "Devices_Radios",
+    "Foundation",
+    "Win32_System_WinRT",
+] }

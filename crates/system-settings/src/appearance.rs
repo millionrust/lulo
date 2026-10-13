@@ -178,11 +178,24 @@ pub(super) async fn apply_theme_change_authoritatively(
             eprintln!("rmac-system-settings: {error}");
         }
     }
+    // Windows' own apps, taskbar and title bars follow the same light/dark
+    // choice and accent colour.
+    #[cfg(windows)]
+    {
+        let effective = theme.effective;
+        if let Err(error) = blocking::unblock(move || windows_sync::sync(&effective)).await {
+            eprintln!("rmac-system-settings: {error}");
+        }
+    }
     Ok(ThemeLoad {
         host: fresh.host,
         theme,
     })
 }
+
+#[cfg(windows)]
+#[path = "appearance_windows.rs"]
+mod windows_sync;
 
 #[cfg(test)]
 mod tests {

@@ -157,7 +157,14 @@ pub fn request() -> Result<(), Error> {
             Err(Error::failed(Operation::Request))
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        crate::lock_windows::lock_workstation().map_err(|_| Error {
+            operation: Operation::Request,
+            kind: io::ErrorKind::Other,
+        })
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         Err(Error {
             operation: Operation::Request,

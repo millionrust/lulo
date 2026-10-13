@@ -8,12 +8,17 @@ impl Settings {
         catalog_event_rx: async_channel::Receiver<()>,
     ) {
         let (notification_updates, notification_update_rx) = async_channel::bounded(4);
-        cx.background_executor()
-            .spawn(async move {
-                let _ = rmac_notifications_linux::center::watch_applications(notification_updates)
-                    .await;
-            })
-            .detach();
+        // Only where the pane is offered: elsewhere the service's watcher
+        // has nothing to reach and its retries would wake Settings.
+        if crate::navigation::platform_supports("Notifications") {
+            cx.background_executor()
+                .spawn(async move {
+                    let _ =
+                        rmac_notifications_linux::center::watch_applications(notification_updates)
+                            .await;
+                })
+                .detach();
+        }
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             while let Ok(update) = notification_update_rx.recv().await {
                 if this
@@ -95,11 +100,13 @@ impl Settings {
         .detach();
 
         let (focus_updates, focus_update_rx) = async_channel::bounded(4);
-        cx.background_executor()
-            .spawn(async move {
-                let _ = rmac_focus_linux::client::watch_settings(focus_updates).await;
-            })
-            .detach();
+        if crate::navigation::platform_supports("Focus") {
+            cx.background_executor()
+                .spawn(async move {
+                    let _ = rmac_focus_linux::client::watch_settings(focus_updates).await;
+                })
+                .detach();
+        }
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             while let Ok(update) = focus_update_rx.recv().await {
                 if this

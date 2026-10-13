@@ -40,18 +40,6 @@ rmac-wallpaper-system.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-# Service backends and panes this Settings build never shows on Windows
-# (ADR 0023 phase 4): network, Bluetooth, users, login items, printers,
-# sharing, accounts, focus, power, input devices, GTK sync, screen reader,
-# the niri compositor link, and the Linux-specific halves of
-# locale/time/notifications/privacy/updates. See navigation.rs's Windows
-# `categories()` for the pane list this build actually shows. `cfg(unix)`,
-# not `cfg(target_os = "linux")`: this crate also builds on macOS as a dev
-# convenience (every other crate's Linux-only deps follow the same
-# `cfg(unix)` convention), and these panes' own real backends are Linux
-# D-Bus/niri/udisks services behind their own internal seams regardless.
-[target.'cfg(unix)'.dependencies]
 libc.workspace = true
 rmac-audio.workspace = true
 rmac-accounts.workspace = true
@@ -91,6 +79,7 @@ rmac-updates.workspace = true
 rmac-updates-linux.workspace = true
 rmac-users-linux.workspace = true
 
+
 # The exe's icon and version resource on Windows (ADR 0023 "Installer").
 [target.'cfg(windows)'.build-dependencies]
 rmac-windows-resource-build.workspace = true
@@ -100,18 +89,23 @@ rmac-windows-resource-build.workspace = true
 # desktop wallpaper.
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
+    "Win32_Devices_Bluetooth",
     "Win32_Devices_Display",
     "Win32_Devices_FunctionDiscovery",
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
+    "Win32_NetworkManagement_WiFi",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Power",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Variant",
     "Win32_UI_HiDpi",
+    "Win32_UI_Input",
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }

@@ -6,7 +6,12 @@
 //! session). Nothing here changes CUPS; changes go through cups-pk-helper
 //! ([`crate::admin`]).
 
+// Windows builds this crate only so Settings compiles; nothing reaches CUPS
+// there, so the socket helpers go unused.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::io::{Read as _, Write as _};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -48,6 +53,14 @@ impl Cups {
         &self.socket
     }
 
+    /// CUPS is not on Windows (Settings there has no Printers pane).
+    #[cfg(not(unix))]
+    fn call(&self, body: Vec<u8>) -> Result<ipp::Response, Error> {
+        let _ = (&self.socket, body);
+        Err(Error::Unavailable)
+    }
+
+    #[cfg(unix)]
     fn call(&self, body: Vec<u8>) -> Result<ipp::Response, Error> {
         let mut stream = UnixStream::connect(&self.socket).map_err(|_| Error::Unavailable)?;
         stream

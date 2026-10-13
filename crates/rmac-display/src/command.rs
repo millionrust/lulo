@@ -10,6 +10,7 @@ pub(super) fn validate_output_id(output: &str) -> Result<(), Error> {
     }
 }
 
+#[cfg(not(windows))]
 pub(super) fn command(
     program: &'static str,
     arguments: &[&str],
@@ -32,12 +33,14 @@ pub(super) fn command(
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+#[cfg(not(windows))]
 pub(super) struct CommandOutput {
     pub(super) status: ExitStatus,
     pub(super) stdout: Vec<u8>,
     pub(super) stderr: Vec<u8>,
 }
 
+#[cfg(not(windows))]
 pub(super) fn bounded_command_output(
     command: &mut Command,
     operation: &'static str,
@@ -103,6 +106,7 @@ pub(super) fn bounded_command_output(
     })
 }
 
+#[cfg(any(not(windows), test))]
 pub(super) fn drain_bounded(
     mut reader: impl std::io::Read,
     limit: usize,

@@ -1,6 +1,9 @@
 #[cfg(target_os = "linux")]
 use std::time::Duration;
 
+#[cfg(windows)]
+pub(crate) use crate::win::system_watch;
+#[cfg(not(windows))]
 use crate::{Error, WatchEvent};
 
 #[cfg(target_os = "linux")]
@@ -23,7 +26,7 @@ pub(crate) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
     sender
         .send(WatchEvent::Unavailable)

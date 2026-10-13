@@ -79,7 +79,17 @@ impl Settings {
                     ));
                 }
 
-                if (0.5..=4.0).contains(&logical.scale) {
+                // Windows gives apps no per-display scale setting: its
+                // scale reads as a plain value there, not a pop-up that
+                // could not apply.
+                if cfg!(windows) && (0.5..=4.0).contains(&logical.scale) {
+                    controls.push(value_button_row(
+                        "Scale",
+                        None,
+                        Some(format!("{}%", (logical.scale * 100.0).round() as u32).into()),
+                        None,
+                    ));
+                } else if (0.5..=4.0).contains(&logical.scale) {
                     let choices: Vec<PopupChoice> = [1.0, 1.25, 1.5, 1.75, 2.0]
                         .into_iter()
                         .map(|scale| {

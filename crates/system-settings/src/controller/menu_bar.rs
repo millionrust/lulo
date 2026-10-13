@@ -77,15 +77,20 @@ impl Settings {
                 MenuBarChange::Network,
             ));
         }
-        controls.push(control(
-            "menu-bar-vpn",
-            "icons/key.svg",
-            accent(),
-            "VPN",
-            indicators.vpn,
-            MenuBarChange::Vpn,
-        ));
-        if self.hardware.has_bluetooth {
+        // Each control only where the bar can show its item: on Windows
+        // the Lulo bar reads Wi-Fi, sound and the battery from Windows;
+        // VPN, Bluetooth, Focus and Notifications are Lulo OS services.
+        if crate::navigation::platform_supports("VPN") {
+            controls.push(control(
+                "menu-bar-vpn",
+                "icons/key.svg",
+                accent(),
+                "VPN",
+                indicators.vpn,
+                MenuBarChange::Vpn,
+            ));
+        }
+        if self.hardware.has_bluetooth && cfg!(not(windows)) {
             controls.push(control(
                 "menu-bar-bluetooth",
                 "icons/bluetooth.svg",
@@ -113,22 +118,26 @@ impl Settings {
                 MenuBarChange::Power,
             ));
         }
-        controls.push(control(
-            "menu-bar-focus",
-            "icons/moon.svg",
-            hsl(0x5e5ce6),
-            "Focus",
-            indicators.focus,
-            MenuBarChange::Focus,
-        ));
-        controls.push(control(
-            "menu-bar-notifications",
-            "icons/bell.svg",
-            hsl(0xff3b30),
-            "Notifications",
-            indicators.notifications,
-            MenuBarChange::Notifications,
-        ));
+        if crate::navigation::platform_supports("Focus") {
+            controls.push(control(
+                "menu-bar-focus",
+                "icons/moon.svg",
+                hsl(0x5e5ce6),
+                "Focus",
+                indicators.focus,
+                MenuBarChange::Focus,
+            ));
+        }
+        if crate::navigation::platform_supports("Notifications") {
+            controls.push(control(
+                "menu-bar-notifications",
+                "icons/bell.svg",
+                hsl(0xff3b30),
+                "Notifications",
+                indicators.notifications,
+                MenuBarChange::Notifications,
+            ));
+        }
         cards.push(card(controls));
 
         if self.hardware.has_battery {

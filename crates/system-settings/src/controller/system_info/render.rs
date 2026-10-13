@@ -2,73 +2,89 @@
 
 use super::*;
 
+/// One row of the General pane, in order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeneralRow {
+    About,
+    SoftwareUpdate,
+    Storage,
+    /// A pane macOS files under General: its name, icon and whether its
+    /// tile takes the accent colour.
+    Pane(&'static str, &'static str, bool),
+}
+
+/// The General rows this platform can open (Software Update and some of
+/// the General panes are Lulo OS services Windows does not have).
+fn general_rows() -> Vec<GeneralRow> {
+    [
+        GeneralRow::About,
+        GeneralRow::SoftwareUpdate,
+        GeneralRow::Storage,
+        GeneralRow::Pane("Date & Time", "icons/clock.svg", true),
+        GeneralRow::Pane("Language & Region", "icons/languages.svg", true),
+        GeneralRow::Pane("Login Items", "icons/app-window.svg", false),
+        GeneralRow::Pane("Sharing", "icons/globe.svg", false),
+    ]
+    .into_iter()
+    .filter(|row| match row {
+        GeneralRow::SoftwareUpdate => crate::navigation::platform_supports("Software Update"),
+        GeneralRow::Pane(name, _, _) => crate::navigation::platform_supports(name),
+        GeneralRow::About | GeneralRow::Storage => true,
+    })
+    .collect()
+}
+
 impl Settings {
     pub(in crate::controller) fn render_general(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-        let cards = vec![
-            card(vec![
-                nav_row(
+        let rows = general_rows();
+        let mut destinations = Vec::new();
+        let mut panes = Vec::new();
+        for (index, row) in rows.iter().copied().enumerate() {
+            let selected = self.general_cursor == index;
+            match row {
+                GeneralRow::About => destinations.push(nav_row(
                     view.clone(),
                     "icons/info.svg",
                     hsl(0x8e8e93),
                     GENERAL_DESTINATIONS[0].into(),
                     self.sysinfo.hardware_model.clone().map(Into::into),
                     SubPage::About,
-                    self.general_cursor == 0,
-                ),
-                nav_row(
+                    selected,
+                )),
+                GeneralRow::SoftwareUpdate => destinations.push(nav_row(
                     view.clone(),
                     "icons/refresh-cw.svg",
                     hsl(0x8e8e93),
                     GENERAL_DESTINATIONS[1].into(),
                     Some(self.sysinfo.operating_system.clone().into()),
                     SubPage::SoftwareUpdate,
-                    self.general_cursor == 1,
-                ),
-                nav_row(
+                    selected,
+                )),
+                GeneralRow::Storage => destinations.push(nav_row(
                     view.clone(),
                     "icons/database.svg",
                     hsl(0x8e8e93),
                     GENERAL_DESTINATIONS[2].into(),
                     None,
                     SubPage::Storage,
-                    self.general_cursor == 2,
-                ),
-            ]),
-            // macOS 26 files these panes under General rather than in the
-            // sidebar; each row opens the pane itself.
-            card(vec![
-                pane_nav_row(
+                    selected,
+                )),
+                GeneralRow::Pane(name, icon, tint) => panes.push(pane_nav_row(
                     view.clone(),
-                    "icons/clock.svg",
-                    accent(),
-                    "Date & Time",
-                    self.general_cursor == 3,
-                ),
-                pane_nav_row(
-                    view.clone(),
-                    "icons/languages.svg",
-                    accent(),
-                    "Language & Region",
-                    self.general_cursor == 4,
-                ),
-                pane_nav_row(
-                    view.clone(),
-                    "icons/app-window.svg",
-                    hsl(0x8e8e93),
-                    "Login Items",
-                    self.general_cursor == 5,
-                ),
-                pane_nav_row(
-                    view,
-                    "icons/globe.svg",
-                    hsl(0x8e8e93),
-                    "Sharing",
-                    self.general_cursor == 6,
-                ),
-            ]),
-        ];
-        let mut cards = cards;
+                    icon,
+                    if tint { accent() } else { hsl(0x8e8e93) },
+                    name,
+                    selected,
+                )),
+            }
+        }
+        // macOS 26 files these panes under General rather than in the
+        // sidebar; each row opens the pane itself.
+        let mut cards = vec![card(destinations)];
+        if !panes.is_empty() {
+            cards.push(card(panes));
+        }
         // The first-login Setup Assistant, run again on request; offered
         // only where it is installed.
         if let Some(program) = setup_assistant_program() {
@@ -93,16 +109,19 @@ impl Settings {
             .track_focus(&self.general_focus.clone().tab_stop(true).tab_index(0))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 match event.keystroke.key.as_str() {
-                    "down" => this.general_cursor = (this.general_cursor + 1).min(6),
+                    "down" => {
+                        this.general_cursor =
+                            (this.general_cursor + 1).min(general_rows().len().saturating_sub(1))
+                    }
                     "up" => this.general_cursor = this.general_cursor.saturating_sub(1),
-                    "enter" | "space" => match this.general_cursor {
-                        0 => this.push(SubPage::About, cx),
-                        1 => this.push(SubPage::SoftwareUpdate, cx),
-                        2 => this.push(SubPage::Storage, cx),
-                        3 => this.select_category("Date & Time", window, cx),
-                        4 => this.select_category("Language & Region", window, cx),
-                        5 => this.select_category("Login Items", window, cx),
-                        _ => this.select_category("Sharing", window, cx),
+                    "enter" | "space" => match general_rows().get(this.general_cursor) {
+                        Some(GeneralRow::About) => this.push(SubPage::About, cx),
+                        Some(GeneralRow::SoftwareUpdate) => this.push(SubPage::SoftwareUpdate, cx),
+                        Some(GeneralRow::Storage) => this.push(SubPage::Storage, cx),
+                        Some(GeneralRow::Pane(name, _, _)) => {
+                            this.select_category(name, window, cx)
+                        }
+                        None => return,
                     },
                     _ => return,
                 }

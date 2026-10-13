@@ -1,4 +1,10 @@
+#[cfg(not(windows))]
 use rmac_time::{Error, ErrorKind, Snapshot};
+
+#[cfg(windows)]
+pub(crate) use crate::win::{
+    system_set_ntp, system_set_time, system_set_timezone, system_snapshot,
+};
 
 #[cfg(target_os = "linux")]
 pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
@@ -46,7 +52,7 @@ pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
     })
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn system_snapshot() -> Result<Snapshot, Error> {
     Err(Error::new(
         ErrorKind::Unavailable,
@@ -63,7 +69,7 @@ pub(crate) fn system_set_ntp(enabled: bool) -> Result<(), Error> {
         .map_err(mutation_error)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn system_set_ntp(_enabled: bool) -> Result<(), Error> {
     Err(Error::new(
         ErrorKind::Unavailable,
@@ -80,7 +86,7 @@ pub(crate) fn system_set_timezone(timezone: &str) -> Result<(), Error> {
         .map_err(mutation_error)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn system_set_timezone(_timezone: &str) -> Result<(), Error> {
     Err(Error::new(
         ErrorKind::Unavailable,
@@ -103,7 +109,7 @@ pub(crate) fn system_set_time(time_usec: u64) -> Result<(), Error> {
         .map_err(mutation_error)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn system_set_time(_time_usec: u64) -> Result<(), Error> {
     Err(Error::new(
         ErrorKind::Unavailable,

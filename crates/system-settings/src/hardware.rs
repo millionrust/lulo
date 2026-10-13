@@ -1,8 +1,8 @@
-//! Small, bounded Linux hardware inventory. All calls run on a background executor.
+//! Small, bounded hardware inventory (Linux sysfs; Windows device APIs). All calls run on a background executor.
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 use std::fs;
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -47,14 +47,14 @@ impl Capabilities {
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn entries(path: &Path) -> Vec<PathBuf> {
     fs::read_dir(path)
         .map(|items| items.flatten().take(256).map(|item| item.path()).collect())
         .unwrap_or_default()
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn read(path: &Path) -> String {
     fs::read(path)
         .ok()
@@ -65,12 +65,12 @@ fn read(path: &Path) -> String {
         .to_owned()
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn any_entry(path: &Path) -> bool {
     !entries(path).is_empty()
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 pub(crate) fn scan(sys: &Path, udev: &Path, fprintd_supported: bool) -> Capabilities {
     let mut result = Capabilities::default();
     let mut integrated_ps2_mouse = false;
@@ -218,7 +218,13 @@ pub(crate) fn current() -> Capabilities {
     result
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+#[path = "hardware_windows.rs"]
+mod windows_scan;
+#[cfg(windows)]
+pub(crate) use windows_scan::{current, watch};
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn current() -> Capabilities {
     Capabilities::default()
 }
@@ -291,7 +297,9 @@ pub(crate) async fn watch(sender: async_channel::Sender<()>) -> std::io::Result<
     Ok(())
 }
 
-#[cfg(test)]
+// Fixtures shaped like Linux's /sys, whose names (`iio:device0`) Windows
+// cannot create.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

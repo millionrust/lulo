@@ -18,3 +18,18 @@ async-io.workspace = true
 futures-util.workspace = true
 rmac-dbus.workspace = true
 zbus.workspace = true
+
+# The Windows backend (`win.rs`): power status, the battery class driver and
+# power-setting notifications.
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Power",
+    "Win32_System_Registry",
+    "Win32_System_SystemServices",
+    "Win32_UI_WindowsAndMessaging",
+] }

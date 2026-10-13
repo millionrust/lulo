@@ -5,11 +5,19 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
-[target.'cfg(not(target_os = "macos"))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 rmac-dbus.workspace = true
 zbus.workspace = true
-
-[target.'cfg(target_os = "linux")'.dependencies]
 async-channel.workspace = true
 async-io.workspace = true
 futures-util.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }

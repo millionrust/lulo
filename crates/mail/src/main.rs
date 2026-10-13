@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod accounts_win;
 mod compose_window;
 mod delivery;
 mod live;
@@ -73,6 +75,8 @@ fn forward_events(
 ) -> std::sync::mpsc::Sender<rmac_mail_runtime::UiEvent> {
     use rmac_mail_runtime::UiEvent;
 
+    #[cfg(windows)]
+    let _ = &accounts;
     let (std_tx, std_rx) = std::sync::mpsc::channel::<UiEvent>();
     let (async_tx, async_rx) = async_channel::unbounded();
     std::thread::spawn(move || {
@@ -91,10 +95,17 @@ fn forward_events(
         };
         match event {
             UiEvent::Snapshot(_) | UiEvent::NewMail(_) | UiEvent::AccountRemoved(_) => {
+                // Windows lets accounts come and go while Mail runs, so each
+                // reload asks the store again.
+                #[cfg(not(windows))]
                 let accounts = accounts.clone();
                 let (mailboxes, messages) = cx
                     .background_executor()
-                    .spawn(async move { live::load(&accounts) })
+                    .spawn(async move {
+                        #[cfg(windows)]
+                        let accounts = delivery::accounts();
+                        live::load(&accounts)
+                    })
                     .await;
                 let _ = handle.update(cx, |view, cx| {
                     view.refresh_live(mailboxes, messages, cx);
@@ -181,7 +192,77 @@ fn start_live_sync(
     None
 }
 
+/// A later launch of Mail on Windows (a `mailto:` link, or the browser coming
+/// back from a Google or Microsoft sign-in) reaches the running Mail here.
+#[cfg(windows)]
+fn handle_launch(arguments: Vec<String>, cx: &mut App) {
+    if let Some(first) = arguments.first() {
+        if let Some(draft) = rmac_mail::mailto::parse(first) {
+            compose_window::open(
+                ComposeKind::New,
+                None,
+                Some(draft),
+                delivery::accounts(),
+                Vec::new(),
+                cx,
+            );
+        } else if !first.starts_with("--") {
+            let _ = rmac_accounts_linux::oauth::callback::deliver(first);
+        }
+    }
+    rmac_ui::activate_app_window(cx);
+}
+
+/// Windows: when accounts are added or removed in Settings, start or stop
+/// their sync workers and show the new list.
+#[cfg(windows)]
+fn watch_account_changes(
+    view_handle: ViewHandle,
+    runtime: Option<Arc<rmac_mail_runtime::Runtime>>,
+) {
+    use std::collections::HashSet;
+
+    let known: Rc<RefCell<HashSet<String>>> = Rc::new(RefCell::new(
+        delivery::accounts()
+            .into_iter()
+            .map(|account| account.path)
+            .collect(),
+    ));
+    accounts_win::set_on_change(move |cx| {
+        let accounts = delivery::accounts();
+        let paths: HashSet<String> = accounts.iter().map(|account| account.path.clone()).collect();
+        if let Some(runtime) = &runtime {
+            for gone in known.borrow().difference(&paths) {
+                runtime.remove_account(gone);
+            }
+            let runtime = Arc::clone(runtime);
+            std::thread::spawn(move || rmac_mail_runtime::windows::seed_accounts(&runtime));
+        }
+        *known.borrow_mut() = paths;
+        let Some(handle) = view_handle.borrow().clone() else {
+            return;
+        };
+        let shown = accounts.clone();
+        let _ = handle.update(cx, |view, cx| view.set_accounts(shown, cx));
+        cx.spawn(async move |cx| {
+            let (mailboxes, messages) = cx
+                .background_executor()
+                .spawn(async move { live::load(&accounts) })
+                .await;
+            let _ = handle.update(cx, |view, cx| view.refresh_live(mailboxes, messages, cx));
+        })
+        .detach();
+    });
+}
+
 fn main() {
+    // One Mail per user on Windows: a later launch hands its `mailto:` link
+    // (or sign-in return) to the running one instead of opening a second.
+    #[cfg(windows)]
+    if rmac_ui::hand_off_to_running_instance(MAIL, &[std::env::args().skip(1).collect()]) {
+        rmac_ui::focus_running_app(MAIL);
+        return;
+    }
     let fixture_mode = std::env::var(FIXTURE_ENV).is_ok_and(|value| value == "1");
     let accounts = if fixture_mode {
         vec![
@@ -249,6 +330,9 @@ fn main() {
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Mail")),
                 KeyBinding::new("cmd-,", ShowSettings, Some("Mail")),
             ]);
+            #[cfg(windows)]
+            rmac_ui::install_app_instance(MAIL, handle_launch, cx);
+            #[cfg(not(windows))]
             rmac_ui::install_app_menu(MAIL, cx);
             // Edit ▸ Writing Tools in compose windows; hidden until Lulo
             // Intelligence is known to be on with its model present.
@@ -292,6 +376,8 @@ fn main() {
             } else {
                 start_live_sync(sync_accounts, Rc::clone(&view_handle), cx)
             };
+            #[cfg(windows)]
+            watch_account_changes(Rc::clone(&view_handle), runtime.clone());
             let view_handle_for_window = Rc::clone(&view_handle);
             let runtime_for_window = runtime.clone();
             let opened = cx.open_window(options, move |window, cx| {

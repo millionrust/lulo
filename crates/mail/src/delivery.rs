@@ -526,7 +526,12 @@ mod tests {
         // known preset, so `deliver` has no SMTP server to try and must
         // queue rather than silently drop the message.
         let result = deliver(&account, draft, Some(draft_location));
-        assert!(matches!(result, DeliveryResult::Queued));
+        let outcome = match &result {
+            DeliveryResult::Sent => "sent".to_owned(),
+            DeliveryResult::Queued => "queued".to_owned(),
+            DeliveryResult::Failed(reason) => format!("failed: {reason}"),
+        };
+        assert_eq!(outcome, "queued");
 
         let storage = MailStorage::open(&home.root.join("lulo/mail"), account.id).unwrap();
         assert_eq!(

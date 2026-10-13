@@ -31,3 +31,11 @@ uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
+
+# Windows adds mail accounts from Mail's own Settings (`accounts_win`).
+[target.'cfg(windows)'.dependencies]
+async-io.workspace = true
+rmac-mail-imap.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true

@@ -161,6 +161,13 @@ impl MailView {
     /// pair — `rmac_mail_runtime`'s `NewMail`/`OpenMessage` events only
     /// carry the account and the storage row id, not Mail's own composite
     /// id string.
+    /// Windows: the account list changed (added or removed in Settings).
+    #[cfg(windows)]
+    pub fn set_accounts(&mut self, accounts: Vec<ComposeAccount>, cx: &mut Context<Self>) {
+        self.accounts = accounts;
+        cx.notify();
+    }
+
     #[cfg(any(target_os = "linux", windows))]
     pub fn message_id_for_row(&self, account: uuid::Uuid, row_id: i64) -> Option<String> {
         self.state

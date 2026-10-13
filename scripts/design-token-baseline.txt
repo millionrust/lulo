@@ -26,9 +26,9 @@ crates/text-editor/src/view/render.rs:2
 crates/text-editor/src/view/render/chrome.rs:1
 shell/bins/rmac-app-switcher/src/force_quit_window.rs:2
 shell/bins/rmac-app-switcher/src/main.rs:2
-shell/bins/rmac-dock/src/main.rs:3
-shell/bins/rmac-menubar/src/main.rs:6
+shell/bins/rmac-dock/src/lib.rs:3
+shell/bins/rmac-menubar/src/lib.rs:6
 shell/bins/rmac-screenshot/src/main.rs:8
-shell/bins/rmac-wallpaper/src/linux_wayland/desktop.rs:8
-shell/bins/rmac-wallpaper/src/linux_wayland/gallery.rs:25
-shell/bins/rmac-wallpaper/src/linux_wayland/menu.rs:1
+shell/bins/rmac-wallpaper/src/surface/desktop.rs:8
+shell/bins/rmac-wallpaper/src/surface/gallery.rs:25
+shell/bins/rmac-wallpaper/src/surface/menu.rs:1

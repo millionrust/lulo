@@ -155,7 +155,45 @@ fn drawer_options(bounds: Bounds<Pixels>) -> WindowOptions {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+/// On Windows the same surface, as a Win32 window `rmac-shell-layer`
+/// places in the middle of the screen (ADR 0023): its size here.
+#[cfg(windows)]
+fn drawer_options(bounds: Bounds<Pixels>) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+            point(px(0.0), px(0.0)),
+            bounds.size,
+        ))),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::PopUp,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        // The blur is drawn by the view (`rmac_shell_layer::over_backdrop`).
+        window_background: WindowBackgroundAppearance::Transparent,
+        app_id: Some(rmac_ui::app_id::APP_DRAWER.to_owned()),
+        window_decorations: Some(WindowDecorations::Client),
+        ..Default::default()
+    }
+}
+
+/// Apps' layer on Windows: no anchor, so the surface sits in the middle of
+/// the screen, as Lulo OS centres it.
+#[cfg(windows)]
+fn windows_layer() -> rmac_shell_layer::layer::LayerShellOptions {
+    use rmac_shell_layer::layer::{KeyboardInteractivity, Layer, LayerShellOptions};
+
+    LayerShellOptions {
+        namespace: "rmac-app-drawer".into(),
+        layer: Layer::Overlay,
+        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+        ..Default::default()
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn drawer_options(bounds: Bounds<Pixels>) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -230,13 +268,18 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         cx.update_global::<AppDrawerService, _>(|service, _| service.catcher = catcher);
     }
     let mut drawer = None;
-    let handle = cx.open_window(drawer_options(bounds), |window, cx| {
+    let build = |window: &mut gpui::Window, cx: &mut GpuiApp| {
         window.set_window_title("Apps");
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| AppDrawer::new(Some(token), window, cx));
         drawer = Some(view.downgrade());
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
-    });
+    };
+    #[cfg(windows)]
+    let handle =
+        rmac_shell_layer::open_layer_window(cx, drawer_options(bounds), windows_layer(), build);
+    #[cfg(not(windows))]
+    let handle = cx.open_window(drawer_options(bounds), build);
     if let (Ok(handle), Some(view)) = (handle, drawer) {
         #[cfg(target_os = "linux")]
         let cancel = cx.update_global::<AppDrawerService, _>(|service, _| {
@@ -308,7 +351,8 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
     open_drawer(bounds, cx);
 }
 
-pub(crate) fn run(show_on_start: bool) {
+/// Run Apps as its own process, answering its shortcut endpoint.
+pub fn run_service(show_on_start: bool) {
     rmac_ui::application()
         .with_assets(gpui_component_assets::Assets)
         .with_quit_mode(gpui::QuitMode::Explicit)
@@ -405,4 +449,66 @@ pub(crate) fn run(show_on_start: bool) {
                 open_drawer(fallback_bounds(cx), cx);
             }
         });
+}
+
+/// Apps' own artwork (the shared icon set it draws from), for a process
+/// that hosts it.
+pub fn asset(path: &str) -> Option<std::borrow::Cow<'static, [u8]>> {
+    use gpui::AssetSource as _;
+    rmac_ui::layered_assets(()).load(path).ok().flatten()
+}
+
+/// Run Apps as an ordinary window (development hosts), or open the
+/// running service's (Linux).
+pub fn run_standalone() {
+    #[cfg(target_os = "linux")]
+    {
+        if let Err(error) =
+            rmac_shortcuts::dispatch(&rmac_shortcuts::ShortcutId("app-drawer".into()))
+        {
+            eprintln!("Could not open Apps: {error}");
+            std::process::exit(1);
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    rmac_ui::boot_app(
+        rmac_ui::app_id::APP_DRAWER,
+        "Apps",
+        DRAWER_WIDTH,
+        DRAWER_HEIGHT,
+        |window, cx| {
+            cx.bind_keys(key_bindings());
+            AppDrawer::new(None, window, cx)
+        },
+    );
+}
+
+/// Apps' service in a process that already runs GPUI (`lulo-shell`);
+/// opening it is up to [`toggle`].
+#[cfg(windows)]
+pub fn start(cx: &mut GpuiApp) {
+    cx.bind_keys(key_bindings());
+    cx.set_global(AppDrawerService {
+        active: None,
+        next_token: 0,
+    });
+}
+
+/// Open Apps, or close the one already open, as the Dock's Apps tile and
+/// its shortcut do.
+#[cfg(windows)]
+pub fn toggle(cx: &mut GpuiApp) {
+    if !cx.has_global::<AppDrawerService>() {
+        start(cx);
+    }
+    route_shortcut(cx);
+}
+
+/// The cross-platform shell scene (`scripts/compare_shell_scenes.py`):
+/// with `RMAC_SHELL_SCENE_OPEN=apps`, open Apps once the service runs.
+#[cfg(windows)]
+pub fn open_scene(cx: &mut GpuiApp) {
+    if std::env::var("RMAC_SHELL_SCENE_OPEN").as_deref() == Ok("apps") {
+        toggle(cx);
+    }
 }

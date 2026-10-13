@@ -6024,6 +6024,7 @@ dependencies = [
  "rmac-apps",
  "rmac-icon",
  "rmac-shell-activation-runtime",
+ "rmac-shell-layer",
  "rmac-shortcuts",
  "rmac-ui",
 ]
@@ -6053,6 +6054,7 @@ dependencies = [
  "futures-util",
  "rmac-apps",
  "rmac-locale",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -6296,6 +6298,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-compositor-system"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "blocking",
+ "futures-util",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "windows 0.61.3",
+]
+
+[[package]]
 name = "rmac-dbus"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -6320,6 +6335,7 @@ dependencies = [
  "rustix 1.1.4",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6369,7 +6385,7 @@ dependencies = [
  "rmac-appearance-portal",
  "rmac-apps",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-display",
  "rmac-dock",
  "rmac-dock-system",
@@ -6391,7 +6407,7 @@ dependencies = [
  "rmac-app-launch",
  "rmac-apps",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-dock",
  "rmac-icon",
  "rmac-locale",
@@ -6633,7 +6649,7 @@ dependencies = [
  "rmac-clipboard-linux",
  "rmac-clock",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-gtk-settings",
  "rmac-intelligence",
  "rmac-launcher",
@@ -6644,6 +6660,7 @@ dependencies = [
  "rmac-quick-look",
  "rmac-quick-settings-system",
  "rmac-shell-activation-runtime",
+ "rmac-shell-layer",
  "rmac-shell-settings",
  "rmac-shortcuts",
  "rmac-theme",
@@ -7046,6 +7063,7 @@ dependencies = [
  "rmac-sound",
  "serde",
  "serde_json",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -7073,6 +7091,7 @@ dependencies = [
  "rmac-places",
  "sha2 0.10.9",
  "trash",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -7257,13 +7276,14 @@ dependencies = [
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-gtk-settings",
  "rmac-media",
  "rmac-osd",
  "rmac-quick-settings",
  "rmac-quick-settings-system",
  "rmac-shell-activation-runtime",
+ "rmac-shell-layer",
  "rmac-shell-runtime",
  "rmac-shortcuts",
  "rmac-theme",
@@ -7382,6 +7402,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-dock"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "chrono",
+ "futures-util",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "rmac-app-launch",
+ "rmac-app-menu",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-compositor-system",
+ "rmac-desktop",
+ "rmac-dock",
+ "rmac-dock-runtime",
+ "rmac-dock-system",
+ "rmac-locale",
+ "rmac-login-items-linux",
+ "rmac-osd",
+ "rmac-places",
+ "rmac-places-system",
+ "rmac-recent-documents",
+ "rmac-search",
+ "rmac-shell-layer",
+ "rmac-shell-runtime",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-shell-ui",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-runtime",
+ "trash",
+ "uuid",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-shell-invocation"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -7405,6 +7467,70 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-layer"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "futures-util",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "raw-window-handle",
+ "rmac-compositor",
+ "rmac-compositor-system",
+ "uuid",
+ "windows 0.61.3",
+]
+
+[[package]]
+name = "rmac-shell-menubar"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "chrono",
+ "futures-util",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "rmac-app-launch",
+ "rmac-app-menu",
+ "rmac-apps",
+ "rmac-audio",
+ "rmac-bluetooth",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-compositor-system",
+ "rmac-desktop",
+ "rmac-dock",
+ "rmac-dock-runtime",
+ "rmac-dock-system",
+ "rmac-locale",
+ "rmac-network",
+ "rmac-osd",
+ "rmac-places",
+ "rmac-power",
+ "rmac-quick-settings-system",
+ "rmac-recent-documents",
+ "rmac-search",
+ "rmac-shell-layer",
+ "rmac-shell-runtime",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-shell-ui",
+ "rmac-shortcuts",
+ "rmac-ui",
+ "rmac-updates",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-runtime",
+ "trash",
+ "uuid",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-shell-runtime"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -7415,7 +7541,7 @@ dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-focus-linux",
  "rmac-focus-runtime",
  "rmac-network",
@@ -7427,6 +7553,8 @@ dependencies = [
  "rmac-shell-status",
  "rmac-shell-status-linux",
  "rmac-sound",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -7462,6 +7590,75 @@ dependencies = [
  "async-io",
  "futures-util",
  "rmac-audio",
+ "zbus",
+]
+
+[[package]]
+name = "rmac-shell-ui"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "blocking",
+ "gpui",
+ "rmac-appearance",
+ "rmac-appearance-portal",
+ "rmac-apps",
+ "rmac-design",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-theme",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "rmac-shell-wallpaper"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "chrono",
+ "futures-util",
+ "gpui",
+ "gpui_linux",
+ "gpui_platform",
+ "image",
+ "libc",
+ "rmac-app-launch",
+ "rmac-app-menu",
+ "rmac-apps",
+ "rmac-archive",
+ "rmac-calendar-agent",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-compositor-system",
+ "rmac-desktop",
+ "rmac-desktop-widgets",
+ "rmac-dock",
+ "rmac-dock-runtime",
+ "rmac-dock-system",
+ "rmac-locale",
+ "rmac-osd",
+ "rmac-pasteboard",
+ "rmac-places",
+ "rmac-power",
+ "rmac-recent-documents",
+ "rmac-search",
+ "rmac-shell-layer",
+ "rmac-shell-runtime",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-shell-ui",
+ "rmac-sound",
+ "rmac-storage",
+ "rmac-theme",
+ "rmac-thumbnails",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-runtime",
+ "rmac-weather",
+ "trash",
+ "uuid",
  "zbus",
 ]
 
@@ -7826,7 +8023,7 @@ dependencies = [
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-compositor",
- "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-shell-settings",
  "rmac-theme",
  "rmac-wallpaper",
@@ -7868,18 +8065,27 @@ dependencies = [
  "gpui",
  "image",
  "raw-window-handle",
+ "rmac-app-drawer",
  "rmac-app-menu",
  "rmac-apps",
  "rmac-compositor",
+ "rmac-compositor-system",
  "rmac-desktop",
+ "rmac-launcher-app",
+ "rmac-osd",
+ "rmac-quick-settings-app",
+ "rmac-shell-dock",
+ "rmac-shell-layer",
+ "rmac-shell-menubar",
  "rmac-shell-settings",
+ "rmac-shell-ui",
+ "rmac-shell-wallpaper",
  "rmac-ui",
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-system",
  "rmac-windows-resource-build",
  "windows 0.61.3",
- "windows-core 0.61.2",
 ]
 
 [[package]]

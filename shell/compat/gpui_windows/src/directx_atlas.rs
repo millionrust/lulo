@@ -166,7 +166,19 @@ impl DirectXAtlasState {
             width: DevicePixels(16384),
             height: DevicePixels(16384),
         };
-        let size = min_size.min(&MAX_ATLAS_SIZE).max(&DEFAULT_ATLAS_SIZE);
+        // rmac: pictures (icons, thumbnails) start on a quarter-size page:
+        // a shell surface shows a handful of icons, and on a laptop's
+        // integrated GPU each 4 MB page costs the process about twice that
+        // (WIN-OS-64). Glyph pages keep the default.
+        const POLYCHROME_ATLAS_SIZE: Size<DevicePixels> = Size {
+            width: DevicePixels(512),
+            height: DevicePixels(512),
+        };
+        let default_size = match kind {
+            AtlasTextureKind::Polychrome => POLYCHROME_ATLAS_SIZE,
+            _ => DEFAULT_ATLAS_SIZE,
+        };
+        let size = min_size.min(&MAX_ATLAS_SIZE).max(&default_size);
         let pixel_format;
         let bind_flag;
         let bytes_per_pixel;
@@ -381,9 +393,11 @@ mod tests {
             width: DevicePixels(64),
             height: DevicePixels(64),
         };
+        // rmac: two of these do not fit one 512² picture page (upstream:
+        // 700 on a 1024² page).
         let big = Size {
-            width: DevicePixels(700),
-            height: DevicePixels(700),
+            width: DevicePixels(350),
+            height: DevicePixels(350),
         };
 
         let keeper_key = make_image_key(1);

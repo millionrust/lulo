@@ -611,3 +611,23 @@ fn double_click_title_bar_defaults_to_zoom_like_macos() {
         ["Zoom", "Minimize", "Fill", "Do Nothing"]
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn a_windows_dock_saved_before_apps_ran_on_windows_gets_apps_back() {
+    let old = [
+        rmac_apps::identity::FILES,
+        rmac_apps::identity::NOTES,
+        rmac_apps::identity::TEXT_EDITOR,
+        rmac_apps::identity::TERMINAL,
+        rmac_apps::identity::SYSTEM_SETTINGS,
+    ];
+    let settings = ShellSettings {
+        pinned_apps: old.into_iter().map(|id| AppId(id.into())).collect(),
+        ..ShellSettings::default()
+    };
+    assert_eq!(
+        migrate_application_ids(settings).pinned_apps,
+        ShellSettings::default().pinned_apps
+    );
+}

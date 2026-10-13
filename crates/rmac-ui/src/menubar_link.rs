@@ -144,7 +144,10 @@ fn set_writer(writer: Option<File>, app_id: &'static str, cx: &mut App) {
     }
 }
 
-/// Give the bar this app's menus, validated now, in the strip's shape.
+/// Give the bar this app's menus, validated now, exactly as the app
+/// exports them over D-Bus on Lulo OS: the bar is the same view on both
+/// (ADR 0023, "Phase 3 revised: shared shell views") and builds the bold
+/// app menu, Window and Help itself.
 fn send_menus(app_id: &'static str, cx: &mut App) {
     let Some(writer) = cx
         .try_global::<MenuBarLink>()
@@ -152,8 +155,7 @@ fn send_menus(app_id: &'static str, cx: &mut App) {
     else {
         return;
     };
-    let app_name = rmac_apps::identity::window_title(app_id).unwrap_or(app_id);
-    let menus = crate::menu_strip::strip_menus(app_name, crate::app_menu::current_menus(cx));
+    let menus = crate::app_menu::current_menus(cx);
     let line = match pipe::encode_message(&Message::Menus(menus)) {
         Ok(line) => line,
         Err(error) => {

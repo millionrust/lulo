@@ -34,7 +34,7 @@ pub struct VpnImportCapabilities {
 }
 
 #[derive(Clone)]
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct VpnImportPreviewId {
     profile: super::VpnProfileId,
     settings: SettingsMap,
@@ -58,13 +58,13 @@ pub struct VpnImportPreview {
     pub source_name: String,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 type SettingsMap = std::collections::HashMap<
     String,
     std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
 >;
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 type SettingsMap = ();
 
 pub(super) fn capabilities() -> VpnImportCapabilities {
@@ -88,11 +88,11 @@ pub(super) fn preview(
     capability: &VpnImportCapabilityId,
     path: &std::path::Path,
 ) -> Result<VpnImportPreview, super::Error> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         linux_preview(capability, path)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = (capability, path);
         Err(super::Error::new(
@@ -106,11 +106,11 @@ pub(super) fn finish(
     preview: &VpnImportPreviewId,
     keep: bool,
 ) -> Result<super::VpnSnapshot, super::Error> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         linux_finish(preview, keep)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = (preview, keep);
         Err(super::Error::new(
@@ -120,28 +120,28 @@ pub(super) fn finish(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const MAX_IMPORT_BYTES: u64 = 4 * 1024 * 1024;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const MAX_COMMAND_OUTPUT_BYTES: usize = 16 * 1024;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const IMPORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const IMPORT_SETTLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const IMPORT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 struct StagedImport {
     id: VpnImportPreviewId,
     name: String,
     service: String,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 struct SensitiveBytes(Vec<u8>);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl Drop for SensitiveBytes {
     fn drop(&mut self) {
         use zeroize::Zeroize as _;
@@ -149,7 +149,7 @@ impl Drop for SensitiveBytes {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_preview(
     capability: &VpnImportCapabilityId,
     path: &std::path::Path,
@@ -238,7 +238,7 @@ fn linux_preview(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_finish(
     preview: &VpnImportPreviewId,
     keep: bool,
@@ -297,7 +297,7 @@ fn linux_finish(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn read_import_file(path: &std::path::Path) -> Result<SensitiveBytes, super::Error> {
     use std::io::Read as _;
 
@@ -327,12 +327,12 @@ fn read_import_file(path: &std::path::Path) -> Result<SensitiveBytes, super::Err
     Ok(SensitiveBytes(bytes))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 struct ImportCommandResult {
     uuid: Option<String>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn run_import_command(
     capability: &VpnImportCapabilityId,
     path: &std::path::Path,
@@ -432,7 +432,7 @@ fn run_import_command(
     result
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn find_uuid(bytes: &[u8]) -> Option<String> {
     bytes.windows(36).find_map(|candidate| {
         let valid = candidate.iter().enumerate().all(|(index, byte)| {
@@ -446,7 +446,7 @@ fn find_uuid(bytes: &[u8]) -> Option<String> {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn connection_paths(
     connection: &zbus::blocking::Connection,
 ) -> Result<Vec<zbus::zvariant::OwnedObjectPath>, super::Error> {
@@ -461,7 +461,7 @@ fn connection_paths(
     .map_err(|error| super::Error::new("list saved VPN profiles", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn find_staged_import(
     connection: &zbus::blocking::Connection,
     capability: &VpnImportCapabilityId,
@@ -530,7 +530,7 @@ fn find_staged_import(
     Ok(candidates.remove(0).1)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn import_matches_capability(
     capability: &VpnImportCapabilityId,
     connection_type: &str,
@@ -546,7 +546,7 @@ fn import_matches_capability(
         })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn require_staged_autoconnect_disabled(
     connection: &zbus::blocking::Connection,
     preview: &VpnImportPreviewId,
@@ -575,7 +575,7 @@ fn require_staged_autoconnect_disabled(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn exact_staged_profile<'a>(
     connection: &'a zbus::blocking::Connection,
     preview: &'a VpnImportPreviewId,
@@ -600,7 +600,7 @@ fn exact_staged_profile<'a>(
     Ok(proxy)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn exact_profile_settings(
     connection: &zbus::blocking::Connection,
     id: &super::VpnProfileId,
@@ -622,7 +622,7 @@ fn exact_profile_settings(
     Ok(settings)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn delete_exact_staged(
     connection: &zbus::blocking::Connection,
     preview: &VpnImportPreviewId,
@@ -632,7 +632,7 @@ fn delete_exact_staged(
         .map_err(|error| super::Error::new("remove temporary VPN import", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn profile_proxy<'a>(
     connection: &'a zbus::blocking::Connection,
     path: &'a str,

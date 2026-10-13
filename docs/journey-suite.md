@@ -199,7 +199,7 @@ considerably less accessible than journey 1's Dock/Spotlight surfaces:
   button, the search/path entry, and the icon-size slider are exposed over
   AT-SPI with an empty name (`grep -rn "aria_label\|\.role(\|
   on_a11y_action" crates/finder/src` returns nothing, unlike
-  `shell/bins/rmac-dock/src/main.rs`, which uses that exact API for its own
+  `shell/bins/rmac-dock/src/lib.rs`, which uses that exact API for its own
   tiles). Worse, **no file, folder, or sidebar row is exposed at all** -- a
   Files window's AT-SPI frame has only its toolbar controls as children.
   This blocks "find a file" (`find_file` step) and any per-item selection
@@ -358,7 +358,7 @@ at all.
   or read back which tab is active.
 
 This pass fixes both, following the same `.role()`/`.aria_label()` pattern
-`shell/bins/rmac-dock/src/main.rs` and `crates/rmac-ui` already use:
+`shell/bins/rmac-dock/src/lib.rs` and `crates/rmac-ui` already use:
 
 * The terminal body div now carries `.id("terminal-grid")`,
   `.role(Role::Terminal)`, and `.a11y_synthetic_children(...)`

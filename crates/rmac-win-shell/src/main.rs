@@ -17,6 +17,19 @@ fn main() {
         Some(rmac_win_shell::win::catalog::APPS_HELPER_SWITCH) => {
             std::process::exit(rmac_win_shell::win::catalog::run_apps_helper())
         }
+        // One icon written as a PNG (`win::shell_icons`), for the same
+        // reason.
+        // Brightness through WMI (`rmac_osd::windows`), for the same reason.
+        Some("--brightness") => std::process::exit(rmac_osd::windows::run_brightness_helper(
+            &std::env::args().skip(2).collect::<Vec<_>>(),
+        )),
+        // Apps' desktop entry: open Apps in the running shell.
+        Some(rmac_win_shell::win::session::APP_DRAWER_SWITCH) => {
+            std::process::exit(rmac_win_shell::win::session::request_app_drawer())
+        }
+        Some(rmac_win_shell::win::shell_icons::SAVE_SWITCH) => {
+            std::process::exit(rmac_win_shell::win::shell_icons::run_save())
+        }
         _ => {}
     }
     std::process::exit(rmac_win_shell::run());

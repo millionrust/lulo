@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 members = ["crates/*", "bins/*", "probes/*"]
+# Vendored GPUI core is Zed's crate, not ours: a path dependency, never a
+# member (so cargo-deny's workspace-only advisories and our lints skip it,
+# as they skip the git copy). docs/decisions/0026-vendor-gpui-core.md
+exclude = ["compat/gpui"]
 
 [workspace.package]
 version = "0.9.0-beta.1"

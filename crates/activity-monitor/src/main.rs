@@ -70,6 +70,8 @@ gpui::actions!(
         ToggleIdleWakeUpsColumn,
         ToggleGpuPercentColumn,
         ToggleGpuTimeColumn,
+        TogglePortsColumn,
+        TogglePreventingSleepColumn,
         ShowGpuProcesses,
         ShowDeltasForProcess,
         SetDockIconApplication,

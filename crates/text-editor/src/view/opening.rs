@@ -82,6 +82,43 @@ impl EditorView {
         .detach();
     }
 
+    /// Files dragged onto the window: each opens as a document, the first
+    /// in this window when it is still a clean untitled one (as File ▸
+    /// Open… does), the rest in windows of their own. Folders and anything
+    /// that is not a file are ignored.
+    pub(super) fn open_dropped_paths(
+        &mut self,
+        dropped: &[PathBuf],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.file_busy || self.file_action_blocked() {
+            return;
+        }
+        let mut paths = rmac_ui::dropped_files(dropped);
+        if paths.is_empty() {
+            return;
+        }
+        if should_reuse_untitled_window(self.dirty, self.path.is_some(), self.body_is_empty(cx)) {
+            let first = paths.remove(0);
+            self.load_document_path(first, "The file could not be opened.", window, cx);
+        }
+        let failed = paths
+            .into_iter()
+            .filter(|path| open_editor_window(cx, Some(path.clone())).is_err())
+            .count();
+        if failed > 0 {
+            self.status_notice = Some(
+                format!(
+                    "Text Editor could not create {failed} dropped document {}.",
+                    if failed == 1 { "window" } else { "windows" }
+                )
+                .into(),
+            );
+        }
+        cx.notify();
+    }
+
     /// TextEdit's File ▸ Duplicate: a new window with this document's exact
     /// content, unsaved. Unlike Save As, the window this was invoked from
     /// keeps its own path and dirty state untouched.

@@ -1019,10 +1019,27 @@ impl ClockView {
                 (sun_line("Sunset", set), rgb(m::CARD_SECONDARY).into()),
             ];
             let name = city.name.to_owned();
+            let drag_label = SharedString::from(city.name);
+            let onto = name.clone();
             cards.push(
                 div()
                     .id(SharedString::from(format!("clock-card-{index}")))
                     .group("card")
+                    // Dragging a card onto another reorders the World Clock.
+                    .on_drag(DraggedCity(name.clone()), move |_, _, _, cx| {
+                        let label = drag_label.clone();
+                        cx.new(|_| CityDragPreview { label })
+                    })
+                    .drag_over::<DraggedCity>(|style, _, _, _| style.opacity(0.7))
+                    .on_drop(cx.listener(move |this, dragged: &DraggedCity, _, cx| {
+                        this.change(
+                            Change::MoveCity {
+                                name: dragged.0.clone(),
+                                onto: onto.clone(),
+                            },
+                            cx,
+                        );
+                    }))
                     .relative()
                     .flex_none()
                     .w(px(m::CARD_WIDTH))
@@ -2250,6 +2267,27 @@ fn ring(diameter: f32, fraction: f32) -> impl IntoElement {
     .top_0()
     .left_0()
     .size_full()
+}
+
+/// A World Clock card being dragged to a new place in the list.
+struct DraggedCity(String);
+
+/// What follows the pointer while a card is dragged: the city's name.
+struct CityDragPreview {
+    label: SharedString,
+}
+
+impl Render for CityDragPreview {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(12.0))
+            .py(px(6.0))
+            .rounded(px(8.0))
+            .bg(rgb(m::CARD_FILL))
+            .text_size(px(m::CARD_TEXT_SIZE))
+            .text_color(rgb(m::TEXT_PRIMARY))
+            .child(self.label.clone())
+    }
 }
 
 impl Render for ClockView {

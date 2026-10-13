@@ -238,6 +238,16 @@ impl ProcRow {
                 .and_then(proc_extra::GpuUsage::total_nanoseconds)
                 .map(|nanoseconds| format_duration(nanoseconds / 1_000_000_000))
                 .unwrap_or_else(|| "—".to_string()),
+            ColKey::Ports => self
+                .extra
+                .ports
+                .map(|count| count.to_string())
+                .unwrap_or_else(|| "—".to_string()),
+            ColKey::PreventingSleep => match self.extra.preventing_sleep {
+                Some(true) => "Yes".to_string(),
+                Some(false) => "No".to_string(),
+                None => "—".to_string(),
+            },
         }
     }
 
@@ -615,6 +625,11 @@ impl ProcessTableDelegate {
             )
         });
         let kind = self.visible.contains(&ColKey::Kind);
+        let ports = self.visible.contains(&ColKey::Ports);
+        let sleep_blockers = self
+            .visible
+            .contains(&ColKey::PreventingSleep)
+            .then(proc_extra::read_sleep_blockers);
         let wakeups = self.visible.contains(&ColKey::IdleWakeUps);
         let status = wakeups || self.visible.contains(&ColKey::Sandbox);
         let gpu = self.view_filter == ViewFilter::GpuProcesses
@@ -642,6 +657,12 @@ impl ProcessTableDelegate {
             }
             if kind {
                 extra.kind = proc_extra::read_kind(row.pid);
+            }
+            if ports {
+                extra.ports = proc_extra::read_ports(row.pid);
+            }
+            if let Some(blockers) = &sleep_blockers {
+                extra.preventing_sleep = Some(blockers.contains(&row.pid));
             }
             if status {
                 let (count, sandboxed) = proc_extra::read_status(row.pid);
@@ -809,6 +830,11 @@ impl ProcessTableDelegate {
                 ColKey::Kind => left.extra.kind.cmp(&right.extra.kind),
                 ColKey::Sandbox => left.extra.sandboxed.cmp(&right.extra.sandboxed),
                 ColKey::IdleWakeUps => left.extra.wakeups.cmp(&right.extra.wakeups),
+                ColKey::Ports => left.extra.ports.cmp(&right.extra.ports),
+                ColKey::PreventingSleep => left
+                    .extra
+                    .preventing_sleep
+                    .cmp(&right.extra.preventing_sleep),
                 ColKey::GpuPercent => left
                     .extra
                     .gpu_percent

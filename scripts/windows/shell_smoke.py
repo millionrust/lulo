@@ -16,6 +16,10 @@ and private profile folders, then checks, with real input:
 6. Alt+Space opens Spotlight, typing finds Text Editor and Return opens it
    (and, reported but not required, "notepad" finds Windows' Notepad
    through the Apps folder);
+6b. Alt+Tab (⌘Tab) is Lulo's switcher: a quick tap switches without the
+   panel, holding Alt shows it and the release switches, Esc cancels; a
+   notification on Lulo's pipe shows a banner, its poster hears it close,
+   and the bar's clock opens Notification Centre listing it;
 7. `lulo-session --stop` turns the layer off, and the work area, the
    taskbar's visibility and its auto-hide setting are as before.
 
@@ -1239,6 +1243,16 @@ def check_shell(
         # Dock leave (WIN-OS-50).
         check_app_placement(bin_dir, environment, screenshots, failures)
 
+        # 6f. ⌘Tab (Alt+Tab) and Notification Centre, the shared views
+        # lulo-shell hosts; then their memory once they have closed.
+        check_switcher(log, bin_dir, environment, screenshots, opened, failures)
+        check_notification_centre(log, screenshots, failures)
+        time.sleep(5.0)
+        memory = memory_mb(shell_pid)
+        print(f"shell: lulo-shell memory after the switcher and Notification Centre closed: {memory}")
+        if memory is not None:
+            measurements["lulo-shell"]["after_switcher_nc_private_mb"] = memory["private_mb"]
+
         # 7. Turning Lulo off gives the desktop back.
         stop_session(bin_dir, environment, session, failures)
         time.sleep(SETTLE_SECONDS)
@@ -1702,6 +1716,197 @@ def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | No
         except subprocess.TimeoutExpired:
             process.kill()
         time.sleep(0.5)
+
+
+VK_TAB = 0x09
+
+
+def switcher_sizes(log: Log, after: int) -> list[tuple[int, int]]:
+    """Every size the switcher's surface was placed at since line `after`."""
+    sizes = []
+    for line in log.lines()[after:]:
+        match = re.search(r"^layer rmac-app-switcher at (-?\d+),(-?\d+),(-?\d+),(-?\d+)$", line)
+        if match:
+            left, top, right, bottom = (int(value) for value in match.groups())
+            sizes.append((right - left, bottom - top))
+    return sizes
+
+
+def foreground_is(pid: int, timeout: float = 5.0) -> bool:
+    return wait_until(lambda: foreground_pid_and_class()[0] == pid, timeout) is not None
+
+
+def check_switcher(
+    log: Log, bin_dir: Path, environment: dict, screenshots: Path | None, opened: list[str], failures: list[str]
+) -> None:
+    """⌘Tab on Windows is Alt+Tab, taken by Lulo's hook while the layer
+    runs (ADR 0023, "Notification Centre and the app switcher on Windows"):
+    a quick tap switches to the previous app without showing the panel,
+    holding Alt shows Lulo's panel and its release switches, and Esc puts
+    back the app that was in front."""
+    started = {}
+    for app in ("rmac-calculator", "rmac-notes"):
+        exe = bin_dir / f"{app}.exe"
+        for pid in processes_named(f"{app}.exe"):
+            terminate(pid)
+        subprocess.Popen([str(exe)], env=environment)
+        found = wait_until(lambda app=app: app_window(f"{app}.exe"), 20.0)
+        if found is None:
+            failures.append(f"{app} opened no window for the switcher check")
+            return
+        opened.append(f"{app}.exe")
+        started[app] = found
+        time.sleep(1.5)
+    calculator, notes = started["rmac-calculator"][0], started["rmac-notes"][0]
+    bring_to_front(started["rmac-notes"][1])
+    if not foreground_is(notes):
+        print(f"shell: switcher: Notes is not in front ({foreground_pid_and_class()}); continuing")
+    time.sleep(1.0)
+
+    # A quick tap: the previous app comes forward, no panel shows.
+    before = len(log.lines())
+    key(VK_MENU)
+    tap(VK_TAB)
+    key(VK_MENU, up=True)
+    switched = foreground_is(calculator)
+    time.sleep(0.5)
+    flashed = [size for size in switcher_sizes(log, before) if size[0] > 50]
+    print(
+        f"shell: switcher quick Alt+Tab: Calculator {'in front' if switched else 'NOT in front'}, "
+        f"panel {'shown ' + str(flashed) if flashed else 'not shown'}"
+    )
+    if not switched:
+        failures.append("a quick Alt+Tab did not bring the previous app (Calculator) to the front")
+    if flashed:
+        failures.append(f"a quick Alt+Tab flashed the switcher panel ({flashed})")
+
+    # Held: the panel shows; Alt's release switches back to Notes.
+    before = len(log.lines())
+    key(VK_MENU)
+    tap(VK_TAB)
+    shown = wait_until(lambda: [size for size in switcher_sizes(log, before) if size[0] > 50], 3.0)
+    time.sleep(0.4)
+    save(screenshots, "switcher")
+    key(VK_MENU, up=True)
+    back = foreground_is(notes)
+    print(
+        f"shell: switcher held Alt+Tab: panel {shown[-1] if shown else 'not shown'}, "
+        f"Notes {'in front' if back else 'NOT in front'} after Alt was released"
+    )
+    if not shown:
+        failures.append("holding Alt after Alt+Tab did not show the switcher panel")
+    if not back:
+        failures.append("releasing Alt did not switch to the selected app (Notes)")
+    if log.wait_for(r"^layer rmac-app-switcher closed", 5.0, after=before) is None:
+        failures.append("the switcher panel did not close after Alt was released")
+
+    # Esc while held cancels: Notes stays in front.
+    time.sleep(0.5)
+    before = len(log.lines())
+    key(VK_MENU)
+    tap(VK_TAB)
+    wait_until(lambda: [size for size in switcher_sizes(log, before) if size[0] > 50], 3.0)
+    tap(VK_ESCAPE)
+    key(VK_MENU, up=True)
+    time.sleep(1.0)
+    kept = foreground_pid_and_class()[0] == notes
+    print(f"shell: switcher Esc: Notes {'still in front' if kept else 'NOT in front'}")
+    if not kept:
+        failures.append("Esc in the switcher did not keep the app that was in front (Notes)")
+    for app in ("rmac-calculator", "rmac-notes"):
+        for pid in processes_named(f"{app}.exe"):
+            terminate(pid)
+        if f"{app}.exe" in opened:
+            opened.remove(f"{app}.exe")
+    time.sleep(1.0)
+
+
+def post_notification(summary: str, body: str, timeout: float = 15.0):
+    """Post on Lulo's notification pipe as a Lulo app does
+    (`rmac_notifications::pipe`). Returns (id, a function that waits for
+    the next answer line), or None."""
+    import threading
+
+    user = "".join(c for c in os.environ.get("USERNAME", "") if c.isalnum() or c in "-_.")
+    path = rf"\\.\pipe\lulo-notifications-{user}"
+    try:
+        pipe = open(path, "r+b", buffering=0)
+    except OSError as error:
+        print(f"shell: notification pipe {path}: {error}")
+        return None
+    pipe.write(f"post\t{summary}\t{body}\t\t1\t\n".encode())
+    lines: list[str] = []
+
+    def read():
+        buffer = b""
+        while True:
+            try:
+                byte = pipe.read(1)
+            except OSError:
+                return
+            if not byte:
+                return
+            if byte == b"\n":
+                lines.append(buffer.decode(errors="replace"))
+                buffer = b""
+            else:
+                buffer += byte
+
+    threading.Thread(target=read, daemon=True).start()
+    posted = wait_until(lambda: lines, timeout)
+    if not posted or not lines[0].startswith("posted\t"):
+        return None
+
+    def next_answer(index: int, wait: float):
+        return wait_until(lambda: lines[index] if len(lines) > index else None, wait)
+
+    return int(lines[0].split("\t")[1]), next_answer
+
+
+def check_notification_centre(log: Log, screenshots: Path | None, failures: list[str]) -> None:
+    """A notification on Lulo's pipe shows as a Lulo banner, is kept in
+    Notification Centre's history, and the menu bar's clock opens
+    Notification Centre with it (ADR 0023)."""
+    before = len(log.lines())
+    posted = post_notification("Lulo check", "A banner from the Windows smoke test")
+    if posted is None:
+        failures.append("Lulo's notification pipe did not take a notification")
+        return
+    notification_id, next_answer = posted
+    banner = log.wait_for(r"^layer rmac-notification-banners at", 10.0, after=before)
+    time.sleep(1.0)
+    save(screenshots, "notification-banner")
+    print(f"shell: notification {notification_id} posted; banner {'shown' if banner else 'NOT shown'}")
+    if banner is None:
+        failures.append("a posted notification showed no Lulo banner")
+    # The banner times out (as on the Mac, about 5 s) and the app hears it.
+    closed = next_answer(1, 20.0)
+    print(f"shell: the poster heard: {closed!r}")
+    if closed is None or not closed.startswith("closed\t"):
+        failures.append(f"the notification's poster did not hear it close (got {closed!r})")
+    # The clock, the bar's rightmost item, opens Notification Centre.
+    bar = log.last(r"^strip rmac-top-bar-\d+ at (-?\d+),(-?\d+),(-?\d+),(-?\d+)")
+    if bar is None:
+        failures.append("no menu bar strip to find the clock in")
+        return
+    left, top, right, bottom = (int(value) for value in bar.groups())
+    before = len(log.lines())
+    click(right - 40, (top + bottom) // 2)
+    panel = log.wait_for(r"^layer rmac-notification-center at", 10.0, after=before)
+    records = log.wait_for(r"^notification centre: (\d+) records", 10.0, after=before)
+    time.sleep(1.0)
+    save(screenshots, "notification-centre")
+    print(
+        f"shell: the clock opened Notification Centre: {'yes' if panel else 'NO'}, "
+        f"{records.group(1) if records else '?'} records"
+    )
+    if panel is None:
+        failures.append("clicking the menu bar's clock did not open Notification Centre")
+    elif records is None or int(records.group(1)) < 1:
+        failures.append("Notification Centre does not list the notification posted on the pipe")
+    tap(VK_ESCAPE)
+    if panel is not None and log.wait_for(r"^layer rmac-notification-center closed", 5.0, after=before) is None:
+        failures.append("Esc did not close Notification Centre")
 
 
 def check_memory_after_use(log: Log, shell_pid: int, measurements: dict, failures: list[str]) -> None:

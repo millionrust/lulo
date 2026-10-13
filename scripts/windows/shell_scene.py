@@ -146,7 +146,8 @@ def main() -> int:
                         help="a memory probe: the machine's own Wi-Fi, sound and battery readings")
     parser.add_argument("--desktop", default="", help="a memory probe: show this folder on the desktop")
     parser.add_argument("--open", default="",
-                        help="spotlight:<query>, control-centre or apps: open that panel in the scene")
+                        help="spotlight:<query>, control-centre, apps or notification-centre: "
+                        "open that panel in the scene")
     parser.add_argument("--default-dock", action="store_true",
                         help="the Dock keeps a fresh profile's own pins")
     args = parser.parse_args()

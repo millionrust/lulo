@@ -161,6 +161,7 @@ fn serve(connection: File, service: ServiceHandle) {
     let Ok(id) = posted else {
         return;
     };
+    rmac_shell_layer::windows::trace::trace(|| format!("notification {} posted", id.get()));
     if connection
         .write_all(pipe::encode_answer(&Answer::Posted(id.get())).as_bytes())
         .is_err()

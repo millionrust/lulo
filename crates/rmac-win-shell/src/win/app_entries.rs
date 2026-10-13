@@ -216,10 +216,14 @@ pub fn refresh() {
 /// [`refresh`] now and whenever the Start menu folders change, on a thread
 /// of its own.
 pub fn start() {
+    // Taken here, before start-up can finish, so the layer is not settled
+    // until the first reading is written.
+    let first = super::settle::busy();
     let spawned = std::thread::Builder::new()
         .name("lulo-windows-apps".into())
-        .spawn(|| {
+        .spawn(move || {
             refresh();
+            drop(first);
             let (changed_tx, changed_rx) = std::sync::mpsc::channel::<()>();
             super::catalog::watch(move |list| {
                 if list == super::catalog::List::Apps {
@@ -232,6 +236,7 @@ pub fn start() {
                     .recv_timeout(std::time::Duration::from_secs(2))
                     .is_ok()
                 {}
+                let _busy = super::settle::busy();
                 refresh();
             }
         });

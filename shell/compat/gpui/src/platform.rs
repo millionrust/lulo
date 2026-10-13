@@ -39,7 +39,7 @@ use crate::{
     DEFAULT_WINDOW_SIZE, DevicePixels, DispatchEventResult, Font, FontId, FontMetrics, FontRun,
     ForegroundExecutor, GlyphId, GpuSpecs, Hsla, ImageSource, Keymap, LineLayout, Pixels,
     PlatformInput, Point, Priority, RenderGlyphParams, RenderImage, RenderImageParams,
-    RenderSvgParams, Scene, ShapedGlyph, ShapedRun, SharedString, Size, SvgRenderer,
+    RenderSvgParams, Rgba, Scene, ShapedGlyph, ShapedRun, SharedString, Size, SvgRenderer,
     SystemWindowTab, Task, Window, WindowControlArea, hash, point, px, size,
 };
 use anyhow::Result;
@@ -432,6 +432,34 @@ impl Default for WindowControls {
     }
 }
 
+/// rmac: the Mac window frame a platform draws round a window itself: rounded
+/// corners, a soft shadow and a 1 px hairline (Windows: ADR 0023 "Window
+/// chrome", WIN-OS-73). On Lulo OS the compositor draws the same frame, so
+/// other platforms ignore it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct WindowFrameStyle {
+    /// The corner radius of the visible window.
+    pub corner_radius: Pixels,
+    /// The hairline drawn along the window's edge, over its content.
+    pub edge: Rgba,
+    /// The shadow while the window is the active one.
+    pub active_shadow: WindowFrameShadow,
+    /// The shadow while another window is active.
+    pub inactive_shadow: WindowFrameShadow,
+}
+
+/// rmac: a window's drop shadow, as CSS's `box-shadow` takes it (the blur
+/// is the Gaussian's 2σ).
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct WindowFrameShadow {
+    /// The blur radius (2σ).
+    pub blur: Pixels,
+    /// How far down the shadow is cast.
+    pub offset_y: Pixels,
+    /// The shadow's colour; only its alpha is used (window shadows are black).
+    pub color: Rgba,
+}
+
 /// A window control button type used in [`WindowButtonLayout`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WindowButton {
@@ -717,6 +745,8 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
         WindowControls::default()
     }
     fn set_client_inset(&self, _inset: Pixels) {}
+    /// rmac: draw a Mac window frame round this window (see [`WindowFrameStyle`]).
+    fn set_frame_style(&self, _style: WindowFrameStyle) {}
     fn gpu_specs(&self) -> Option<GpuSpecs>;
 
     fn update_ime_position(&self, _bounds: Bounds<Pixels>);

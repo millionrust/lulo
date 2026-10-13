@@ -48,6 +48,9 @@ uuid.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 rmac-dock.workspace = true
 rmac-dock-system.workspace = true
+# File ▸ Print hands PDF and text files to the print portal.
+raw-window-handle.workspace = true
+rmac-print-linux.workspace = true
 
 # Real folders/drives (SHGetKnownFolderPath, GetLogicalDrives), opening with
 # the default app, the Recycle Bin, and the operation journal's no-replace

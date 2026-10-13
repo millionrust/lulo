@@ -4,7 +4,7 @@ members = ["crates/*", "bins/*", "probes/*"]
 # Vendored GPUI core is Zed's crate, not ours: a path dependency, never a
 # member (so cargo-deny's workspace-only advisories and our lints skip it,
 # as they skip the git copy). docs/decisions/0026-vendor-gpui-core.md
-exclude = ["compat/gpui"]
+exclude = ["compat/gpui", "compat/notify"]
 
 [workspace.package]
 version = "0.9.0-beta.1"
@@ -93,6 +93,11 @@ lto = false
 codegen-units = 16
 incremental = true
 strip = false
+
+[patch.crates-io]
+# notify's Windows watcher woke every 100 ms (ADR 0023, "Idle from the
+# settled mark"); compat/notify is 7.0.0 with that fixed.
+notify = { path = "compat/notify" }
 
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "compat/ztracing" }

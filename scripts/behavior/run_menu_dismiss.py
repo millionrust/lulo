@@ -204,7 +204,8 @@ class Run:
         self.top_bar = self.spawn([str(bins / "top-bar")], "top-bar", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.wallpaper = self.spawn([str(bins / "wallpaper")], "wallpaper", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.quick_settings = self.spawn(
-            [str(bins / "rmac-quick-settings")], "quick-settings", {"VK_ICD_FILENAMES": LAVAPIPE}
+            [str(bins / "rmac-quick-settings")], "quick-settings",
+            {"VK_ICD_FILENAMES": LAVAPIPE, "RMAC_FRAME_TRACE": str(self.out / "quick-settings-trace.csv")},
         )
         self.launcher = self.spawn([str(bins / "rmac-launcher")], "launcher",
                                    {"VK_ICD_FILENAMES": LAVAPIPE})
@@ -351,6 +352,12 @@ class Run:
             if self.has_layer(namespace):
                 self.dispatch(shortcut)
             self.wait_for(lambda namespace=namespace: self.popover_gone(namespace), 5)
+
+    def has_fake_backlight(self) -> bool:
+        """The session's fake sysfs has a backlight, so Control Centre shows
+        its Display row (`--no-backlight` takes it away)."""
+        root = self.env.get("LULO_FAKE_SYS_ROOT")
+        return bool(root) and (Path(root) / "class/backlight").is_dir()
 
     def capture(self, name: str) -> Image.Image:
         path = self.work / f"{name}.png"
@@ -515,8 +522,18 @@ class Run:
                 self.keys.key("escape")
                 closed = self.wait_for(lambda: item() is None, 5)
                 self.check(f"Escape focus: Escape closes the {label}", closed)
-                self.check(f"Escape focus: Escape returns the keyboard from the {label}",
-                           self.wait_for(focused, 10))
+                returned = self.wait_for(focused, 10)
+                self.check(f"Escape focus: Escape returns the keyboard from the {label}", returned)
+                if not returned:
+                    # Evidence for a CI-only failure: what niri thinks is focused.
+                    print(f"focus diagnostic ({label}): windows="
+                          f"{[(w.get('app_id'), w.get('is_focused')) for w in self.niri('windows') or []]} "
+                          f"workspaces={self.niri('workspaces')}", flush=True)
+                    log = self.out / "top-bar.log"
+                    if log.exists():
+                        for line in log.read_text(errors="replace").splitlines():
+                            if "focus" in line.lower():
+                                print(f"top-bar: {line}", flush=True)
         finally:
             probe.terminate()
             try:
@@ -783,7 +800,16 @@ class Run:
                     continue
             return found
 
-        candidates = self.wait_for(lambda: rows() or None, 5) or []
+        # On a loaded runner the layer exists before the launcher's field has
+        # the keyboard, and the first key press is dropped; type again if no
+        # row appeared (a second "e" still matches).
+        candidates = []
+        for _ in range(3):
+            candidates = self.wait_for(lambda: rows() or None, 5) or []
+            if candidates:
+                break
+            print("Spotlight expanded: no result rows yet, typing again", flush=True)
+            self.keys.type_text("e")
         self.check("Spotlight expanded: typing \"e\" shows at least one result row",
                    bool(candidates), f"{len(candidates)} candidates")
         if not candidates:
@@ -936,7 +962,7 @@ class Run:
 
         self.close_everything()
         self.check("Control Centre detail: opens", open_panel())
-        if os.environ.get("LULO_FAKE_SYS_ROOT"):
+        if self.has_fake_backlight():
             opened = press("Display details")
             listed = opened and self.wait_for(lambda: showing(items, "Display Settings\u2026"), 10)
             self.check("Control Centre Display: the title opens the Display view", listed)
@@ -998,11 +1024,13 @@ class Run:
     def control_centre_first_open_and_grow(self) -> None:
         """CC-18 and CC-10, with real pointer input.
 
-        CC-18: the surface opens at its real height. The Display row used to
-        arrive after the first frame and the surface kept its first height,
-        cutting Sound off, so the panel's painted bottom edge, measured
-        against an empty-desktop capture, must be the same just after it
-        opens and once everything has settled, and tall enough for every row.
+        CC-18: the surface opens at its real height. The panel's painted
+        bottom edge, measured against an empty-desktop capture, must be the
+        same on the first frame that shows the panel as once everything has
+        settled, and reach the bottom of the last row. How tall that is
+        depends on the machine: Display is a row only when a backlight
+        exists, so the expected height follows the fake sysfs (`--no-backlight`
+        removes the backlight, as on a desktop PC or most VMs).
 
         CC-10: a real click on the Sound title grows the Sound view out of
         its tile: frames grabbed right after the press differ from the
@@ -1012,42 +1040,124 @@ class Run:
 
         namespace = "rmac-quick-settings"
         box = (OUTPUT_W - 420, 30, OUTPUT_W, 540)
+        has_backlight = self.has_fake_backlight()
+        rows = 5 if has_backlight else 4
 
-        def bottom(image: Image.Image, baseline: Image.Image) -> int:
-            difference = ImageChops.difference(image.crop(box), baseline.crop(box)).convert("L")
-            mask = difference.point(lambda value: 255 if value > 60 else 0)
+        def bottom(image: Image.Image, baseline_box: Image.Image) -> int:
+            """Lowest row, in screen pixels, where `image` (the panel's box)
+            differs from the empty desktop's. Only meaningful between two
+            frames of the same run: the panel's shadow and dimming reach
+            further on a bright wallpaper, and the old threshold of 60 read
+            26 px short on the CI runner's teal one, so the absolute height
+            is judged from the Sound module's own pixels instead."""
+            difference = ImageChops.difference(image, baseline_box).convert("L")
+            mask = difference.point(lambda value: 255 if value > 14 else 0)
             region = mask.getbbox()
             return box[1] + region[3] if region else 0
+
+        def grab_box() -> Image.Image:
+            """Just the panel's area, fast enough to catch the first frame."""
+            result = subprocess.run(
+                ["grim", "-t", "ppm", "-g",
+                 f"{box[0]},{box[1]} {box[2] - box[0]}x{box[3] - box[1]}", "-"],
+                env=self.env, capture_output=True, timeout=15)
+            if result.returncode:
+                raise RuntimeError(f"grim region: {result.stderr[-300:]!r}")
+            import io
+            return Image.open(io.BytesIO(result.stdout)).convert("RGB")
 
         def cpu_ticks(pid: int) -> int:
             fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
             return int(fields[11]) + int(fields[12])
 
+        def trace_lines() -> list[tuple[str, int]]:
+            try:
+                text = (self.out / "quick-settings-trace.csv").read_text()
+            except OSError:
+                return []
+            rows = []
+            for line in text.splitlines():
+                name, _, micros = line.rpartition(",")
+                if micros.isdigit():
+                    rows.append((name, int(micros)))
+            return rows
+
+        def trace_marks() -> str:
+            return " ".join(name for name, _ in trace_lines() if name.startswith("quick_settings_"))
+
+        def trace_recent(seconds: float) -> str:
+            """What the frame trace saw in its last `seconds`, by event."""
+            rows = trace_lines()
+            if not rows:
+                return "no trace"
+            cutoff = rows[-1][1] - int(seconds * 1_000_000)
+            counts: dict[str, int] = {}
+            for name, micros in rows:
+                if micros >= cutoff:
+                    counts[name] = counts.get(name, 0) + 1
+            return ", ".join(f"{name} x{count}" for name, count in sorted(counts.items())) or "none"
+
         self.close_everything()
         time.sleep(0.5)
         baseline = self.capture("control-centre-first-open-baseline")
+        baseline_box = baseline.crop(box)
         self.dispatch("quick-settings")
         if not self.check("Control Centre first open: opens",
                           self.wait_for(lambda: self.has_layer(namespace), 10, 0.02)):
             return
-        # The first painted frame, however soon it arrives.
-        early = self.capture("control-centre-first-open-early")
-        for _ in range(60):
-            if bottom(early, baseline):
+        # The first frame that shows the panel, however soon it arrives, then
+        # a few more over the next moments: none may be a different height.
+        early = None
+        for _ in range(200):
+            image = grab_box()
+            if bottom(image, baseline_box) > box[1] + 100:
+                early = image
                 break
-            early = self.capture("control-centre-first-open-early")
+        if early is None:
+            self.check("Control Centre first open: a frame shows the panel", False)
+            return
+        early_bottom = bottom(early, baseline_box)
+        if self.args.capture_dir:
+            target = Path(self.args.capture_dir)
+            target.mkdir(parents=True, exist_ok=True)
+            early.save(target / "control-centre-first-open-early.png")
         sound = self.wait_for(lambda: self.find_button("Sound details"), 10)
         time.sleep(1.0)
         late = self.capture("control-centre-first-open-settled")
         self.keep_capture("control-centre-first-open-settled")
-        early_bottom, late_bottom = bottom(early, baseline), bottom(late, baseline)
-        # 5 rows (Now Playing always shown, Display present) = 392 pt tall,
-        # 35 below the top.
+        late_bottom = bottom(late.crop(box), baseline_box)
+        detail = (f"backlight={has_backlight}, early={early_bottom}, settled={late_bottom}, "
+                  f"trace: {trace_marks()}")
         self.check("Control Centre first open: the surface does not change height after opening",
-                   abs(early_bottom - late_bottom) <= 3,
-                   f"early={early_bottom}, settled={late_bottom}")
-        self.check("Control Centre first open: Sound is not cut off",
-                   late_bottom >= CONTROL_CENTRE_TOP + 392 - 4, f"bottom={late_bottom}")
+                   abs(early_bottom - late_bottom) <= 3, detail)
+        module = self.extents(sound) if sound is not None else None
+        self.check("Control Centre first open: the Sound module has screen extents", module is not None, detail)
+        if module is not None:
+            left = OUTPUT_W - CONTROL_CENTRE_RIGHT - CONTROL_CENTRE_WIDTH + module[0]
+            top = CONTROL_CENTRE_TOP + module[1]
+            # The last row sits one gap below the rows above it.
+            self.check("Control Centre first open: Sound is the last row of the surface",
+                       top == CONTROL_CENTRE_TOP + 12 + (rows - 1) * 76, f"{detail}, sound at y={top}")
+            # The module's inside, clear of the panel's own shadow, which
+            # reaches about 24 px past the surface edge and would otherwise
+            # make a cut-off module look half painted.
+            region = (left - box[0] + 20, top - box[1] + 28,
+                      left - box[0] + module[2] - 20, top - box[1] + module[3] - 8)
+
+            def drawn(image: Image.Image) -> float:
+                """How much of the Sound module's area differs from the empty
+                desktop: a module the surface cuts off is not painted at all."""
+                difference = ImageChops.difference(image.crop(region), baseline_box.crop(region)).convert("L")
+                area = max(1, (region[2] - region[0]) * (region[3] - region[1]))
+                return sum(difference.histogram()[15:]) / area
+
+            self.check("Control Centre first open: Sound is painted on the first frame",
+                       drawn(early) > 0.5, f"{detail}, drawn={drawn(early):.2f}")
+            self.check("Control Centre first open: Sound is painted once settled",
+                       drawn(late.crop(box)) > 0.5, f"{detail}, drawn={drawn(late.crop(box)):.2f}")
+        self.check("Control Centre first open: Display is a row only with a backlight",
+                   (sound is not None and (self.find_button("Display details") is not None) == has_backlight),
+                   detail)
         if sound is None:
             return
         box_sound = self.extents(sound)
@@ -1079,8 +1189,9 @@ class Run:
         pid = self.quick_settings.pid
         before = cpu_ticks(pid)
         time.sleep(2.0)
+        ticks = cpu_ticks(pid) - before
         self.check("Control Centre grow-out: no frames are drawn once the motion ends",
-                   cpu_ticks(pid) - before <= 6, f"ticks={cpu_ticks(pid) - before}")
+                   ticks <= 6, f"ticks={ticks}, last 2 s of the frame trace: {trace_recent(2.0)}")
         self.close_everything()
 
     def control_centre_sound_outputs(self) -> None:
@@ -1567,9 +1678,17 @@ class Run:
             self.check("Dock focus: probe app is frontmost", frontmost)
             if not frontmost:
                 return
-            tile = self.find_node(("push button", "button"),
-                                  lambda name: name.startswith("Files") and not name.endswith(" menu"))
-            box = self.extents(tile) if tile is not None else None
+            # The Dock publishes its tiles to AT-SPI a moment after the probe
+            # window maps, and a tile can briefly report an empty box while
+            # the Dock re-lays out around the new app; one shot of the walk
+            # raced both on CI. Wait for a tile with real bounds.
+            def files_tile_box():
+                tile = self.find_node(("push button", "button"),
+                                      lambda name: name.startswith("Files") and not name.endswith(" menu"))
+                found = self.extents(tile) if tile is not None else None
+                return found if found and found[2] > 0 and found[3] > 0 else None
+
+            box = self.wait_for(files_tile_box, 20)
             if box is None:
                 self.check("Dock focus: Files tile has bounds", False)
                 return
@@ -1768,6 +1887,10 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
             sys_root = work / "fake-sys"
             fake_hardware.fake_sysfs(sys_root)
             env["LULO_FAKE_SYS_ROOT"] = str(sys_root)
+        if args.no_backlight:
+            # A desktop PC or a VM: no Display row, so Control Centre is one
+            # row shorter and must open at that height too (CC-18).
+            shutil.rmtree(Path(env["LULO_FAKE_SYS_ROOT"]) / "class/backlight")
         if args.audio == "fake":
             env.update(fake_audio.install(work))
         elif not real_audio.available():
@@ -1836,6 +1959,11 @@ def main() -> int:
         "--audio", choices=("fake", "real"), default="fake",
         help="fake: fake_audio.py's recorded graphs (default); real: a private PipeWire and "
              "WirePlumber with null sinks (scripts/behavior/real_audio.py)",
+    )
+    parser.add_argument(
+        "--no-backlight", action="store_true",
+        help="remove the fake backlight, as on a machine with no screen brightness control "
+             "(Control Centre then has no Display row)",
     )
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

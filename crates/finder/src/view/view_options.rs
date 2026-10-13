@@ -354,6 +354,12 @@ impl FinderView {
                         owner: view_owner,
                         focus: cx.focus_handle(),
                     });
+                    // Inside the panel's own window only: the compositor
+                    // still leaves the Files window key (`options.focus`).
+                    // Once the user makes the panel key, Esc and ⌘W reach
+                    // it (they did nothing before the 2026-10-13 robot run).
+                    let focus = view.read(cx).focus.clone();
+                    window.focus(&focus, cx);
                     cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
                 });
                 let _ = owner.update(cx, |this, cx| {
@@ -901,8 +907,12 @@ impl Render for ViewOptionsWindow {
             .ok();
         div()
             .size_full()
+            .track_focus(&self.focus)
             .key_context("Finder")
             .on_action(cx.listener(|this, _: &ShowViewOptions, window, cx| this.close(window, cx)))
+            // ⌘W is Finder's Close Tab in this key context; in the panel it
+            // closes the panel, as on the Mac.
+            .on_action(cx.listener(|this, _: &CloseTab, window, cx| this.close(window, cx)))
             .on_action(
                 cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| this.close(window, cx)),
             )

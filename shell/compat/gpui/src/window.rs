@@ -17,8 +17,8 @@ use crate::{
     SystemWindowTabController, TabStopMap, TaffyLayoutEngine, Task, TextRenderingMode, TextStyle,
     TextStyleRefinement, ThermalState, TransformationMatrix, Underline, UnderlineStyle,
     WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowControls, WindowDecorations,
-    WindowOptions, WindowParams, WindowTextSystem, point, prelude::*, profiler, px, rems, size,
-    transparent_black,
+    WindowFrameStyle, WindowOptions, WindowParams, WindowTextSystem, point, prelude::*, profiler,
+    px, rems, size, transparent_black,
 };
 
 use anyhow::{Context as _, Result, anyhow};
@@ -2404,6 +2404,13 @@ impl Window {
     pub fn set_client_inset(&mut self, inset: Pixels) {
         self.client_inset = Some(inset);
         self.platform_window.set_client_inset(inset);
+    }
+
+    /// rmac: ask the platform to draw a Mac window frame round this window:
+    /// rounded corners, a soft shadow and a hairline (Windows only; on Lulo
+    /// OS the compositor draws it, and macOS has its own).
+    pub fn set_frame_style(&self, style: WindowFrameStyle) {
+        self.platform_window.set_frame_style(style);
     }
 
     /// Returns the client_inset value by [`Self::set_client_inset`].

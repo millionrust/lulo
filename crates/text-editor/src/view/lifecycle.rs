@@ -222,6 +222,12 @@ impl EditorView {
                 ),
                 KeyBinding::new("cmd-shift-w", ToggleWrapToPage, Some(CTX)),
                 KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, Some(CTX)),
+                // ⌘W closes the Settings window too (settings_window.rs).
+                KeyBinding::new(
+                    rmac_ui::shortcuts::CLOSE.keystroke,
+                    CloseWindow,
+                    Some(crate::settings_window::KEY_CONTEXT),
+                ),
                 KeyBinding::new("alt-cmd-w", CloseAll, Some(CTX)),
                 KeyBinding::new("shift-cmd-t", ToggleRichText, Some(CTX)),
                 KeyBinding::new("cmd-t", crate::ShowFonts, Some(CTX)),

@@ -61,6 +61,31 @@ pub const MAX_DOCK_TILE_SIZE: f32 = 128.0;
 /// updating that assertion.
 pub const DEFAULT_DOCK_TILE_SIZE: f32 = 64.0;
 
+/// The Dock a fresh profile starts with, in order.
+pub const DEFAULT_PINNED_APPS: [&str; 9] = [
+    rmac_apps::identity::FILES,
+    rmac_apps::identity::APP_DRAWER,
+    rmac_apps::identity::NOTES,
+    rmac_apps::identity::TEXT_EDITOR,
+    rmac_apps::identity::TERMINAL,
+    rmac_apps::identity::SYSTEM_SETTINGS,
+    rmac_apps::identity::WEATHER,
+    rmac_apps::identity::CALCULATOR,
+    rmac_apps::identity::MAIL,
+];
+
+/// The default Dock before Weather, Calculator and Mail were pinned. A saved
+/// Dock that still equals it is the untouched default, so it is brought up
+/// to [`DEFAULT_PINNED_APPS`].
+pub(crate) const PREVIOUS_DEFAULT_PINNED_APPS: [&str; 6] = [
+    rmac_apps::identity::FILES,
+    rmac_apps::identity::APP_DRAWER,
+    rmac_apps::identity::NOTES,
+    rmac_apps::identity::TEXT_EDITOR,
+    rmac_apps::identity::TERMINAL,
+    rmac_apps::identity::SYSTEM_SETTINGS,
+];
+
 fn default_dock_tile_size() -> f32 {
     DEFAULT_DOCK_TILE_SIZE
 }
@@ -457,18 +482,12 @@ impl Default for ShellSettings {
         Self {
             // The owner's reference Dock (FEEL_SPEC.md §C): Files leads
             // implicitly, then Apps, Notes, Text Editor, Terminal, System
-            // Settings. No browser and no Downloads are pinned.
-            pinned_apps: [
-                rmac_apps::identity::FILES,
-                rmac_apps::identity::APP_DRAWER,
-                rmac_apps::identity::NOTES,
-                rmac_apps::identity::TEXT_EDITOR,
-                rmac_apps::identity::TERMINAL,
-                rmac_apps::identity::SYSTEM_SETTINGS,
-            ]
-            .into_iter()
-            .map(|identity| AppId(identity.into()))
-            .collect(),
+            // Settings, then Weather, Calculator and Mail (owner, 2026-10-13:
+            // "yes pin them"). No browser and no Downloads are pinned.
+            pinned_apps: DEFAULT_PINNED_APPS
+                .into_iter()
+                .map(|identity| AppId(identity.into()))
+                .collect(),
             dock_stacks: Vec::new(),
             dock: DockSettings::default(),
             clock: ClockSettings::default(),

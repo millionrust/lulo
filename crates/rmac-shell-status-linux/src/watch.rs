@@ -362,7 +362,10 @@ fn property_change(message: &zbus::Message) -> crate::model::PropertyChange {
 
     let header = message.header();
     if header.member().map(|member| member.as_str()) != Some("PropertiesChanged") {
-        return crate::model::PropertyChange::Shown;
+        return crate::model::signal_interface_change(
+            header.interface().map(|interface| interface.as_str()),
+        )
+        .unwrap_or(crate::model::PropertyChange::Shown);
     }
     let body = message.body();
     let Ok((interface, changed, invalidated)) =

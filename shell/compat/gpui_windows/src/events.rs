@@ -49,6 +49,13 @@ impl WindowsWindowInner {
             WM_CREATE => self.handle_create_msg(handle),
             WM_MOVE => self.handle_move_msg(handle, lparam),
             WM_SIZE => self.handle_size_msg(wparam, lparam),
+            // rmac: the Mac frame follows every move, resize, state change,
+            // show and hide (rmac_window_frame.rs). DefWindowProcW still
+            // runs, and sends WM_MOVE and WM_SIZE.
+            WM_WINDOWPOSCHANGED => {
+                self.update_mac_frame();
+                None
+            }
             WM_GETMINMAXINFO => self.handle_get_min_max_info_msg(lparam),
             WM_ENTERSIZEMOVE | WM_ENTERMENULOOP => self.handle_size_move_loop(handle),
             WM_EXITSIZEMOVE | WM_EXITMENULOOP => self.handle_size_move_loop_exit(handle),
@@ -783,6 +790,10 @@ impl WindowsWindowInner {
                 this.state.callbacks.input.set(Some(func));
             }
         }
+
+        // rmac: the active window casts the deeper Mac shadow.
+        self.state.mac_frame.set_active(activated);
+        self.update_mac_frame();
 
         self.executor
             .spawn(async move {

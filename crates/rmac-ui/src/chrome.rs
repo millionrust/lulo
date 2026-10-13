@@ -264,11 +264,20 @@ pub fn hide_application(others: bool, cx: &mut App) {
 /// by asking the compositor to close each of its windows. Every window
 /// therefore goes through its own close guard, so an edited document still
 /// asks Save / Don't Save / Cancel. Files, like Finder, never quits.
+///
+/// Once every window has closed, the process exits too, as a quit app does
+/// on the Mac. Apps that keep running with no windows open (Text Editor,
+/// Preview and Terminal run with `QuitMode::Explicit`, like TextEdit) used
+/// to stay resident after ⌘Q with no window and no way back but a relaunch
+/// (found by the live robot, 2026-10-13). A close the user cancels (Cancel
+/// on Save / Don't Save) leaves its window open, so nothing quits; the quit
+/// only stays armed for [`QUIT_GRACE`], so a much later ⌘W on the last
+/// window does not quit the app by surprise.
 pub fn quit_application(cx: &mut App) {
     #[cfg(not(unix))]
     cx.defer(native::quit_application);
     #[cfg(unix)]
-    cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
         let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
             eprintln!("could not read windows to quit");
@@ -277,6 +286,13 @@ pub fn quit_application(cx: &mut App) {
         let Some(windows) = quit_windows(&snapshot, pid) else {
             return;
         };
+        cx.update(|cx| {
+            if windows.is_empty() && cx.windows().is_empty() {
+                cx.quit();
+            } else {
+                arm_quit_after_last_window(cx);
+            }
+        });
         let mut store = rmac_compositor::ParkingStore::load_default();
         for window in &windows {
             store.forget(*window);
@@ -289,6 +305,42 @@ pub fn quit_application(cx: &mut App) {
             if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
                 eprintln!("could not close a window to quit: {error:?}");
             }
+        }
+    })
+    .detach();
+}
+
+/// How long a ⌘Q stays armed while its windows close: long enough for a
+/// Save panel the user is filling in, short enough that a cancelled quit
+/// does not resurface minutes later.
+#[cfg(unix)]
+const QUIT_GRACE: Duration = Duration::from_secs(120);
+
+#[cfg(unix)]
+thread_local! {
+    /// When the pending ⌘Q was asked for, and whether the close hook that
+    /// carries it out is installed.
+    static QUIT_ARMED: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+    static QUIT_HOOK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a quit asked for at `armed` should exit now that a window closed
+/// and `open` windows remain.
+#[cfg(unix)]
+fn quit_now(armed: Option<std::time::Instant>, now: std::time::Instant, open: usize) -> bool {
+    open == 0 && armed.is_some_and(|armed| now.saturating_duration_since(armed) <= QUIT_GRACE)
+}
+
+#[cfg(unix)]
+fn arm_quit_after_last_window(cx: &mut App) {
+    QUIT_ARMED.with(|armed| armed.set(Some(std::time::Instant::now())));
+    if QUIT_HOOK.with(|hook| hook.replace(true)) {
+        return;
+    }
+    cx.on_window_closed(|cx, _| {
+        let armed = QUIT_ARMED.with(std::cell::Cell::get);
+        if quit_now(armed, std::time::Instant::now(), cx.windows().len()) {
+            cx.quit();
         }
     })
     .detach();
@@ -1153,6 +1205,24 @@ mod tests {
             focused: id == 1,
             active_window: None,
         }
+    }
+
+    #[test]
+    fn a_quit_exits_once_the_last_window_closes_within_the_grace_period() {
+        let armed = std::time::Instant::now();
+        // Windows still open (a Save panel is up): keep running.
+        assert!(!quit_now(Some(armed), armed, 1));
+        // The last window closed: exit, as ⌘Q on the Mac does.
+        assert!(quit_now(Some(armed), armed + Duration::from_secs(5), 0));
+        // No quit was asked for: an app that stays open with no windows
+        // (Text Editor, Preview) keeps running after ⌘W.
+        assert!(!quit_now(None, armed, 0));
+        // A quit the user cancelled long ago does not resurface on a later ⌘W.
+        assert!(!quit_now(
+            Some(armed),
+            armed + QUIT_GRACE + Duration::from_secs(1),
+            0
+        ));
     }
 
     #[test]

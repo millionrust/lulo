@@ -46,6 +46,25 @@ fn bitrate_and_poll_time_changes_do_not_refresh() {
 }
 
 #[test]
+fn a_mocked_service_call_log_does_not_refresh() {
+    use crate::model::{signal_interface_change, PropertyChange};
+
+    assert_eq!(
+        signal_interface_change(Some("org.freedesktop.DBus.Mock")),
+        Some(PropertyChange::Unshown)
+    );
+    // Any real service signal still re-reads the service.
+    for interface in [
+        Some("org.freedesktop.UPower"),
+        Some("org.freedesktop.NetworkManager"),
+        Some("org.freedesktop.DBus.ObjectManager"),
+        None,
+    ] {
+        assert_eq!(signal_interface_change(interface), None, "{interface:?}");
+    }
+}
+
+#[test]
 fn source_sets_scope_transport_failures() {
     assert!(!Sources::system_bus().audio);
     assert_eq!(

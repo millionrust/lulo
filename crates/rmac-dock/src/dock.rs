@@ -65,6 +65,13 @@ impl Model {
                 continue;
             }
             let application = applications.get(&canonical).copied();
+            // Lulo on Windows ships its apps in stages (ADR 0023): a default
+            // pin whose app is not installed yet is left out rather than
+            // drawn as a broken tile, unless it is running.
+            #[cfg(windows)]
+            if application.is_none() && !windows.contains_key(&canonical) {
+                continue;
+            }
             let grouped = windows.remove(&canonical).unwrap_or_default();
             items.push(build_item(&pinned_id.0, application, true, grouped));
         }

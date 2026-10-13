@@ -36,6 +36,7 @@ mod presentation;
 mod presentation_persistence;
 mod presentation_support;
 mod preview_options;
+mod print_controller;
 mod progress_window;
 mod quick_look_controller;
 mod recovery_controller;
@@ -172,6 +173,7 @@ actions!(
         QuickLook,
         Slideshow,
         Compress,
+        PrintSelection,
         GetInfo,
         ShowInspector,
         GetSummaryInfo,
@@ -393,6 +395,10 @@ struct Tab {
 /// Go ▸ Recent Folders keeps this many entries, matching the Mac's own
 /// default list length.
 const RECENT_FOLDERS_CAP: usize = 10;
+
+/// The key context of Files' own auxiliary windows (Settings, the Progress
+/// window): ⌘W there is `CloseTab`, which closes that window.
+pub(crate) const PANEL_CONTEXT: &str = "FilesPanel";
 
 struct FinderView {
     cwd: PathBuf,

@@ -47,6 +47,9 @@ pub(crate) struct DirectXRenderer {
 
     width: u32,
     height: u32,
+    /// rmac: the radius, in device pixels, DirectComposition rounds the
+    /// window's corners at (`rmac_window_frame.rs`); 0 leaves them square.
+    corner_radius: f32,
 
     /// Whether we want to skip drwaing due to device lost events.
     ///
@@ -105,6 +108,8 @@ struct DirectComposition {
     comp_device: IDCompositionDevice,
     comp_target: IDCompositionTarget,
     comp_visual: IDCompositionVisual,
+    /// rmac: the rounded clip of a window with a Mac frame, made on first use.
+    corner_clip: Option<IDCompositionRectangleClip>,
 }
 
 impl DirectXRendererDevices {
@@ -178,12 +183,37 @@ impl DirectXRenderer {
             font_info: Self::get_font_info(),
             width: 1,
             height: 1,
+            corner_radius: 0.0,
             skip_draws: false,
         })
     }
 
     pub(crate) fn sprite_atlas(&self) -> Arc<dyn PlatformAtlas> {
         self.atlas.clone()
+    }
+
+    /// rmac: whether the window is drawn through DirectComposition, which
+    /// can round its corners (`GPUI_DISABLE_DIRECT_COMPOSITION` turns it off).
+    pub(crate) fn uses_direct_composition(&self) -> bool {
+        self.direct_composition.is_some()
+    }
+
+    /// rmac: round the window's corners at `radius` device pixels (0 for
+    /// square ones, as when maximised). Applied again on every resize.
+    pub(crate) fn set_corner_radius(&mut self, radius: f32) {
+        if self.corner_radius == radius {
+            return;
+        }
+        self.corner_radius = radius;
+        self.apply_corner_clip().log_err();
+    }
+
+    fn apply_corner_clip(&mut self) -> Result<()> {
+        let (width, height, radius) = (self.width as f32, self.height as f32, self.corner_radius);
+        match self.direct_composition.as_mut() {
+            Some(composition) => composition.set_corner_clip(width, height, radius),
+            None => Ok(()),
+        }
     }
 
     fn pre_draw(&self, clear_color: &[f32; 4]) -> Result<()> {
@@ -306,6 +336,8 @@ impl DirectXRenderer {
         self.pipelines = pipelines;
         self.direct_composition = direct_composition;
         self.skip_draws = true;
+        // rmac: the new visual needs the window's rounded clip again.
+        self.apply_corner_clip().log_err();
         Ok(())
     }
 
@@ -419,6 +451,8 @@ impl DirectXRenderer {
                 .device_context
                 .OMSetRenderTargets(Some(slice::from_ref(&resources.render_target_view)), None);
         }
+        // rmac: the bottom corners follow the new size.
+        self.apply_corner_clip().log_err();
 
         Ok(())
     }
@@ -948,6 +982,7 @@ impl DirectComposition {
             comp_device,
             comp_target,
             comp_visual,
+            corner_clip: None,
         })
     }
 
@@ -955,6 +990,47 @@ impl DirectComposition {
         unsafe {
             self.comp_visual.SetContent(swap_chain)?;
             self.comp_target.SetRoot(&self.comp_visual)?;
+            self.comp_device.Commit()?;
+        }
+        Ok(())
+    }
+
+    /// rmac: clip the window's content to a `width` × `height` rectangle
+    /// with corners rounded at `radius` (device pixels). DirectComposition
+    /// draws the clip's edge anti-aliased (soft border mode), so the corners
+    /// are smooth where a window region would be jagged, and it costs
+    /// nothing per frame: DWM applies it while composing.
+    fn set_corner_clip(&mut self, width: f32, height: f32, radius: f32) -> Result<()> {
+        if radius <= 0.0 && self.corner_clip.is_none() {
+            return Ok(());
+        }
+        let clip = match &self.corner_clip {
+            Some(clip) => clip.clone(),
+            None => {
+                let clip = unsafe { self.comp_device.CreateRectangleClip()? };
+                unsafe {
+                    self.comp_visual
+                        .SetBorderMode(DCOMPOSITION_BORDER_MODE_SOFT)?;
+                    self.comp_visual.SetClip(&clip)?;
+                }
+                self.corner_clip = Some(clip.clone());
+                clip
+            }
+        };
+        let radius = radius.max(0.0);
+        unsafe {
+            clip.SetLeft2(0.0)?;
+            clip.SetTop2(0.0)?;
+            clip.SetRight2(width)?;
+            clip.SetBottom2(height)?;
+            clip.SetTopLeftRadiusX2(radius)?;
+            clip.SetTopLeftRadiusY2(radius)?;
+            clip.SetTopRightRadiusX2(radius)?;
+            clip.SetTopRightRadiusY2(radius)?;
+            clip.SetBottomLeftRadiusX2(radius)?;
+            clip.SetBottomLeftRadiusY2(radius)?;
+            clip.SetBottomRightRadiusX2(radius)?;
+            clip.SetBottomRightRadiusY2(radius)?;
             self.comp_device.Commit()?;
         }
         Ok(())

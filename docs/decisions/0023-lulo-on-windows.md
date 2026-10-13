@@ -1762,30 +1762,33 @@ menu. All of these pass ("every Lulo layer check passed", job of run 37832355013
 
 ### What is left
 
-- **Memory and idle on the runner.** `idle_gate.py`'s 60 MB private budget and 2-tick idle
-  budget are partly met. Idle CPU passes since the window list is read once per
-  change on its own thread and the shell's own surfaces no longer count as changes (2–3
-  ticks over the window in the last runs; one run measured 150 while lulo-shell was still
-  writing Windows' apps' icons, which the Apps folder helper now does instead). Private memory does not: in
-  `shell_smoke.py` lulo-shell holds about 75 MB at idle and 105 MB after Spotlight and a
-  menu (the old Windows UI: 39 and 58 MB). The same binary started by
-  `shell_scene.py` settles at 36–40 MB in every configuration tried (the fixed scene, the
-  runner's own status readings, its own Desktop folder, a user's start with Windows' apps
-  as entries, the runner's windows left showing; the `Shell scenes` job's memory probes),
-  and Spotlight or Control Centre open adds 11–14 MB. The 35 MB difference arrives in one
-  step during start-up in the smoke run only (17 → 67 MB in 14 ms between the first two
-  windows opening) and is not found yet.
+- **Memory and idle** (WIN-OS-64) are met. Memory checkpoints in the trace and a
+  parts-off probe (`LULO_PROBE_SKIP=desktop,menubar,dock,spotlight`) on the owner's laptop
+  found where the shared views' memory went: the desktop's folder and document icons fell
+  back to the 1024-pt SVG, which GPUI rasterised at 2048 × 2048 and kept (about 50 MB); the
+  Recycle Bin's item count loaded the shell namespace (about 20 MB; the bin's `$I` files
+  are counted instead); path textures stayed allocated after the last path; the wallpaper
+  kept its decoded copy beside the layer's; the bar's window was the screen's size while
+  no menu was open (it is now the bar until a menu opens, as a full-screen swap chain is
+  charged to the process on a real GPU); and picture atlas pages started at 1024². The
+  runner now holds 42 MB private at idle and 57 MB 30 s after Spotlight and a menu
+  (budget 60 MB); the laptop's release build 52.3 MB at start and 56.6 MB 30 s after the
+  Lulo menu and two status menus (the 11a6dfbd preview, same tour: 96.3 and 100.6 MB). Idle CPU stays within 2 ticks: the
+  running-app icon reader takes the window list's own snapshots and writes nothing into
+  the watched applications folder.
 - **The hotkey notice** (WIN-OS-62): recorded once and traced, but Lulo OS's notification
   banner does not run on Windows, so nothing shows it.
 - **Bluetooth** in the menu bar and Control Centre (WIN-OS-63).
 - **What the blur samples.** Blurred materials draw the wallpaper only; an app window under
   an open menu is not blurred into it (niri samples it on Lulo OS).
-- **Full-screen surfaces.** The bar's and the Dock's surfaces are the screen's size, as on
-  Lulo OS (their menus and magnification draw inside them); each costs Windows a full-screen
-  swap chain.
-- **The real PC.** CI proves the runner (Windows Server, WARP, 1024 × 768 at 100 %); the
-  owner's laptop (Radeon, 1366 × 768) still needs the coordinator's tour: DPI other than
-  100 %, the blur's look on a real wallpaper, the Dock's corners on that GPU.
+- **Full-screen surfaces.** The Dock's surface is still the screen's size, as on Lulo OS
+  (its menus and magnification draw inside it); the bar's is the screen's size only while
+  a menu is open.
+- **The real PC.** The owner's laptop (Radeon, 1366 × 768, release build) was toured and
+  measured: desktop shortcuts with their targets' icons and names (WIN-OS-65), running and
+  minimized Windows apps with their icons in the Dock (WIN-OS-66), the Lulo artwork on the
+  desktop (WIN-OS-67), Control Centre's Display slider (WIN-OS-69). DPI other than 100 % is
+  still untried.
 
 ## Phase plan
 

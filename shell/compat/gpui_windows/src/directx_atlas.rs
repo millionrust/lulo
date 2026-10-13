@@ -393,9 +393,11 @@ mod tests {
             width: DevicePixels(64),
             height: DevicePixels(64),
         };
+        // rmac: two of these do not fit one 512² picture page (upstream:
+        // 700 on a 1024² page).
         let big = Size {
-            width: DevicePixels(700),
-            height: DevicePixels(700),
+            width: DevicePixels(350),
+            height: DevicePixels(350),
         };
 
         let keeper_key = make_image_key(1);

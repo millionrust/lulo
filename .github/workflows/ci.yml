@@ -18,7 +18,9 @@ concurrency:
 # smaller objects build faster, and sccache can only cache non-incremental
 # compiles. Jobs that compile set RUSTC_WRAPPER=sccache after
 # mozilla-actions/sccache-action, which stores each compiled crate in the
-# GitHub Actions cache, so a branch run reuses dev's crates.
+# GitHub Actions cache, so a branch run reuses dev's crates. Nothing here
+# saves a `target` directory: one such entry (5-13 GB) fills the
+# repository's 10 GB cache budget and evicts every sccache entry.
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"

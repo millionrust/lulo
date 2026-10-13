@@ -44,14 +44,13 @@ struct FontInfo {
 }
 
 /// rmac (docs/decisions/0025-vendor-gpui-windows.md, "Text"): a font the
-/// app added itself, Lulo's Inter. DirectWrite rasterizes CFF outlines with
-/// stem darkening and symmetric vertical antialiasing, so Inter came out
-/// heavier and softer than on Lulo OS, where `gpui_wgpu` renders the same
-/// font file with swash, hinted, in grayscale. The glyphs of these faces
-/// are rasterized here by the same swash calls, so a Lulo window's text has
-/// Lulo OS's exact weight and sharpness; DirectWrite still shapes and lays
-/// out every line, and rasterizes every other font (system fallbacks,
-/// emoji).
+/// app added itself, Lulo's Inter. DirectWrite's own CFF rasterizer and
+/// antialiasing drew Inter visibly heavier and softer than Lulo OS, where
+/// `gpui_wgpu` renders the same font file with swash, hinted. The glyphs of
+/// these faces are rasterized here by the same swash calls, so a Lulo
+/// window's text has Lulo OS's exact weight and sharpness; DirectWrite
+/// still shapes and lays out every line, and rasterizes every other font
+/// (system fallbacks, emoji).
 struct SwashFace {
     data: Arc<Cow<'static, [u8]>>,
     offset: u32,
@@ -342,13 +341,10 @@ impl PlatformTextSystem for DirectWriteTextSystem {
 
     fn recommended_rendering_mode(
         &self,
-        font_id: FontId,
+        _font_id: FontId,
         _font_size: Pixels,
     ) -> TextRenderingMode {
-        // rmac: swash draws the app's own fonts in grayscale, as on Lulo OS.
-        if self.state.read().fonts[font_id.0].swash.is_some() {
-            TextRenderingMode::Grayscale
-        } else if self.components.system_subpixel_rendering {
+        if self.components.system_subpixel_rendering {
             TextRenderingMode::Subpixel
         } else {
             TextRenderingMode::Grayscale
@@ -821,11 +817,16 @@ impl DirectWriteState {
     }
 
     /// rmac: `params`' glyph as `gpui_wgpu`'s `CosmicTextSystem` renders it
-    /// on Lulo OS (hinted, grayscale, the same subpixel offset), when its
-    /// font is one of the app's own faces; `None` leaves the glyph to
-    /// DirectWrite. Bounds and pixels both come from here, so they agree.
+    /// on Lulo OS (hinted, the same subpixel offset; grayscale, or LCD
+    /// subpixel coverage in an opaque window), when its font is one of the
+    /// app's own faces; `None` leaves the glyph to DirectWrite. Bounds and
+    /// pixels both come from here, so they agree. The pixels are what this
+    /// atlas expects: one coverage byte for a monochrome sprite, and for a
+    /// subpixel sprite R, G and B coverage then a spare byte, in an
+    /// `R8G8B8A8` texture (`gpui_wgpu` swaps R and B for its `Bgra8Unorm`
+    /// atlas; the shaders read the same `rgb` either way).
     fn swash_glyph(&self, params: &RenderGlyphParams) -> Option<swash::scale::image::Image> {
-        if params.is_emoji || params.subpixel_rendering {
+        if params.is_emoji {
             return None;
         }
         let face = &self.swash_faces[self.fonts[params.font_id.0].swash?];
@@ -840,11 +841,25 @@ impl DirectWriteState {
             .size(params.font_size.as_f32() * params.scale_factor)
             .hint(true)
             .build();
-        let image = Render::new(&[Source::Bitmap(StrikeWith::ExactSize), Source::Outline])
-            .format(Format::Alpha)
+        let format = if params.subpixel_rendering {
+            // As `gpui_wgpu`: swash's BGRA subpixel format comes out in RGB order.
+            Format::subpixel_bgra()
+        } else {
+            Format::Alpha
+        };
+        let mut image = Render::new(&[Source::Bitmap(StrikeWith::ExactSize), Source::Outline])
+            .format(format)
             .offset(offset)
             .render(&mut scaler, glyph_id)?;
-        (image.content == swash::scale::image::Content::Mask).then_some(image)
+        use swash::scale::image::Content;
+        match (image.content, params.subpixel_rendering) {
+            (Content::Mask, false) | (Content::SubpixelMask, true) => Some(image),
+            (Content::Mask, true) => {
+                image.data = image.data.iter().flat_map(|&a| [a, a, a, a]).collect();
+                Some(image)
+            }
+            _ => None,
+        }
     }
 
     fn raster_bounds(
@@ -1816,9 +1831,9 @@ fn get_font_names_from_collection(
 
 /// rmac: a copy of `font_face`'s OpenType table `tag`, if it has one.
 fn font_table(font_face: &IDWriteFontFace3, tag: [u8; 4]) -> Option<Vec<u8>> {
-    let mut data = std::ptr::null_mut();
+    let mut data: *mut c_void = std::ptr::null_mut();
     let mut size = 0u32;
-    let mut context = std::ptr::null_mut();
+    let mut context: *mut c_void = std::ptr::null_mut();
     let mut exists = BOOL(0);
     unsafe {
         font_face

@@ -281,7 +281,10 @@ pub fn partial_bytes(model: &(impl Pinned + ?Sized)) -> u64 {
 fn licence_notice(model: &(impl Pinned + ?Sized)) -> String {
     let text = match model.licence() {
         "Apache-2.0" => "the full text is in /usr/share/common-licenses/Apache-2.0".to_owned(),
-        "MIT" => format!("the full text follows\n\n{}", crate::voice::MOONSHINE_LICENCE),
+        "MIT" => format!(
+            "the full text follows\n\n{}",
+            crate::voice::MOONSHINE_LICENCE
+        ),
         other => other.to_owned(),
     };
     format!(

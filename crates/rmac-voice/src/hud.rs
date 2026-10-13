@@ -461,9 +461,8 @@ pub fn run() {
                 .detach();
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                 let first = futures_util::FutureExt::fuse(press_rx.recv());
-                let timeout = futures_util::FutureExt::fuse(
-                    cx.background_executor().timer(START_WAIT),
-                );
+                let timeout =
+                    futures_util::FutureExt::fuse(cx.background_executor().timer(START_WAIT));
                 futures_util::pin_mut!(first, timeout);
                 let pressed = futures_util::select! {
                     press = first => press.is_ok(),

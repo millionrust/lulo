@@ -42,7 +42,9 @@ impl std::fmt::Display for WavError {
 impl std::error::Error for WavError {}
 
 fn u16_at(bytes: &[u8], at: usize) -> Option<u16> {
-    bytes.get(at..at + 2).map(|b| u16::from_le_bytes([b[0], b[1]]))
+    bytes
+        .get(at..at + 2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
 }
 
 fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
@@ -329,9 +331,7 @@ mod tests {
 
         // Nothing said: it gives up after 6 s.
         let mut endpointer = Endpointer::default();
-        let steps = (0..200)
-            .position(|_| endpointer.step(&silence))
-            .unwrap();
+        let steps = (0..200).position(|_| endpointer.step(&silence)).unwrap();
         assert_eq!(steps + 1, 120);
         assert!(!endpointer.heard_speech());
     }

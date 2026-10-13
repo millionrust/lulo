@@ -104,8 +104,7 @@ pub fn threads() -> usize {
 
 /// Load `model`'s verified files into the real engine.
 pub fn open(model: &VoiceModel) -> Result<Box<dyn Transcriber>, VoiceEngineError> {
-    let models =
-        rmac_intelligence::paths::models_dir().ok_or(VoiceEngineError::NotDownloaded)?;
+    let models = rmac_intelligence::paths::models_dir().ok_or(VoiceEngineError::NotDownloaded)?;
     let paths = model.verified(&models).map_err(|error| match error {
         rmac_intelligence::verify::VerifyError::Missing => VoiceEngineError::NotDownloaded,
         other => VoiceEngineError::Failed(other.to_string()),

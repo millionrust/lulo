@@ -63,8 +63,7 @@ pub fn find_onnxruntime() -> Result<PathBuf, VoiceEngineError> {
             else {
                 continue;
             };
-            if version.first() != Some(&1) || version.get(1).copied().unwrap_or(0) < MINIMUM_MINOR
-            {
+            if version.first() != Some(&1) || version.get(1).copied().unwrap_or(0) < MINIMUM_MINOR {
                 continue;
             }
             if best.as_ref().is_none_or(|(current, _)| version > *current) {
@@ -144,12 +143,18 @@ impl Moonshine {
 }
 
 /// Run `session` on positional `inputs` and keep every output, in order.
-fn run(session: &mut Session, inputs: Vec<SessionInputValue<'_>>) -> Result<Vec<DynValue>, VoiceEngineError> {
+fn run(
+    session: &mut Session,
+    inputs: Vec<SessionInputValue<'_>>,
+) -> Result<Vec<DynValue>, VoiceEngineError> {
     let outputs = session.run(inputs.as_slice()).map_err(failed)?;
     Ok(outputs.into_iter().map(|(_, value)| value).collect())
 }
 
-fn int_tensor(shape: Vec<i64>, values: Vec<i32>) -> Result<SessionInputValue<'static>, VoiceEngineError> {
+fn int_tensor(
+    shape: Vec<i64>,
+    values: Vec<i32>,
+) -> Result<SessionInputValue<'static>, VoiceEngineError> {
     Tensor::from_array((shape, values))
         .map(SessionInputValue::from)
         .map_err(failed)
@@ -161,10 +166,13 @@ fn best_token(logits: &DynValue) -> Result<i32, VoiceEngineError> {
     values
         .iter()
         .enumerate()
-        .fold(None, |best: Option<(usize, f32)>, (index, value)| match best {
-            Some((_, top)) if top >= *value => best,
-            _ => Some((index, *value)),
-        })
+        .fold(
+            None,
+            |best: Option<(usize, f32)>, (index, value)| match best {
+                Some((_, top)) if top >= *value => best,
+                _ => Some((index, *value)),
+            },
+        )
         .map(|(index, _)| index as i32)
         .ok_or_else(|| failed("the decoder wrote no logits"))
 }
@@ -180,7 +188,10 @@ impl Transcriber for Moonshine {
         let audio = Tensor::from_array((vec![1i64, samples.len() as i64], samples.to_vec()))
             .map_err(failed)?;
         let mut features = run(&mut self.preprocess, vec![SessionInputValue::from(audio)])?;
-        let features = features.drain(..).next().ok_or_else(|| failed("no features"))?;
+        let features = features
+            .drain(..)
+            .next()
+            .ok_or_else(|| failed("no features"))?;
         let frames = features.shape().get(1).copied().unwrap_or(0);
         steps.preprocess_ms = started.elapsed().as_secs_f64() * 1000.0;
 
@@ -192,7 +203,10 @@ impl Transcriber for Moonshine {
                 int_tensor(vec![1], vec![frames as i32])?,
             ],
         )?;
-        let encoder_out = encoded.drain(..).next().ok_or_else(|| failed("no encoding"))?;
+        let encoder_out = encoded
+            .drain(..)
+            .next()
+            .ok_or_else(|| failed("no encoding"))?;
         let encoder_frames = encoder_out.shape().get(1).copied().unwrap_or(0).max(0);
         steps.encode_ms = started.elapsed().as_secs_f64() * 1000.0;
 

@@ -232,10 +232,7 @@ pub async fn listen(
 
     let mut incoming = std::pin::pin!(futures_util::stream::select(
         signals.map(Incoming::Signal),
-        futures_util::stream::select(
-            owners.map(Incoming::Owner),
-            controls.map(Incoming::Control),
-        ),
+        futures_util::stream::select(owners.map(Incoming::Owner), controls.map(Incoming::Control),),
     ));
     while let Some(event) = incoming.next().await {
         match event {

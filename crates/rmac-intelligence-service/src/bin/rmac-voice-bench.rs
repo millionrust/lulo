@@ -67,7 +67,14 @@ mod bench {
                 status
                     .lines()
                     .find_map(|line| line.strip_prefix("VmHWM:"))
-                    .and_then(|value| value.trim().trim_end_matches("kB").trim().parse::<f64>().ok())
+                    .and_then(|value| {
+                        value
+                            .trim()
+                            .trim_end_matches("kB")
+                            .trim()
+                            .parse::<f64>()
+                            .ok()
+                    })
             })
             .map(|kib| kib / 1024.0)
             .unwrap_or(0.0)
@@ -114,14 +121,12 @@ mod bench {
             std::process::exit(1);
         });
         let started = Instant::now();
-        let mut engine = rmac_intelligence_service::voice::moonshine::Moonshine::load(
-            &paths,
-            arguments.threads,
-        )
-        .unwrap_or_else(|error| {
-            eprintln!("{error}");
-            std::process::exit(1);
-        });
+        let mut engine =
+            rmac_intelligence_service::voice::moonshine::Moonshine::load(&paths, arguments.threads)
+                .unwrap_or_else(|error| {
+                    eprintln!("{error}");
+                    std::process::exit(1);
+                });
         let load_ms = started.elapsed().as_secs_f64() * 1000.0;
         let rss_loaded = peak_rss_mib();
         let mut intent = arguments.intent_model.as_ref().map(|path| {
@@ -146,7 +151,8 @@ mod bench {
                 "threads": arguments.threads, "load_ms": load_ms,
                 "rss_before_mib": rss_before, "rss_loaded_mib": rss_loaded})
         );
-        let (mut transcribe_times, mut intent_times, mut totals) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut transcribe_times, mut intent_times, mut totals) =
+            (Vec::new(), Vec::new(), Vec::new());
         let mut pairs: Vec<(String, String)> = Vec::new();
         for entry in &entries {
             let file = base.join(entry["file"].as_str().unwrap_or_default());
@@ -242,19 +248,19 @@ mod bench {
                 Ok(transcript) => println!(
                     "{}",
                     serde_json::json!({"event": "service", "run": run, "text": transcript.text,
-                        "release_to_text_client_ms": client_ms,
-                        "levels": levels.get(),
-                        "held_ms": hold.as_secs_f64() * 1000.0,
-                        "since_start_ms": started.elapsed().as_secs_f64() * 1000.0,
-                        "timing": {
-                            "audio_ms": transcript.timing.audio_ms,
-                            "stop_to_text_ms": transcript.timing.stop_to_text_ms,
-                            "waited_for_model_ms": transcript.timing.waited_for_model_ms,
-                            "encode_ms": transcript.timing.encode_ms,
-                            "decode_ms": transcript.timing.decode_ms,
-                            "model_load_ms": transcript.timing.model_load_ms,
-                            "start_to_audio_ms": transcript.timing.start_to_audio_ms,
-                        }})
+                    "release_to_text_client_ms": client_ms,
+                    "levels": levels.get(),
+                    "held_ms": hold.as_secs_f64() * 1000.0,
+                    "since_start_ms": started.elapsed().as_secs_f64() * 1000.0,
+                    "timing": {
+                        "audio_ms": transcript.timing.audio_ms,
+                        "stop_to_text_ms": transcript.timing.stop_to_text_ms,
+                        "waited_for_model_ms": transcript.timing.waited_for_model_ms,
+                        "encode_ms": transcript.timing.encode_ms,
+                        "decode_ms": transcript.timing.decode_ms,
+                        "model_load_ms": transcript.timing.model_load_ms,
+                        "start_to_audio_ms": transcript.timing.start_to_audio_ms,
+                    }})
                 ),
                 Err(error) => println!(
                     "{}",

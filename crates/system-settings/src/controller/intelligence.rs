@@ -205,7 +205,11 @@ impl Settings {
     }
 
     /// Talk to Lulo (hold ⌥Space and speak).
-    pub(in crate::controller) fn set_intelligence_voice(&mut self, voice: bool, cx: &mut Context<Self>) {
+    pub(in crate::controller) fn set_intelligence_voice(
+        &mut self,
+        voice: bool,
+        cx: &mut Context<Self>,
+    ) {
         let mut config = self.intelligence.config.clone();
         config.voice = voice;
         self.save_intelligence_config(config, cx);

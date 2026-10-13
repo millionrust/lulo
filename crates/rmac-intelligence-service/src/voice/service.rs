@@ -555,10 +555,7 @@ async fn authorize(header: &Header<'_>, connection: &Connection) -> Result<(), V
 }
 
 #[cfg(not(target_os = "linux"))]
-async fn authorize(
-    header: &Header<'_>,
-    _connection: &Connection,
-) -> Result<(), VoiceServiceError> {
+async fn authorize(header: &Header<'_>, _connection: &Connection) -> Result<(), VoiceServiceError> {
     let _ = Purpose::Voice;
     header
         .sender()

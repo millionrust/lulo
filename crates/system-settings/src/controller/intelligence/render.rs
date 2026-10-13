@@ -131,7 +131,9 @@ impl Settings {
                 pane.config.voice,
                 !pane.busy,
                 move |enabled, _, cx| {
-                    toggle_view.update(cx, |settings, cx| settings.set_intelligence_voice(enabled, cx));
+                    toggle_view.update(cx, |settings, cx| {
+                        settings.set_intelligence_voice(enabled, cx)
+                    });
                 },
             ),
             fact_row(
@@ -153,8 +155,7 @@ impl Settings {
     ) -> AnyElement {
         let pane = &self.intelligence;
         let size = megabytes(voice.size());
-        let (status, button): (String, AnyElement) = if let Some(download) = &pane.voice_download
-        {
+        let (status, button): (String, AnyElement) = if let Some(download) = &pane.voice_download {
             let percent = download.done * 100 / download.total.max(1);
             let cancel_view = view.clone();
             (

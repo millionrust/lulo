@@ -42,9 +42,7 @@ fn main() {
         })
         .map(|_| ())
     } else {
-        eprintln!(
-            "usage: rmac-intelligence-fetch tiny|standard|voice-tiny|voice-standard"
-        );
+        eprintln!("usage: rmac-intelligence-fetch tiny|standard|voice-tiny|voice-standard");
         std::process::exit(2);
     };
     match result {

@@ -158,7 +158,8 @@ mod tests {
 
     #[test]
     fn a_file_plays_in_real_time_then_falls_silent() {
-        let path = std::env::temp_dir().join(format!("rmac-voice-capture-{}.wav", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("rmac-voice-capture-{}.wav", std::process::id()));
         std::fs::write(&path, audio::write_wav(&[0.5f32; STEP_SAMPLES])).unwrap();
         let mut source = FileSource::open(&path).unwrap();
         let started = Instant::now();

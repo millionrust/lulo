@@ -360,12 +360,12 @@ mod tests {
 
     #[test]
     fn transcripts_lose_their_closing_full_stop() {
-        assert_eq!(clean_transcript(" Turn on dark mode. "), "Turn on dark mode");
-        assert_eq!(clean_transcript("Open  Notes!"), "Open Notes");
         assert_eq!(
-            clean_transcript("What is the time?"),
-            "What is the time?"
+            clean_transcript(" Turn on dark mode. "),
+            "Turn on dark mode"
         );
+        assert_eq!(clean_transcript("Open  Notes!"), "Open Notes");
+        assert_eq!(clean_transcript("What is the time?"), "What is the time?");
         assert_eq!(clean_transcript("Set volume to 30%."), "Set volume to 30%");
         assert_eq!(clean_transcript("..."), "");
         assert_eq!(clean_transcript(""), "");
@@ -376,7 +376,10 @@ mod tests {
         let mut config = Config::default();
         assert_eq!(availability(&config, &facts(), None), Availability::Off);
         config.enabled = true;
-        assert_eq!(availability(&config, &facts(), None), Availability::VoiceOff);
+        assert_eq!(
+            availability(&config, &facts(), None),
+            Availability::VoiceOff
+        );
         config.voice = true;
         assert_eq!(
             availability(&config, &facts(), None),

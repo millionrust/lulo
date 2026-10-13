@@ -7,10 +7,80 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch cancels the older run (dev keeps every
+# run), so agents re-pushing a branch do not hold runners for stale results.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/dev' }}
+
+# CI-only build settings (docs/ci.md "Build speed"); release.yml and
+# candidate.yml do not use them. No debug info and no incremental state:
+# smaller objects build faster, and sccache can only cache non-incremental
+# compiles. Jobs that compile set RUSTC_WRAPPER=sccache after
+# mozilla-actions/sccache-action, which stores each compiled crate in the
+# GitHub Actions cache, so a branch run reuses dev's crates. Nothing here
+# saves a `target` directory: one such entry (5-13 GB) fills the
+# repository's 10 GB cache budget and evicts every sccache entry.
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  SCCACHE_GHA_ENABLED: "true"
+  # The Windows jobs' packages (ADR 0023): Clippy and the tests cover these.
+  RMAC_WINDOWS_PACKAGES: >-
+    -p rmac-calculator -p rmac-notes -p rmac-text-editor -p rmac-editor
+    -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime
+    -p rmac-ui -p rmac-storage -p rmac-recent-documents
+    -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal
+    -p rmac-portal -p rmac-print-linux -p rmac-spelling -p rmac-sound
+    -p rmac-finder -p rmac-mounts -p rmac-search -p rmac-app-launch
+    -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
+    -p rmac-system-settings -p rmac-appearance-portal
+    -p rmac-app-menu -p rmac-win-shell
 
 jobs:
+  # Only `docs/**/*.md` changed: the Rust, Windows and macOS jobs are
+  # skipped (the Python suite, which reads the docs, still runs). Anything
+  # else, or a diff that cannot be read, runs everything.
+  changes:
+    name: Changed files
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - name: Check whether only docs changed
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            base=$PR_BASE
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            base=$DEFAULT_BRANCH  # a new branch: compare with dev
+          else
+            base=$BEFORE
+          fi
+          code=true
+          # The compare API lists at most 300 files; a longer list runs everything.
+          if files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$base...$HEAD" --jq '.files[].filename'); then
+            count=$(printf '%s\n' "$files" | grep -c . || true)
+            other=$(printf '%s\n' "$files" | grep -vcE '^docs/.+\.md$' || true)
+            echo "$count changed files since $base, $other outside docs/**/*.md"
+            if [ "$count" -gt 0 ] && [ "$count" -lt 300 ] && [ "$other" -eq 0 ]; then
+              code=false
+            fi
+          else
+            echo "Could not compare $base...$HEAD; running every job"
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   # ubuntu-26.04 hosted runners went GA 2026-09-17 (todo.md "Move the Linux
   # jobs from ubuntu-24.04 to Ubuntu 26.04"). These two jobs have no apt-get
   # step (release-contracts is pure Python; dependency-policy's cargo-deny
@@ -58,8 +128,14 @@ jobs:
 
   linux:
     name: Linux checks
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      RUSTC_WRAPPER: sccache
+      # mold links the test binaries in CI only; release and candidate
+      # builds keep the toolchain's default linker.
+      RUSTFLAGS: -C linker-features=-lld -C link-arg=-fuse-ld=mold
 
     steps:
       - name: Check out repository
@@ -86,9 +162,11 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
             dbus \
+            mold \
             python3-dbusmock
 
       - name: Install pinned Rust toolchain
+        if: needs.changes.outputs.code == 'true'
         run: rustup show active-toolchain
 
       - name: Install Python
@@ -100,16 +178,16 @@ jobs:
       - name: Install Python test dependencies
         run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1 PyYAML==6.0.3
 
-      - name: Cache Cargo data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # Compiled crates come from the GitHub Actions cache (docs/ci.md
+      # "Build speed"); the post step prints the hit rate.
+      - name: Set up sccache
+        if: needs.changes.outputs.code == 'true'
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          version: v0.18.0
 
       - name: Check formatting
+        if: needs.changes.outputs.code == 'true'
         run: python3 scripts/check-rustfmt.py
 
       - name: Check shared-control boundary
@@ -138,11 +216,13 @@ jobs:
           test -s /tmp/rmac-linux-evidence/environment.txt
 
       - name: Run Clippy
+        if: needs.changes.outputs.code == 'true'
         run: cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
 
       # The AccountsService and cups-pk-helper tests run against
       # python-dbusmock on a private bus; here a missing mock is a failure.
       - name: Run tests
+        if: needs.changes.outputs.code == 'true'
         env:
           RMAC_REQUIRE_DBUSMOCK: "1"
         run: cargo test --locked --workspace --all-features
@@ -157,9 +237,14 @@ jobs:
     # ubuntu-26.04 hosted runner (2026-09-17). Kept non-blocking until it has
     # run clean for a while (apt package names/versions differ across LTS
     # releases and are unverified here); see docs/ci.md.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     continue-on-error: true
+    env:
+      RUSTC_WRAPPER: sccache
+      RUSTFLAGS: -C linker-features=-lld -C link-arg=-fuse-ld=mold
 
     steps:
       - name: Check out repository
@@ -186,6 +271,7 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
             dbus \
+            mold \
             python3-dbusmock
 
       - name: Install pinned Rust toolchain
@@ -200,14 +286,12 @@ jobs:
       - name: Install Python test dependencies
         run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1 PyYAML==6.0.3
 
-      - name: Cache Cargo data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # Compiled crates come from the GitHub Actions cache (docs/ci.md
+      # "Build speed"); the post step prints the hit rate.
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-2604-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          version: v0.18.0
 
       - name: Check formatting
         run: python3 scripts/check-rustfmt.py
@@ -227,8 +311,12 @@ jobs:
 
   macos:
     name: macOS checks
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-15
     timeout-minutes: 45
+    env:
+      RUSTC_WRAPPER: sccache
 
     steps:
       - name: Check out repository
@@ -246,14 +334,12 @@ jobs:
       - name: Install Python test dependencies
         run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1 PyYAML==6.0.3
 
-      - name: Cache Cargo data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # Compiled crates come from the GitHub Actions cache (docs/ci.md
+      # "Build speed"); the post step prints the hit rate.
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          version: v0.18.0
 
       - name: Run Clippy
         run: cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
@@ -264,238 +350,253 @@ jobs:
       - name: Run Python tests
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
-  windows:
-    name: Windows apps
-    # ADR 0023 phases 1-2c: Calculator, Notes, Text Editor, Preview, Clock,
-    # Weather and Terminal, with the shared crates they need (rmac-ui,
-    # storage, editor, Notes' store, the print/portal/spelling/sound seams),
-    # build, pass Clippy and their unit tests, and open a window on Windows;
-    # the launch check also opens each of the seven windows' menu strip
-    # with Alt, presses Ctrl+N and, for Text Editor, hands a second launch
-    # to the running app. Preview also opens a tiny fixture PDF and checks
-    # that Windows.Data.Pdf (`winpdf.rs`) rendered its page. It also prints
-    # each app's launch time and 20 s idle-CPU reading (the "Idle CPU"/
-    # "Launch time" tasks), and checks that opening Calculator then Weather
-    # without closing Calculator leaves Weather in the foreground (the
-    # "Foreground" task).
-    # Phase 2d adds Files (crates/finder): real Favourites/Locations
-    # (SHGetKnownFolderPath, drive enumeration), Open with the default app,
-    # Move to Bin through the real Recycle Bin, colour tags in an NTFS
-    # alternate data stream, and a crash-safe Copy/Move journal and Undo
-    # with real Windows locking — all with their own passing unit tests.
-    # Linux-only pieces (the xdg-trash-spec Bin view/restore, Add to Dock,
-    # atomic replace/exchange, Unix-identity-dependent rename survival)
-    # are honest, test-gated stubs; see docs/parity.md's WIN-OS-18..20.
-    # "Foreground" task). Phase 3's Lulo layer (`rmac-win-shell`:
-    # lulo-session and lulo-shell) is checked last on the same desktop: the
-    # bar's and the Dock's work-area strips, the Dock opening Calculator,
-    # Calculator's menus in the bar, a maximised window between the two,
-    # Spotlight on Alt+Space, and the taskbar and work area restored on exit.
-    # Lulo mode (ADR 0023 "Lulo mode"): Lulo's desktop under every window
-    # with Explorer's icons hidden, its icons opening, renaming and
-    # dragging, Lulo windows' shadow, Spotlight as the bar alone, apps
-    # opened in front of a maximised File Explorer, memory after use, and
-    # every way out (Turn Off, sign-out, crashes, uninstall) giving the
-    # desktop back.
-    # Blocking. Each check step has `continue-on-error`, so one run reports
-    # every kind of Windows breakage, and the last step ("Windows summary")
-    # fails the job when any of them failed: a step's API conclusion reads
-    # "success" under continue-on-error, so nothing may rely on it. The
-    # idle gate fails the job directly: since gpui_windows parks idle
-    # windows (ADR 0025) every app but Terminal, and both Lulo layer
-    # processes, must stay within one tick of CPU over the 20 s idle window.
-    # See docs/ci.md.
+  # ADR 0023 on Windows, in five jobs that run side by side (docs/ci.md
+  # "Windows"): Clippy, the unit tests, and one debug build of the apps,
+  # whose exes the three launch jobs download instead of building again.
+  #
+  # Phases 1-2c: Calculator, Notes, Text Editor, Preview, Clock, Weather
+  # and Terminal, with the shared crates they need (rmac-ui, storage,
+  # editor, Notes' store, the print/portal/spelling/sound seams), build,
+  # pass Clippy and their unit tests, and open a window on Windows; the
+  # launch check also opens each window's menu strip with Alt, presses
+  # Ctrl+N and, for Text Editor, hands a second launch to the running app.
+  # Preview also opens a tiny fixture PDF and checks that Windows.Data.Pdf
+  # (`winpdf.rs`) rendered its page. It also prints each app's launch time
+  # and 20 s idle-CPU reading, and checks that opening Calculator then
+  # Weather without closing Calculator leaves Weather in the foreground.
+  # Phase 2d adds Files (crates/finder): real Favourites/Locations
+  # (SHGetKnownFolderPath, drive enumeration), Open with the default app,
+  # Move to Bin through the real Recycle Bin, colour tags in an NTFS
+  # alternate data stream, and a crash-safe Copy/Move journal and Undo
+  # with real Windows locking — all with their own passing unit tests.
+  # Linux-only pieces (the xdg-trash-spec Bin view/restore, Add to Dock,
+  # atomic replace/exchange, Unix-identity-dependent rename survival)
+  # are honest, test-gated stubs; see docs/parity.md's WIN-OS-18..20.
+  # Phase 3's Lulo layer (`rmac-win-shell`: lulo-session and lulo-shell)
+  # is checked in its own launch job: the bar's and the Dock's work-area
+  # strips, the Dock opening Calculator, Calculator's menus in the bar, a
+  # maximised window between the two, Spotlight on Alt+Space, and the
+  # taskbar and work area restored on exit. Lulo mode (ADR 0023 "Lulo
+  # mode"): Lulo's desktop under every window with Explorer's icons
+  # hidden, its icons opening, renaming and dragging, Lulo windows'
+  # shadow, Spotlight as the bar alone, apps opened in front of a
+  # maximised File Explorer, memory after use, and every way out (Turn
+  # Off, sign-out, crashes, uninstall) giving the desktop back.
+  # Every job is blocking. Within a job, later checks still run after a
+  # failed one (`!cancelled()`), so one run reports every kind of breakage.
+  windows-clippy:
+    name: Windows Clippy
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
-    timeout-minutes: 75
+    timeout-minutes: 45
     env:
-      RMAC_WINDOWS_PACKAGES: >-
-        -p rmac-calculator -p rmac-notes -p rmac-text-editor -p rmac-editor
-        -p rmac-notes-store -p rmac-notes-storage -p rmac-notes-runtime
-        -p rmac-ui -p rmac-storage -p rmac-recent-documents
-        -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal
-        -p rmac-portal -p rmac-print-linux -p rmac-spelling -p rmac-sound
-        -p rmac-finder -p rmac-mounts -p rmac-search -p rmac-app-launch
-        -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
-        -p rmac-system-settings -p rmac-appearance-portal
-        -p rmac-app-menu -p rmac-win-shell
+      RUSTC_WRAPPER: sccache
     defaults:
       run:
         shell: bash
-
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install pinned Rust toolchain
-        continue-on-error: true
         run: rustup show active-toolchain
 
-      - name: Install Python
-        continue-on-error: true
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
-          python-version: "3.12"
+          version: v0.18.0
 
-      # One cache entry per lockfile, saved once even when a later step
-      # fails, so a red run still warms the next one.
-      - name: Restore Cargo data
-        continue-on-error: true
-        id: cargo-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - name: Run Clippy
+        run: cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
+
+  windows-tests:
+    name: Windows tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      RUSTC_WRAPPER: sccache
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          version: v0.18.0
+
+      # gpui_windows (ADR 0025) runs with the apps' packages so it builds
+      # with the same features: its frame-loop tests and upstream's own.
+      - name: Run tests
+        run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
+
+  windows-build:
+    name: Windows build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      RUSTC_WRAPPER: sccache
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.18.0
 
       # Each exe's own icon (rmac-windows-resource-build embeds
       # packaging/windows/icons/<id>.ico when it exists), so the launch
       # check can prove Files, lulo-shell and lulo-session carry theirs.
       - name: Make the Windows icons
-        id: icons
-        if: ${{ !cancelled() }}
-        continue-on-error: true
         run: bash scripts/windows/make_icons.sh
 
-      - name: Run Clippy
-        id: clippy
-        continue-on-error: true
-        run: cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
-
-      # The remaining steps still run after a Clippy failure, so one run
-      # reports every kind of Windows breakage.
-      # gpui_windows (ADR 0025) runs with the apps' packages so it builds
-      # with the same features: its frame-loop tests and upstream's own.
-      - name: Run tests
-        id: tests
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
-
       - name: Build the apps
-        id: build
-        if: ${{ !cancelled() }}
-        continue-on-error: true
         run: |
           cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
             -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal \
             -p rmac-finder -p rmac-system-settings -p rmac-win-shell --bins
 
+      - name: Upload the apps
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-apps
+          path: target/debug/*.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  # The apps' launch, menu, idle-CPU and memory checks, in three parts on
+  # three runners, each on the exes from `windows-build`.
+  windows-launch:
+    name: Windows launch (${{ matrix.part }})
+    needs: windows-build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: apps 1
+            artifact: windows-app-screens-1
+            apps: rmac-calculator rmac-notes rmac-text-editor rmac-preview rmac-clock
+            launch: --world-tick-check
+            # One World Clock minute tick may cost Clock at most 3 ticks (ADR
+            # 0023 phase 2e).
+            gate: --max-world-tick-ticks 3
+            expect: rmac-calculator rmac-notes rmac-text-editor rmac-preview rmac-clock
+          - part: apps 2
+            artifact: windows-app-screens-2
+            apps: rmac-weather rmac-terminal rmac-files rmac-system-settings
+            launch: --foreground-check rmac-calculator
+            gate: ""
+            expect: rmac-weather rmac-terminal rmac-files rmac-system-settings
+          - part: Lulo layer
+            artifact: windows-shell-screens
+            apps: ""
+            launch: --shell
+            # lulo-shell's working set at idle within 60 MB (8 GB PCs;
+            # WIN-OS-39). Lulo mode (ADR 0023 "Lulo mode", WIN-OS-43): 30 s
+            # after one use of Spotlight and a menu again, lulo-shell's
+            # private bytes must be within the budget and close to their
+            # reading after the first use (closed panels give their Direct3D
+            # memory back each time), and within 60 MB at idle too
+            # (WIN-OS-53: the owner's Radeon laptop reads 55.8 MB at idle
+            # and 59.0 MB after use, ADR 0023).
+            gate: >-
+              --shell-memory-mb 60 --shell-idle-private-mb 60
+              --shell-after-use-private-mb 60 --shell-after-use-growth-mb 4
+            expect: lulo-shell lulo-session
+            installer: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Download the apps
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-apps
+          path: target/debug
+
+      # `windows-build` made the icons before building (it fails without
+      # them), so every exe must carry its own.
       - name: Launch each app
         id: launch
-        if: ${{ !cancelled() }}
-        continue-on-error: true
+        env:
+          LULO_EXPECT_EXE_ICONS: "1"
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
-          if ls packaging/windows/icons/*.ico >/dev/null 2>&1; then
-            export LULO_EXPECT_EXE_ICONS=1
-          fi
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
-            --foreground-check rmac-calculator --world-tick-check \
-            --results windows-results.json --shell \
-            target/debug rmac-calculator rmac-notes rmac-text-editor \
-            rmac-preview rmac-clock rmac-weather rmac-terminal rmac-files \
-            rmac-system-settings
+            ${{ matrix.launch }} --results windows-results.json \
+            target/debug ${{ matrix.apps }}
 
       # Blocking: no app but Terminal, and neither Lulo layer process, may
       # use more than one 15.6 ms tick of CPU over 20 s with no input (ADR
-      # 0025's parked frame loop; ADR 0023 phase 3), one World Clock minute
-      # tick may cost Clock at most 3 (ADR 0023 phase 2e), and lulo-shell's
-      # working set at idle must stay within 60 MB (8 GB PCs; WIN-OS-39).
-      # Lulo mode (ADR 0023 "Lulo mode", WIN-OS-43): 30 s after one use of
-      # Spotlight and a menu again, lulo-shell's private bytes must be
-      # within the budget and close to their reading after the first use
-      # (closed panels give their Direct3D memory back each time), and
-      # within 60 MB at idle too (WIN-OS-53: the owner's Radeon laptop reads
-      # 55.8 MB at idle and 59.0 MB after use, ADR 0023).
-      # The runner's software GPU (WARP) is counted apart: idle_gate.py. A
-      # missing results file or an expected app without a reading fails.
+      # 0025's parked frame loop; ADR 0023 phase 3); the part's own budgets
+      # are in the matrix above. The runner's software GPU (WARP) is counted
+      # apart: idle_gate.py. A missing results file or an expected app
+      # without a reading fails.
       - name: Idle gate
         if: ${{ !cancelled() }}
         run: >-
           python scripts/windows/idle_gate.py windows-results.json --budget-ticks 1
-          --exempt rmac-terminal --max-world-tick-ticks 3 --shell-memory-mb 60
-          --shell-idle-private-mb 60 --shell-after-use-private-mb 60 --shell-after-use-growth-mb 4
-          --expect rmac-calculator rmac-notes rmac-text-editor rmac-preview rmac-clock
-          rmac-weather rmac-terminal rmac-files rmac-system-settings lulo-shell lulo-session
+          --exempt rmac-terminal ${{ matrix.gate }} --expect ${{ matrix.expect }}
 
       # A newer MSI must replace an older one's files (WIN-OS-54): build
       # 100, then build 101, then 101 re-stamped, each installed over the
       # one before, then uninstalled (scripts/windows/upgrade_smoke.py).
       # WiX 5.0.2 as in windows-preview.yml (ADR 0023 "Installer").
       - name: Installer upgrade
-        id: upgrade
-        if: ${{ !cancelled() }}
-        continue-on-error: true
+        if: ${{ !cancelled() && matrix.installer }}
         run: |
           dotnet tool install --global wix --version 5.0.2
           export PATH="$HOME/.dotnet/tools:$PATH"
           python scripts/windows/upgrade_smoke.py target/debug/lulo-session.exe "$RUNNER_TEMP/lulo-upgrade"
 
-      - name: Upload app screenshots
+      - name: Upload screenshots
         if: ${{ !cancelled() }}
-        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: windows-app-screens
+          name: ${{ matrix.artifact }}
           path: |
             windows-screens
             windows-results.json
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Upload Lulo layer screenshots
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: windows-shell-screens
-          path: windows-screens/shell-*.png
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Save Cargo data
-        if: always() && steps.cargo-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-
-      # Blocking: every check above ran (each with continue-on-error, so one
-      # run shows them all); the job fails if any of them did. `outcome` is
-      # the step's real result, before continue-on-error.
-      - name: Windows summary
-        if: always()
-        env:
-          ICONS: ${{ steps.icons.outcome }}
-          CLIPPY: ${{ steps.clippy.outcome }}
-          TESTS: ${{ steps.tests.outcome }}
-          BUILD: ${{ steps.build.outcome }}
-          LAUNCH: ${{ steps.launch.outcome }}
-          UPGRADE: ${{ steps.upgrade.outcome }}
-        run: |
-          failed=0
-          for step in ICONS CLIPPY TESTS BUILD LAUNCH UPGRADE; do
-            outcome=${!step}
-            echo "Windows summary: $step: $outcome"
-            if [ "$outcome" != "success" ]; then failed=1; fi
-          done
-          if [ "$failed" = 1 ]; then
-            echo "::error::a Windows check failed (see the step marked failure above)"
-            exit 1
-          fi
-
   upstream-gpui-linux:
     name: Current GPUI Linux runtime gate
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       CARGO_BUILD_JOBS: 2
+      RUSTC_WRAPPER: sccache
+      RUSTFLAGS: -C linker-features=-lld -C link-arg=-fuse-ld=mold
 
     steps:
       - name: Check out repository
@@ -524,6 +625,7 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
             mesa-vulkan-drivers \
+            mold \
             python3-pyatspi \
             sway \
             wayland-utils
@@ -531,21 +633,24 @@ jobs:
       - name: Install experiment Rust toolchain
         run: rustup toolchain install 1.95.0 --profile minimal --component clippy --component rustfmt
 
-      - name: Cache experiment Cargo data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # Compiled crates come from the GitHub Actions cache (docs/ci.md
+      # "Build speed"); the post step prints the hit rate.
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            shell/target
-          key: ${{ runner.os }}-upstream-gpui-${{ hashFiles('shell/Cargo.lock', 'shell/rust-toolchain.toml') }}
+          version: v0.18.0
 
       - name: Check experiment formatting
         working-directory: shell
         run: cargo fmt --all -- --check
 
+      # cargo-deny runs in its own (musl) container, which has neither
+      # sccache nor mold.
       - name: Check shell dependency policy
         uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
+        env:
+          RUSTC_WRAPPER: ""
+          RUSTFLAGS: ""
         with:
           log-level: error
           manifest-path: shell/Cargo.toml

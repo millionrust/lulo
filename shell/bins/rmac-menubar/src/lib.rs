@@ -347,9 +347,11 @@ mod bar {
                             .fuse();
                         clock = Some((show_seconds, Box::pin(timer)));
                     }
-                    let Some((_, tick)) = clock.as_mut() else {
+                    let Some((_, timer)) = clock.as_mut() else {
                         break;
                     };
+                    // `select!` polls a mutable binding.
+                    let mut tick = timer;
                     let update = receiver.recv().fuse();
                     futures_util::pin_mut!(update);
                     futures_util::select! {

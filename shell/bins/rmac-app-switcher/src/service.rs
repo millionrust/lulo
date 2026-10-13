@@ -177,6 +177,10 @@ pub(crate) struct Service {
     /// the Lulo menu).
     #[cfg(target_os = "linux")]
     force_quit: Option<WindowHandle<ForceQuitView>>,
+    /// Windows: commands that arrived while the window list for a new
+    /// switch was being read; they run once the panel is open.
+    #[cfg(windows)]
+    pending: Option<Vec<Command>>,
 }
 
 impl Service {
@@ -189,6 +193,8 @@ impl Service {
             kept: None,
             #[cfg(target_os = "linux")]
             force_quit: None,
+            #[cfg(windows)]
+            pending: None,
         };
         service.refresh_catalog(cx);
         service
@@ -1155,6 +1161,43 @@ fn activate(
 }
 
 fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
+    // Windows reads the window list when a switch starts instead of
+    // following every window event (its z-order is the activation order),
+    // so an idle shell does no work for the switcher.
+    #[cfg(windows)]
+    {
+        let queued = service.update(cx, |service, _| match service.pending.as_mut() {
+            Some(pending) => {
+                pending.push(command);
+                true
+            }
+            None => false,
+        });
+        if queued {
+            return;
+        }
+        if service.read(cx).open.is_none() && matches!(command, Command::Next | Command::Previous) {
+            service.update(cx, |service, _| service.pending = Some(Vec::new()));
+            let service = service.clone();
+            cx.spawn(async move |cx: &mut AsyncApp| {
+                let snapshot = rmac_compositor_system::snapshot().await;
+                cx.update(|cx| {
+                    let queued = service.update(cx, |service, _| {
+                        if let Ok(snapshot) = snapshot {
+                            service.apply(rmac_compositor::Event::Snapshot { snapshot });
+                        }
+                        service.pending.take().unwrap_or_default()
+                    });
+                    open_switcher(&service, command == Command::Previous, cx);
+                    for command in queued {
+                        handle_command(&service, command, cx);
+                    }
+                });
+            })
+            .detach();
+            return;
+        }
+    }
     if command == Command::ForceQuit {
         // Windows has Task Manager for this, from the Lulo menu.
         #[cfg(target_os = "linux")]
@@ -1373,6 +1416,21 @@ fn open_switcher(service: &Entity<Service>, backwards: bool, cx: &mut App) {
 fn start_service(commands: async_channel::Receiver<Command>, cx: &mut App) {
     let service = cx.new(Service::new);
 
+    #[cfg(not(windows))]
+    watch_compositor(&service, cx);
+
+    cx.spawn(async move |cx: &mut AsyncApp| {
+        while let Ok(command) = commands.recv().await {
+            cx.update(|cx| handle_command(&service, command, cx));
+        }
+    })
+    .detach();
+}
+
+/// Follow the compositor's window list (Lulo OS): the activation order is
+/// learned from focus changes.
+#[cfg(not(windows))]
+fn watch_compositor(service: &Entity<Service>, cx: &mut App) {
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     cx.background_executor()
         .spawn(async move {
@@ -1387,19 +1445,9 @@ fn start_service(commands: async_channel::Receiver<Command>, cx: &mut App) {
             cx.update(|cx| {
                 watched.update(cx, |service, cx| {
                     service.apply(event);
-                    #[cfg(target_os = "linux")]
                     service.refresh_force_quit(cx);
-                    #[cfg(windows)]
-                    let _ = cx;
                 })
             });
-        }
-    })
-    .detach();
-
-    cx.spawn(async move |cx: &mut AsyncApp| {
-        while let Ok(command) = commands.recv().await {
-            cx.update(|cx| handle_command(&service, command, cx));
         }
     })
     .detach();

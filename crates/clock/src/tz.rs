@@ -338,6 +338,15 @@ pub fn local_zone_name() -> Option<String> {
             return Some(value.to_owned());
         }
     }
+    // Windows names its zone through WinRT's calendar (an ICU name such as
+    // `Asia/Calcutta`). Without it a fresh World Clock on Windows showed no
+    // city, where Lulo OS and the Mac show the computer's own.
+    #[cfg(windows)]
+    if let Ok(name) = iana_time_zone::get_timezone() {
+        if valid_name(&name) {
+            return Some(name);
+        }
+    }
     if let Ok(target) = std::fs::read_link("/etc/localtime") {
         if let Some(name) = zone_name_from_path(&target) {
             return Some(name);

@@ -6254,6 +6254,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "iana-time-zone",
  "image",
  "notify",
  "rmac-sound",

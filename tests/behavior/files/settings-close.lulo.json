@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "files/settings-close",
+  "observations": {
+    "settings_open": {"windows": {"count": 2}},
+    "settings_closed": {"windows": {"count": 1}}
+  }
+}

@@ -113,6 +113,12 @@ fn main() {
                         Some("Calculator"),
                     ),
                     KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Calculator")),
+                    // Maths Notes is its own window: ⌘W closes just it.
+                    KeyBinding::new(
+                        rmac_ui::shortcuts::CLOSE.keystroke,
+                        CloseWindow,
+                        Some("MathsNotes"),
+                    ),
                     KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, Some("Calculator")),
                 ],
             );

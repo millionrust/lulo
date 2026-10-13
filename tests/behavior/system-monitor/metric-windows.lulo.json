@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "scenario": "system-monitor/metric-windows",
+  "observations": {
+    "cpu_usage": {"windows": {"count": 2}}
+  }
+}

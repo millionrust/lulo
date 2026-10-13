@@ -15,6 +15,9 @@ use crate::{
     settings::{self, Settings},
 };
 
+/// The Settings window's key context: ⌘W (`CloseWindow`) is bound in it.
+pub(crate) const KEY_CONTEXT: &str = "TextEditorSettings";
+
 const WIDTH: f32 = 439.0;
 const HEIGHT: f32 = 676.0;
 
@@ -39,6 +42,10 @@ pub(crate) fn show(cx: &mut App) {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Settings");
         let view = cx.new(|cx| SettingsView::new(window, cx));
+        // Keyboard focus starts in the window, so ⌘W and Esc reach it (the
+        // 2026-10-13 live robot found neither closed it).
+        let focus = view.read(cx).focus.clone();
+        window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
     }) {
         Ok(handle) => OPEN.with(|open| open.set(Some(handle))),
@@ -562,6 +569,8 @@ impl Render for SettingsView {
         };
         div()
             .track_focus(&self.focus)
+            .key_context(KEY_CONTEXT)
+            .on_action(cx.listener(|_, _: &crate::CloseWindow, window, _| window.remove_window()))
             .size_full()
             .v_flex()
             .bg(rmac_ui::mac::window())

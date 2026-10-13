@@ -10,12 +10,14 @@
 //! running totals, sums over a block) — see `mathnotes.rs`'s doc comment.
 
 use gpui::{
-    div, px, App, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, SharedString, Styled as _, Window, WindowHandle,
+    div, px, App, AppContext as _, Context, Entity, FocusHandle, FontWeight,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, Styled as _,
+    Window, WindowHandle,
 };
-use rmac_ui::{mac, InputEvent, InputState, Root, TextField};
+use rmac_ui::{mac, InputEvent, InputState, Root, StyledExt as _, TextField};
 
 use crate::view::CalculatorView;
+use crate::CloseWindow;
 
 const WIDTH: f32 = 440.0;
 const HEIGHT: f32 = 460.0;
@@ -47,8 +49,11 @@ pub(crate) fn show(main: Entity<CalculatorView>, cx: &mut App) {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Maths Notes");
         let view = cx.new(|cx| MathsNotesView::new(main, window, cx));
-        let focus = view.read(cx).focus.clone();
-        window.focus(&focus, cx);
+        // The notebook takes typing straight away, as on the Mac: focus its
+        // text, not the surrounding view (the live robot found typing went
+        // nowhere, 2026-10-13).
+        let input = view.read(cx).input.clone();
+        input.update(cx, |state, cx| state.focus(window, cx));
         cx.new(|cx| Root::new(view, window, cx))
     }) {
         Ok(handle) => OPEN.with(|open| open.set(Some(handle))),
@@ -105,7 +110,34 @@ impl MathsNotesView {
 }
 
 impl Render for MathsNotesView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // A real title bar with the traffic lights, and ⌘W / File ▸ Close
+        // closing just this window: before the 2026-10-13 robot run the
+        // window had neither, so nothing but quitting Calculator closed it.
+        div()
+            .id("maths-notes")
+            .track_focus(&self.focus)
+            .key_context("MathsNotes")
+            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
+            .size_full()
+            .v_flex()
+            .bg(mac::window())
+            .text_color(mac::text())
+            .child(rmac_ui::title_bar_content(
+                div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .font_weight(FontWeight::BOLD)
+                    .child("Maths Notes"),
+            ))
+            .child(self.render_body())
+    }
+}
+
+impl MathsNotesView {
+    fn render_body(&self) -> impl IntoElement {
         let results = self.results.iter().enumerate().map(|(index, text)| {
             div()
                 .id(SharedString::from(format!("maths-notes-result-{index}")))
@@ -119,12 +151,11 @@ impl Render for MathsNotesView {
                 .into_any_element()
         });
         div()
-            .id("maths-notes")
-            .track_focus(&self.focus)
-            .key_context("MathsNotes")
-            .size_full()
+            .id("maths-notes-body")
+            .flex_1()
+            .min_h(px(0.0))
+            .w_full()
             .flex()
-            .bg(mac::window())
             .child(
                 div()
                     .id("maths-notes-input")

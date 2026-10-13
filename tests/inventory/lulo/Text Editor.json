@@ -1180,6 +1180,10 @@
       },
       {
         "kind": "section",
+        "label": "Properties"
+      },
+      {
+        "kind": "section",
         "label": "Options"
       },
       {
@@ -1272,6 +1276,18 @@
       },
       {
         "kind": "control",
+        "label": "Author:"
+      },
+      {
+        "kind": "control",
+        "label": "Organisation:"
+      },
+      {
+        "kind": "control",
+        "label": "Copyright:"
+      },
+      {
+        "kind": "control",
         "label": "Plain text"
       },
       {
@@ -1285,6 +1301,14 @@
       {
         "kind": "control",
         "label": "Rich text font:"
+      },
+      {
+        "kind": "control",
+        "label": "Use the Format menu to choose settings for an open document."
+      },
+      {
+        "kind": "control",
+        "label": "Document properties are saved only with rich text files. Choose File > Show Properties to change the properties for an open document."
       },
       {
         "kind": "control",

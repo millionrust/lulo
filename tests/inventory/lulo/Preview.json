@@ -131,6 +131,13 @@
           "children": []
         },
         {
+          "label": "Duplicate",
+          "action": "preview::Duplicate",
+          "shortcut": "⇧⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Rename…",
           "action": "preview::RenameDocument",
           "shortcut": "",
@@ -276,6 +283,21 @@
           "shortcut": "⇧⌘I",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Insert",
+          "action": "preview::InsertMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Blank Page",
+              "action": "preview::InsertBlankPage",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Move to Bin",
@@ -667,6 +689,13 @@
           "children": []
         },
         {
+          "label": "Show Magnifier",
+          "action": "preview::ShowMagnifier",
+          "shortcut": "`",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Adjust Size…",
           "action": "preview::AdjustSize",
           "shortcut": "",
@@ -854,6 +883,13 @@
           "label": "Crop",
           "action": "preview::Crop",
           "shortcut": "⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Remove Background",
+          "action": "preview::RemoveBackground",
+          "shortcut": "⇧⌘K",
           "separator_before": false,
           "children": []
         },

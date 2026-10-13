@@ -1,11 +1,14 @@
 //! Text Editor ▸ Settings…: defaults for new plain-text documents.
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
+    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity, FocusHandle,
+    FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
-use rmac_ui::{Button, Checkbox, PopUpButton, PopupMenuItem, Root, StyledExt as _};
+use rmac_ui::{
+    AccessibleTextInput as _, Button, Checkbox, InputEvent, InputState, PopUpButton, PopupMenuItem,
+    Root, StyledExt as _, TextField,
+};
 
 use crate::{
     document::TextEncoding,
@@ -35,7 +38,7 @@ pub(crate) fn show(cx: &mut App) {
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Settings");
-        let view = cx.new(SettingsView::new);
+        let view = cx.new(|cx| SettingsView::new(window, cx));
         cx.new(|cx| Root::new(view, window, cx))
     }) {
         Ok(handle) => OPEN.with(|open| open.set(Some(handle))),
@@ -62,14 +65,53 @@ struct SettingsView {
     focus: FocusHandle,
     tab: Tab,
     settings: Settings,
+    author_input: Entity<InputState>,
+    organisation_input: Entity<InputState>,
+    copyright_input: Entity<InputState>,
 }
 
 impl SettingsView {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let settings = settings::current();
+        let author_input =
+            cx.new(|cx| InputState::new(window, cx).default_value(settings.author_default.clone()));
+        let organisation_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(settings.organisation_default.clone())
+        });
+        let copyright_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(settings.copyright_default.clone())
+        });
+        cx.subscribe(&author_input, |this, input, event: &InputEvent, cx| {
+            if let InputEvent::Change = event {
+                let value = input.read(cx).value().to_string();
+                this.edit(|settings| settings.author_default = value, cx);
+            }
+        })
+        .detach();
+        cx.subscribe(
+            &organisation_input,
+            |this, input, event: &InputEvent, cx| {
+                if let InputEvent::Change = event {
+                    let value = input.read(cx).value().to_string();
+                    this.edit(|settings| settings.organisation_default = value, cx);
+                }
+            },
+        )
+        .detach();
+        cx.subscribe(&copyright_input, |this, input, event: &InputEvent, cx| {
+            if let InputEvent::Change = event {
+                let value = input.read(cx).value().to_string();
+                this.edit(|settings| settings.copyright_default = value, cx);
+            }
+        })
+        .detach();
         Self {
             focus: cx.focus_handle(),
             tab: Tab::NewDocument,
-            settings: settings::current(),
+            settings,
+            author_input,
+            organisation_input,
+            copyright_input,
         }
     }
 
@@ -124,6 +166,31 @@ impl SettingsView {
                     .on_click(cx.listener(move |this, _, _, cx| increase(this, cx))),
             )
             .child(unit)
+    }
+
+    /// Settings ▸ New Document ▸ Properties (TXT-SETTINGS-001/003/006): a
+    /// labelled single-line text field, the same row shape `number_row`
+    /// uses but editable free text instead of a stepper.
+    fn text_row(
+        label: &'static str,
+        input: &Entity<InputState>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .py_1()
+            .child(div().w(px(96.0)).child(label))
+            .child(
+                div()
+                    .id(SharedString::from(label))
+                    .flex_1()
+                    .role(Role::TextInput)
+                    .aria_label(label.trim_end_matches(':'))
+                    .accessible_text_input(input, cx)
+                    .child(TextField::new(input)),
+            )
     }
 
     fn checkbox_row(
@@ -285,7 +352,29 @@ impl SettingsView {
                 },
                 cx,
             ))
+            .child(Self::section_label("Properties"))
+            .child(Self::text_row("Author:", &self.author_input, cx))
+            .child(Self::text_row(
+                "Organisation:",
+                &self.organisation_input,
+                cx,
+            ))
+            .child(Self::text_row("Copyright:", &self.copyright_input, cx))
             .child(Self::section_label("Options"))
+            .child(
+                div()
+                    .pb_1()
+                    .text_size(px(11.0))
+                    .text_color(rmac_ui::mac::text_secondary())
+                    .child("Use the Format menu to choose settings for an open document."),
+            )
+            .child(
+                div()
+                    .pb_1()
+                    .text_size(px(11.0))
+                    .text_color(rmac_ui::mac::text_secondary())
+                    .child("Document properties are saved only with rich text files. Choose File > Show Properties to change the properties for an open document."),
+            )
             .child(Self::checkbox_row(
                 "settings-wrap-to-page",
                 "Wrap to page",

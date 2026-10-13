@@ -115,11 +115,11 @@ class FlatpakPackageTests(unittest.TestCase):
             source
             for source in sources
             if source.get("dest-filename") == "Cargo.toml"
-            and source["dest"] == "cargo/vendor/gpui"
+            and source["dest"] == "cargo/vendor/gpui_platform"
         )
-        # Zed's tree also holds a same-named lint fixture at version 0.0.0.
+        # GPUI core is a path crate now (ADR 0026); any Zed git crate will do.
         manifest["contents"] = manifest["contents"].replace(
-            'version = "0.2.2"', 'version = "0.0.0"', 1
+            'version = "0.1.0"', 'version = "0.0.0"', 1
         )
         with self.assertRaisesRegex(verify.VerificationError, "not the locked package"):
             verify.verify_cargo_sources(sources, self.locked, self.git_locked)

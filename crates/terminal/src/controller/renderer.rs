@@ -59,6 +59,7 @@ impl Render for TerminalView {
                 self.allow_mouse_reporting,
                 cx,
             );
+            publish_copy_style_menu_state(cx);
             rmac_ui::set_menu_enabled("terminal::CopyPlainText", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::CopyWithoutBackgroundColour", has_selection, cx);
             rmac_ui::set_menu_enabled("terminal::ExportSelectedTextAs", has_selection, cx);

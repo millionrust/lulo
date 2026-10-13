@@ -973,14 +973,16 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             item!("Redo", "input::Redo", "⇧⌘Z"),
             item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "terminal::Copy", "⌘C"),
-            // TRM-MENU-001/002/003: the Mac's own Copy Special leads with
-            // these two shortcut-bearing commands, then a style-for-"Copy"
-            // radio group (Terminal's Settings (Default), Plain Text, and
-            // the twelve named built-in profiles — left for later rather
-            // than listing items that would just re-run the same copy).
-            // Both items below used to call the exact same plain `copy`;
-            // they are real, DISTINCT actions now
-            // (`TerminalView::copy_without_background_colour`).
+            // TRM-MENU-001..015: the Mac's own Copy Special leads with the
+            // two shortcut-bearing commands below, then a disabled
+            // "Style for "Copy" Command" heading row and a flat
+            // style-for-"Copy" radio group under it (Terminal's Settings
+            // (Default), Plain Text, and the twelve named built-in
+            // profiles, exactly as the Mac lays them out — not a further
+            // submenu): a session-wide choice of which profile's colours a
+            // plain Copy renders its styled (HTML/RTF) clipboard content
+            // with, independent of the window's own live display
+            // (`profiles::CopyStyle`, `TerminalView::copy`/`copy_styled`).
             submenu!(
                 "Copy Special",
                 "terminal::CopySpecialMenu",
@@ -991,6 +993,30 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
                         "terminal::CopyWithoutBackgroundColour",
                         "⌃⇧⌘C"
                     ),
+                    item!(
+                        "Style for “Copy” Command",
+                        "terminal::CopyStyleHeading",
+                        "",
+                        separator
+                    ),
+                    item!(
+                        "Terminal’s Settings (Default)",
+                        "terminal::CopyStyleDefault",
+                        ""
+                    ),
+                    item!("Plain Text", "terminal::CopyStylePlainText", ""),
+                    item!("Basic", "terminal::CopyStyleBasic", "", separator),
+                    item!("Clear Dark", "terminal::CopyStyleClearDark", ""),
+                    item!("Clear Light", "terminal::CopyStyleClearLight", ""),
+                    item!("Grass", "terminal::CopyStyleGrass", ""),
+                    item!("Homebrew", "terminal::CopyStyleHomebrew", ""),
+                    item!("Man Page", "terminal::CopyStyleManPage", ""),
+                    item!("Novel", "terminal::CopyStyleNovel", ""),
+                    item!("Ocean", "terminal::CopyStyleOcean", ""),
+                    item!("Pro", "terminal::CopyStylePro", ""),
+                    item!("Red Sands", "terminal::CopyStyleRedSands", ""),
+                    item!("Silver Aerogel", "terminal::CopyStyleSilverAerogel", ""),
+                    item!("Solid Colors", "terminal::CopyStyleSolidColors", ""),
                 ]
             ),
             item!("Paste", "terminal::Paste", "⌘V"),
@@ -1106,6 +1132,15 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             ),
             item!("Clear Screen", "terminal::ClearScreen", "⌃⌘L", separator),
             item!("Clear Scrollback", "terminal::ClearScrollback", "⌥⌘K"),
+            // TRM-MENU-016: the same window-fill the green button's Move &
+            // Resize ▸ Fill already does (`rmac_ui::fill_focused_window`).
+            // The Mac's own ⌃⌥⌘L would show no differently from Clear
+            // Screen's ⌃⌘L above once mapped to Windows (both become
+            // Alt+Shift+L, per `control_primary_keystroke`'s documented
+            // ⌃⌘/⌃⌥⌘ collapse) — shown with no shortcut rather than a
+            // second, indistinguishable "Alt+Shift+L" menu row; the real
+            // ⌃⌥⌘L keybinding (`lifecycle.rs`) still works on Mac/Linux.
+            item!("Fill Screen", "terminal::FillScreen", ""),
             item!(
                 "Use Option as Meta Key",
                 "terminal::ToggleOptionAsMeta",
@@ -1157,7 +1192,14 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: WINDOW_MENU,
         items: &[
-            item!("Show Previous Tab", "terminal::PrevTab", "⇧⌘["),
+            // TRM-MENU-021: shared across every app that keeps more than
+            // one window (`rmac_ui::chrome::cycle_through_windows`).
+            item!(
+                "Cycle Through Windows",
+                "rmac_ui::CycleThroughWindows",
+                "⌘`"
+            ),
+            item!("Show Previous Tab", "terminal::PrevTab", "⇧⌘[", separator),
             item!("Show Next Tab", "terminal::NextTab", "⇧⌘]"),
         ],
     },
@@ -1608,9 +1650,17 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Clean Up Selection", "finder::CleanUpSelection", ""),
             item!("Show View Options", "finder::ShowViewOptions", "⌘J"),
             item!("Show Preview", "finder::TogglePreview", "⇧⌘P"),
+            // FIL-MENU-006: which extra fields the Column view's preview
+            // pane's Information block shows (`FinderView::
+            // toggle_preview_options`), independent of Show View Options.
+            item!("Show Preview Options", "finder::ShowPreviewOptions", ""),
             item!("Show All Tabs", "finder::ShowAllTabs", "⇧⌘\\"),
             item!("Show Tab Bar", "finder::ToggleTabBar", "⇧⌘T"),
             item!("Hide Toolbar", "finder::ToggleToolbar", "⌥⌘T"),
+            // FIL-MENU-005: hide/show whole toolbar groups
+            // (`FinderView::toggle_customise_toolbar`), the same shape as
+            // Preview's and Notes' own Customise Toolbar… popovers.
+            item!("Customise Toolbar…", "finder::CustomiseToolbar", ""),
             item!("Enter Full Screen", "finder::EnterFullScreen", "F"),
             item!("Hide Sidebar", "finder::ToggleSidebar", "⌃⌘S", separator),
             item!("Show Path Bar", "finder::TogglePathBar", "⌥⌘P"),
@@ -1634,6 +1684,12 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Downloads", "finder::GoDownloads", "⌥⌘L"),
             item!("Home", "finder::GoHome", "⇧⌘H"),
             item!("Computer", "finder::GoComputer", "⇧⌘C"),
+            // FIL-MENU-007: GNOME's GVFS network-mount folder
+            // (`FinderView::go_network`) — the closest Linux analogue to
+            // the Mac's Network window; Go ▸ Connect to Server… (⌘K,
+            // already present below) has no real server-discovery
+            // groundwork to pair it with.
+            item!("Network", "finder::GoNetwork", "⇧⌘K"),
             item!("Applications", "finder::GoApplications", "⇧⌘A"),
             item!("Utilities", "finder::GoUtilities", "⇧⌘U"),
             item!("Library", "finder::GoLibrary", ""),
@@ -1651,6 +1707,14 @@ const FILES_MENUS: &[MenuSpec] = &[
         label: "Window",
         items: &[
             item!("Show Progress Window", "finder::ShowProgressWindow", ""),
+            // FIL-MENU-009: shared across every app that keeps more than
+            // one window (`rmac_ui::chrome::cycle_through_windows`).
+            item!(
+                "Cycle Through Windows",
+                "rmac_ui::CycleThroughWindows",
+                "⌘`",
+                separator
+            ),
             item!("Show Previous Tab", "finder::PreviousTab", "", separator),
             item!("Show Next Tab", "finder::NextTab", ""),
         ],
@@ -1791,6 +1855,14 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("All Processes", "activity_monitor::ShowAllProcesses", ""),
+            // MON-MENU-022: a parent/child tree of every process
+            // (`ViewFilter::AllHierarchical`), its own exclusive choice
+            // rather than a modifier on the others below.
+            item!(
+                "All Processes, Hierarchically",
+                "activity_monitor::ShowAllProcessesHierarchically",
+                ""
+            ),
             item!("My Processes", "activity_monitor::ShowMyProcesses", ""),
             item!(
                 "System Processes",
@@ -2169,6 +2241,10 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Close Selected", "preview::CloseSelected", "⇧⌘W"),
             item!("Save", "preview::SaveMarkup", "⌘S"),
             item!("Save As…", "preview::SaveAs", "⌥⇧⌘S"),
+            // PRV-MENU-001: a new window with this document's current
+            // on-disk bytes, unsaved — like Text Editor's own Duplicate
+            // (TE-01), not Save As (`main::duplicate_document`).
+            item!("Duplicate", "preview::Duplicate", "⇧⌘S"),
             item!("Rename…", "preview::RenameDocument", ""),
             item!("Move To…", "preview::MoveToFolder", ""),
             submenu!(
@@ -2227,6 +2303,15 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             // only understands rectangles — the same simplification
             // macOS Preview's own Crop applies to any selection shape.
             item!("Invert Selection", "preview::InvertSelection", "⇧⌘I"),
+            // PRV-MENU-005/007: Blank Page splices an empty, same-size page
+            // after the current one (`markup::insert_blank_page`). Page
+            // from File… needs cross-document object import and is left
+            // out rather than faked.
+            submenu!(
+                "Insert",
+                "preview::InsertMenu",
+                [item!("Blank Page", "preview::InsertBlankPage", "")]
+            ),
             item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(
                 "Find",
@@ -2327,6 +2412,12 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         label: "Tools",
         items: &[
             item!("Show Inspector", "preview::ShowInspector", "⌘I"),
+            // PRV-MENU-009: the same live magnifier overlay as Tools ▸
+            // Annotate ▸ Loupe (⌃⌘L) — a second entry point that works
+            // without opening the Annotate submenu, exactly as the Mac's
+            // own Show Magnifier and Annotate ▸ Loupe both exist
+            // separately (`PreviewView::toggle_loupe`).
+            item!("Show Magnifier", "preview::ShowMagnifier", "`"),
             item!("Adjust Size…", "preview::AdjustSize", "", separator),
             item!("Rectangular Selection", "preview::RectangularSelection", ""),
             // PRV-MENU-013: a real 4-connected flood fill by colour
@@ -2378,6 +2469,9 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Flip Horizontal", "preview::FlipHorizontal", ""),
             item!("Flip Vertical", "preview::FlipVertical", ""),
             item!("Crop", "preview::Crop", "⌘K"),
+            // PRV-MENU-009: colour-keys the border-connected background to
+            // transparent (`rmac_preview::selection::remove_background`).
+            item!("Remove Background", "preview::RemoveBackground", "⇧⌘K"),
             // PRV-MENU-015: real content removal (`rmac_preview::redact`)
             // — an image's selected pixels are overwritten black; a PDF
             // page is rasterised with the area burned in black and its

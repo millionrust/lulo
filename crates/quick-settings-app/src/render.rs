@@ -15,6 +15,7 @@ use gpui::{
     MouseUpEvent, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
     Styled as _, Toggled, Window,
 };
+use rmac_quick_settings::detail::{geometry as g, Detail};
 use rmac_quick_settings::layout;
 use rmac_ui::mac;
 
@@ -165,6 +166,19 @@ impl Render for QuickSettingsView {
         }
         let modules = self.modules();
         let panel = self.panel();
+        // CC-10: while a detail view grows out of (or back into) its tile,
+        // both it and the grid are drawn, cross-fading. Frames are requested
+        // only while the motion runs, so an idle panel costs nothing.
+        let reveal = self.transition.and_then(|transition| {
+            transition
+                .amount()
+                .map(|amount| (transition.detail, amount))
+        });
+        if reveal.is_some() {
+            window.request_animation_frame();
+        } else {
+            self.transition = None;
+        }
         // A detail view replaces the grid; any banners stay above it.
         let banner_block = if modules.banners_shown() > 0 {
             PADDING + modules.banners_shown() as f32 * (layout::BANNER_HEIGHT + layout::GAP) as f32
@@ -203,22 +217,42 @@ impl Render for QuickSettingsView {
             let top = index as f32 * (layout::BANNER_HEIGHT + layout::GAP) as f32;
             children.push(self.banner(index, top, control, message, cx));
         }
-        let detail = panel
-            .as_ref()
-            .map(|panel| self.detail_view(panel, banner_block, cx));
+        let shown_panel = match (&panel, reveal) {
+            (Some(panel), _) => Some(panel.clone()),
+            (None, Some((detail, _))) => self.panel_for(detail),
+            (None, None) => None,
+        };
+        let detail = shown_panel.as_ref().map(|shown| match reveal {
+            None => self.detail_view(shown, g::PANEL_LEFT, banner_block, cx),
+            Some((detail, amount)) => {
+                let (tile_x, tile_y, tile_width, tile_height) =
+                    tile_rect(detail, &modules, self.brightness.is_some());
+                let lerp = |from: f32, to: f32| from + (to - from) * amount;
+                let (x, y) = (lerp(tile_x, g::PANEL_LEFT), lerp(tile_y, banner_block));
+                let width = lerp(tile_width, g::PANEL_WIDTH);
+                let height = lerp(tile_height, shown.layout().1);
+                div()
+                    .absolute()
+                    .left(px(x))
+                    .top(px(y))
+                    .w(px(width))
+                    .h(px(height))
+                    .overflow_hidden()
+                    .rounded(px(lerp(layout::MODULE_RADIUS as f32, 0.0)))
+                    .opacity(amount)
+                    .child(self.detail_view(shown, g::PANEL_LEFT - x, banner_block - y, cx))
+                    .into_any_element()
+            }
+        });
+        let grid_visible = detail.is_none() || reveal.is_some();
 
         let row_top = |row: usize| modules.row_top(row) as f32;
         let mut row = 0;
-        if detail.is_none() {
+        if grid_visible {
             children.push(self.pill_wifi(0.0, row_top(row), &view.wifi, cx));
-            if self.player.is_some() {
-                children.push(self.now_playing(PITCH * 2.0, row_top(row), cx));
-                children.push(self.pill_bluetooth(0.0, row_top(row + 1), &view.bluetooth, cx));
-                row += 2;
-            } else {
-                children.push(self.pill_bluetooth(PITCH * 2.0, row_top(row), &view.bluetooth, cx));
-                row += 1;
-            }
+            children.push(self.now_playing(PITCH * 2.0, row_top(row), cx));
+            children.push(self.pill_bluetooth(0.0, row_top(row + 1), &view.bluetooth, cx));
+            row += 2;
             let mut column = 0.0;
             if layout::low_power_available(&view.power.value) && view.power.available {
                 children.push(self.low_power_circle(column, row_top(row), &view.power, cx));
@@ -233,7 +267,7 @@ impl Render for QuickSettingsView {
             }
             children.push(self.sound_module(row_top(row), &view.sound, cx));
         }
-        let content_height = if detail.is_some() {
+        let content_height = if !grid_visible {
             (banner_block - PADDING).max(0.0)
         } else {
             modules.content_height() as f32
@@ -282,6 +316,7 @@ impl Render for QuickSettingsView {
                     .top(px(PADDING))
                     .w(px(GRID_WIDTH))
                     .h(px(content_height))
+                    .opacity(reveal.map_or(1.0, |(_, amount)| 1.0 - amount))
                     .children(children),
             )
             .children(detail);
@@ -291,6 +326,19 @@ impl Render for QuickSettingsView {
         let surface =
             rmac_shell_layer::over_backdrop(window, cx, layout::SURFACE_RADIUS as f32, surface);
         surface
+    }
+}
+
+/// The tile a detail view grows out of, in surface coordinates: Wi-Fi and
+/// Bluetooth are the two left pills, Display and Sound the full-width rows
+/// (Now Playing is always shown, so the pills take rows 0 and 1).
+fn tile_rect(detail: Detail, modules: &layout::Modules, display: bool) -> (f32, f32, f32, f32) {
+    let top = |row: usize| PADDING + modules.row_top(row) as f32;
+    match detail {
+        Detail::Wifi => (PADDING, top(0), PILL_WIDTH, CELL),
+        Detail::Bluetooth => (PADDING, top(1), PILL_WIDTH, CELL),
+        Detail::Display => (PADDING, top(3), GRID_WIDTH, CELL),
+        Detail::Sound => (PADDING, top(3 + usize::from(display)), GRID_WIDTH, CELL),
     }
 }
 

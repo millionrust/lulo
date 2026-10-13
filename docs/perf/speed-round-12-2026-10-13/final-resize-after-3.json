@@ -1,0 +1,68 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-13T09:08:39Z",
+  "interactions": {
+    "resize-drag-edge": {
+      "configure_to_present_max_ms": 56.467,
+      "configure_to_present_p95_ms": 13.861,
+      "configures": 107,
+      "final_size": [
+        723,
+        832
+      ],
+      "frame_p50_ms": 6.401,
+      "frame_p95_ms": 15.084,
+      "frames": 110,
+      "pass": true,
+      "render_p50_ms": 3.36,
+      "render_p95_ms": 11.995,
+      "resizes": 103,
+      "stalls": 1,
+      "start_size": [
+        723,
+        832
+      ],
+      "submit_p50_ms": 0.791,
+      "submit_p95_ms": 7.882,
+      "swapchain_kept": 104,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.9636363636363636,
+      "worst_frame_ms": 61.079
+    },
+    "resize-drag-long": {
+      "configure_to_present_max_ms": 497.891,
+      "configure_to_present_p95_ms": 497.891,
+      "configures": 17,
+      "final_size": [
+        640,
+        832
+      ],
+      "frame_p50_ms": 8.275,
+      "frame_p95_ms": 35.516,
+      "frames": 24,
+      "pass": false,
+      "render_p50_ms": 3.6,
+      "render_p95_ms": 20.505,
+      "resizes": 16,
+      "stalls": 0,
+      "start_size": [
+        723,
+        832
+      ],
+      "submit_p50_ms": 0.802,
+      "submit_p95_ms": 17.283,
+      "swapchain_kept": 14,
+      "swapchain_rebuilds": 2,
+      "within_16_7ms_share": 0.8333333333333334,
+      "worst_frame_ms": 46.155
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

@@ -33,14 +33,15 @@ use crate::{
     AnnotateRectangle, AnnotateSignature, AnnotateSpeechBubble, AnnotateStar,
     AnnotateStrikeThrough, AnnotateText, AnnotateUnderline, AutomaticSelection, Back,
     BrowseSavedVersions, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, ContactSheet,
-    ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, EnterFullScreen, ExportAs,
-    ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal, FlipVertical, Forward, GoToPage,
-    HideSidebar, InvertSelection, JumpToSelection, ManageSignatures, MoveToFolder, MoveToTrash,
-    NextDocument, NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
-    RectangularSelection, Redact, RedoMarkup, RenameDocument, RevertMarkup, RotateLeft,
-    RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes,
-    ShowImageBackground, ShowInspector, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents,
-    ShowThumbnails, SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
+    ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, Duplicate, EnterFullScreen,
+    ExportAs, ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal, FlipVertical, Forward,
+    GoToPage, HideSidebar, InsertBlankPage, InvertSelection, JumpToSelection, ManageSignatures,
+    MoveToFolder, MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument,
+    PreviousItem, PrintDocument, RectangularSelection, Redact, RedoMarkup, RemoveBackground,
+    RenameDocument, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll,
+    ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes, ShowImageBackground, ShowInspector,
+    ShowMagnifier, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails,
+    SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
     TakeScreenshotSelection, TakeScreenshotWindow, ToggleCheckGrammarWithSpelling,
     ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleMarkup,
     ToggleToolbar, TwoPages, UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn,
@@ -90,6 +91,8 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::AdjustSize",
         "preview::FlipHorizontal",
         "preview::FlipVertical",
+        "preview::RemoveBackground",
+        "preview::InsertBlankPage",
         "preview::RectangularSelection",
         "preview::AutomaticSelection",
         "preview::InvertSelection",
@@ -137,6 +140,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::PrintDocument",
         "preview::ExportAsPdf",
         "preview::SaveAs",
+        "preview::Duplicate",
         "preview::ToggleToolbar",
         "preview::ToggleMarkup",
         "preview::SaveMarkup",
@@ -586,12 +590,13 @@ impl Drop for Slot {
     }
 }
 
-/// The private `rmac-preview/clipboard/<pid>-<n>` folder holding a New from
-/// Clipboard document, when `path` is one.
+/// The private `rmac-preview/{clipboard,duplicate}/<pid>-<n>` folder
+/// holding a New from Clipboard document or a File ▸ Duplicate (PRV-MENU-001)
+/// copy, when `path` is one of either.
 pub(crate) fn clipboard_cache_folder(path: &Path) -> Option<&Path> {
     let folder = path.parent()?;
     let name = folder.file_name()?.to_str()?;
-    let clipboard = folder.parent()?;
+    let kind = folder.parent()?;
     let valid_name = name.split_once('-').is_some_and(|(pid, id)| {
         !pid.is_empty()
             && !id.is_empty()
@@ -599,8 +604,11 @@ pub(crate) fn clipboard_cache_folder(path: &Path) -> Option<&Path> {
             && id.bytes().all(|byte| byte.is_ascii_digit())
     });
     (valid_name
-        && clipboard.file_name()? == "clipboard"
-        && clipboard.parent()?.file_name()? == "rmac-preview")
+        && matches!(
+            kind.file_name().and_then(|name| name.to_str()),
+            Some("clipboard" | "duplicate")
+        )
+        && kind.parent()?.file_name()? == "rmac-preview")
         .then_some(folder)
 }
 
@@ -2828,6 +2836,15 @@ impl PreviewView {
         self.edit_image(render::flip_vertical, cx);
     }
 
+    /// Tools ▸ Remove Background (⇧⌘K, PRV-MENU-009): colour-keys the
+    /// border-connected background to transparent
+    /// (`selection::remove_background`) through the same undoable image
+    /// edit as Flip. Save keeps the alpha for PNG/WebP/TIFF; a JPEG source
+    /// has no alpha channel, so the cleared area saves as black.
+    fn remove_background(&mut self, cx: &mut Context<Self>) {
+        self.edit_image(selection::remove_background, cx);
+    }
+
     fn image_pixel_size(&self) -> Option<(u32, u32)> {
         match &self.slot()?.loaded()?.content {
             Content::Image(image) => Some(image.size),
@@ -3302,6 +3319,77 @@ impl PreviewView {
         .detach();
     }
 
+    /// Edit ▸ Insert ▸ Blank Page (PRV-MENU-007): writes the PDF back to its
+    /// own path with an empty, same-size page after the current one, then
+    /// reloads it. A version is recorded first (`versions::record`), so
+    /// Browse Saved Versions can still recover the old bytes; the write is
+    /// temp-file-then-rename, off the UI thread. Refused while markup is
+    /// unsaved, since annotation page indexes would shift.
+    fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
+        if self.markup_save_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        if slot.kind() != Some(Kind::Pdf) || !slot.markup.items.is_empty() {
+            return;
+        }
+        let source = slot.path.clone();
+        let id = slot.id;
+        let after = slot.current_page;
+        self.markup_save_busy = true;
+        cx.spawn(async move |this, cx| {
+            let write_source = source.clone();
+            let written = blocking::unblock(move || -> Result<(), String> {
+                let _ = versions::record(&write_source);
+                let temporary = write_source
+                    .with_extension(format!("lulo-inserting-{}.pdf", std::process::id()));
+                if let Err(error) = markup::insert_blank_page(&write_source, &temporary, after) {
+                    let _ = std::fs::remove_file(&temporary);
+                    return Err(error);
+                }
+                std::fs::rename(&temporary, &write_source).map_err(|e| e.to_string())
+            })
+            .await;
+            let reload = match written {
+                Ok(()) => {
+                    let reload_source = source.clone();
+                    Some(blocking::unblock(move || render::load(&reload_source)).await)
+                }
+                Err(error) => {
+                    eprintln!("rmac-preview: could not insert a blank page: {error}");
+                    None
+                }
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.markup_save_busy = false;
+                if let Some(Ok(loaded)) = reload {
+                    if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
+                        let old_display = slot.display.take();
+                        let old_pages: Vec<_> =
+                            slot.pages.drain().map(|(_, bitmap)| bitmap.image).collect();
+                        let old_thumbs: Vec<_> =
+                            slot.thumbs.drain().map(|(_, (_, image))| image).collect();
+                        slot.state = SlotState::Ready(loaded);
+                        slot.text = TextState::NotLoaded;
+                        slot.pending.clear();
+                        slot.current_page =
+                            (after + 1).min(slot.page_sizes().len().saturating_sub(1));
+                        if let Some((_, image)) = old_display {
+                            this.garbage.push(image);
+                        }
+                        this.garbage.extend(old_pages);
+                        this.garbage.extend(old_thumbs);
+                    }
+                    this.text_selection = None;
+                } else if let Some(Err(error)) = reload {
+                    eprintln!("rmac-preview: the edited PDF could not be reloaded: {error}");
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     // ---- Tools ▸ Annotate ▸ Signature ▸ Manage Signatures… (PRV-MENU-065) --
 
     fn open_manage_signatures(&mut self, cx: &mut Context<Self>) {
@@ -3702,6 +3790,20 @@ impl PreviewView {
     }
 
     // ---- export -------------------------------------------------------------
+
+    /// File ▸ Duplicate (⇧⌘S, PRV-MENU-001): opens a new window on a fresh
+    /// copy of this document's current on-disk bytes, under its own
+    /// cache-backed path (`main::duplicate_document`) — unsaved, leaving
+    /// this window's own path and dirty state untouched. Distinct from
+    /// Save As (⌥⇧⌘S) above, which keeps editing the SAME window under a
+    /// new real path.
+    fn duplicate_document(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.slot() else { return };
+        if slot.loaded().is_none() {
+            return;
+        }
+        crate::duplicate_document(slot.path.clone(), cx);
+    }
 
     /// File ▸ Save As… writes a new document and makes it the active path.
     /// A PDF with markup keeps a clean backing copy so later saves do not
@@ -7079,6 +7181,7 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_checked(action, self.markup_tool == tool, cx);
             }
             rmac_ui::set_menu_checked("preview::AnnotateLoupe", self.loupe_active, cx);
+            rmac_ui::set_menu_checked("preview::ShowMagnifier", self.loupe_active, cx);
             rmac_ui::set_menu_checked("preview::ToggleMarkup", self.markup_shown, cx);
             rmac_ui::set_menu_checked("preview::ToggleToolbar", self.toolbar_shown, cx);
             #[cfg(target_os = "linux")]
@@ -7179,6 +7282,7 @@ impl Render for PreviewView {
             );
             rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
             rmac_ui::set_menu_enabled("preview::SaveAs", loaded && !self.save_as_busy, cx);
+            rmac_ui::set_menu_enabled("preview::Duplicate", loaded, cx);
             let pdf = self
                 .slot()
                 .is_some_and(|slot| slot.kind() == Some(Kind::Pdf));
@@ -7208,6 +7312,14 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_enabled(action, loaded && multiple, cx);
             }
             rmac_ui::set_menu_enabled("preview::GoToPage", pdf, cx);
+            // Page indexes in unsaved markup would shift under an insert,
+            // so it waits for Save or Revert.
+            rmac_ui::set_menu_enabled(
+                "preview::InsertBlankPage",
+                pdf && !self.markup_save_busy
+                    && self.slot().is_some_and(|slot| slot.markup.items.is_empty()),
+                cx,
+            );
             for action in [
                 "preview::AnnotateHighlight",
                 "preview::AnnotateUnderline",
@@ -7233,6 +7345,7 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_enabled(action, pdf, cx);
             }
             rmac_ui::set_menu_enabled("preview::AnnotateLoupe", loaded, cx);
+            rmac_ui::set_menu_enabled("preview::ShowMagnifier", loaded, cx);
             rmac_ui::set_menu_enabled("preview::Slideshow", loaded, cx);
             let is_image = self
                 .slot()
@@ -7240,6 +7353,7 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::ShowImageBackground", is_image, cx);
             rmac_ui::set_menu_enabled("preview::FlipHorizontal", is_image, cx);
             rmac_ui::set_menu_enabled("preview::FlipVertical", is_image, cx);
+            rmac_ui::set_menu_enabled("preview::RemoveBackground", is_image, cx);
             rmac_ui::set_menu_enabled("preview::RectangularSelection", is_image, cx);
             rmac_ui::set_menu_checked(
                 "preview::RectangularSelection",
@@ -7433,6 +7547,7 @@ impl Render for PreviewView {
                 this.export_as_pdf(window, cx);
             }))
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save_as(window, cx)))
+            .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate_document(cx)))
             .on_action(cx.listener(|this, _: &ToggleToolbar, _, cx| {
                 this.toolbar_shown = !this.toolbar_shown;
                 cx.notify();
@@ -7510,6 +7625,7 @@ impl Render for PreviewView {
                 this.choose_annotation(Tool::Note, cx);
             }))
             .on_action(cx.listener(|this, _: &AnnotateLoupe, _, cx| this.toggle_loupe(cx)))
+            .on_action(cx.listener(|this, _: &ShowMagnifier, _, cx| this.toggle_loupe(cx)))
             .on_action(cx.listener(|this, _: &ManageSignatures, _, cx| {
                 this.open_manage_signatures(cx);
             }))
@@ -7543,6 +7659,12 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &FlipHorizontal, _, cx| this.flip_horizontal(cx)))
             .on_action(cx.listener(|this, _: &FlipVertical, _, cx| this.flip_vertical(cx)))
+            .on_action(cx.listener(|this, _: &InsertBlankPage, _, cx| {
+                this.insert_blank_page(cx);
+            }))
+            .on_action(cx.listener(|this, _: &RemoveBackground, _, cx| {
+                this.remove_background(cx);
+            }))
             .on_action(cx.listener(|this, _: &Crop, _, cx| this.crop_to_selection(cx)))
             .on_action(cx.listener(|this, _: &RectangularSelection, _, cx| {
                 this.toggle_selection_tool(cx);
@@ -7705,6 +7827,13 @@ mod tests {
         assert_eq!(
             clipboard_cache_folder(cache),
             Some(Path::new("/home/user/.cache/rmac-preview/clipboard/4242-7"))
+        );
+        // File ▸ Duplicate (PRV-MENU-001) uses the same unsaved-cache
+        // convention, under its own "duplicate" subfolder.
+        let duplicate = Path::new("/home/user/.cache/rmac-preview/duplicate/4242-7/photo copy.png");
+        assert_eq!(
+            clipboard_cache_folder(duplicate),
+            Some(Path::new("/home/user/.cache/rmac-preview/duplicate/4242-7"))
         );
         for kept in [
             "/home/user/Pictures/Untitled.png",

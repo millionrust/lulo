@@ -117,7 +117,7 @@ pub(crate) struct QuickSettingsView {
     pub(crate) hovered_module: Option<Module>,
     /// Backlight level in percent; `None` hides the Display module.
     pub(crate) brightness: Option<u8>,
-    /// The player Now Playing shows; `None` hides the module.
+    /// The player Now Playing shows; `None` shows "Not Playing".
     pub(crate) player: Option<rmac_media::Player>,
     /// Volume shown while a drag or its write is in flight.
     pub(crate) volume_preview: Option<u8>,
@@ -144,6 +144,46 @@ pub(crate) struct QuickSettingsView {
     pub(crate) a11y_active_last_frame: bool,
     volume_generation: u64,
     brightness_generation: u64,
+    /// A detail view growing out of (or collapsing back into) its tile.
+    pub(crate) transition: Option<DetailTransition>,
+}
+
+/// How long a detail view takes to grow out of its tile (CC-10).
+const DETAIL_TRANSITION: Duration = Duration::from_millis(260);
+
+/// A detail view in motion. Frames are requested only while it runs.
+#[derive(Clone, Copy)]
+pub(crate) struct DetailTransition {
+    pub(crate) detail: Detail,
+    pub(crate) opening: bool,
+    started: Instant,
+}
+
+impl DetailTransition {
+    /// How far the detail view has grown, 0 (the tile) to 1 (the panel),
+    /// on a decelerating curve like the Mac's spring settling; `None` once
+    /// the motion has finished.
+    pub(crate) fn amount(&self) -> Option<f32> {
+        let time = self.started.elapsed().as_secs_f32() / DETAIL_TRANSITION.as_secs_f32();
+        if time >= 1.0 {
+            return None;
+        }
+        let eased = 1.0 - (1.0 - time).powi(3);
+        Some(if self.opening { eased } else { 1.0 - eased })
+    }
+}
+
+/// The grid's height before anything has been drawn: Now Playing is always
+/// shown, so only the Display row depends on the machine (CC-18). The
+/// opener sizes the layer surface with this, so the first frame neither
+/// jumps nor clips Sound.
+pub(crate) fn initial_surface_height(display: bool) -> f32 {
+    Modules {
+        now_playing: true,
+        display,
+        banners: 0,
+    }
+    .surface_height() as f32
 }
 
 impl QuickSettingsView {
@@ -169,6 +209,7 @@ impl QuickSettingsView {
     pub(crate) fn new(
         token: u64,
         previous_window: Option<rmac_compositor::WindowId>,
+        brightness: Option<u8>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -230,15 +271,19 @@ impl QuickSettingsView {
         })
         .detach();
 
-        // The Display module exists only when a backlight can be read.
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let level = blocking::unblock(rmac_osd::brightness).await.ok();
-            let _ = this.update(cx, |this, cx| {
-                this.brightness = level;
-                cx.notify();
-            });
-        })
-        .detach();
+        // The Display module exists only when a backlight can be read. The
+        // opener already read it before the surface was sized (CC-18), so
+        // only a machine that had none re-reads, in case one appeared.
+        if brightness.is_none() {
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                let level = blocking::unblock(rmac_osd::brightness).await.ok();
+                let _ = this.update(cx, |this, cx| {
+                    this.brightness = level;
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
 
         // Now Playing follows the active MPRIS player while the panel is open.
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
@@ -276,14 +321,14 @@ impl QuickSettingsView {
             sound_title_focus,
             dark_mode_override: None,
             hovered_module: None,
-            brightness: None,
+            brightness,
             player: None,
             volume_preview: None,
             dragging: None,
             hovered_slider: None,
             slider_bulges: SliderBulges::default(),
             epoch: Instant::now(),
-            surface_height: rmac_quick_settings::surface::LOGICAL_HEIGHT as f32,
+            surface_height: initial_surface_height(brightness.is_some()),
             detail: None,
             others_expanded: false,
             module_focus: None,
@@ -292,12 +337,17 @@ impl QuickSettingsView {
             a11y_active_last_frame: false,
             volume_generation: 0,
             brightness_generation: 0,
+            transition: None,
         }
     }
 
     /// The open detail view, cut to fit the tallest surface.
     pub(crate) fn panel(&self) -> Option<Panel> {
-        let detail = self.detail?;
+        self.panel_for(self.detail?)
+    }
+
+    /// `detail`'s view, also drawn while it collapses back into its tile.
+    pub(crate) fn panel_for(&self, detail: Detail) -> Option<Panel> {
         let mut panel = detail::panel(
             detail,
             self.state.inputs(),
@@ -323,6 +373,11 @@ impl QuickSettingsView {
         cx: &mut Context<Self>,
     ) {
         self.focus.focus(window, cx);
+        self.transition = Some(DetailTransition {
+            detail,
+            opening: true,
+            started: Instant::now(),
+        });
         self.detail = Some(detail);
         self.others_expanded = false;
         self.hovered_module = None;
@@ -351,6 +406,11 @@ impl QuickSettingsView {
     /// Back to the grid, keeping keyboard focus on the module.
     pub(crate) fn close_detail(&mut self, cx: &mut Context<Self>) {
         if let Some(detail) = self.detail.take() {
+            self.transition = Some(DetailTransition {
+                detail,
+                opening: false,
+                started: Instant::now(),
+            });
             self.module_focus = Some(match detail {
                 Detail::Wifi => Module::Wifi,
                 Detail::Bluetooth => Module::Bluetooth,
@@ -660,7 +720,7 @@ impl QuickSettingsView {
 
     pub(crate) fn modules(&self) -> Modules {
         Modules {
-            now_playing: self.player.is_some(),
+            now_playing: true,
             display: self.brightness.is_some(),
             banners: self.banners().len(),
         }

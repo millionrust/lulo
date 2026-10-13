@@ -1,0 +1,68 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-13T09:09:34Z",
+  "interactions": {
+    "cmd-tab-cancel-escape": {
+      "cancel_to_restored_ms": 525.4516934999174,
+      "flickers": [
+        false,
+        false
+      ],
+      "focus_paths": [
+        [
+          null,
+          4
+        ],
+        [
+          null,
+          4
+        ]
+      ],
+      "pass": true,
+      "raced": 3,
+      "restored": [
+        882.5339559998611,
+        168.3694309999737
+      ],
+      "reveals": [
+        222.43653399982577,
+        43.5620729999755,
+        47.861398000350164,
+        null,
+        42.80535899988536
+      ]
+    },
+    "cmd-tab-cancel-period": {
+      "cancel_to_restored_ms": 144.26020499968217,
+      "flickers": [
+        false
+      ],
+      "focus_paths": [
+        [
+          null,
+          6
+        ]
+      ],
+      "pass": true,
+      "raced": 4,
+      "restored": [
+        144.26020499968217
+      ],
+      "reveals": [
+        124.12749499981146,
+        49.10127399989506,
+        null,
+        45.559722000234615,
+        null
+      ]
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

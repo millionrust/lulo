@@ -317,10 +317,26 @@ fn open_popover(
         service.next_token
     });
     let mut popover = None;
+    // Read the backlight before the surface exists so it opens at its real
+    // height: the Display row would otherwise arrive after the first frame
+    // and the surface kept its first height, cutting Sound off (CC-18). One
+    // sysfs read, no D-Bus. Windows reads it through WMI in a helper
+    // process, too slow to wait for here: the view reads it once open.
+    #[cfg(target_os = "linux")]
+    let brightness = rmac_osd::brightness().ok();
+    #[cfg(not(target_os = "linux"))]
+    let brightness = None;
+    let bounds = if cfg!(target_os = "linux") {
+        let height = px(crate::view::initial_surface_height(brightness.is_some()));
+        Bounds::new(bounds.origin, size(bounds.size.width, height))
+    } else {
+        bounds
+    };
     let build = |window: &mut gpui::Window, cx: &mut App| {
         window.set_window_title("Quick Settings");
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| QuickSettingsView::new(token, previous_window, window, cx));
+        let view =
+            cx.new(|cx| QuickSettingsView::new(token, previous_window, brightness, window, cx));
         popover = Some(view.downgrade());
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     };

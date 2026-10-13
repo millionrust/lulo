@@ -172,6 +172,12 @@ impl Render for FinderView {
             .overflow_hidden()
             .text_color(label())
             .on_action(cx.listener(|this, _: &ShowViewOptions, _, cx| this.toggle_view_options(cx)))
+            .on_action(cx.listener(|this, _: &ShowPreviewOptions, _, cx| {
+                this.toggle_preview_options(cx);
+            }))
+            .on_action(cx.listener(|this, _: &CustomiseToolbar, _, cx| {
+                this.toggle_customise_toolbar(cx);
+            }))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.view_options_open && event.keystroke.key.as_str() == "escape" {
                     this.close_view_options(cx);

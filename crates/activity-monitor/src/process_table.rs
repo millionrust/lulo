@@ -166,6 +166,10 @@ pub(crate) struct ProcRow {
     pub(crate) threads: u32,
     /// Owning uid, for the MON-03 View filter (My/System/Other Users').
     pub(crate) uid: Option<u32>,
+    /// Indentation level under View ▸ All Processes, Hierarchically
+    /// (MON-MENU-022): 0 for a row with no parent in the visible set, or a
+    /// parent's `depth + 1` otherwise. Always 0 outside that filter.
+    pub(crate) depth: u32,
 }
 
 impl ProcRow {
@@ -491,6 +495,7 @@ impl ProcessTableDelegate {
                     status: SharedString::from(process.status().to_string()),
                     threads: thread_group_size(process.tasks().map(|tasks| tasks.len())),
                     uid,
+                    depth: 0,
                 }
             })
             .collect();
@@ -531,7 +536,75 @@ impl ProcessTableDelegate {
             .take(300)
             .cloned()
             .collect();
+        if view_filter == ViewFilter::AllHierarchical {
+            self.rows = Self::hierarchical_order(&self.rows);
+        }
         self.refresh_accessible();
+    }
+
+    /// View ▸ All Processes, Hierarchically (MON-MENU-022): reorder
+    /// `rows` (already filtered, sorted and capped) into a parent/child
+    /// tree — each row immediately followed by its own children, one
+    /// level deeper (`ProcRow::depth`) — using `ppid`, without touching
+    /// the underlying flat storage this is built from. A process whose
+    /// parent isn't in `rows` (filtered out, already reaped, or the 300-row
+    /// cap cut it, MON-11) is shown as its own root rather than dropped.
+    /// Siblings keep whatever order `sort_rows` already gave `rows`.
+    fn hierarchical_order(rows: &[ProcRow]) -> Vec<ProcRow> {
+        let index_by_pid: std::collections::HashMap<u32, usize> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| (row.pid, i))
+            .collect();
+        let mut children: std::collections::HashMap<u32, Vec<usize>> =
+            std::collections::HashMap::new();
+        let mut roots: Vec<usize> = Vec::new();
+        for (i, row) in rows.iter().enumerate() {
+            match row
+                .ppid
+                .filter(|ppid| *ppid != row.pid && index_by_pid.contains_key(ppid))
+            {
+                Some(ppid) => children.entry(ppid).or_default().push(i),
+                None => roots.push(i),
+            }
+        }
+
+        fn visit(
+            i: usize,
+            depth: u32,
+            rows: &[ProcRow],
+            children: &std::collections::HashMap<u32, Vec<usize>>,
+            visited: &mut [bool],
+            out: &mut Vec<ProcRow>,
+        ) {
+            if visited[i] {
+                return;
+            }
+            visited[i] = true;
+            let mut row = rows[i].clone();
+            row.depth = depth;
+            let pid = row.pid;
+            out.push(row);
+            if let Some(kids) = children.get(&pid) {
+                for &child in kids {
+                    visit(child, depth + 1, rows, children, visited, out);
+                }
+            }
+        }
+
+        let mut out = Vec::with_capacity(rows.len());
+        let mut visited = vec![false; rows.len()];
+        for root in roots {
+            visit(root, 0, rows, &children, &mut visited, &mut out);
+        }
+        // Defensive only: a real process tree has no cycles, but never
+        // silently drop a row if one somehow existed.
+        for i in 0..rows.len() {
+            if !visited[i] {
+                visit(i, 0, rows, &children, &mut visited, &mut out);
+            }
+        }
+        out
     }
 
     fn sort_rows(rows: &mut [ProcRow], key: ColKey, ascending: bool) {
@@ -826,9 +899,16 @@ impl TableDelegate for ProcessTableDelegate {
                 .size(gpui::px(ICON_SIZE))
                 .flex_none()
         });
+        // MON-MENU-022: each level of View ▸ All Processes, Hierarchically
+        // indents the Name column under its parent, the same 16 px per
+        // level a disclosure-triangle outline typically uses.
+        const INDENT: f32 = 16.0;
         div()
             .flex()
             .items_center()
+            .when(key == ColKey::Name && row.depth > 0, |el| {
+                el.pl(gpui::px(row.depth as f32 * INDENT))
+            })
             .when(icon.is_some(), |el| el.gap(gpui::px(6.0)))
             .children(icon)
             .child(text)
@@ -954,6 +1034,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn hierarchical_order_nests_children_under_their_parent() {
+        // 1 (init) → 100 (shell) → 200 (grep); 300 is unrelated, a second
+        // root.
+        let rows = vec![
+            row_with_parent(1, None, "init"),
+            row_with_parent(300, Some(1), "cron"),
+            row_with_parent(100, Some(1), "shell"),
+            row_with_parent(200, Some(100), "grep"),
+        ];
+        let ordered = ProcessTableDelegate::hierarchical_order(&rows);
+        let pids: Vec<u32> = ordered.iter().map(|row| row.pid).collect();
+        // init's own children (300, then 100) keep their input order;
+        // grep is nested right after its parent shell, before any sibling
+        // of init that comes later.
+        assert_eq!(pids, vec![1, 300, 100, 200]);
+        let depth_of = |pid: u32| ordered.iter().find(|row| row.pid == pid).unwrap().depth;
+        assert_eq!(depth_of(1), 0);
+        assert_eq!(depth_of(300), 1);
+        assert_eq!(depth_of(100), 1);
+        assert_eq!(depth_of(200), 2);
+    }
+
+    #[test]
+    fn hierarchical_order_treats_a_missing_parent_as_a_root() {
+        // ppid 999 was filtered out (or already exited): its child is
+        // shown as its own root rather than dropped.
+        let rows = vec![row_with_parent(50, Some(999), "orphan")];
+        let ordered = ProcessTableDelegate::hierarchical_order(&rows);
+        assert_eq!(ordered.len(), 1);
+        assert_eq!(ordered[0].pid, 50);
+        assert_eq!(ordered[0].depth, 0);
+    }
+
+    #[test]
+    fn hierarchical_order_drops_no_rows() {
+        let rows = vec![
+            row_with_parent(1, None, "init"),
+            row_with_parent(2, Some(1), "a"),
+            row_with_parent(3, Some(2), "b"),
+            row_with_parent(4, Some(3), "c"),
+            row_with_parent(5, None, "unrelated"),
+        ];
+        let ordered = ProcessTableDelegate::hierarchical_order(&rows);
+        assert_eq!(ordered.len(), rows.len());
+        let mut pids: Vec<u32> = ordered.iter().map(|row| row.pid).collect();
+        pids.sort_unstable();
+        assert_eq!(pids, vec![1, 2, 3, 4, 5]);
+    }
+
     fn row(cpu: f32, cpu_ready: bool) -> ProcRow {
         ProcRow {
             pid: 1,
@@ -975,6 +1105,34 @@ mod tests {
             status: "Running".into(),
             threads: 1,
             uid: None,
+            depth: 0,
+        }
+    }
+
+    /// A minimal row for `hierarchical_order` tests: just the identity and
+    /// parentage that ordering cares about.
+    fn row_with_parent(pid: u32, ppid: Option<u32>, name: &str) -> ProcRow {
+        ProcRow {
+            pid,
+            name: name.into(),
+            cmd_search: name.to_lowercase().into(),
+            cpu: 0.0,
+            cpu_ready: true,
+            mem: 0,
+            disk: 0,
+            bytes_read: 0,
+            bytes_written: 0,
+            cpu_time: None,
+            energy: 0.0,
+            ppid,
+            user: "user".into(),
+            vmem: 0,
+            run_time: 0,
+            start_time: 0,
+            status: "Running".into(),
+            threads: 1,
+            uid: None,
+            depth: 0,
         }
     }
 

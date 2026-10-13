@@ -1,0 +1,99 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-09T04:01:07Z",
+  "interactions": {
+    "cmd-tab": {
+      "pass": false,
+      "switch_ms": 104.75866706110537,
+      "switcher_first_frame_ms": 22.268248023465276,
+      "switches": [
+        1332.9868360888213,
+        100.64810502808541,
+        104.75866706110537,
+        103.87867502868176,
+        126.01832393556833
+      ]
+    },
+    "cmd-tab-hold": {
+      "commits": [
+        46.64751305244863,
+        53.70951595250517,
+        57.66527506057173,
+        59.63003006763756,
+        61.30127201322466
+      ],
+      "pass": true,
+      "release_to_switch_ms": 57.66527506057173,
+      "reveal_ms": 44.272189028561115,
+      "reveals": [
+        130.10774890426546,
+        44.272189028561115,
+        42.52389399334788,
+        42.91834402829409,
+        45.196759048849344
+      ]
+    },
+    "resize-drag-edge": {
+      "configure_to_present_max_ms": 139.484,
+      "configure_to_present_p95_ms": 29.714,
+      "configures": 92,
+      "final_size": [
+        723,
+        832
+      ],
+      "frame_p50_ms": 11.817,
+      "frame_p95_ms": 31.108,
+      "frames": 96,
+      "pass": false,
+      "render_p50_ms": 8.805,
+      "render_p95_ms": 25.128,
+      "resizes": 90,
+      "stalls": 1,
+      "start_size": [
+        723,
+        832
+      ],
+      "submit_p50_ms": 0.761,
+      "submit_p95_ms": 8.805,
+      "swapchain_kept": 91,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.6875,
+      "worst_frame_ms": 139.432
+    },
+    "resize-drag-long": {
+      "configure_to_present_max_ms": 311.126,
+      "configure_to_present_p95_ms": 175.685,
+      "configures": 34,
+      "final_size": [
+        963,
+        832
+      ],
+      "frame_p50_ms": 17.56,
+      "frame_p95_ms": 42.334,
+      "frames": 41,
+      "pass": false,
+      "render_p50_ms": 15.196,
+      "render_p95_ms": 39.08,
+      "resizes": 34,
+      "stalls": 2,
+      "start_size": [
+        723,
+        832
+      ],
+      "submit_p50_ms": 0.823,
+      "submit_p95_ms": 7.896,
+      "swapchain_kept": 33,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.4634146341463415,
+      "worst_frame_ms": 175.634
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

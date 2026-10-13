@@ -468,6 +468,9 @@ mod tests {
 
     #[test]
     fn a_password_account_keeps_its_secrets_out_of_the_index() {
+        if !crate::wincred::tests::available() {
+            return;
+        }
         let (accounts, dir) = store("password");
         let imap = Secret::new("planted-imap-password".into());
         let smtp = Secret::new("planted-smtp-password".into());
@@ -507,6 +510,9 @@ mod tests {
 
     #[test]
     fn adding_the_same_address_twice_keeps_one_account() {
+        if !crate::wincred::tests::available() {
+            return;
+        }
         let (accounts, dir) = store("twice");
         let first = Secret::new("one".into());
         let second = Secret::new("two".into());
@@ -536,6 +542,9 @@ mod tests {
 
     #[test]
     fn services_can_be_turned_off_and_unknown_paths_are_refused() {
+        if !crate::wincred::tests::available() {
+            return;
+        }
         let (accounts, dir) = store("services");
         let password = Secret::new("p".into());
         let path = accounts
@@ -559,6 +568,9 @@ mod tests {
 
     #[test]
     fn an_oauth_account_stores_both_tokens_and_reads_a_fresh_one_back() {
+        if !crate::wincred::tests::available() {
+            return;
+        }
         let (accounts, dir) = store("oauth");
         let access = Secret::new("a".repeat(3_000));
         let refresh = Secret::new("planted-refresh".into());

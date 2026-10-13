@@ -144,8 +144,20 @@ pub fn delete_secret(name: &str) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// A network logon (an SSH session, a service) has no Credential Manager
+    /// profile and every write fails; the tests then have nothing to prove.
+    pub(crate) fn available() -> bool {
+        let probe = format!("Lulo/test/probe-{}", std::process::id());
+        let ok = write_secret(&probe, "x").is_ok();
+        delete_secret(&probe);
+        if !ok {
+            eprintln!("skipped: the Windows Credential Manager is not available in this session");
+        }
+        ok
+    }
 
     fn unique(label: &str) -> String {
         format!("Lulo/test/{label}-{}", std::process::id())
@@ -153,6 +165,9 @@ mod tests {
 
     #[test]
     fn a_short_secret_round_trips_and_is_deleted() {
+        if !available() {
+            return;
+        }
         let name = unique("short");
         assert_eq!(read_secret(&name).unwrap(), None);
         write_secret(&name, "planted-password").unwrap();
@@ -168,6 +183,9 @@ mod tests {
 
     #[test]
     fn a_token_longer_than_one_credential_round_trips() {
+        if !available() {
+            return;
+        }
         let name = unique("long");
         let long: String = (0..5_000)
             .map(|n| char::from(b'a' + (n % 26) as u8))
@@ -184,6 +202,9 @@ mod tests {
 
     #[test]
     fn an_empty_secret_is_distinct_from_a_missing_one() {
+        if !available() {
+            return;
+        }
         let name = unique("empty");
         write_secret(&name, "").unwrap();
         assert_eq!(read_secret(&name).unwrap().as_deref(), Some(""));

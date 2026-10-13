@@ -44,7 +44,7 @@ impl Tree {
         caps: &[(&str, &str)],
         props: &str,
     ) -> &Self {
-        let device = format!("class/input/{event}/device");
+        let device = format!("sys/class/input/{event}/device");
         self.write(&format!("{device}/name"), name);
         self.write(&format!("{device}/id/bustype"), bus);
         self.write(&format!("{device}/properties"), props);

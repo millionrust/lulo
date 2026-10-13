@@ -22,8 +22,8 @@ use windows::core::HSTRING;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
 use windows::Win32::System::Threading::{
-    CreateEventW, CreateMutexW, OpenMutexW, ReleaseMutex, SetEvent, WaitForSingleObject, INFINITE,
-    SYNCHRONIZATION_SYNCHRONIZE,
+    CreateEventW, CreateMutexW, OpenEventW, OpenMutexW, ReleaseMutex, SetEvent,
+    WaitForSingleObject, EVENT_MODIFY_STATE, INFINITE, SYNCHRONIZATION_SYNCHRONIZE,
 };
 
 use super::{appbar, desktop, folders, handle, launch, registry, taskbar, user_name};
@@ -68,6 +68,49 @@ pub fn on_stop_request(on_stop: impl FnOnce() + Send + 'static) {
             unsafe { WaitForSingleObject(event, INFINITE) };
             on_stop();
         });
+}
+
+/// The switch that asks the running shell to open Apps
+/// (`lulo-shell.exe --app-drawer`, the Exec of Apps' desktop entry).
+pub const APP_DRAWER_SWITCH: &str = "--app-drawer";
+
+fn app_drawer_event_name() -> HSTRING {
+    HSTRING::from(format!(r"Local\lulo-shell-apps-{}", user_name()))
+}
+
+/// Call `on_open` (from a thread that waits on a named event, so nothing
+/// polls) each time `lulo-shell --app-drawer` asks for Apps.
+pub fn on_app_drawer_request(on_open: impl Fn() + Send + 'static) {
+    // SAFETY: an auto-reset named event, kept for the life of the process.
+    let Ok(event) = (unsafe { CreateEventW(None, false, false, &app_drawer_event_name()) }) else {
+        return;
+    };
+    let event = event.0 as usize;
+    let _ = std::thread::Builder::new()
+        .name("lulo-apps-request".into())
+        .spawn(move || loop {
+            let event = windows::Win32::Foundation::HANDLE(event as *mut core::ffi::c_void);
+            // SAFETY: waits on the event created above.
+            unsafe { WaitForSingleObject(event, INFINITE) };
+            on_open();
+        });
+}
+
+/// `lulo-shell --app-drawer`: ask the running shell to open Apps.
+pub fn request_app_drawer() -> i32 {
+    // SAFETY: opens the running shell's named event and sets it.
+    match unsafe { OpenEventW(EVENT_MODIFY_STATE, false, &app_drawer_event_name()) } {
+        Ok(event) => {
+            // SAFETY: as above; the handle is closed straight after.
+            unsafe {
+                let _ = SetEvent(event);
+                let _ = CloseHandle(event);
+            }
+            0
+        }
+        // No Lulo running.
+        Err(_) => 1,
+    }
 }
 
 fn request_stop() {

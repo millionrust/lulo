@@ -45,6 +45,8 @@ rmac-shell-wallpaper.workspace = true
 # processes.
 rmac-launcher-app.workspace = true
 rmac-quick-settings-app.workspace = true
+# Apps, the same view Lulo OS runs as its own process.
+rmac-app-drawer.workspace = true
 rmac-shell-settings.workspace = true
 # The shell's live design tokens (light or dark, accent), as each Lulo OS
 # shell process installs them.

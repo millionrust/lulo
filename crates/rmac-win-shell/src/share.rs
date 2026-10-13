@@ -32,6 +32,11 @@ const ENTRIES: &[(&str, &[u8])] = files! {
     "org.rmac.Preview" => "../../../packaging/rmac-apps/applications/org.rmac.Preview.desktop",
 };
 
+/// Apps' entry: Apps runs inside `lulo-shell`, so its entry asks the
+/// running shell to open it (`lulo-shell.exe --app-drawer`).
+const APP_DRAWER_ENTRY: &[u8] =
+    include_bytes!("../../../packaging/rmac-apps/applications/org.rmac.AppDrawer.desktop");
+
 /// App icons, as `icons/hicolor/scalable/apps/<name>.svg`.
 const APP_ICONS: &[(&str, &[u8])] = files! {
     "org.rmac.Files.svg" => "../../../packaging/rmac-apps/icons/org.rmac.Files.svg",
@@ -147,6 +152,21 @@ pub fn install_into(share: &Path, install_dir: &Path, scene: bool) {
         }
         write_if_changed(&path, entry.as_bytes());
     }
+    let apps = String::from_utf8_lossy(APP_DRAWER_ENTRY)
+        .replace("TryExec=/usr/bin/rmac-app-drawer", "TryExec=/usr/bin/lulo-shell")
+        .replace(
+            "Exec=/usr/bin/rmac-app-drawer",
+            &format!("Exec=/usr/bin/lulo-shell {}", crate::win::session::APP_DRAWER_SWITCH),
+        );
+    let mut apps = windows_entry(&apps, install_dir);
+    if scene {
+        apps = apps
+            .lines()
+            .filter(|line| !line.starts_with("TryExec="))
+            .map(|line| format!("{line}\n"))
+            .collect();
+    }
+    write_if_changed(&applications.join("org.rmac.AppDrawer.desktop"), apps.as_bytes());
     let icons = share.join("icons").join("hicolor");
     write_if_changed(&icons.join("index.theme"), HICOLOR_INDEX.as_bytes());
     for (name, contents) in APP_ICONS {

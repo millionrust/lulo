@@ -113,7 +113,8 @@ impl AssetSource for ShellAssets {
         Ok(rmac_shell_menubar::asset(path)
             .or_else(|| rmac_shell_wallpaper::asset(path))
             .or_else(|| rmac_launcher_app::asset(path))
-            .or_else(|| rmac_quick_settings_app::asset(path)))
+            .or_else(|| rmac_quick_settings_app::asset(path))
+            .or_else(|| rmac_app_drawer::asset(path)))
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
@@ -316,7 +317,12 @@ pub fn run() -> i32 {
             {
                 let executor = cx.background_executor().clone();
                 rmac_shell_layer::windows::on_closed(move |_, namespace| {
-                    let panel = ["rmac-launcher", "rmac-quick-settings", "rmac-menu-material"]
+                    let panel = [
+                        "rmac-launcher",
+                        "rmac-quick-settings",
+                        "rmac-menu-material",
+                        "rmac-app-drawer",
+                    ]
                         .iter()
                         .any(|prefix| namespace.starts_with(prefix));
                     if panel {
@@ -391,6 +397,22 @@ pub fn run() -> i32 {
             rmac_quick_settings_app::start(cx);
             requests::register("launcher", rmac_launcher_app::toggle);
             requests::register("quick-settings", rmac_quick_settings_app::toggle);
+            // Apps, from the Dock's tile and from its desktop entry
+            // (`lulo-shell --app-drawer`, from Spotlight or a shortcut).
+            rmac_app_drawer::start(cx);
+            requests::register("app-drawer", rmac_app_drawer::toggle);
+            {
+                let (apps_tx, apps_rx) = async_channel::bounded::<()>(1);
+                crate::win::session::on_app_drawer_request(move || {
+                    let _ = apps_tx.try_send(());
+                });
+                cx.spawn(async move |cx| {
+                    while apps_rx.recv().await.is_ok() {
+                        cx.update(rmac_app_drawer::toggle);
+                    }
+                })
+                .detach();
+            }
             memory::report("surfaces started");
 
             {
@@ -451,6 +473,7 @@ pub fn run() -> i32 {
                         cx.update(|cx| {
                             rmac_launcher_app::open_scene(cx);
                             rmac_quick_settings_app::open_scene(cx);
+                            rmac_app_drawer::open_scene(cx);
                         });
                     }
                 })

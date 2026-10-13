@@ -7,7 +7,7 @@ use gpui::{
     StyledImage as _, Window,
 };
 use gpui_component::StyledExt as _;
-use rmac_app_drawer::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
+use crate::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
 use rmac_ui::{mac, Button, EmptyState, SearchField, Spinner};
 
 use crate::catalog::{App, Category};
@@ -130,7 +130,7 @@ impl Render for AppDrawer {
                 .into_any_element()
         };
 
-        div()
+        let panel = div()
             .track_focus(&self.focus)
             .key_context("AppDrawer")
             .on_action(cx.listener(|this, _: &MoveLeft, _, cx| {
@@ -302,6 +302,15 @@ impl Render for AppDrawer {
             )
             .when_some(context_menu, |element: Div, (menu, state)| {
                 element.child(menu.render(&state))
-            })
+            });
+        // On Windows the blur under the panel is drawn here, not by the
+        // compositor (`rmac_shell_layer::over_backdrop`).
+        #[cfg(windows)]
+        {
+            rmac_shell_layer::set_corner_radius(window, mac::radius_large_surface());
+            rmac_shell_layer::over_backdrop(window, cx, mac::radius_large_surface(), panel)
+        }
+        #[cfg(not(windows))]
+        panel
     }
 }

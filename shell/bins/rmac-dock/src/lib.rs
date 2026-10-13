@@ -1870,6 +1870,17 @@ mod dock {
             modifiers: gpui::Modifiers,
             cx: &mut Context<Self>,
         ) {
+            // On Windows Apps runs inside the shell: its tile opens it
+            // there rather than starting a process (`lulo-shell
+            // --app-drawer`, its desktop entry's Exec, does the same from
+            // elsewhere).
+            #[cfg(windows)]
+            if !modifiers.platform
+                && app_id.trim_end_matches(".desktop") == rmac_apps::identity::APP_DRAWER
+                && system::requests::run("app-drawer", cx)
+            {
+                return;
+            }
             let hide = modifiers.alt.then(|| {
                 let status = self.status.read(cx);
                 let model = status.model()?;

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use gpui::SharedString;
-use rmac_app_drawer::accessibility::{ApplicationCategory, ApplicationSemantics};
+use crate::accessibility::{ApplicationCategory, ApplicationSemantics};
 
 #[cfg(not(target_os = "macos"))]
 use category::categorize_desktop;

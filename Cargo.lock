@@ -6023,6 +6023,7 @@ dependencies = [
  "rmac-apps",
  "rmac-icon",
  "rmac-shell-activation-runtime",
+ "rmac-shell-layer",
  "rmac-shortcuts",
  "rmac-ui",
 ]
@@ -8057,6 +8058,7 @@ dependencies = [
  "gpui",
  "image",
  "raw-window-handle",
+ "rmac-app-drawer",
  "rmac-app-menu",
  "rmac-apps",
  "rmac-compositor",

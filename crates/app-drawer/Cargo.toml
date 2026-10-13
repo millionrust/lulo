@@ -22,3 +22,8 @@ rmac-icon.workspace = true
 rmac-shortcuts.workspace = true
 rmac-shell-activation-runtime.workspace = true
 rmac-ui.workspace = true
+
+# The Windows shell hosts this surface; `rmac-shell-layer` places it as the
+# layer surface it is on Linux (ADR 0023).
+[target.'cfg(windows)'.dependencies]
+rmac-shell-layer.workspace = true

@@ -112,6 +112,7 @@ rmac-intelligence = { version = "=0.9.0-beta.1", path = "crates/rmac-intelligenc
 rmac-keyboard = { version = "=0.9.0-beta.1", path = "crates/rmac-keyboard" }
 rmac-launcher = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher" }
 rmac-launcher-app = { version = "=0.9.0-beta.1", path = "crates/launcher-app" }
+rmac-app-drawer = { version = "=0.9.0-beta.1", path = "crates/app-drawer" }
 rmac-launcher-providers = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-providers" }
 rmac-launcher-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-runtime" }
 rmac-launcher-system = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-system" }

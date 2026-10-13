@@ -178,10 +178,14 @@ pub fn refresh() {
         return;
     };
     // Beside the entries, not among them: the catalogue watches that folder.
+    // `-2`: icons fitted into the icon grid (WIN-OS-71).
     let icons = applications.parent().map_or_else(
-        || applications.join("..").join("lulo-windows-icons"),
-        |data| data.join("lulo-windows-icons"),
+        || applications.join("..").join("lulo-windows-icons-2"),
+        |data| data.join("lulo-windows-icons-2"),
     );
+    if let Some(data) = applications.parent() {
+        let _ = std::fs::remove_dir_all(data.join("lulo-windows-icons"));
+    }
     let Some(apps) = super::catalog::apps_folder_apps(&icons) else {
         super::trace(|| "windows apps: the Apps folder could not be read".into());
         return;

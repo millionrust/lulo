@@ -127,14 +127,18 @@ def render_wallpapers(wallpaper_dir: pathlib.Path) -> str:
     )
     if not files:
         return ""
-    lines = [
-        '      <Component Id="Comp_Wallpapers" Directory="LuloWallpapers" Guid="*">',
-    ]
-    for index, path in enumerate(files):
-        key = ' KeyPath="yes"' if index == 0 else ""
-        file_id = "Wallpaper_" + "".join(c if c.isalnum() else "_" for c in path.stem)
-        lines.append(f'        <File Id={attr(file_id)} Source={attr(str(path))}{key} />')
-    lines.append("      </Component>")
+    # One file per component: WiX derives a component's GUID from its one
+    # key file (`Guid="*"`).
+    lines = []
+    for path in files:
+        stem = "".join(c if c.isalnum() else "_" for c in path.stem)
+        lines.append(
+            f'      <Component Id={attr("Comp_Wallpaper_" + stem)} Directory="LuloWallpapers" Guid="*">'
+        )
+        lines.append(
+            f'        <File Id={attr("Wallpaper_" + stem)} Source={attr(str(path))} KeyPath="yes" />'
+        )
+        lines.append("      </Component>")
     return "\n".join(lines)
 
 

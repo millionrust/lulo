@@ -43,7 +43,9 @@ fn cache() -> Option<PathBuf> {
             std::env::var_os("LOCALAPPDATA")
                 .map(|local| PathBuf::from(local).join("Lulo").join("Cache"))
         })
-        .map(|cache| cache.join("lulo-icons"))
+        // `-2`: icons fitted into the icon grid (WIN-OS-71); the earlier
+        // folder is removed by `watch_running`.
+        .map(|cache| cache.join("lulo-icons-2"))
 }
 
 /// The cached icon of `source` (a file or a program), written by a helper
@@ -105,6 +107,14 @@ pub fn ensure_running_icon(app_id: &str, exe_path: &str) {
 /// Give every running Windows app without a desktop entry its icon, as
 /// its windows appear (the window list's own events; nothing polls).
 pub fn watch_running(cx: &mut gpui::App) {
+    // Icons cached before they were fitted into the grid.
+    if let Some(old) = cache().and_then(|cache| cache.parent().map(|parent| parent.join("lulo-icons"))) {
+        cx.background_executor()
+            .spawn(async move {
+                let _ = blocking::unblock(move || std::fs::remove_dir_all(old)).await;
+            })
+            .detach();
+    }
     let (sender, receiver) = async_channel::bounded::<rmac_compositor::Event>(16);
     cx.background_executor()
         .spawn(async move {

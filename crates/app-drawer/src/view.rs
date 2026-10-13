@@ -6,7 +6,7 @@ mod render;
 use std::time::Duration;
 
 use gpui::{AppContext as _, Context, Entity, FocusHandle, Pixels, Point, SharedString, Window};
-use rmac_app_drawer::accessibility::{
+use crate::accessibility::{
     project_app_drawer, AppDrawerAccessibilitySnapshot, ApplicationCategory, DrawerFeedback,
     DrawerProjectionState, DrawerView, OPEN_ACTION_NAME, SHOW_IN_FOLDER_ACTION_NAME,
 };
@@ -148,7 +148,7 @@ impl AppDrawer {
         cx: &gpui::App,
     ) -> Result<
         AppDrawerAccessibilitySnapshot,
-        rmac_app_drawer::accessibility::AccessibilityProjectionError,
+        crate::accessibility::AccessibilityProjectionError,
     > {
         let search_matches = self.search_matching_indices(cx);
         let visible = self.visible_indices(cx);

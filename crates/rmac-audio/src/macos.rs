@@ -42,6 +42,7 @@ pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
         outputs,
         inputs,
         hardware_devices: Vec::new(),
+        recording: Vec::new(),
     })
 }
 

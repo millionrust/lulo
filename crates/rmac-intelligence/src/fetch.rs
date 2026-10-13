@@ -18,7 +18,7 @@ use std::process::{Command, Stdio};
 
 use sha2::{Digest, Sha256};
 
-use crate::manifest::Model;
+use crate::manifest::Pinned;
 use crate::{paths, verify};
 
 #[derive(Debug)]
@@ -58,7 +58,10 @@ impl std::error::Error for FetchError {}
 
 /// Download `model` into the user's model folder, calling `progress` with
 /// (bytes so far, total) whenever another whole percent has arrived.
-pub fn fetch(model: &Model, mut progress: impl FnMut(u64, u64)) -> Result<PathBuf, FetchError> {
+pub fn fetch(
+    model: &(impl Pinned + ?Sized),
+    mut progress: impl FnMut(u64, u64),
+) -> Result<PathBuf, FetchError> {
     let models = paths::models_dir().ok_or(FetchError::NoDataDirectory)?;
     fetch_into(&models, model, &mut progress, &mut curl)
 }
@@ -124,7 +127,7 @@ fn curl(url: &str, offset: u64) -> Result<std::process::Child, FetchError> {
 /// The whole download, with the byte source injectable for tests.
 pub fn fetch_into<S: Source>(
     models: &Path,
-    model: &Model,
+    model: &(impl Pinned + ?Sized),
     progress: &mut impl FnMut(u64, u64),
     source: &mut S,
 ) -> Result<PathBuf, FetchError> {
@@ -133,19 +136,19 @@ pub fn fetch_into<S: Source>(
         .create(true)
         .truncate(false)
         .write(true)
-        .open(models.join(format!("{}.lock", model.sha256)))
+        .open(models.join(format!("{}.lock", model.sha256())))
         .map_err(FetchError::Io)?;
     lock.try_lock().map_err(|_| FetchError::Busy)?;
 
     let target = paths::model_file(models, model);
     if verify::verified_model(models, model).is_ok() {
-        progress(model.size, model.size);
+        progress(model.size(), model.size());
         return Ok(target);
     }
     let partial = paths::partial_file(models, model);
     let mut hasher = Sha256::new();
     let mut have = match std::fs::symlink_metadata(&partial) {
-        Ok(metadata) if metadata.file_type().is_file() && metadata.len() < model.size => {
+        Ok(metadata) if metadata.file_type().is_file() && metadata.len() < model.size() => {
             // Resume: hash what is already there.
             let mut file = File::open(&partial).map_err(FetchError::Io)?;
             let mut buffer = vec![0u8; 1 << 20];
@@ -177,30 +180,31 @@ pub fn fetch_into<S: Source>(
         use std::os::unix::fs::PermissionsExt as _;
         let _ = output.set_permissions(std::fs::Permissions::from_mode(0o600));
     }
-    progress(have, model.size);
-    let mut child = source.open(model.url, have)?;
+    let size = model.size();
+    progress(have, size);
+    let mut child = source.open(model.url(), have)?;
     let mut reader = child
         .stdout_reader()
         .ok_or(FetchError::Downloader(io::Error::other(
             "the downloader has no output",
         )))?;
     let mut buffer = vec![0u8; 256 * 1024];
-    let mut last_percent = have * 100 / model.size.max(1);
+    let mut last_percent = have * 100 / size.max(1);
     let streamed: Result<(), FetchError> = (|| loop {
         let read = reader.read(&mut buffer).map_err(FetchError::Io)?;
         if read == 0 {
             return Ok(());
         }
-        if have + read as u64 > model.size {
+        if have + read as u64 > size {
             return Err(FetchError::WrongSize);
         }
         output.write_all(&buffer[..read]).map_err(FetchError::Io)?;
         hasher.update(&buffer[..read]);
         have += read as u64;
-        let percent = have * 100 / model.size.max(1);
+        let percent = have * 100 / size.max(1);
         if percent != last_percent {
             last_percent = percent;
-            progress(have, model.size);
+            progress(have, size);
         }
     })();
     drop(reader);
@@ -213,10 +217,10 @@ pub fn fetch_into<S: Source>(
         return Err(error);
     }
     finished?;
-    if have != model.size {
+    if have != size {
         return Err(FetchError::WrongSize);
     }
-    if verify::hex(&hasher.finalize()) != model.sha256 {
+    if verify::hex(&hasher.finalize()) != model.sha256() {
         let _ = std::fs::remove_file(&partial);
         return Err(FetchError::WrongChecksum);
     }
@@ -246,7 +250,7 @@ impl ChildOutput for std::process::Child {
 }
 
 /// Delete a downloaded model, its partial download, stamp and licence.
-pub fn remove(model: &Model) -> io::Result<()> {
+pub fn remove(model: &(impl Pinned + ?Sized)) -> io::Result<()> {
     let models = paths::models_dir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no data directory"))?;
     for path in [
@@ -265,26 +269,35 @@ pub fn remove(model: &Model) -> io::Result<()> {
 }
 
 /// Bytes of a partial download, for "Resume (42 %)".
-pub fn partial_bytes(model: &Model) -> u64 {
+pub fn partial_bytes(model: &(impl Pinned + ?Sized)) -> u64 {
     paths::models_dir()
         .map(|models| paths::partial_file(&models, model))
         .and_then(|path| std::fs::symlink_metadata(path).ok())
         .filter(|metadata| metadata.file_type().is_file())
-        .map(|metadata| metadata.len().min(model.size))
+        .map(|metadata| metadata.len().min(model.size()))
         .unwrap_or(0)
 }
 
-fn licence_notice(model: &Model) -> String {
+fn licence_notice(model: &(impl Pinned + ?Sized)) -> String {
+    let text = match model.licence() {
+        "Apache-2.0" => "the full text is in /usr/share/common-licenses/Apache-2.0".to_owned(),
+        "MIT" => format!("the full text follows\n\n{}", crate::voice::MOONSHINE_LICENCE),
+        other => other.to_owned(),
+    };
     format!(
-        "{}\n\nSource: {}\nSHA-256: {}\nLicence: {} (the full text is in /usr/share/common-licenses/Apache-2.0)\n\
+        "{}\n\nSource: {}\nSHA-256: {}\nLicence: {} ({text})\n\
          The model is used unmodified. It is not part of Lulo OS and is not endorsed by its authors.\n",
-        model.display_name, model.url, model.sha256, model.licence
+        model.display_name(),
+        model.url(),
+        model.sha256(),
+        model.licence()
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::Model;
 
     struct Bytes(io::Cursor<Vec<u8>>);
 

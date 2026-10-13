@@ -10,6 +10,9 @@
 //!   only on a model whose size and SHA-256 match the manifest.
 //! - The model, its context and the saved prompt-prefix state live on one
 //!   worker thread; D-Bus calls queue jobs to it.
+//!
+//! [`voice`] is its sibling, `org.rmac.Voice1` (`rmac-voice-service`):
+//! hold-to-talk speech to text under the same rules.
 
 pub mod caller;
 pub mod engine;
@@ -17,3 +20,4 @@ pub mod fixture;
 #[cfg(target_os = "linux")]
 pub mod llama;
 pub mod service;
+pub mod voice;

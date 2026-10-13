@@ -286,6 +286,15 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             ),
             0o644,
         ),
+        # Lulo voice (ADR 0024 §8): activated by the talk key, never at login.
+        "usr/share/dbus-1/services/org.rmac.Voice1.service": (
+            _dbus_service(
+                intelligence / "org.rmac.Voice1.service.in",
+                "@RMAC_VOICE_EXEC@",
+                f"{SYSTEM_LIBEXEC}/rmac-voice-service",
+            ),
+            0o644,
+        ),
     }
     for source in sorted((session / "units").iterdir(), key=lambda path: path.name):
         if source.is_symlink() or not source.is_file():

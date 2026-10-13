@@ -1,7 +1,8 @@
 //! Lulo Intelligence pane presentation, in the grammar of macOS 26's
 //! Apple Intelligence & Siri pane: a header card, the main switch, then the
 //! model group (which model, its download, its size), with the reasons and
-//! privacy facts as footnotes.
+//! privacy facts as footnotes; then Talk to Lulo (the Mac's Siri group:
+//! the switch, the keyboard shortcut, and here the voice model's download).
 
 use rmac_intelligence::gate::Decision;
 use rmac_intelligence::manifest::Tier;
@@ -99,12 +100,106 @@ impl Settings {
                     "{reason}{status} The model is downloaded once, from a fixed version on Hugging Face, and checked against its fingerprint before it is used. Licence: {}.",
                     tier.model().licence
                 )));
+                if pane.config.enabled {
+                    self.push_voice(&mut cards, tier, &view);
+                }
             }
         }
         if let Some(error) = &pane.error {
             cards.push(note_card(error.clone()));
         }
         self.pane(cards)
+    }
+
+    /// Talk to Lulo: hold ⌥Space and speak (ADR 0024 §8).
+    fn push_voice(&self, cards: &mut Vec<Div>, tier: Tier, view: &Entity<Settings>) {
+        let pane = &self.intelligence;
+        let voice = tier.voice_model();
+        cards.push(section_header("Talk to Lulo"));
+        let toggle_view = view.clone();
+        cards.push(card(vec![
+            switch_row(
+                "intelligence-voice",
+                "Talk to Lulo",
+                Some(
+                    format!(
+                        "Hold {} and say what you want; let go to see it in Spotlight.",
+                        rmac_intelligence::voice::TALK_KEY_DESCRIPTION
+                    )
+                    .into(),
+                ),
+                pane.config.voice,
+                !pane.busy,
+                move |enabled, _, cx| {
+                    toggle_view.update(cx, |settings, cx| settings.set_intelligence_voice(enabled, cx));
+                },
+            ),
+            fact_row(
+                "Keyboard Shortcut",
+                format!("Hold {}", rmac_intelligence::voice::TALK_KEY_DESCRIPTION),
+            ),
+            self.voice_download_row(voice, view),
+        ]));
+        cards.push(footnote(format!(
+            "Speech is turned into text on this computer by {} ({}). The microphone is on only while you hold the keys, and the menu bar shows an orange dot meanwhile. Nothing you say is kept or leaves this computer.",
+            voice.display_name, voice.licence
+        )));
+    }
+
+    fn voice_download_row(
+        &self,
+        voice: &'static rmac_intelligence::voice::VoiceModel,
+        view: &Entity<Settings>,
+    ) -> AnyElement {
+        let pane = &self.intelligence;
+        let size = megabytes(voice.size());
+        let (status, button): (String, AnyElement) = if let Some(download) = &pane.voice_download
+        {
+            let percent = download.done * 100 / download.total.max(1);
+            let cancel_view = view.clone();
+            (
+                format!("Downloading voice model… {percent}% of {size}"),
+                push_button("intelligence-voice-download-cancel", "Stop")
+                    .on_click(move |_, _, cx| {
+                        cancel_view.update(cx, |settings, cx| settings.cancel_voice_download(cx));
+                    })
+                    .into_any_element(),
+            )
+        } else if pane.voice_present {
+            let remove_view = view.clone();
+            (
+                format!("Downloaded · {size}"),
+                push_button("intelligence-voice-remove", "Remove")
+                    .disabled(pane.busy)
+                    .on_click(move |_, _, cx| {
+                        remove_view.update(cx, |settings, cx| settings.remove_voice_model(cx));
+                    })
+                    .into_any_element(),
+            )
+        } else {
+            let download_view = view.clone();
+            let (status, label) = if pane.voice_downloaded > 0 {
+                (
+                    format!(
+                        "Download paused at {}% of {size}",
+                        pane.voice_downloaded * 100 / voice.size().max(1)
+                    ),
+                    "Resume",
+                )
+            } else {
+                (format!("Not downloaded · {size}"), "Download")
+            };
+            (
+                status,
+                push_button("intelligence-voice-download", label)
+                    .disabled(pane.busy || pane.download.is_some())
+                    .on_click(move |_, _, cx| {
+                        download_view.update(cx, |settings, cx| settings.download_voice_model(cx));
+                    })
+                    .into_any_element(),
+            )
+        };
+        value_button_row("Voice", Some(status.into()), None, Some(button))
     }
 
     fn intelligence_download_row(&self, tier: Tier, view: &Entity<Settings>) -> AnyElement {
@@ -117,11 +212,12 @@ impl Settings {
             let cancel_view = view.clone();
             (
                 format!(
-                    "Downloading {} model… {percent}% of {size}",
+                    "Downloading {} {}model… {percent}% of {size}",
                     match download.tier {
                         Tier::Tiny => "Tiny",
                         Tier::Standard => "Standard",
-                    }
+                    },
+                    if download.voice { "voice " } else { "" }
                 ),
                 push_button("intelligence-download-cancel", "Stop")
                     .on_click(move |_, _, cx| {

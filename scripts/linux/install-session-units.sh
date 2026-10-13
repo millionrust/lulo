@@ -73,13 +73,14 @@ esac
     -p rmac-lock-provider-linux --features rmac-lock-provider-linux/provider --bin rmac-lock-provider \
     -p rmac-keyboard --bin rmac-mac-keyboard \
     -p rmac-setup-assistant --bin rmac-setup-assistant \
-    -p rmac-polkit-agent --bin rmac-polkit-agent)
+    -p rmac-polkit-agent --bin rmac-polkit-agent \
+    -p rmac-voice --bin rmac-voice-hud)
 # Lulo Intelligence (ADR 0024) compiles llama.cpp, which needs CMake and a
 # C++ compiler. Without CMake the rest of the session still installs.
 intelligence_built=no
 if command -v cmake >/dev/null 2>&1 || [ -n "${CMAKE:-}" ]; then
     (cd "${repo_root}" && cargo build --locked --release --jobs "${cargo_jobs}" \
-        -p rmac-intelligence-service --bin rmac-intelligence-service \
+        -p rmac-intelligence-service --bin rmac-intelligence-service --bin rmac-voice-service \
         -p rmac-intelligence --bin rmac-intelligence-fetch)
     intelligence_built=yes
 else
@@ -108,9 +109,11 @@ install -m 0755 "${target_dir}/release/rmac-lock-provider" "${libexec_dir}/rmac-
 install -m 0755 "${target_dir}/release/rmac-mac-keyboard" "${libexec_dir}/rmac-mac-keyboard"
 install -m 0755 "${target_dir}/release/rmac-setup-assistant" "${libexec_dir}/rmac-setup-assistant"
 install -m 0755 "${target_dir}/release/rmac-polkit-agent" "${libexec_dir}/rmac-polkit-agent"
+install -m 0755 "${target_dir}/release/rmac-voice-hud" "${libexec_dir}/rmac-voice-hud"
 if [ "${intelligence_built}" = yes ]; then
     install -m 0755 "${target_dir}/release/rmac-intelligence-service" "${libexec_dir}/rmac-intelligence-service"
     install -m 0755 "${target_dir}/release/rmac-intelligence-fetch" "${libexec_dir}/rmac-intelligence-fetch"
+    install -m 0755 "${target_dir}/release/rmac-voice-service" "${libexec_dir}/rmac-voice-service"
 fi
 install -m 0755 "${script_dir}/start-rmac-session.sh" "${bin_dir}/rmac-session-start"
 install -d -m 0755 "${config_home}/rmac"
@@ -181,6 +184,11 @@ if [ "${intelligence_built}" = yes ]; then
         >"${intelligence_activation_tmp}"
     install -m 0644 "${intelligence_activation_tmp}" \
         "${dbus_service_dir}/org.rmac.Intelligence1.service"
+    sed "s|@RMAC_VOICE_EXEC@|${libexec_dir}/rmac-voice-service|g" \
+        "${intelligence_install_dir}/org.rmac.Voice1.service.in" \
+        >"${intelligence_activation_tmp}"
+    install -m 0644 "${intelligence_activation_tmp}" \
+        "${dbus_service_dir}/org.rmac.Voice1.service"
     rm -f "${intelligence_activation_tmp}"
     trap - EXIT HUP INT TERM
 fi

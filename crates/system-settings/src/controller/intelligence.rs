@@ -1,7 +1,8 @@
 //! System Settings ▸ Lulo Intelligence (ADR 0024 §4, §5; parity SET-115):
 //! the on/off switch, the hardware gate's verdict, the checksum-verified
 //! model download and the one-time speed check that decides whether the
-//! larger model is offered.
+//! larger model is offered; and Talk to Lulo (§8): its switch and the
+//! voice model's download, through the same fetcher.
 //!
 //! Everything that reads the disk, starts the downloader or talks to the
 //! service runs on the blocking pool; nothing here polls. Download progress
@@ -37,6 +38,12 @@ pub(in crate::controller) struct IntelligencePane {
     /// Bytes of a partial download, per tier.
     pub(in crate::controller) partial: [u64; 2],
     pub(in crate::controller) download: Option<Download>,
+    /// Whether this tier's voice model is on disk and verified.
+    pub(in crate::controller) voice_present: bool,
+    /// Bytes of the voice model already downloaded (finished files and
+    /// partial ones), for "Resume at N %".
+    pub(in crate::controller) voice_downloaded: u64,
+    pub(in crate::controller) voice_download: Option<Download>,
     pub(in crate::controller) calibrating: bool,
     /// Whether each tier's prompt-prefix state is saved, so its first
     /// request is warm ([`rmac_intelligence::prefix_state`]).
@@ -49,6 +56,8 @@ pub(in crate::controller) struct IntelligencePane {
 
 pub(in crate::controller) struct Download {
     pub(in crate::controller) tier: Tier,
+    /// The voice model rather than the language model.
+    pub(in crate::controller) voice: bool,
     pub(in crate::controller) done: u64,
     pub(in crate::controller) total: u64,
     child: Arc<Mutex<Option<std::process::Child>>>,
@@ -67,6 +76,8 @@ struct Loaded {
     present: [bool; 2],
     partial: [u64; 2],
     ready: [bool; 2],
+    voice_present: bool,
+    voice_downloaded: u64,
 }
 
 fn load() -> Loaded {
@@ -79,12 +90,22 @@ fn load() -> Loaded {
             .is_some_and(|models| rmac_intelligence::verify::is_present(models, tier.model()))
     });
     let partial = Tier::ALL.map(|tier| rmac_intelligence::fetch::partial_bytes(tier.model()));
+    let voice = config.tier(&facts).unwrap_or(Tier::Tiny).voice_model();
+    let voice_present = models
+        .as_deref()
+        .is_some_and(|models| voice.is_present(models));
+    let voice_downloaded = models
+        .as_deref()
+        .map(|models| voice.downloaded_bytes(models))
+        .unwrap_or(0);
     Loaded {
         config,
         facts,
         present,
         partial,
         ready: prefix_states(),
+        voice_present,
+        voice_downloaded,
     }
 }
 
@@ -139,6 +160,8 @@ impl Settings {
                 pane.present = loaded.present;
                 pane.partial = loaded.partial;
                 pane.ready = loaded.ready;
+                pane.voice_present = loaded.voice_present;
+                pane.voice_downloaded = loaded.voice_downloaded;
                 this.warm_intelligence(cx);
                 cx.notify();
             });
@@ -181,6 +204,49 @@ impl Settings {
         self.save_intelligence_config(config, cx);
     }
 
+    /// Talk to Lulo (hold ⌥Space and speak).
+    pub(in crate::controller) fn set_intelligence_voice(&mut self, voice: bool, cx: &mut Context<Self>) {
+        let mut config = self.intelligence.config.clone();
+        config.voice = voice;
+        self.save_intelligence_config(config, cx);
+    }
+
+    /// Download this tier's voice model, file by file, in the same
+    /// `rmac-intelligence-fetch` helper.
+    pub(in crate::controller) fn download_voice_model(&mut self, cx: &mut Context<Self>) {
+        self.start_download(true, cx);
+    }
+
+    pub(in crate::controller) fn cancel_voice_download(&mut self, cx: &mut Context<Self>) {
+        if let Some(download) = &self.intelligence.voice_download {
+            kill_download(download);
+        }
+        cx.notify();
+    }
+
+    pub(in crate::controller) fn remove_voice_model(&mut self, cx: &mut Context<Self>) {
+        let model = self.intelligence_tier().voice_model();
+        self.intelligence.busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                model
+                    .files
+                    .iter()
+                    .try_for_each(rmac_intelligence::fetch::remove)
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.intelligence.busy = false;
+                if result.is_err() {
+                    this.intelligence.error = Some("Could not remove the voice model.".into());
+                }
+                this.refresh_intelligence(cx);
+            });
+        })
+        .detach();
+    }
+
     pub(in crate::controller) fn choose_intelligence_tier(
         &mut self,
         tier: Tier,
@@ -194,18 +260,45 @@ impl Settings {
     /// Start (or resume) the checksum-verified download of the chosen model
     /// in the `rmac-intelligence-fetch` helper process.
     pub(in crate::controller) fn download_intelligence_model(&mut self, cx: &mut Context<Self>) {
-        if self.intelligence.download.is_some() {
+        self.start_download(false, cx);
+    }
+
+    fn start_download(&mut self, voice: bool, cx: &mut Context<Self>) {
+        let slot = if voice {
+            &self.intelligence.voice_download
+        } else {
+            &self.intelligence.download
+        };
+        if slot.is_some() {
             return;
         }
         let tier = self.intelligence_tier();
-        let model = tier.model();
+        let (done, total, argument) = if voice {
+            (
+                self.intelligence.voice_downloaded,
+                tier.voice_model().size(),
+                format!("voice-{}", tier.as_str()),
+            )
+        } else {
+            (
+                self.intelligence.partial[tier_index(tier)],
+                tier.model().size,
+                tier.as_str().to_owned(),
+            )
+        };
         let child = Arc::new(Mutex::new(None));
-        self.intelligence.download = Some(Download {
+        let download = Download {
             tier,
-            done: self.intelligence.partial[tier_index(tier)],
-            total: model.size,
+            voice,
+            done,
+            total,
             child: child.clone(),
-        });
+        };
+        if voice {
+            self.intelligence.voice_download = Some(download);
+        } else {
+            self.intelligence.download = Some(download);
+        }
         self.intelligence.error = None;
         cx.notify();
         let (lines_tx, lines) = async_channel::bounded::<FetchLine>(16);
@@ -229,7 +322,7 @@ impl Settings {
                 return;
             };
             let spawned = std::process::Command::new(executable)
-                .arg(tier.as_str())
+                .arg(argument)
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::null())
@@ -272,7 +365,7 @@ impl Settings {
             while let Ok(line) = lines.recv().await {
                 let stop = !matches!(line, FetchLine::Progress(..));
                 let alive = this.update(cx, |this: &mut Settings, cx| {
-                    this.apply_fetch_line(line, cx);
+                    this.apply_fetch_line(voice, line, cx);
                     cx.notify();
                 });
                 if alive.is_err() || stop {
@@ -283,21 +376,26 @@ impl Settings {
         .detach();
     }
 
-    fn apply_fetch_line(&mut self, line: FetchLine, cx: &mut Context<Self>) {
+    fn apply_fetch_line(&mut self, voice: bool, line: FetchLine, cx: &mut Context<Self>) {
+        let slot = if voice {
+            &mut self.intelligence.voice_download
+        } else {
+            &mut self.intelligence.download
+        };
         match line {
             FetchLine::Progress(done, total) => {
-                if let Some(download) = self.intelligence.download.as_mut() {
+                if let Some(download) = slot.as_mut() {
                     download.done = done;
                     download.total = total.max(1);
                 }
             }
             FetchLine::Done => {
-                self.intelligence.download = None;
+                *slot = None;
                 // The refresh sees the model and warms it up.
                 self.refresh_intelligence(cx);
             }
             FetchLine::Failed(message) => {
-                self.intelligence.download = None;
+                *slot = None;
                 self.intelligence.error = Some(format!("The download stopped: {message}.").into());
                 self.refresh_intelligence(cx);
             }
@@ -307,15 +405,7 @@ impl Settings {
     /// Stop the download; the partial file stays, so it can resume.
     pub(in crate::controller) fn cancel_intelligence_download(&mut self, cx: &mut Context<Self>) {
         if let Some(download) = &self.intelligence.download {
-            let child = download.child.clone();
-            blocking::unblock(move || {
-                if let Ok(mut slot) = child.lock() {
-                    if let Some(process) = slot.as_mut() {
-                        let _ = process.kill();
-                    }
-                }
-            })
-            .detach();
+            kill_download(download);
         }
         cx.notify();
     }
@@ -439,6 +529,19 @@ impl Settings {
         })
         .detach();
     }
+}
+
+/// Stop a download's helper; the partial file stays, so it can resume.
+fn kill_download(download: &Download) {
+    let child = download.child.clone();
+    blocking::unblock(move || {
+        if let Ok(mut slot) = child.lock() {
+            if let Some(process) = slot.as_mut() {
+                let _ = process.kill();
+            }
+        }
+    })
+    .detach();
 }
 
 #[cfg(test)]

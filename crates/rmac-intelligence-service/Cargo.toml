@@ -16,6 +16,16 @@ path = "src/bin/rmac-intelligence-service.rs"
 name = "rmac-intelligence-bench"
 path = "src/bin/rmac-intelligence-bench.rs"
 
+# org.rmac.Voice1: hold-to-talk speech to text (ADR 0024 §8).
+[[bin]]
+name = "rmac-voice-service"
+path = "src/bin/rmac-voice-service.rs"
+
+# Measures the voice model on recorded clips. Not packaged.
+[[bin]]
+name = "rmac-voice-bench"
+path = "src/bin/rmac-voice-bench.rs"
+
 [dependencies]
 async-channel.workspace = true
 async-io.workspace = true
@@ -32,6 +42,10 @@ zbus.workspace = true
 # never compile it.
 [target.'cfg(target_os = "linux")'.dependencies]
 llama-cpp-2.workspace = true
+# Moonshine speech to text (ADR 0024 §8) through the system ONNX Runtime
+# (Ubuntu's libonnxruntime, MIT), loaded with dlopen when a capture
+# starts: nothing native is built or downloaded.
+ort.workspace = true
 
 # The caller-check tests open pidfds (pidfd_open).
 [target.'cfg(target_os = "linux")'.dev-dependencies]

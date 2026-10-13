@@ -308,6 +308,8 @@ pub(super) struct GraphMetadata {
     /// `node.name` of the node named by the `default` metadata object's
     /// `default.audio.source` key, if any and unambiguous.
     pub(super) default_source: Option<String>,
+    /// Running capture streams' application names ([`recording_stream`]).
+    pub(super) recording: Vec<String>,
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -353,6 +355,7 @@ pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
         outputs,
         inputs,
         hardware_devices,
+        recording: graph.recording,
     })
 }
 
@@ -960,6 +963,39 @@ pub(super) fn graph_devices(graph: &GraphMetadata, kind: DeviceKind) -> Vec<Devi
     devices
 }
 
+/// The application name of a capture stream that is recording now: a
+/// `Stream/Input/Audio` node in the `running` state. Monitor streams (an app
+/// recording what the speakers play, or a level meter on a sink monitor)
+/// are not the microphone and are left out, as the Mac's indicator does.
+#[cfg(any(not(target_os = "macos"), test))]
+pub(super) fn recording_stream(
+    object: &serde_json::Value,
+    props: &serde_json::Value,
+) -> Option<String> {
+    use serde_json::Value;
+
+    let state = object
+        .get("info")
+        .and_then(|info| info.get("state"))
+        .and_then(Value::as_str);
+    if state != Some("running") {
+        return None;
+    }
+    let monitor = |key: &str| match props.get(key) {
+        Some(Value::Bool(value)) => *value,
+        Some(Value::String(value)) => value == "true",
+        _ => false,
+    };
+    if monitor("stream.monitor") || monitor("stream.capture.sink") {
+        return None;
+    }
+    ["application.name", "node.description", "node.name"]
+        .into_iter()
+        .find_map(|key| props.get(key).and_then(Value::as_str))
+        .map(bounded_label)
+        .filter(|name| !name.is_empty())
+}
+
 #[cfg(any(not(target_os = "macos"), test))]
 pub(super) fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Error> {
     use serde_json::Value;
@@ -1000,6 +1036,15 @@ pub(super) fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Erro
                 let kind = match props.get("media.class").and_then(Value::as_str) {
                     Some("Audio/Sink") => DeviceKind::Output,
                     Some("Audio/Source") => DeviceKind::Input,
+                    Some("Stream/Input/Audio") => {
+                        if let Some(name) = recording_stream(object, props) {
+                            if !graph.recording.contains(&name) && graph.recording.len() < 16 {
+                                graph.recording.push(name);
+                                graph.recording.sort();
+                            }
+                        }
+                        continue;
+                    }
                     _ => continue,
                 };
                 match kind {

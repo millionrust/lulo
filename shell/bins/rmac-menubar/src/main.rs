@@ -4814,6 +4814,14 @@ mod linux_wayland {
                                     }
                                     if is_battery {
                                         item.child(battery_glyph(snapshot.battery))
+                                    } else if indicator.kind == TopBarIndicatorKind::Microphone {
+                                        // BAR-09: the Mac's orange privacy dot.
+                                        item.child(
+                                            div()
+                                                .size(px(7.0))
+                                                .rounded_full()
+                                                .bg(rgba(tokens::system_orange())),
+                                        )
                                     } else {
                                         let (width, height) = status_icon_size(indicator.kind);
                                         item.child(
@@ -5359,6 +5367,8 @@ mod linux_wayland {
             TopBarIndicatorKind::Sound => "sound.svg",
             TopBarIndicatorKind::Battery => "battery.svg",
             TopBarIndicatorKind::Notifications => "notifications.svg",
+            // Drawn as a dot, not a glyph; it opens Control Centre.
+            TopBarIndicatorKind::Microphone => "control-center.svg",
         };
         shell_icon_path(file)
     }

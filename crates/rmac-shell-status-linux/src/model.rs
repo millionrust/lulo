@@ -105,6 +105,24 @@ pub(crate) enum PropertyChange {
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) const SIGNAL_STRENGTH_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// python-dbusmock's call log: every method call a mocked service answers
+/// is announced as a `MethodCalled` signal on this interface, from the same
+/// object path the watcher subscribes to. Reading a mocked service to
+/// refresh therefore produced the signal that asked for the next refresh,
+/// about 190 full re-reads a second for as long as a panel was open in the
+/// nested behaviour sessions (the runtime CI measured Control Centre at 44%
+/// of a core while idle). Real services never emit it, and it carries no
+/// state the shell shows.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) const MOCK_CALL_LOG_INTERFACE: &str = "org.freedesktop.DBus.Mock";
+
+/// Classify a signal that is not `PropertiesChanged` by the interface that
+/// sent it; `None` when the signal can mean something the shell shows.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn signal_interface_change(interface: Option<&str>) -> Option<PropertyChange> {
+    (interface == Some(MOCK_CALL_LOG_INTERFACE)).then_some(PropertyChange::Unshown)
+}
+
 /// Classify a `PropertiesChanged` signal by its changed property names.
 ///
 /// NetworkManager republishes the Wi-Fi link's bitrate and access-point

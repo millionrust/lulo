@@ -263,8 +263,13 @@ drew Inter's CFF outlines with its own hinting and antialiasing, where
   every process (about 600 KB an Inter face; 2.4 MB for the four faces
   shipped before this branch).
 - The CI window scenes (`shell-scenes.yml`) put Calculator and Text Editor
-  from the same commit side by side; the zoomed text is pixel-alike, LCD
-  fringes included.
+  from the same commit side by side (mean difference about 1 in 255, the
+  title bar band under 3). On the owner's laptop, against the same apps
+  in a nested Lulo OS at scale 1, Text Editor's toolbar text now differs
+  by a mean of 2.2 in 255 (DirectWrite: 6.0) and Files' sidebar by 5.7 to
+  8.3 (DirectWrite: 11.6 to 13.9; the rest is the words Windows' Files uses
+  and icons a debug build does not embed).
+- `RMAC_TEXT_TRACE=1` reports on stderr which faces swash took over.
 
 ## Consequences
 

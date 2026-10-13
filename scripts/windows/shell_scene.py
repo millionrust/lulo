@@ -51,7 +51,6 @@ SW_HIDE = 0
 SW_SHOWNOACTIVATE = 4
 GWL_EXSTYLE = -20
 WS_EX_TOOLWINDOW = 0x80
-DWMWA_EXTENDED_FRAME_BOUNDS = 9
 
 
 def empty_recycle_bin() -> None:
@@ -84,13 +83,12 @@ def hide_other_windows() -> list[int]:
 
 
 def app_window(pid: int) -> tuple[int, int, int, int] | None:
-    """The screen box of `pid`'s visible app window: DWM's frame bounds, the
+    """The screen box of `pid`'s visible app window: its client area, the
     window as drawn, without any shadow round it. Shell surfaces (tool
     windows) are skipped."""
     from ctypes import wintypes
 
     user32 = ctypes.windll.user32
-    dwmapi = ctypes.windll.dwmapi
     found: list[tuple[int, int, int, int]] = []
     callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
@@ -101,12 +99,16 @@ def app_window(pid: int) -> tuple[int, int, int, int] | None:
             return True
         if user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW:
             return True
+        # The client area is the visible window (its swap chain): Lulo's
+        # own frame keeps resize borders and its shadow outside it
+        # (op/win-corners), so the frame bounds are larger than the window.
         rect = wintypes.RECT()
-        if dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, ctypes.byref(rect),
-                                        ctypes.sizeof(rect)) != 0:
-            user32.GetWindowRect(hwnd, ctypes.byref(rect))
-        if rect.right - rect.left > 50 and rect.bottom - rect.top > 50:
-            found.append((rect.left, rect.top, rect.right, rect.bottom))
+        user32.GetClientRect(hwnd, ctypes.byref(rect))
+        origin = wintypes.POINT(0, 0)
+        user32.ClientToScreen(hwnd, ctypes.byref(origin))
+        width, height = rect.right - rect.left, rect.bottom - rect.top
+        if width > 50 and height > 50:
+            found.append((origin.x, origin.y, origin.x + width, origin.y + height))
         return True
 
     user32.EnumWindows(callback_type(visit), 0)

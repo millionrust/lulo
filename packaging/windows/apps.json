@@ -98,7 +98,7 @@
     "extensions": []
   },
   {
-    "id": "calendar-agent",
+    "id": "lulo-calendar-agent",
     "display_name": "Calendar Reminders",
     "bin": "rmac-calendar-agent",
     "extensions": [],

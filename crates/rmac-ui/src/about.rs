@@ -110,6 +110,20 @@ fn bundled_icon(app_id: &str) -> Option<PathBuf> {
             "weather",
             include_bytes!("../../../assets/icons/weather.svg"),
         ),
+        id::SYSTEM_MONITOR => (
+            "system-monitor",
+            include_bytes!("../../../assets/icons/system-monitor.svg"),
+        ),
+        id::MAIL => ("mail", include_bytes!("../../../assets/icons/mail.svg")),
+        id::CALENDAR => (
+            "calendar",
+            include_bytes!("../../../assets/icons/calendar.svg"),
+        ),
+        id::PLAYER => ("player", include_bytes!("../../../assets/icons/player.svg")),
+        "org.rmac.ArchiveUtility" => (
+            "archive-utility",
+            include_bytes!("../../../assets/icons/archive-utility.svg"),
+        ),
         _ => return None,
     };
     let directory = std::env::temp_dir().join("lulo-about-icons");
@@ -246,6 +260,6 @@ mod tests {
             assert!(root.join(&icon).is_file(), "{icon} is missing");
             checked += 1;
         }
-        assert_eq!(checked, 9);
+        assert_eq!(checked, 14);
     }
 }

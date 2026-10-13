@@ -366,16 +366,23 @@ impl QuickSettingsView {
 
     /// Now Playing for the active MPRIS player: 140 × 140, two rows tall.
     pub(super) fn now_playing(&self, x: f32, y: f32, cx: &Context<Self>) -> AnyElement {
-        let Some(player) = self.player.as_ref() else {
-            return div().into_any_element();
-        };
+        // The Mac always shows the tile; with no player it reads "Not
+        // Playing" and the transport controls are dimmed (CC-02).
+        let player = self.player.as_ref();
         let title = player
-            .title
-            .clone()
-            .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| player.identity.clone());
-        let artist = player.artist.clone().filter(|artist| !artist.is_empty());
-        let playing = player.status == rmac_media::PlaybackStatus::Playing;
+            .map(|player| {
+                player
+                    .title
+                    .clone()
+                    .filter(|title| !title.is_empty())
+                    .unwrap_or_else(|| player.identity.clone())
+            })
+            .unwrap_or_else(|| "Not Playing".to_owned());
+        let artist = player
+            .and_then(|player| player.artist.clone())
+            .filter(|artist| !artist.is_empty());
+        let playing =
+            player.is_some_and(|player| player.status == rmac_media::PlaybackStatus::Playing);
         let text_width = PILL_WIDTH - 15.0 - 13.0;
         let text = match artist {
             Some(artist) => layer()
@@ -421,7 +428,7 @@ impl QuickSettingsView {
         ]
         .into_iter()
         .map(|(id, (path, width, height), centre, command)| {
-            let supported = command.supported_by(player);
+            let supported = player.is_some_and(|player| command.supported_by(player));
             let view = cx.entity().downgrade();
             let label = match id {
                 "previous" => "Previous Track",

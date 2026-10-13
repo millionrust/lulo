@@ -322,6 +322,9 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
     // through the installed shortcut.
     #[cfg(windows)]
     set_app_user_model_id(app_id);
+    // Its windows' corner radius follows the app (window_frame_windows).
+    #[cfg(windows)]
+    crate::window_frame_windows::set_app_id(app_id);
     // Windows has no Lulo menu bar yet: a later launch reaches this process
     // over a named pipe instead of D-Bus (ADR 0023).
     #[cfg(windows)]

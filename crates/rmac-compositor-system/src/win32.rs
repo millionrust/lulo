@@ -59,6 +59,10 @@ const SHELL_CLASSES: [&str; 5] = [
     "Windows.UI.Core.CoreWindow",
 ];
 
+/// The class of the shadow window round each Lulo app window
+/// (`shell/compat/gpui_windows/src/rmac_window_frame.rs`).
+const WINDOW_SHADOW_CLASS: &str = "LuloWindowShadow";
+
 /// Why the window list cannot be followed.
 #[derive(Debug)]
 pub enum Error {
@@ -333,6 +337,11 @@ unsafe extern "system" fn on_event(
     // SAFETY: no arguments.
     let own = process_id(hwnd) == unsafe { GetCurrentProcessId() };
     if own && event != EVENT_SYSTEM_FOREGROUND {
+        return;
+    }
+    // A Lulo app window's shadow (gpui_windows' `rmac_window_frame.rs`)
+    // shows and hides with its window, which already reports it.
+    if class_name(hwnd) == WINDOW_SHADOW_CLASS {
         return;
     }
     if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {

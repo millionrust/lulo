@@ -16,6 +16,11 @@ never reads or writes a real profile. For each app the check:
 5. for Text Editor, launches the app a second time with no arguments and
    checks that launch hands off to the running process (it exits and a
    window opens in the first one) instead of starting a second app.
+6. for Calculator and Text Editor, before any key, puts a blue backdrop
+   behind the window and checks its frame (ADR 0023 "Window chrome",
+   WIN-OS-73): outside the arc of Lulo's corner radius (27 pt and 16 pt)
+   the backdrop shows, just inside it the window does, and the Mac shadow
+   beside the window fades with distance and ends at its margin.
 
 For Preview, a tiny one-page PDF (a red square, written by this script —
 no poppler or other PDF tool involved) is passed on the command line, and
@@ -595,6 +600,179 @@ def has_reddish_pixel(image) -> bool:
     return False
 
 
+#: Lulo's window corner radius (pt) for the apps whose frame is checked:
+#: niri's unified-toolbar radius for Calculator, the title-bar radius for
+#: Text Editor (`rmac_design::Radii`, `packaging/rmac-session/shell.kdl`).
+FRAME_RADIUS = {"rmac-calculator": 27, "rmac-text-editor": 16}
+#: A saturated blue no Lulo window is, put behind the window for the check.
+BACKDROP = (32, 96, 255)
+#: The backdrop reaches this far (pt) past the window on every side.
+BACKDROP_MARGIN = 110
+
+
+def window_scale(hwnd: int) -> float:
+    try:
+        dpi = user32().GetDpiForWindow(wintypes.HWND(hwnd))
+    except AttributeError:
+        dpi = 96
+    return (dpi or 96) / 96
+
+
+def client_rect_on_screen(hwnd: int) -> tuple[int, int, int, int]:
+    """The window's client area, the visible window (its swap chain)."""
+    rect = wintypes.RECT()
+    user32().GetClientRect(hwnd, ctypes.byref(rect))
+    left, top = client_origin(hwnd)
+    return left, top, left + rect.right - rect.left, top + rect.bottom - rect.top
+
+
+def backdrop_share(colour: tuple[int, int, int]) -> float | None:
+    """How much of the backdrop shows in `colour`, if `colour` is the
+    backdrop darkened by a black shadow (a share of 1.0 is the bare
+    backdrop); `None` when it is anything else, such as the window."""
+    red, green, blue = colour[:3]
+    share = blue / BACKDROP[2]
+    if blue < 40:
+        return None
+    if abs(red - BACKDROP[0] * share) > 14 or abs(green - BACKDROP[1] * share) > 14:
+        return None
+    return share
+
+
+def open_backdrop(rect: tuple[int, int, int, int]) -> subprocess.Popen | None:
+    """A borderless window of `BACKDROP` covering `rect`, from Tk."""
+    left, top, right, bottom = rect
+    script = (
+        "import tkinter\n"
+        "root = tkinter.Tk()\n"
+        "root.overrideredirect(True)\n"
+        f"root.geometry('{right - left}x{bottom - top}+{left}+{top}')\n"
+        f"root.configure(background='#{BACKDROP[0]:02x}{BACKDROP[1]:02x}{BACKDROP[2]:02x}')\n"
+        "root.mainloop()\n"
+    )
+    try:
+        return subprocess.Popen([sys.executable, "-c", script])
+    except OSError:
+        return None
+
+
+def check_window_frame(app: str, hwnd: int, screenshots: Path | None) -> str | None:
+    """ADR 0023 "Window chrome" (WIN-OS-73): the window is drawn as on Lulo
+    OS and macOS, over a contrasting backdrop. Outside the arc of Lulo's
+    corner radius the backdrop shows through (darkened only by the shadow),
+    just inside it the window does; and beside the window the shadow fades
+    out with distance, back to the bare backdrop past its margin."""
+    radius_pt = FRAME_RADIUS.get(app)
+    if radius_pt is None:
+        return None
+    if grab((0, 0, 1, 1)) is None:
+        print(f"{app}: window frame check skipped (Pillow is not installed)")
+        return None
+    scale = window_scale(hwnd)
+    left, top, right, bottom = client_rect_on_screen(hwnd)
+    screen_width = user32().GetSystemMetrics(0)
+    screen_height = user32().GetSystemMetrics(1)
+    margin = round(BACKDROP_MARGIN * scale)
+    area = (
+        max(left - margin, 0),
+        max(top - margin, 0),
+        min(right + margin, screen_width),
+        min(bottom + margin, screen_height),
+    )
+    backdrop = open_backdrop(area)
+    if backdrop is None:
+        return "could not open the backdrop window for the frame check"
+    try:
+        time.sleep(1.5)
+        if not bring_forward(hwnd):
+            return "could not bring the window over the frame check's backdrop"
+        time.sleep(1.0)
+        left, top, right, bottom = client_rect_on_screen(hwnd)
+        image = grab(area)
+        if image is None:
+            return None
+        image = image.convert("RGB")
+
+        def at(x: int, y: int) -> tuple[int, int, int]:
+            return image.getpixel((x - area[0], y - area[1]))
+
+        radius = radius_pt * scale
+        # The arc meets the diagonal r(1 - 1/sqrt 2) in from the corner.
+        diagonal = radius * (1 - 2**-0.5)
+        outside = max(int(diagonal - 3 * scale), 0)
+        inside = int(diagonal + 3 * scale) + 1
+        corners = {
+            "top left": ((left + outside, top + outside), (left + inside, top + inside)),
+            "top right": ((right - 1 - outside, top + outside), (right - 1 - inside, top + inside)),
+        }
+        if bottom + 2 < screen_height:
+            corners["bottom left"] = (
+                (left + outside, bottom - 1 - outside),
+                (left + inside, bottom - 1 - inside),
+            )
+        errors: list[str] = []
+        for name, (clear, filled) in corners.items():
+            clear_colour, filled_colour = at(*clear), at(*filled)
+            print(
+                f"{app}: {name} corner (radius {radius_pt} pt): {clear_colour} outside the arc, "
+                f"{filled_colour} just inside it"
+            )
+            if backdrop_share(clear_colour) is None:
+                errors.append(
+                    f"its {name} corner is not clear outside a {radius_pt} pt arc ({clear_colour})"
+                )
+            if backdrop_share(filled_colour) is not None:
+                errors.append(f"its {name} corner is clear inside a {radius_pt} pt arc ({filled_colour})")
+        diagonal_colours = [at(left + step, top + step) for step in range(0, int(diagonal) + 4)]
+        print(f"{app}: top-left diagonal {diagonal_colours}")
+        # The shadow beside a side edge (the right one, or the left one if
+        # the window is near the screen's right), half way down: darkest at
+        # the edge, fading with distance, gone past the margin.
+        y = (top + bottom) // 2
+        distances = [2, 10, 20, 32]
+        room = round(60 * scale)
+        if right + room < area[2]:
+            side, outward = "right", [right - 1 + round(d * scale) for d in distances]
+            past = min(right + margin - 4, area[2] - 1)
+        else:
+            side, outward = "left", [left - round(d * scale) for d in distances]
+            past = max(left - margin + 4, area[0])
+        shares = [backdrop_share(at(x, y)) for x in outward]
+        beyond = backdrop_share(at(past, y))
+        print(
+            f"{app}: beside its {side} edge the backdrop shows {shares} at {distances} pt, "
+            f"{beyond} past the shadow"
+        )
+        if any(share is None for share in shares) or beyond is None:
+            errors.append(f"beside its {side} edge the screen is not the shadowed backdrop ({shares})")
+        else:
+            if not all(a < b for a, b in zip(shares, shares[1:])):
+                errors.append(f"its shadow does not fade with distance ({shares})")
+            if shares[0] > 0.85:
+                errors.append(f"it casts no shadow beside its edge ({shares[0]:.2f} of the backdrop shows)")
+            if beyond < 0.95:
+                errors.append(f"its shadow reaches past its margin ({beyond:.2f} of the backdrop shows)")
+        if screenshots is not None:
+            save(image, screenshots / f"{app}-frame.png")
+            corner = image.crop(
+                (
+                    left - area[0] - round(16 * scale),
+                    top - area[1] - round(16 * scale),
+                    left - area[0] + round(48 * scale),
+                    top - area[1] + round(48 * scale),
+                )
+            )
+            save(corner.resize((corner.width * 6, corner.height * 6), 0), screenshots / f"{app}-corner.png")
+        if errors:
+            return "window frame: " + "; ".join(errors)
+        print(f"{app}: window frame OK: {radius_pt} pt corners clear outside the arc, Mac shadow")
+        return None
+    finally:
+        backdrop.kill()
+        backdrop.wait(timeout=30)
+        time.sleep(0.3)
+
+
 def check_preview_pdf(hwnd: int, screenshots: Path | None) -> str | None:
     """Preview opened with the fixture PDF on its command line: wait for
     Windows.Data.Pdf (`rmac-preview`'s `winpdf` module, ADR 0023 phase 2c)
@@ -774,11 +952,14 @@ def launch(
                 for thread, thread_ticks in threads[:6]
             ]
 
+        # Before the keys and menus below, which open panels over it.
+        frame_error = check_window_frame(app, hwnd, screenshots)
         if not bring_forward(hwnd):
             return "could not bring the window forward to test its keys"
         errors = [
             error
             for error in (
+                frame_error,
                 check_menu_strip(app, hwnd, screenshots),
                 check_menu_command(app, process, hwnd),
                 check_new_shortcut(app, process, screenshots),

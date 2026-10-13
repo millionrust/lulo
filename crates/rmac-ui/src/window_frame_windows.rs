@@ -1,19 +1,24 @@
-//! The hairline round every Lulo app window on Windows (ADR 0023 "Lulo
-//! mode", WIN-OS-42).
+//! The Mac window frame round every Lulo app window on Windows (ADR 0023
+//! "Window chrome", WIN-OS-42 and WIN-OS-73).
 //!
-//! `gpui_windows` gives each app window DWM's soft shadow and Windows 11's
-//! rounded corners. The 1 px edge DWM draws round it is the Mac's window
-//! hairline here, in Lulo's own appearance rather than Windows': a dark
-//! window gets a light rim and a light one a soft grey edge, both made from
-//! the theme's separator over the window colour. It is set when a window's
-//! root view is made and again whenever the theme changes. Shell surfaces
-//! (tool windows: the menu bar, Dock, Spotlight, menus) draw their own
-//! edges and are left alone.
+//! On Lulo OS niri rounds each app window at Lulo's window radius, casts
+//! the Mac's soft shadow and the window's own hairline shows. Windows 11
+//! only rounds at a small fixed radius, so each app window asks
+//! `gpui_windows` to draw the same frame itself (`Window::set_frame_style`):
+//! the radius niri gives this app ([`crate::window::window_corner_radius`]),
+//! the key and non-key window shadows (`rmac_design::Elevation`, the values
+//! niri is configured with), and the hairline in Lulo's own appearance
+//! rather than Windows': a dark window gets a light rim and a light one a
+//! soft grey edge, both the theme's separator over the window colour. It is
+//! set when a window's root view is made and again whenever the theme
+//! changes. Shell surfaces (tool windows: the menu bar, Dock, Spotlight,
+//! menus) draw their own shapes and are left alone.
 
-use gpui::Window;
+use std::sync::OnceLock;
+
+use gpui::{px, Window, WindowFrameShadow, WindowFrameStyle};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Foundation::{COLORREF, HWND};
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW};
 
 use crate::theme::RgbaColor;
@@ -23,7 +28,15 @@ use crate::theme::RgbaColor;
 /// inside a window is barely there.
 const EDGE_STRENGTH: f32 = 2.5;
 
-/// Watch for new app windows and give each its edge.
+/// This process's app id, which picks its corner radius.
+static APP_ID: OnceLock<&'static str> = OnceLock::new();
+
+/// Remember the app id (the app menu installs it before any window opens).
+pub(crate) fn set_app_id(app_id: &'static str) {
+    let _ = APP_ID.set(app_id);
+}
+
+/// Watch for new app windows and give each its frame.
 pub(crate) fn install(cx: &mut gpui::App) {
     cx.observe_new::<crate::window::Root>(|_, window, _| {
         if let Some(window) = window {
@@ -53,6 +66,44 @@ fn blend(base: RgbaColor, over: RgbaColor, strength: f32) -> RgbaColor {
     }
 }
 
+fn gpui_rgba(colour: RgbaColor) -> gpui::Rgba {
+    gpui::Rgba {
+        r: f32::from(colour.red) / 255.0,
+        g: f32::from(colour.green) / 255.0,
+        b: f32::from(colour.blue) / 255.0,
+        a: f32::from(colour.alpha) / 255.0,
+    }
+}
+
+fn shadow(shadow: rmac_design::WindowShadow) -> WindowFrameShadow {
+    WindowFrameShadow {
+        blur: px(shadow.softness),
+        offset_y: px(shadow.offset_y),
+        color: gpui::Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: (shadow.color.0 & 0xff) as f32 / 255.0,
+        },
+    }
+}
+
+/// The frame for this app's windows in the current theme.
+fn style() -> WindowFrameStyle {
+    let radii = crate::theme::current().radii;
+    let elevation = rmac_design::Elevation::resolve(rmac_appearance::Contrast::Normal);
+    WindowFrameStyle {
+        corner_radius: px(crate::window::window_corner_radius(
+            APP_ID.get().copied().unwrap_or_default(),
+            radii.window,
+            radii.window_toolbar,
+        )),
+        edge: gpui_rgba(edge_colour()),
+        active_shadow: shadow(elevation.window_active),
+        inactive_shadow: shadow(elevation.window_inactive),
+    }
+}
+
 fn hwnd(window: &Window) -> Option<HWND> {
     let handle = HasWindowHandle::window_handle(window).ok()?;
     match handle.as_raw() {
@@ -61,31 +112,17 @@ fn hwnd(window: &Window) -> Option<HWND> {
     }
 }
 
-/// Give `window` the edge for the current theme.
+/// Give `window` the frame for the current theme.
 pub(crate) fn apply(window: &Window) {
     let Some(hwnd) = hwnd(window) else {
         return;
     };
     // SAFETY: reads the style of a window this process owns.
-    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
-    if style & WS_EX_TOOLWINDOW.0 != 0 {
+    let style_bits = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+    if style_bits & WS_EX_TOOLWINDOW.0 != 0 {
         return;
     }
-    let edge = edge_colour();
-    // COLORREF is 0x00BBGGRR.
-    let colour =
-        COLORREF(u32::from(edge.red) | (u32::from(edge.green) << 8) | (u32::from(edge.blue) << 16));
-    // SAFETY: a COLORREF-sized attribute of a window this process owns.
-    // Windows 10 does not know the attribute and refuses it; nothing else
-    // changes there.
-    let _ = unsafe {
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_BORDER_COLOR,
-            &colour as *const COLORREF as *const core::ffi::c_void,
-            std::mem::size_of::<COLORREF>() as u32,
-        )
-    };
+    window.set_frame_style(style());
 }
 
 #[cfg(test)]
@@ -109,5 +146,17 @@ mod tests {
         // Never more than the separator colour itself.
         let full = blend(window, RgbaColor::opaque(0xffffff), EDGE_STRENGTH);
         assert_eq!(full.red, 0xff);
+    }
+
+    #[test]
+    fn the_shadows_are_niris() {
+        let elevation = rmac_design::Elevation::resolve(rmac_appearance::Contrast::Normal);
+        let active = shadow(elevation.window_active);
+        assert_eq!(active.blur, px(42.0));
+        assert_eq!(active.offset_y, px(16.0));
+        assert!((active.color.a - 0xbd as f32 / 255.0).abs() < 1e-6);
+        let inactive = shadow(elevation.window_inactive);
+        assert_eq!(inactive.blur, px(26.0));
+        assert!((inactive.color.a - 0x75 as f32 / 255.0).abs() < 1e-6);
     }
 }

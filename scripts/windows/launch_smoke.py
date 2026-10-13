@@ -798,6 +798,9 @@ def launch(
             measurement["active_ticks"] = round(active_ticks, 3)
             print(f"{app}: CPU over {IDLE_WINDOW_SECONDS:.0f} s while it is the active window = {active_ticks:.2f} ticks")
             ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+            # Longer than its slowest refresh period (5 s), so a refresh that
+            # was already due when the window went away has run.
+            time.sleep(7)
             idle = measure_idle_cpu(process.pid, log=log)
             ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
         memory = process_memory_mb(process.pid)

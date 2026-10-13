@@ -1767,6 +1767,14 @@ const MONITOR_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Close", "activity_monitor::Close", "⌘W"),
             item!("Close All", "activity_monitor::CloseAll", "⌥⌘W"),
+            // MON-MENU-002: the process list as shown, through the print
+            // portal (`process_print`).
+            item!(
+                "Print…",
+                "activity_monitor::PrintProcesses",
+                "⌘P",
+                separator
+            ),
         ],
     },
     MenuSpec {

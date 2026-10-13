@@ -14,17 +14,18 @@ use crate::view_filter::ViewFilter;
 use crate::{
     process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, EnterFullScreen,
     FilterProcesses, FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess,
-    JumpToSelection, Minimize, QuitAndKeepWindows, QuitProcess, RefreshEveryFiveSeconds,
-    RefreshEverySecond, RefreshEveryTwoSeconds, SampleProcess, SendSignalToProcess,
-    SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses, ShowAllProcesses,
-    ShowAllProcessesHierarchically, ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess,
-    ShowGpuHistoryWindow, ShowGpuProcesses, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
-    ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ShowWindowedProcesses,
-    ToggleBytesReadColumn, ToggleBytesWrittenColumn, ToggleCompressedColumn, ToggleCpuColumn,
-    ToggleCpuTimeColumn, ToggleEnergyColumn, ToggleFootprintColumn, ToggleGpuPercentColumn,
-    ToggleGpuTimeColumn, ToggleIdleWakeUpsColumn, ToggleKindColumn, ToggleMemoryColumn,
-    TogglePidColumn, ToggleRealPrivateColumn, ToggleRealSharedColumn, ToggleSandboxColumn,
-    ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
+    JumpToSelection, Minimize, PrintProcesses, QuitAndKeepWindows, QuitProcess,
+    RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds, SampleProcess,
+    SendSignalToProcess, SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses,
+    ShowAllProcesses, ShowAllProcessesHierarchically, ShowCpuHistoryWindow, ShowCpuUsageWindow,
+    ShowDeltasForProcess, ShowGpuHistoryWindow, ShowGpuProcesses, ShowInactiveProcesses,
+    ShowMainWindow, ShowMyProcesses, ShowOtherUsersProcesses, ShowSelectedProcesses,
+    ShowSystemProcesses, ShowWindowedProcesses, ToggleBytesReadColumn, ToggleBytesWrittenColumn,
+    ToggleCompressedColumn, ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn,
+    ToggleFootprintColumn, ToggleGpuPercentColumn, ToggleGpuTimeColumn, ToggleIdleWakeUpsColumn,
+    ToggleKindColumn, ToggleMemoryColumn, TogglePidColumn, ToggleRealPrivateColumn,
+    ToggleRealSharedColumn, ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn,
+    UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -166,6 +167,9 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ShowInactiveProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::InactiveProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PrintProcesses, window, cx| {
+                this.print_processes(window, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowGpuProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::GpuProcesses, cx);

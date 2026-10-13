@@ -402,6 +402,18 @@ impl ProcessTableDelegate {
         self.fill_extras();
     }
 
+    /// The visible columns' titles and the cells of every shown row, for
+    /// File ▸ Print….
+    pub(crate) fn printable(&self) -> (Vec<&'static str>, Vec<Vec<String>>) {
+        let titles = self.visible.iter().map(|key| key.title()).collect();
+        let rows = self
+            .rows
+            .iter()
+            .map(|row| self.visible.iter().map(|&key| row.cell_text(key)).collect())
+            .collect();
+        (titles, rows)
+    }
+
     /// Set the selected PID and keep the AT-SPI projection's per-row
     /// `selected` flag in sync. This is the only place `selected_pid` should
     /// be assigned from outside this module.

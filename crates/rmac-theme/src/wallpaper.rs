@@ -42,6 +42,27 @@ struct StoredWallpaperColors {
     colors: WallpaperColors,
 }
 
+/// Windows has no `XDG_RUNTIME_DIR`. The Lulo layer's desktop (the same
+/// wallpaper view as Lulo OS) and the apps both find the colours under the
+/// per-user state folder rmac-ui gives every Lulo process there
+/// (`XDG_STATE_HOME`, by default `%LOCALAPPDATA%\Lulo\State`), so app windows
+/// take the wallpaper's tint as they do on Lulo OS.
+#[cfg(windows)]
+fn windows_runtime_dir() -> Option<PathBuf> {
+    let absolute = |name: &str| {
+        env::var_os(name)
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+    };
+    absolute("XDG_STATE_HOME")
+        .or_else(|| absolute("LOCALAPPDATA").map(|local| local.join("Lulo").join("State")))
+}
+
+#[cfg(not(windows))]
+fn windows_runtime_dir() -> Option<PathBuf> {
+    None
+}
+
 /// `$XDG_RUNTIME_DIR/rmac/wallpaper-colors.json` authority.
 #[derive(Clone, Debug)]
 pub struct WallpaperColorStore {
@@ -53,6 +74,7 @@ impl WallpaperColorStore {
         let runtime = env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
+            .or_else(windows_runtime_dir)
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::NotFound,

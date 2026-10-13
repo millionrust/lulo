@@ -75,7 +75,13 @@ def compare(linux_path: Path, windows_path: Path, blur: float, pixel_threshold: 
     linux = Image.open(linux_path).convert("RGB")
     windows = Image.open(windows_path).convert("RGB")
     sizes = (linux.size, windows.size)
-    if windows.size != linux.size:
+    if windows.size != linux.size and kind == "window":
+        # Two windows of slightly different sizes line up at their top-left
+        # corner (title bar, toolbar, sidebar): compare what both show.
+        common = (min(linux.width, windows.width), min(linux.height, windows.height))
+        linux = linux.crop((0, 0, *common))
+        windows = windows.crop((0, 0, *common))
+    elif windows.size != linux.size:
         windows = windows.resize(linux.size, Image.Resampling.LANCZOS)
     soft_linux = linux.filter(ImageFilter.GaussianBlur(blur))
     soft_windows = windows.filter(ImageFilter.GaussianBlur(blur))

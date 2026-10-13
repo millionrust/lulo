@@ -2255,6 +2255,39 @@ mod tests {
         assert_eq!(store.count().unwrap(), 0);
     }
 
+    #[test]
+    fn undo_reports_the_steps_redo_must_repeat_in_their_original_order() {
+        let root = TestDirectory::new("redo-steps");
+        let store = UndoStore::open(root.0.join("undo")).unwrap();
+        let first = root.0.join("first");
+        let second = root.0.join("second");
+        with_undo_batch(|| {
+            for folder in [&first, &second] {
+                fs::create_dir(folder).unwrap();
+                store.archive_created_folder(folder).unwrap();
+            }
+        });
+        // The newest receipt has an id that changes with every operation.
+        let before = store.latest().unwrap().unwrap();
+        assert!(!before.id.is_empty());
+        let outcome = store
+            .execute_latest(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            outcome.redo,
+            Some(vec![
+                RedoStep::NewFolder { path: first },
+                RedoStep::NewFolder { path: second },
+            ])
+        );
+        assert!(store.latest().unwrap().is_none());
+    }
+
     impl FileSystem for CrossCopyFileSystem {
         fn create_dir(&self, path: &Path) -> io::Result<()> {
             fs::create_dir(path)
@@ -2542,6 +2575,14 @@ mod tests {
         assert_eq!(fs::read(&source).unwrap(), b"bytes");
         assert!(!destination.exists());
         assert_eq!(journal.undo_store().count().unwrap(), 0);
+        // Redo repeats exactly this copy.
+        assert_eq!(
+            outcome.redo,
+            Some(vec![RedoStep::Copy {
+                from: source,
+                to: destination
+            }])
+        );
     }
 
     #[test]
@@ -2600,11 +2641,13 @@ mod tests {
         ticket.replace_copy().unwrap();
         ticket.commit().unwrap();
 
-        journal
+        let outcome = journal
             .undo_store()
             .execute_latest(&RealFileSystem, &AtomicBool::new(false), &mut |_| {})
             .unwrap()
             .unwrap();
+        // A replacement is not redone blindly: Redo stays unavailable.
+        assert_eq!(outcome.redo, None);
 
         assert_eq!(fs::read(&source).unwrap(), b"new");
         assert_eq!(fs::read(&destination).unwrap(), b"old");

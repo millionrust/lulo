@@ -322,6 +322,7 @@ impl QuickSettingsView {
         })
         .detach();
 
+        let hardware = hardware_now();
         Self {
             token,
             previous_window,
@@ -341,14 +342,14 @@ impl QuickSettingsView {
             dark_mode_override: None,
             hovered_module: None,
             brightness,
-            hardware: hardware_now(),
+            hardware,
             player: None,
             volume_preview: None,
             dragging: None,
             hovered_slider: None,
             slider_bulges: SliderBulges::default(),
             epoch: Instant::now(),
-            surface_height: initial_surface_height(brightness.is_some()),
+            surface_height: initial_surface_height(brightness.is_some(), hidden_pills(&hardware)),
             detail: None,
             others_expanded: false,
             module_focus: None,

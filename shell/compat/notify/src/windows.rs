@@ -138,7 +138,13 @@ impl ReadDirectoryChangesServer {
 
             unsafe {
                 // wait with alertable flag so that the completion routine fires
-                let waitres = WaitForSingleObjectEx(self.wakeup_sem, 100, 1);
+                // rmac: block until an action wakes the server (every sender
+                // releases `wakeup_sem`) or a completion routine runs, instead
+                // of waking every 100 ms: each watcher's thread woke ten times
+                // a second for the life of the process, the idle CPU of every
+                // Lulo app and of lulo-shell on Windows (ADR 0023, "Idle from
+                // the settled mark").
+                let waitres = WaitForSingleObjectEx(self.wakeup_sem, INFINITE, 1);
                 if waitres == WAIT_OBJECT_0 {
                     let _ = self.meta_tx.send(MetaEvent::WatcherAwakened);
                 }
@@ -524,6 +530,8 @@ impl Watcher for ReadDirectoryChangesWatcher {
     fn configure(&mut self, config: Config) -> Result<bool> {
         let (tx, rx) = bounded(1);
         self.tx.send(Action::Configure(config, tx))?;
+        // rmac: the server no longer wakes on its own; wake it for this.
+        self.wakeup_server();
         rx.recv()?
     }
 

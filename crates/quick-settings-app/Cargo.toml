@@ -21,6 +21,8 @@ gpui-component-assets.workspace = true
 rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
 rmac-gtk-settings.workspace = true
+# Which radios this PC has, for the Wi-Fi and Bluetooth pills (ADR 0027).
+rmac-hardware.workspace = true
 rmac-media.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-system.workspace = true

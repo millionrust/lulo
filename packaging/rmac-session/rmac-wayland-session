@@ -159,6 +159,9 @@ prepare_rmac_config()
     packaged_config=/usr/share/rmac/niri/config.kdl
     rmac_config=${config_home}/rmac/niri/config.kdl
     rmac_shortcuts=${config_home}/rmac/niri/shortcuts-generated.kdl
+    # The hardware profile's compositor choices (ADR 0027): a lighter blur
+    # on a low-spec PC. The shell writes it after detecting the hardware.
+    rmac_hardware=${config_home}/rmac/niri/hardware-generated.kdl
     rmac_session_config=${config_home}/rmac/niri/session.kdl
     if [ ! -f "${packaged_config}" ] || [ -L "${packaged_config}" ]; then
         echo "the packaged rmac niri configuration is unavailable" >&2
@@ -180,6 +183,14 @@ prepare_rmac_config()
     # Clear a stale fallback before niri starts. The shortcut broker atomically
     # writes either the portal-owned empty mode or the fallback mode afterward.
     /usr/bin/install -m 0600 /dev/null "${rmac_shortcuts}" || return 1
+    if [ -L "${rmac_hardware}" ] ||
+        { [ -e "${rmac_hardware}" ] && [ ! -f "${rmac_hardware}" ]; }; then
+        echo "the generated rmac hardware configuration is not a regular file" >&2
+        return 1
+    fi
+    if [ ! -e "${rmac_hardware}" ]; then
+        /usr/bin/install -m 0600 /dev/null "${rmac_hardware}" || return 1
+    fi
     rmac_session_temporary=${rmac_session_config}.new.$$
     if [ -e "${rmac_session_temporary}" ] || [ -L "${rmac_session_temporary}" ]; then
         echo "the temporary rmac session configuration already exists" >&2
@@ -189,6 +200,7 @@ prepare_rmac_config()
     if ! printf '%s\n' \
         'include "config.kdl"' \
         'include "shortcuts-generated.kdl"' \
+        'include "hardware-generated.kdl"' \
         >"${rmac_session_temporary}"; then
         echo "could not write the generated rmac session configuration" >&2
         return 1

@@ -31,6 +31,8 @@ gpui.workspace = true
 image = { workspace = true, features = ["png"] }
 raw-window-handle.workspace = true
 rmac-apps.workspace = true
+# The hardware profile, detected and stored on the first run (ADR 0027).
+rmac-hardware.workspace = true
 rmac-ui.workspace = true
 # Lulo mode's desktop (ADR 0023 "Lulo mode"): Lulo OS's desktop model
 # (icon grid, saved places, renaming) and its wallpaper store and renderer.

@@ -38,7 +38,7 @@ env:
     -p rmac-system-settings -p rmac-appearance-portal
     -p rmac-app-menu -p rmac-win-shell -p rmac-compositor-system
     -p rmac-shell-runtime -p rmac-launcher-app -p rmac-quick-settings-app -p rmac-osd
-    -p rmac-app-drawer
+    -p rmac-app-drawer -p rmac-hardware
 
 jobs:
   # Only `docs/**/*.md` changed: the Rust, Windows and macOS jobs are
@@ -451,6 +451,11 @@ jobs:
           # The settings store's own tests assume Unix files; the Windows
           # Dock migration is checked on its own.
           cargo test --locked -p rmac-shell-settings --lib a_windows_dock_saved_before_apps
+
+      # The hardware profile (ADR 0027) on a real Windows: it prints what it
+      # found and fails when detection is over its 20 ms budget or panics.
+      - name: Hardware profile
+        run: cargo run --locked -p rmac-hardware --bin rmac-hardware -- --check
 
   windows-build:
     name: Windows build

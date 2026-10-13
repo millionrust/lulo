@@ -25,6 +25,8 @@ uuid.workspace = true
 # The blurred wallpaper copy under blurred materials (`windows::backdrop`).
 image.workspace = true
 raw-window-handle.workspace = true
+# A low-spec PC gets solid materials instead of the blur (ADR 0027).
+rmac-hardware.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",

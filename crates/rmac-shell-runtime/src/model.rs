@@ -27,6 +27,10 @@ pub struct Snapshot {
     pub status: rmac_shell_status::Snapshot,
     pub quick_settings: rmac_quick_settings::Inputs,
     pub health: HealthSnapshot,
+    /// What this PC's hardware shows and turns down (ADR 0027); `None`
+    /// until detection finishes, and in the fixed shell scenes, where
+    /// everything shows.
+    pub hardware: Option<rmac_hardware::Adaptations>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

@@ -1,0 +1,40 @@
+[package]
+name = "rmac-hardware"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+description = "Lulo's hardware profile: what this PC has, detected once at start-up and kept current on hot-plug"
+
+# Prints this PC's profile and the detection time; `--check` fails when
+# detection takes longer than the budget (the CI check), `--first-run`
+# stores it the way the shell does at first start.
+[[bin]]
+name = "rmac-hardware"
+path = "src/bin/rmac-hardware.rs"
+
+[dependencies]
+async-channel.workspace = true
+rmac-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Display",
+    "Win32_Foundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Gdi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    "Win32_System_Power",
+    "Win32_System_SystemInformation",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+] }

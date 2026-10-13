@@ -146,6 +146,24 @@ pub(crate) struct QuickSettingsView {
     brightness_generation: u64,
     /// A detail view growing out of (or collapsing back into) its tile.
     pub(crate) transition: Option<DetailTransition>,
+    /// What this PC has (ADR 0027): the Wi-Fi and Bluetooth pills only with
+    /// their radios, and no grow-out motion on a low-spec PC.
+    pub(crate) hardware: rmac_hardware::Adaptations,
+}
+
+/// The hardware adaptations to draw with now. The fixed shell scenes draw
+/// every module on every machine.
+pub(crate) fn hardware_now() -> rmac_hardware::Adaptations {
+    if rmac_shell_runtime::scene::active() {
+        rmac_hardware::Adaptations::default()
+    } else {
+        rmac_hardware::adaptations()
+    }
+}
+
+/// How many of the Wi-Fi and Bluetooth pills this PC has no radio for.
+pub(crate) fn hidden_pills(hardware: &rmac_hardware::Adaptations) -> usize {
+    usize::from(!hardware.wifi) + usize::from(!hardware.bluetooth)
 }
 
 /// How long a detail view takes to grow out of its tile (CC-10).
@@ -177,11 +195,12 @@ impl DetailTransition {
 /// shown, so only the Display row depends on the machine (CC-18). The
 /// opener sizes the layer surface with this, so the first frame neither
 /// jumps nor clips Sound.
-pub(crate) fn initial_surface_height(display: bool) -> f32 {
+pub(crate) fn initial_surface_height(display: bool, hidden_pills: usize) -> f32 {
     Modules {
         now_playing: true,
         display,
         banners: 0,
+        hidden_pills,
     }
     .surface_height() as f32
 }
@@ -322,6 +341,7 @@ impl QuickSettingsView {
             dark_mode_override: None,
             hovered_module: None,
             brightness,
+            hardware: hardware_now(),
             player: None,
             volume_preview: None,
             dragging: None,
@@ -373,7 +393,7 @@ impl QuickSettingsView {
         cx: &mut Context<Self>,
     ) {
         self.focus.focus(window, cx);
-        self.transition = Some(DetailTransition {
+        self.transition = (!self.hardware.reduce_motion).then(|| DetailTransition {
             detail,
             opening: true,
             started: Instant::now(),
@@ -406,7 +426,7 @@ impl QuickSettingsView {
     /// Back to the grid, keeping keyboard focus on the module.
     pub(crate) fn close_detail(&mut self, cx: &mut Context<Self>) {
         if let Some(detail) = self.detail.take() {
-            self.transition = Some(DetailTransition {
+            self.transition = (!self.hardware.reduce_motion).then(|| DetailTransition {
                 detail,
                 opening: false,
                 started: Instant::now(),
@@ -462,7 +482,13 @@ impl QuickSettingsView {
     /// The grid's keyboard order, as the modules are laid out.
     pub(crate) fn module_order(&self) -> Vec<Module> {
         let view = self.state.view();
-        let mut order = vec![Module::Wifi, Module::Bluetooth];
+        let mut order = Vec::new();
+        if self.hardware.wifi {
+            order.push(Module::Wifi);
+        }
+        if self.hardware.bluetooth {
+            order.push(Module::Bluetooth);
+        }
         if rmac_quick_settings::layout::low_power_available(&view.power.value)
             && view.power.available
         {
@@ -723,10 +749,14 @@ impl QuickSettingsView {
             now_playing: true,
             display: self.brightness.is_some(),
             banners: self.banners().len(),
+            hidden_pills: hidden_pills(&self.hardware),
         }
     }
 
     fn apply_update(&mut self, update: rmac_shell_runtime::Update, cx: &mut Context<Self>) {
+        if let Some(hardware) = update.snapshot.hardware {
+            self.hardware = hardware;
+        }
         self.state.refresh(update.snapshot.quick_settings);
         self.received_snapshot = true;
         self.stream_error = None;
@@ -1100,28 +1130,32 @@ mod tests {
     }
 
     /// CC-18: the only rows that depend on the machine are Display (a
-    /// backlight, read before the surface opens) and error banners, which
-    /// only an operation or a stopped watcher adds. Now Playing is always
-    /// drawn, and Wi-Fi, Bluetooth, Focus and Low Power are tiles inside
-    /// fixed rows, so a missing adapter or battery never changes the height.
+    /// backlight, read before the surface opens), the radio pills (the
+    /// hardware profile, detected when the process starts, ADR 0027) and
+    /// error banners, which only an operation or a stopped watcher adds.
+    /// Now Playing is always drawn and Low Power is a tile inside a fixed
+    /// row, so the opening height is the height every later state draws.
     #[test]
     fn the_opening_height_is_the_height_every_later_state_draws() {
-        let with_backlight = initial_surface_height(true);
-        let without_backlight = initial_surface_height(false);
+        let with_backlight = initial_surface_height(true, 0);
+        let without_backlight = initial_surface_height(false, 0);
         // Five rows of 64 pt and four 12 pt gaps, then the 12 pt padding.
         assert_eq!(with_backlight, 5.0 * 64.0 + 4.0 * 12.0 + 24.0);
         assert_eq!(without_backlight, 4.0 * 64.0 + 3.0 * 12.0 + 24.0);
         assert_eq!(with_backlight - without_backlight, 64.0 + 12.0);
         for display in [true, false] {
-            let later = Modules {
-                now_playing: true,
-                display,
-                banners: 0,
-            };
-            assert_eq!(
-                initial_surface_height(display),
-                later.surface_height() as f32
-            );
+            for hidden_pills in 0..=2 {
+                let later = Modules {
+                    now_playing: true,
+                    display,
+                    banners: 0,
+                    hidden_pills,
+                };
+                assert_eq!(
+                    initial_surface_height(display, hidden_pills),
+                    later.surface_height() as f32
+                );
+            }
         }
     }
 

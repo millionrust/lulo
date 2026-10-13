@@ -564,7 +564,7 @@ mod tests {
                 wrong: "too".into(),
             },
             Injected {
-                index: 5,
+                index: 6,
                 right: "bought".into(),
                 wrong: "bougth".into(),
             },

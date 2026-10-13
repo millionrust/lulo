@@ -556,12 +556,12 @@ impl Engine for LlamaEngine {
         if !raw.is_empty() {
             sink(&raw);
         }
-        let mut position = prefix.tokens + tokens.len() as i32;
+        let start = prefix.tokens + tokens.len() as i32;
         let mut first_token_ms = 0.0;
         let mut decode_started = Instant::now();
         let mut output_tokens = 0u32;
         let mut capped = true;
-        for _ in 0..most {
+        for position in start..start + most {
             // `sample` also accepts the token into the penalty sampler.
             let token = sampler.sample(&self.context, self.batch.n_tokens() - 1);
             if output_tokens == 0 {
@@ -596,7 +596,6 @@ impl Engine for LlamaEngine {
                 .add(token, position, &[SEQUENCE], true)
                 .map_err(failed)?;
             self.context.decode(&mut self.batch).map_err(failed)?;
-            position += 1;
         }
         let tail = stream.finish();
         if !tail.is_empty() {

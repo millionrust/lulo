@@ -252,6 +252,9 @@ impl<T: EditableText> TextTarget for Entity<T> {
 
 pub type Target = Rc<dyn TextTarget>;
 
+/// Names the text a Writing Tools command acts on, when one fires.
+type TargetFinder = Rc<dyn Fn(&mut Window, &mut App) -> Option<Target>>;
+
 /// The [`Target`] for an editable field.
 pub fn target<T: EditableText>(field: &Entity<T>) -> Target {
     Rc::new(field.clone())
@@ -361,7 +364,7 @@ pub fn on_actions<E: InteractiveElement>(
     panel: &Entity<WritingTools>,
     target: impl Fn(&mut Window, &mut App) -> Option<Target> + 'static,
 ) -> E {
-    let target: Rc<dyn Fn(&mut Window, &mut App) -> Option<Target>> = Rc::new(target);
+    let target: TargetFinder = Rc::new(target);
     let run = {
         let panel = panel.clone();
         let target = target.clone();

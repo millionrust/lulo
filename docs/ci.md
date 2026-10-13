@@ -68,9 +68,14 @@ Orca is not installed or started by this workflow.
 
 The `summary` job checks that every recorded scenario appears exactly once,
 merges pass/fail counts and runner exit codes, and fails on missing artifacts
-or regressions. It is currently **non-blocking** (`continue-on-error: true`).
-After two consecutive complete green runs, remove that setting so runtime
-regressions block merges. Runtime jobs have 25 minute timeouts; binaries are
+or regressions. It is **blocking** since 2026-10-13 (op/ci-health), after two consecutive
+complete green runs. Every packed check job also fails when a playback it ran
+exited non-zero (after uploading its results), so a job's status matches the
+summary's. Known-flaky waits were fixed rather than loosened: Escape returns
+focus to the latest focused window when niri reports no active one, the Dock
+tile and Settings zoom checks wait for a settled baseline, and the desktop
+icon check is a time-to-icon budget (`--max-time-to-icon-ms`, default 3000)
+because "icon in the very first captured frame" is unreachable (DESK-12). Runtime jobs have 25 minute timeouts; binaries are
 built once, and all playback jobs run in parallel. An `agent/*` push invokes
 the same workflow; `.claude/ci-branch.sh wait <name>` prints its merged runtime
 report even while the summary job is non-blocking.

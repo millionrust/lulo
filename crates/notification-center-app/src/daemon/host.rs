@@ -143,13 +143,26 @@ impl BannerHost {
         };
 
         cx.spawn(async move |this, cx: &mut AsyncApp| {
-            let (service, events) = match rmac_notifications_linux::service::serve().await {
+            // Lulo OS serves the session bus; Windows has none, so Lulo
+            // apps post over the notification pipe instead (ADR 0023).
+            #[cfg(not(windows))]
+            let served = rmac_notifications_linux::service::serve().await;
+            #[cfg(windows)]
+            let served = rmac_notifications_linux::service::local::serve().await;
+            let (service, events) = match served {
                 Ok(served) => served,
                 Err(error) => {
                     eprintln!("{error}");
+                    // Hosted in `lulo-shell`, the rest of the shell keeps
+                    // running without notifications.
+                    #[cfg(windows)]
+                    return;
+                    #[cfg(not(windows))]
                     std::process::exit(1);
                 }
             };
+            #[cfg(windows)]
+            crate::pipe_server::start(service.clone());
             let handle = service.clone();
             if this
                 .update(cx, move |this, _| this.service = Some(handle))
@@ -189,7 +202,13 @@ impl BannerHost {
         let (compositor_tx, compositor_rx) = async_channel::bounded(64);
         cx.background_executor()
             .spawn(async move {
-                if let Err(error) = rmac_compositor_niri::watch(compositor_tx).await {
+                #[cfg(not(windows))]
+                let watched = rmac_compositor_system::watch(compositor_tx)
+                    .await
+                    .map_err(|error| error.to_string());
+                #[cfg(windows)]
+                let watched = watch_placement(compositor_tx).await;
+                if let Err(error) = watched {
                     eprintln!("notification banners: compositor watcher stopped: {error}");
                 }
             })
@@ -207,6 +226,12 @@ impl BannerHost {
         .detach();
 
         let (lock_tx, lock_rx) = async_channel::bounded(8);
+        // logind's lock state (Lulo OS). Windows draws nothing over its own
+        // lock screen, so its banners need no gate: the watcher's end lets
+        // them through.
+        #[cfg(windows)]
+        drop(lock_tx);
+        #[cfg(not(windows))]
         cx.background_executor()
             .spawn(async move {
                 if rmac_notifications_linux::lock_state::watch(lock_tx)
@@ -739,28 +764,52 @@ impl BannerHost {
             .strip_suffix(".desktop")
             .unwrap_or(&identity.key)
             .to_owned();
-        let snapshot = self.compositor.snapshot();
-        let window = snapshot
-            .windows
-            .iter()
-            .filter(|window| window.app_id.as_deref() == Some(desktop_id.as_str()))
-            .max_by_key(|window| {
-                window
-                    .focus_timestamp
-                    .map(|stamp| (stamp.seconds, stamp.nanoseconds))
+        // Windows: the banners follow only where they go
+        // (`watch_placement`), so the windows are read now.
+        #[cfg(windows)]
+        {
+            let spec = self.launch.get(&identity.key).cloned();
+            cx.spawn(async move |_, _: &mut AsyncApp| {
+                let window = rmac_compositor_system::snapshot()
+                    .await
+                    .ok()
+                    .and_then(|snapshot| newest_window(&snapshot, &desktop_id));
+                if let Some(window) = window {
+                    let action = rmac_compositor::Action::FocusWindow { window };
+                    if let Err(error) = rmac_compositor_system::execute_action(&action).await {
+                        eprintln!(
+                            "notification banners: could not focus the application: {error:?}"
+                        );
+                    }
+                } else if let Some(spec) = spec {
+                    if let Err(error) = rmac_app_launch::launch(spec).await {
+                        eprintln!(
+                            "notification banners: could not open the application: {error:?}"
+                        );
+                    }
+                }
             })
-            .map(|window| window.id);
+            .detach();
+        }
+        #[cfg(not(windows))]
+        self.open_application_from(&desktop_id, &identity.key, cx);
+    }
+
+    #[cfg(not(windows))]
+    fn open_application_from(&self, desktop_id: &str, key: &str, cx: &mut Context<Self>) {
+        let snapshot = self.compositor.snapshot();
+        let window = newest_window(&snapshot, desktop_id);
         if let Some(window) = window {
             cx.spawn(async move |_, _: &mut AsyncApp| {
                 let action = rmac_compositor::Action::FocusWindow { window };
-                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                     eprintln!("notification banners: could not focus the application: {error:?}");
                 }
             })
             .detach();
             return;
         }
-        let Some(spec) = self.launch.get(&identity.key).cloned() else {
+        let Some(spec) = self.launch.get(key).cloned() else {
             return;
         };
         cx.spawn(async move |_, _: &mut AsyncApp| {
@@ -770,4 +819,63 @@ impl BannerHost {
         })
         .detach();
     }
+}
+
+/// The most recently focused window of the app `desktop_id`.
+fn newest_window(
+    snapshot: &rmac_compositor::Snapshot,
+    desktop_id: &str,
+) -> Option<rmac_compositor::WindowId> {
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| window.app_id.as_deref() == Some(desktop_id))
+        .max_by_key(|window| {
+            window
+                .focus_timestamp
+                .map(|stamp| (stamp.seconds, stamp.nanoseconds))
+        })
+        .map(|window| window.id)
+}
+
+/// Windows: the window list, passed on only when what places the banners
+/// changes (the displays, and which one is in front), so every other
+/// window event costs the banner host nothing (the idle gate counts each
+/// wake-up).
+#[cfg(windows)]
+async fn watch_placement(
+    sender: async_channel::Sender<rmac_compositor::Event>,
+) -> Result<(), String> {
+    let (raw_tx, raw_rx) = async_channel::bounded(64);
+    let watcher = async {
+        rmac_compositor_system::watch(raw_tx)
+            .await
+            .map_err(|error| error.to_string())
+    };
+    let filter = async {
+        let mut state = rmac_compositor::State::default();
+        let mut placed = None;
+        while let Ok(event) = raw_rx.recv().await {
+            let _ = state.apply(event);
+            let snapshot = state.snapshot();
+            let workspaces = snapshot
+                .workspaces
+                .iter()
+                .map(|workspace| (workspace.id, workspace.output.clone(), workspace.focused))
+                .collect::<Vec<_>>();
+            let key = (snapshot.outputs.clone(), workspaces);
+            if placed.as_ref() != Some(&key) {
+                placed = Some(key);
+                if sender
+                    .send(rmac_compositor::Event::Snapshot { snapshot })
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    };
+    futures_util::try_join!(watcher, filter).map(drop)
 }

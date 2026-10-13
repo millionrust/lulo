@@ -161,6 +161,11 @@ impl NotificationCenterView {
     fn apply_snapshot(&mut self, update: Result<Snapshot, String>, cx: &mut Context<Self>) {
         match update {
             Ok(snapshot) => {
+                // What the Windows CI checks read (`LULO_SHELL_TRACE=1`).
+                #[cfg(windows)]
+                rmac_shell_layer::windows::trace::trace(|| {
+                    format!("notification centre: {} records", snapshot.records.len())
+                });
                 let should_mark_read =
                     !self.marking_read && snapshot.records.iter().any(|record| record.unread);
                 self.snapshot = Some(snapshot);

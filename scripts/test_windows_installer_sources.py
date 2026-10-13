@@ -70,5 +70,39 @@ class MsiVersionRisesWithEveryBuild(unittest.TestCase):
         self.assertEqual(upgrade.get("AllowSameVersionUpgrades"), "yes")
 
 
+class InstallBringsLuloBack(unittest.TestCase):
+    """An upgrade left Lulo stopped (2026-10-14): the MSI now stops a running
+    Lulo before it replaces the files and starts it again once it is done,
+    and no longer deletes the user's Start Lulo at Sign-In on install."""
+
+    namespace = {"wix": "http://wixtoolset.org/schemas/v4/wxs"}
+
+    def product(self):
+        return ElementTree.parse(WINDOWS / "Product.wxs")
+
+    def test_lulo_starts_after_install_finalize_without_waiting(self) -> None:
+        product = self.product()
+        action = product.find(".//wix:CustomAction[@Id='StartLulo']", self.namespace)
+        self.assertIsNotNone(action)
+        self.assertIn("--after-install", action.get("ExeCommand"))
+        self.assertEqual(action.get("Return"), "asyncNoWait")
+        self.assertEqual(action.get("Execute"), "immediate")
+        step = product.find(".//wix:Custom[@Action='StartLulo']", self.namespace)
+        self.assertEqual(step.get("After"), "InstallFinalize")
+        self.assertIn('NOT REMOVE="ALL"', step.get("Condition"))
+
+    def test_a_running_lulo_stops_before_files_are_checked(self) -> None:
+        step = self.product().find(".//wix:Custom[@Action='StopLuloForUpgrade']", self.namespace)
+        self.assertIsNotNone(step)
+        self.assertEqual(step.get("Before"), "InstallValidate")
+
+    def test_install_keeps_start_at_sign_in(self) -> None:
+        removed = [
+            value.get("Key")
+            for value in self.product().iter("{http://wixtoolset.org/schemas/v4/wxs}RemoveRegistryValue")
+        ]
+        self.assertFalse([key for key in removed if key.endswith(r"CurrentVersion\Run")], removed)
+
+
 if __name__ == "__main__":
     unittest.main()

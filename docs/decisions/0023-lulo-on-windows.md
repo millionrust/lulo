@@ -684,6 +684,21 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
 
 ### What the installer does
 
+- **Brings Lulo back after an install or upgrade** (branch `op/win-upgrade-restart`). An
+  upgrade used to leave Lulo stopped. Now the MSI stops a running Lulo before
+  InstallValidate (`lulo-session --stop`, then a 20 s wait for both processes), and after
+  InstallFinalize runs `lulo-session --after-install` as the installing user, without
+  waiting (immediate custom action, `asyncNoWait`; the session starts the layer in a
+  detached process). It starts Lulo after a fresh install, and after an upgrade unless the
+  user had turned Lulo off: `HKCU\Software\Lulo\Session\LuloMode` is set by every session
+  start and cleared only by Turn Off Lulo or Restore Windows Desktop, never by a scripted
+  `--stop`. It sits outside `Software\Lulo\Shell`, which the old product's removal deletes
+  during an upgrade. The `<RemoveRegistryValue>` for the Run key's "Lulo" value is gone: it
+  ran at install time, so every upgrade turned Start Lulo at Sign-In off; uninstall still
+  clears it through `--uninstall`. `upgrade_smoke.py` (CI) checks start / no start / start
+  across three installs; `installer_smoke.py` (windows-preview.yml) checks `lulo-session`
+  and `lulo-shell` are running after a real install. Still open: `Software\Lulo\Shell` (the
+  Dock's monitor and similar settings) is lost on every upgrade, for the same reason.
 - **Installs every Lulo Windows app** (Calculator, Notes, Text Editor, Preview, Clock,
   Weather, Terminal, and now Files and the Lulo layer -- `lulo-session.exe` and
   `lulo-shell.exe`, ADR 0023 phase 3, merged from `op/win-shell`) to
@@ -1881,6 +1896,110 @@ menu. All of these pass ("every Lulo layer check passed", job of run 37832355013
   minimized Windows apps with their icons in the Dock (WIN-OS-66), the Lulo artwork on the
   desktop (WIN-OS-67), Control Centre's Display slider (WIN-OS-69). DPI other than 100 % is
   still untried.
+
+## Notification Centre and the app switcher on Windows (branch `op/win-switcher-nc`)
+
+Two more of Lulo OS's surfaces run on Windows as the same views, following "Phase 3
+revised": `shell/bins/rmac-app-switcher` and `crates/notification-center-app` are now
+libraries with a `start(cx)` entry point that `lulo-shell` calls. Lulo OS's binaries
+(`app-switcher`, `rmac-notification-center`, `rmac-notification-center-panel`) are thin
+`main`s over the same libraries and behave as before.
+
+### The switcher
+
+The service and panel (`service.rs`) read the window list and act through
+`rmac-compositor-system` (niri on Lulo OS, the Win32 backend on Windows), open the panel
+through `rmac_shell_layer::open_layer_window` (an `Overlay` surface centred on the focused
+display), and make the same optimistic switch as Lulo OS (SPEED-11, `model::optimistic_plan`:
+the next app is focused as soon as the switch starts, a cancel puts the original back).
+What differs is how keys arrive and how the panel is put away:
+
+| | Lulo OS | Windows |
+|---|---|---|
+| Opening | niri's ⌘Tab bind runs `app-switcher next` | `alt_tab`'s low-level keyboard hook sends `next` |
+| The switch key | the panel takes the keyboard and follows ⌘ | the hook sees Alt go up and sends `commit` |
+| The panel's keys (Tab, ←/→, Esc, ⌘Q, ⌘H) | the panel's own key events | the hook swallows them while Alt is held and sends commands |
+| Keyboard | `Exclusive` | `None`: the app switched to has the keyboard at once |
+| After a switch | the surface is kept unmapped for the next ⌘Tab | the window is closed (its swap chain given back) |
+| Force Quit | the switcher's own window | Task Manager, from the Lulo menu |
+
+**The hotkey: Alt+Tab, through a hook, only while Lulo runs.** Lulo's key mapping turns ⌘
+into Ctrl for app shortcuts (`rmac_app_menu::windows_keys`), which would make ⌘Tab Ctrl+Tab,
+but Ctrl+Tab moves between tabs in every browser and editor and is in Lulo's own apps'
+tables; Alt+Tab is the chord Windows users already switch apps with. It is not
+registrable (`RegisterHotKey` refuses Windows' own chords), so a `WH_KEYBOARD_LL` hook on a
+thread of its own (blocked in `GetMessageW`, nothing polls) takes it. The hook exists only
+in `lulo-shell`, so outside Lulo mode Windows' own switcher answers, and an elevated window
+in front (whose keys a non-elevated hook never sees) gets Windows' switcher too. It takes
+keys only during a switch, from the first Alt+Tab until Alt goes up; Alt's own presses and
+releases always pass through, so every app's idea of the keyboard stays right. At the first
+Tab it presses an unassigned key (0xE8, tagged as Lulo's own input, as Spotlight's Win+Space
+hook does), so Windows treats Alt as part of a chord and releasing it never opens the front
+app's menu bar. Ctrl+Alt+Tab (Windows' sticky switcher) and Win+Alt+Tab are left alone. A
+release the hook missed (a secure desktop between press and release) is caught twice: the
+next key during a switch checks Alt's state, and the panel checks it before it reveals
+itself, committing instead of staying up.
+
+A quick tap shows no panel, as on the Mac and Lulo OS: the panel opens at 1 × 1 and grows to
+its size (`resize_layer`) only if Alt is still held 120 ms later or a second Tab arrives.
+`shell_smoke.py` checks a quick tap (the previous app in front, no panel at full size), a
+hold (the panel shown, Alt's release switching back) and Esc (the app in front kept).
+
+### Notification Centre
+
+The authority, its banners and the Center panel run in `lulo-shell` as the same views.
+Windows has no session bus, so:
+
+- **The service without a bus** (`rmac_notifications_linux::service::local`). The same
+  reducer, history store (`%LOCALAPPDATA%\Lulo\State\rmac\notifications`), per-app
+  policies and banner session. `ServiceHandle`'s bus connection is optional; without one
+  the legacy `ActionInvoked` and `NotificationClosed` signals go back to the posting app
+  over its pipe instead, and the Center panel's calls (`center::snapshot`, `watch_snapshot`,
+  `mark_read`, `clear`, `remove`, `set_policy`, `invoke`) are answered in-process. There is
+  no Focus service on Windows yet, so the Center's policy alone decides delivery instead of
+  failing closed as Lulo OS does when Focus cannot be read.
+- **The notification pipe** (`rmac_notifications::pipe`).
+  `\\.\pipe\lulo-notifications-<user>`, same-user security, no remote clients, one
+  connection per notification: the app writes one `post` line (summary, body, freedesktop
+  actions, urgency, flags) and then only reads `posted <id>`, any `action <key>` and a final
+  `closed <reason>`, so neither side ever reads and writes one synchronous handle at once.
+  Who posted comes from the pipe's client process (`GetNamedPipeClientProcessId`): a Lulo
+  app by its executable, anything else named as the window list names it. One thread waits
+  for connections; each connection's thread blocks on its notification's answers. Clock's
+  alarms and timers (`rmac-clock --ring-due`, started by Task Scheduler) post through it
+  when a Lulo layer runs, with Stop, Snooze and Open, as on Lulo OS (WIN-OS-83).
+- **Surfaces.** Banners are an `Overlay` layer surface anchored top right that never takes
+  the keyboard (window regions keep clicks off it outside the cards); the Center panel is
+  the same `Exclusive` surface Control Centre is, closing when it loses the keyboard. The
+  menu bar's clock asks for `notification-center`, which `lulo-shell` registers.
+- **Not mirrored:** Windows' own toast notifications. Reading them needs
+  `UserNotificationListener`, a packaged-app capability and a user permission; Lulo apps'
+  notifications are enough for this slice. Windows' lock screen hides everything, so the
+  banners need no lock gate.
+
+### Proof
+
+`shell_smoke.py` (CI `windows-launch`, "Lulo layer") posts a notification on the pipe from
+the runner, checks the banner, that the poster hears it close, and that a click on the
+clock opens Notification Centre listing it; then the switcher checks above. Both views
+start with the layer, so the idle gate (≤ 2 ticks over 20 s) and the idle memory gate cover
+them; lulo-shell's private bytes after both have been used and closed are gated at 60 MB
+(`idle_gate.py --shell-after-panels-private-mb`). Run 38454571380 (debug, WARP): lulo-shell
+0.0 ticks and no wake-ups over the idle window, 34.2 MB private at idle, 48.8 MB after the
+switcher and Notification Centre closed. The switcher reads the window list when a switch
+starts (z-order is the activation order) and asks for a fresh reading first: the window
+list's event filter (7c67835c) can keep a reading from before the last foreground change,
+which made every switch target the wrong app. The cross-platform scenes gain a fifth,
+Notification Centre open on an empty history (`--open notification-centre`; on Lulo OS the
+daemon and panel run under `dbus-run-session`).
+
+### What is left
+
+- The hotkey notice (WIN-OS-62) can now be a banner; `lulo-shell` still only traces it.
+- Windows toasts in Notification Centre (`UserNotificationListener`).
+- Focus on Windows, and per-app notification settings in System Settings, which still reads
+  the Center over D-Bus in its own process.
+- A switcher scene in the pixel diff (it needs running apps in both scenes).
 
 ## Window chrome: Lulo's own corners and shadow (branch `op/win-corners`)
 

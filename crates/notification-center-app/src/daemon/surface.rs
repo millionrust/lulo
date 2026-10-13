@@ -145,9 +145,67 @@ pub(crate) fn open(
     }
 }
 
-/// Banners are drawn as Wayland layer surfaces; elsewhere the service runs
-/// without them.
-#[cfg(not(target_os = "linux"))]
+/// On Windows the same layer surface, a Win32 window `rmac-shell-layer`
+/// places from the same anchor and margins (ADR 0023): top right, below
+/// the menu bar's strip, never taking the keyboard.
+#[cfg(windows)]
+pub(crate) fn open(
+    output: String,
+    host: Entity<BannerHost>,
+    cx: &mut App,
+) -> Option<AnyWindowHandle> {
+    use gpui::{point, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions};
+    use rmac_shell_layer::layer::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
+
+    // The compositor snapshot names each monitor by its device name, as
+    // `rmac-shell-layer` names GPUI's displays.
+    let wanted = rmac_shell_layer::stable_output_uuid(&rmac_compositor::OutputId(output.clone()));
+    let display_id = rmac_shell_layer::output_surfaces::newest_displays(cx)
+        .get(&wanted)
+        .map(|display| display.id());
+    let options = WindowOptions {
+        titlebar: None,
+        focus: false,
+        show: true,
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+            point(px(0.0), px(0.0)),
+            size(px(SURFACE_WIDTH), px(INITIAL_HEIGHT)),
+        ))),
+        display_id,
+        app_id: Some("org.rmac.NotificationBanners".into()),
+        window_background: WindowBackgroundAppearance::Transparent,
+        kind: WindowKind::PopUp,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        ..Default::default()
+    };
+    let layer = LayerShellOptions {
+        namespace: rmac_notifications_linux::surfaces::NAMESPACE.into(),
+        layer: Layer::Overlay,
+        anchor: Anchor::TOP | Anchor::RIGHT,
+        margin: Some((px(0.0), px(0.0), px(0.0), px(0.0))),
+        keyboard_interactivity: KeyboardInteractivity::None,
+        ..Default::default()
+    };
+    let opened = rmac_shell_layer::open_layer_window(cx, options, layer, |window, cx| {
+        window.set_window_title("Notification Banners");
+        rmac_ui::prepare_surface_window(window, cx);
+        let view = cx.new(|cx| BannerSurface::new(output, host, cx));
+        cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
+    });
+    match opened {
+        Ok(handle) => Some(handle.into()),
+        Err(error) => {
+            eprintln!("notification banners: could not open a surface: {error}");
+            None
+        }
+    }
+}
+
+/// Banners are drawn as layer surfaces; elsewhere the service runs without
+/// them.
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn open(
     _output: String,
     _host: Entity<BannerHost>,

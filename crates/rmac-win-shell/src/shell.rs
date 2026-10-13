@@ -114,7 +114,8 @@ impl AssetSource for ShellAssets {
             .or_else(|| rmac_shell_wallpaper::asset(path))
             .or_else(|| rmac_launcher_app::asset(path))
             .or_else(|| rmac_quick_settings_app::asset(path))
-            .or_else(|| rmac_app_drawer::asset(path)))
+            .or_else(|| rmac_app_drawer::asset(path))
+            .or_else(|| rmac_notification_center_app::asset(path)))
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
@@ -221,7 +222,11 @@ fn add_menu_rows() {
         }
         trace(|| format!("files for folders {}", if on { "on" } else { "off" }));
     });
-    requests::register(TURN_OFF_ACTION, quit);
+    requests::register(TURN_OFF_ACTION, |cx| {
+        // The user's own choice: an upgrade must not turn Lulo back on.
+        let _ = registry::set_lulo_mode(false);
+        quit(cx);
+    });
 }
 
 /// Spotlight's hotkey (and its fallbacks), and the one-time word on which
@@ -322,6 +327,8 @@ pub fn run() -> i32 {
                         "rmac-quick-settings",
                         "rmac-menu-material",
                         "rmac-app-drawer",
+                        "rmac-app-switcher",
+                        "rmac-notification-center",
                     ]
                     .iter()
                     .any(|prefix| namespace.starts_with(prefix));
@@ -401,6 +408,16 @@ pub fn run() -> i32 {
             // (`lulo-shell --app-drawer`, from Spotlight or a shortcut).
             rmac_app_drawer::start(cx);
             requests::register("app-drawer", rmac_app_drawer::toggle);
+            // ⌘Tab (Alt+Tab here) and Notification Centre with its banners,
+            // the same views Lulo OS runs as their own processes; the
+            // menu bar's clock opens Notification Centre.
+            if !skipped("switcher") {
+                rmac_shell_app_switcher::start(cx);
+            }
+            if !skipped("notifications") {
+                rmac_notification_center_app::start(cx);
+                requests::register("notification-center", rmac_notification_center_app::toggle);
+            }
             {
                 let (apps_tx, apps_rx) = async_channel::bounded::<()>(1);
                 crate::win::session::on_app_drawer_request(move || {
@@ -475,6 +492,7 @@ pub fn run() -> i32 {
                             rmac_launcher_app::open_scene(cx);
                             rmac_quick_settings_app::open_scene(cx);
                             rmac_app_drawer::open_scene(cx);
+                            rmac_notification_center_app::open_scene(cx);
                         });
                     }
                 })

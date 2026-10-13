@@ -68,6 +68,9 @@ namespace LuloRobot
         [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
         [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
         [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+        [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+        [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+        [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
         [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT rect, int size);
         [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
         [DllImport("psapi.dll")] public static extern bool GetProcessMemoryInfo(IntPtr process, out PROCESS_MEMORY_COUNTERS_EX counters, int size);
@@ -182,6 +185,23 @@ namespace LuloRobot
             List<IntPtr> found = new List<IntPtr>();
             Native.EnumWindows(delegate (IntPtr h, IntPtr l) { if (Native.IsWindowVisible(h)) found.Add(h); return true; }, IntPtr.Zero);
             return found.ToArray();
+        }
+
+        // The process whose top-level window is under the point: the robot
+        // clicks only where a Lulo window is, never on someone else's app.
+        public static int PidAt(int x, int y)
+        {
+            Native.POINT p; p.X = x; p.Y = y;
+            IntPtr h = Native.WindowFromPoint(p);
+            if (h == IntPtr.Zero) return 0;
+            IntPtr root = Native.GetAncestor(h, 2);
+            return PidOf(root == IntPtr.Zero ? h : root);
+        }
+
+        public static string ProcessName(int pid)
+        {
+            try { using (Process p = Process.GetProcessById(pid)) { return p.ProcessName; } }
+            catch (Exception) { return ""; }
         }
 
         public static string Title(IntPtr h) { StringBuilder b = new StringBuilder(512); Native.GetWindowText(h, b, 512); return b.ToString(); }

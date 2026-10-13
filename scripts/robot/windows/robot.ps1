@@ -99,10 +99,28 @@ function Guard {
     if ($R::IdleMs() + 1500 -lt $ownAgo) { throw 'robot: real input detected, stopping' }
     if ((Get-Date) -gt $deadline) { throw "robot: time limit of $MaxMinutes min reached" }
 }
-function Keys { param([int[]]$k) Guard; $R::Chord($k); Mark }
-function Click($x, $y) { Guard; $R::Click([int]$x, [int]$y); Mark }
-function RClick($x, $y) { Guard; $R::RightClick([int]$x, [int]$y); Mark }
-function DClick($x, $y) { Guard; $R::DoubleClick([int]$x, [int]$y); Mark }
+# Input goes only to Lulo: a click lands only where a Lulo window is on top,
+# and keys go only to a Lulo window in front. Anything else is skipped and
+# reported, so the robot never types into or clicks someone else's app.
+function Is-Lulo([int]$id) { return ($R::ProcessName($id) -match '^(rmac|lulo)-') }
+function Keys {
+    param([int[]]$k)
+    Guard
+    $fg = $R::PidOf($R::Foreground())
+    if (-not (Is-Lulo $fg)) { $script:skippedInput++; Write-Host "robot: keys $($k -join '+') skipped: '$($R::ProcessName($fg))' is in front"; return }
+    $R::Chord($k); Mark
+}
+function Target-Ok($x, $y) {
+    $id = $R::PidAt([int]$x, [int]$y)
+    if (Is-Lulo $id) { return $true }
+    $script:skippedInput++
+    Write-Host "robot: click at ($x, $y) skipped: '$($R::ProcessName($id))' is there"
+    return $false
+}
+$script:skippedInput = 0
+function Click($x, $y) { Guard; if (Target-Ok $x $y) { $R::Click([int]$x, [int]$y); Mark } }
+function RClick($x, $y) { Guard; if (Target-Ok $x $y) { $R::RightClick([int]$x, [int]$y); Mark } }
+function DClick($x, $y) { Guard; if (Target-Ok $x $y) { $R::DoubleClick([int]$x, [int]$y); Mark } }
 function Center($node) { return @(($node.Bounds.X + $node.Bounds.Width / 2), ($node.Bounds.Y + $node.Bounds.Height / 2)) }
 
 # ---- Preflight ------------------------------------------------------------
@@ -630,7 +648,7 @@ function Resize-App($run) {
     $R::Show($run.Main, 9); Start-Sleep -Milliseconds 300
     $f = $R::Frame($run.Main); $wa = $R::WorkArea()
     # Small: drag the bottom-right corner up and left as far as it goes.
-    Guard; $R::Drag($f.Right + 3, $f.Bottom + 3, $f.Left + 60, $f.Top + 60); Mark
+    Guard; if (Target-Ok ($f.Right + 3) ($f.Bottom + 3)) { $R::Drag($f.Right + 3, $f.Bottom + 3, $f.Left + 60, $f.Top + 60); Mark }
     Start-Sleep -Milliseconds 800
     $small = $R::Frame($run.Main)
     $measures["$($run.Key).min_size"] = "$($small.Width)x$($small.Height)"
@@ -640,7 +658,7 @@ function Resize-App($run) {
     Check-Bounds $run $run.Main 'small'
     # Large: drag it to the work area's bottom-right corner.
     $s = $R::Frame($run.Main)
-    Guard; $R::Drag($s.Right + 3, $s.Bottom + 3, $wa.Right - 4, $wa.Bottom - 4); Mark
+    Guard; if (Target-Ok ($s.Right + 3) ($s.Bottom + 3)) { $R::Drag($s.Right + 3, $s.Bottom + 3, $wa.Right - 4, $wa.Bottom - 4); Mark }
     Start-Sleep -Milliseconds 800
     [void](Shot "$($run.Key)-large")
     Check-Placement $run $run.Main 'large'
@@ -772,11 +790,28 @@ function Exercise-Shell {
         if ($still.Count) { Add-Finding 'medium' 'close' 'Lulo layer' "Esc did not close the panel opened by '$($b.Name)'" '' (Shot "shell-status-$short-stuck"); Escape-All }
     }
     # Spotlight from the keyboard.
-    $res = Shell-Observe 'spotlight-alt-space' { Keys @(0x12, 0x20) } 'Spotlight'
+    # Alt+Space, unless another app holds it: then Lulo has recorded the
+    # fallback it took (SpotlightHotkeyNotice), and Alt+Space would open that
+    # other app (on the first test PC, the ChatGPT app).
+    $notice = (Get-ItemProperty 'HKCU:\Software\Lulo\Shell' -Name SpotlightHotkeyNotice -ErrorAction SilentlyContinue).SpotlightHotkeyNotice
+    $hotkey = switch ($notice) {
+        2 { @{ Label = 'Win+Space'; Keys = @(0x5B, 0x20) } }
+        3 { @{ Label = 'Ctrl+Alt+Space'; Keys = @(0x11, 0x12, 0x20) } }
+        4 { @{ Label = 'Alt+Shift+Space'; Keys = @(0x12, 0x10, 0x20) } }
+        default { @{ Label = 'Alt+Space'; Keys = @(0x12, 0x20) } }
+    }
+    $measures['shell.spotlight_hotkey'] = $hotkey.Label
+    $res = Shell-Observe "spotlight-$($hotkey.Label)" { Keys $hotkey.Keys } 'Spotlight'
+    $foreign = @($res.New | Where-Object { -not (Is-Lulo ($R::PidOf($_))) })
+    foreach ($w in $foreign) {
+        # Not ours: put it away again and say so.
+        Add-Finding 'medium' 'spotlight' 'Lulo layer' "$($hotkey.Label) opened another app's window '$($R::Title($w))' ($($R::ProcessName($R::PidOf($w))))"
+        $R::Close($w)
+    }
     if (-not ($res.New | Where-Object { $R::PidOf($_) -eq $pidShell })) {
-        Add-Finding 'medium' 'spotlight' 'Lulo layer' 'Alt+Space did not open a Spotlight window'
+        Add-Finding 'medium' 'spotlight' 'Lulo layer' "$($hotkey.Label) did not open a Spotlight window"
     } else {
-        Guard; $R::Type('calcul'); Mark; Start-Sleep -Milliseconds 900
+        Guard; if (Is-Lulo ($R::PidOf($R::Foreground()))) { $R::Type('calcul'); Mark }; Start-Sleep -Milliseconds 900
         [void](Shot 'shell-spotlight-typed')
         foreach ($w in $res.New) { if ($R::PidOf($w) -eq $pidShell) { Check-ShellPanel $w 'spotlight' } }
     }
@@ -962,6 +997,7 @@ try {
     }
     if ($clip) { Restore-Clipboard $clip }
     Scan-EventLog
+    $measures['skipped_input'] = $script:skippedInput
     if ($R::TreeTimeouts) { Add-Finding 'high' 'hang' 'robot' "$($R::TreeTimeouts) UI Automation walk(s) got no answer within 8 s (a window stopped responding)" }
     $report = [ordered]@{ started = $started.ToString('s'); seconds = [int]((Get-Date) - $started).TotalSeconds; bin = $Bin; menuMode = $MenuMode; measures = $measures; findings = $findings }
     $report | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 (Join-Path $out 'findings.json')

@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "calculator/maths-notes-close",
+  "observations": {
+    "notes_open": {"windows": {"count": 2}},
+    "notes_closed": {"windows": {"count": 1}}
+  }
+}

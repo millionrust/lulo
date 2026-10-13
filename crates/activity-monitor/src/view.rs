@@ -844,9 +844,15 @@ impl MonitorView {
     }
 
     /// Window ▸ CPU Usage / CPU History / GPU History.
+    ///
+    /// Deferred: `open_window` draws the new window's first frame at once,
+    /// and that frame reads this view, which is still being updated here.
+    /// Opening it directly aborted System Monitor ("cannot read MonitorView
+    /// while it is already being updated"; found by the live robot,
+    /// 2026-10-13).
     pub(crate) fn open_metric_window(&mut self, kind: MetricWindowKind, cx: &mut Context<Self>) {
         let view = cx.entity();
-        floating_windows::show(kind, view, cx);
+        cx.defer(move |cx| floating_windows::show(kind, view, cx));
     }
 
     /// Application ▸ Quit and Keep Windows (MON-16, MON-MENU-001): persist

@@ -3810,12 +3810,22 @@ impl PreviewView {
     /// map directly to its `screen`/`selection` commands; it has no
     /// separate window-capture word, so `From Window…` reuses the
     /// interactive selection overlay, which lets the user click a window.
+    /// File ▸ Take Screenshot runs Lulo's screenshot tool, the same command
+    /// ⇧⌘3/⇧⌘4 run. It used to spawn a `screenshot` that no Lulo system has,
+    /// so all three rows did nothing (found by the live robot, 2026-10-13).
     fn take_screenshot(command: &'static str) {
-        if let Err(error) = std::process::Command::new("screenshot")
-            .arg(command)
-            .spawn()
-        {
-            eprintln!("rmac-preview: could not start screenshot {command}: {error}");
+        let tool = screenshot_tool(
+            std::env::current_exe().ok().as_deref(),
+            std::env::var_os("HOME")
+                .as_deref()
+                .map(std::path::Path::new),
+            |path| path.is_file(),
+        );
+        if let Err(error) = std::process::Command::new(&tool).arg(command).spawn() {
+            eprintln!(
+                "rmac-preview: could not start {} {command}: {error}",
+                tool.display()
+            );
         }
     }
 
@@ -7087,6 +7097,24 @@ fn is_openable_document(path: &Path) -> bool {
     name.to_ascii_lowercase().ends_with(".pdf") || document::has_image_extension(&name)
 }
 
+/// Lulo's screenshot tool: beside this binary (a development build), then a
+/// per-user install, then the packaged `/usr/libexec/rmac` helper.
+fn screenshot_tool(
+    current_exe: Option<&std::path::Path>,
+    home: Option<&std::path::Path>,
+    exists: impl Fn(&std::path::Path) -> bool,
+) -> PathBuf {
+    const NAME: &str = "rmac-screenshot";
+    let packaged = PathBuf::from("/usr/libexec/rmac").join(NAME);
+    current_exe
+        .map(|exe| exe.with_file_name(NAME))
+        .into_iter()
+        .chain(home.map(|home| home.join(".local/libexec/rmac").join(NAME)))
+        .chain(std::iter::once(packaged.clone()))
+        .find(|candidate| exists(candidate))
+        .unwrap_or(packaged)
+}
+
 /// File ▸ Rename…'s (PRV-MENU-002) one validity rule: a non-empty, single
 /// path component. Matches `text_editor`'s own `is_valid_document_name`.
 fn is_valid_document_name(name: &str) -> bool {
@@ -8112,7 +8140,32 @@ impl Render for PreviewView {
 
 #[cfg(test)]
 mod tests {
-    use super::is_valid_document_name;
+    use super::{is_valid_document_name, screenshot_tool};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn take_screenshot_runs_lulos_screenshot_tool() {
+        let exe = Path::new("/usr/bin/rmac-preview");
+        let home = Path::new("/home/a");
+        // Installed: the packaged helper.
+        let installed = |p: &Path| p == Path::new("/usr/libexec/rmac/rmac-screenshot");
+        assert_eq!(
+            screenshot_tool(Some(exe), Some(home), installed),
+            PathBuf::from("/usr/libexec/rmac/rmac-screenshot")
+        );
+        // A development build next to its own helper wins.
+        let dev = Path::new("/home/a/bins/rmac-preview");
+        let beside = |p: &Path| p == Path::new("/home/a/bins/rmac-screenshot");
+        assert_eq!(
+            screenshot_tool(Some(dev), Some(home), beside),
+            PathBuf::from("/home/a/bins/rmac-screenshot")
+        );
+        // Never the nonexistent bare `screenshot` the menu used to run.
+        assert_eq!(
+            screenshot_tool(Some(exe), Some(home), |_| false),
+            PathBuf::from("/usr/libexec/rmac/rmac-screenshot")
+        );
+    }
 
     #[test]
     fn rename_rejects_empty_dot_and_separator_names() {

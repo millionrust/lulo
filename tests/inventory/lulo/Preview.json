@@ -717,6 +717,13 @@
           "children": []
         },
         {
+          "label": "Text Selection",
+          "action": "preview::TextSelection",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Rectangular Selection",
           "action": "preview::RectangularSelection",
           "shortcut": "",

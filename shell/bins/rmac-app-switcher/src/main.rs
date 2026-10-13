@@ -124,19 +124,26 @@ pub(crate) mod linux_wayland {
         }
 
         /// Undo the switch after a cancel: once the optimistic requests have
-        /// landed, focus the window that was frontmost before ⌘Tab.
-        fn restore(self, snapshot: rmac_compositor::Snapshot, cx: &mut App) {
-            let Some(action) = model::restore_action(&snapshot, self.plan.original) else {
-                return;
-            };
+        /// landed, focus the window that was frontmost before ⌘Tab. The
+        /// returned channel closes once niri has answered, or `None` when
+        /// there is nothing to restore.
+        fn restore(
+            self,
+            snapshot: rmac_compositor::Snapshot,
+            cx: &mut App,
+        ) -> Option<async_channel::Receiver<()>> {
+            let action = model::restore_action(&snapshot, self.plan.original)?;
+            let (restored_tx, restored) = async_channel::bounded::<()>(1);
             cx.spawn(async move |_cx: &mut AsyncApp| {
                 let _ = self.done.recv().await;
                 if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
                     eprintln!("app switcher could not restore focus: {error:?}");
                 }
                 gpui_linux::trace_mark("switcher_restored");
+                drop(restored_tx);
             })
             .detach();
+            Some(restored)
         }
     }
 
@@ -532,12 +539,31 @@ pub(crate) mod linux_wayland {
             self.plan = None;
             // Closing without a commit cancels (Esc, ⌘., another surface
             // taking the keyboard): put back the app that was frontmost.
-            if let Some(optimistic) = self.optimistic.take() {
-                if let Some(snapshot) = self.snapshot(cx) {
-                    optimistic.restore(snapshot, cx);
-                }
-            }
+            let restored = self.optimistic.take().and_then(|optimistic| {
+                let snapshot = self.snapshot(cx)?;
+                optimistic.restore(snapshot, cx)
+            });
             let _ = self.service.update(cx, |service, cx| service.closed(cx));
+            let Some(restored) = restored else {
+                self.hide(window, cx);
+                return;
+            };
+            // Hand the keyboard back only once niri has focused that app
+            // again, so the app switched to ahead never shows active.
+            let generation = self.generation;
+            cx.spawn_in(window, async move |this, cx| {
+                let _ = restored.recv().await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.generation == generation && this.closing {
+                        this.hide(window, cx);
+                    }
+                });
+            })
+            .detach();
+        }
+
+        /// Unmap the surface and keep it for the next ⌘Tab.
+        fn hide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             // Keep the surface, unmapped, for the next ⌘Tab: it takes no
             // input or focus and draws nothing until mapped again.
             // Its swapchain was allocated at the panel's size when it opened

@@ -1075,16 +1075,30 @@ class InteractionScenarios:
             restored: list[Optional[float]] = []
             reveals: list[Optional[float]] = []
             paths: list[list[Optional[int]]] = []
+            flickers: list[bool] = []
+            raced = 0
             for _ in range(max(3, self.args.repeat)):
                 original_app = self._focused_app_id()
-                if original_app is None or self._switch_target(apps) is None:
+                target = self._switch_target(apps)
+                if original_app is None or target is None:
                     break
                 mark = self._mark(service_trace)
+                target_mark = self._mark(target[1])
                 focus_mark = focus.mark()
                 start = time.monotonic()
                 self.input.hold("alt-tab", extra=("cmd",))
                 reveals.append(self._wait_reveal(service_trace, mark, start))
                 time.sleep(0.2)
+                if any(event == "switcher_commit" for event, _ in self._since(service_trace, mark)):
+                    # The harness presses Super only after niri's Alt-Tab
+                    # bind fired; when the switcher got the keyboard first
+                    # it saw a quick tap and switched. Not a cancel: let go
+                    # and try again.
+                    raced += 1
+                    self.input.release("alt-tab", extra=("cmd",))
+                    time.sleep(0.5)
+                    self._settle(service_trace, 1.0)
+                    continue
                 start = time.monotonic()
                 self.input.key(cancel_key)
                 time.sleep(0.1)
@@ -1094,11 +1108,16 @@ class InteractionScenarios:
                 if self._focused_app_id() != original_app:
                     restored[-1] = None
                 paths.append(focus_path(focus.since(focus_mark)))
+                # The app switched to ahead must never get the keyboard.
+                flickers.append(any(event == "focus_in"
+                                    for event, _ in self._since(target[1], target_mark)))
                 self._settle(service_trace, 1.0)
             done = [r for r in restored if r is not None]
             return {"restored": restored, "reveals": reveals, "focus_paths": paths,
+                    "flickers": flickers, "raced": raced,
                     "cancel_to_restored_ms": statistics.median(done) if done else None,
-                    "pass": bool(restored) and all(r is not None for r in restored)}
+                    "pass": (bool(restored) and all(r is not None for r in restored)
+                             and not any(flickers))}
         finally:
             focus.close()
             for process, _trace, _app in apps:

@@ -205,7 +205,14 @@ jobs:
             mkdir -p "$result"
             set +e
             case "$SUITE" in
-              menu-dismiss) /usr/bin/python3 scripts/behavior/run_menu_dismiss.py --niri "$niri" --bin-dir runtime-bin --capture-dir "$result/screenshots" ;;
+              # The second pass is the machine with no backlight (a desktop PC, most
+              # VMs): Control Centre has no Display row and must open one row shorter.
+              menu-dismiss)
+                /usr/bin/python3 scripts/behavior/run_menu_dismiss.py --niri "$niri" --bin-dir runtime-bin --capture-dir "$result/screenshots"
+                menu_status=$?
+                /usr/bin/python3 scripts/behavior/run_menu_dismiss.py --niri "$niri" --bin-dir runtime-bin --capture-dir "$result/screenshots-no-backlight" \
+                  --only control-centre-grow --no-backlight
+                (exit $((menu_status || $?))) ;;
               power-dialogs) /usr/bin/python3 scripts/behavior/run_power_dialogs.py --niri "$niri" --bin-dir runtime-bin --capture-dir "$result/screenshots" ;;
               window-move) /usr/bin/python3 scripts/behavior/run_window_move.py --niri "$niri" --bin-dir runtime-bin ;;
               # Desktop icons and img() loads paint on an idle, inactive surface with no input.

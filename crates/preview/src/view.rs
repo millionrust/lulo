@@ -3518,11 +3518,7 @@ impl PreviewView {
     /// Edit ▸ Insert ▸ Blank Page (PRV-MENU-007): an empty, same-size page
     /// after the current one.
     fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
-        self.edit_pdf_pages(
-            "insert a blank page",
-            |source, temporary, after| markup::insert_blank_page(source, temporary, after),
-            cx,
-        );
+        self.edit_pdf_pages("insert a blank page", markup::insert_blank_page, cx);
     }
 
     /// Edit ▸ Insert ▸ Page from File… (PRV-MENU-005): choose a PDF or an

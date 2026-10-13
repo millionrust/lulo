@@ -43,11 +43,11 @@ use rmac_ui::{InputEvent, InputState, Position, Rope, RopeExt as _};
 use crate::PrintFile;
 use crate::{document, long_lines, recovery, storage};
 use crate::{
-    ActualSize, AlignCentre, AlignLeft, AlignRight, CloseAll, CloseBar, CloseWindow, CopyRuler,
-    DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont, JumpToSelection, NewFile,
-    OpenFile, OpenPageSetup, PasteRuler, QuitAndKeepWindows, SaveFile, SaveFileAs, SaveGoToFolder,
-    SelectLine, ShowRuler, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleRichText,
-    ToggleWrapToPage, UseSelectionForFind, ZoomIn, ZoomOut,
+    ActualSize, AlignCentre, AlignLeft, AlignRight, CloseAll, CloseBar, CloseWindow, Complete,
+    CopyRuler, DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont, JumpToSelection,
+    NewFile, OpenFile, OpenPageSetup, PasteRuler, QuitAndKeepWindows, SaveFile, SaveFileAs,
+    SaveGoToFolder, SelectLine, ShowRuler, ShowSettings, ToggleFind, ToggleMono, ToggleReplace,
+    ToggleRichText, ToggleWrapToPage, UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use document_io::{

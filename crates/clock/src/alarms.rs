@@ -418,9 +418,15 @@ mod tests {
         };
         let json = serde_json::to_string(&chosen).unwrap();
         assert!(json.contains("\"sound\":\"chime\""));
-        assert_eq!(serde_json::from_str::<Alarm>(&json).unwrap().sound, AlarmSound::Chime);
+        assert_eq!(
+            serde_json::from_str::<Alarm>(&json).unwrap().sound,
+            AlarmSound::Chime
+        );
         // A file saved before sounds existed has no field and rings Alert.
         let old = r#"{"id":3,"hour":6,"minute":30}"#;
-        assert_eq!(serde_json::from_str::<Alarm>(old).unwrap().sound, AlarmSound::Alert);
+        assert_eq!(
+            serde_json::from_str::<Alarm>(old).unwrap().sound,
+            AlarmSound::Alert
+        );
     }
 }

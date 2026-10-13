@@ -72,6 +72,13 @@
           "shortcut": "⌥⌘W",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Print…",
+          "action": "activity_monitor::PrintProcesses",
+          "shortcut": "⌘P",
+          "separator_before": true,
+          "children": []
         }
       ]
     },
@@ -292,6 +299,20 @@
               "shortcut": "",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "% GPU",
+              "action": "activity_monitor::ToggleGpuPercentColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "GPU Time",
+              "action": "activity_monitor::ToggleGpuTimeColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
         },
@@ -398,6 +419,13 @@
         {
           "label": "Windowed Processes",
           "action": "activity_monitor::ShowWindowedProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "GPU Processes",
+          "action": "activity_monitor::ShowGpuProcesses",
           "shortcut": "",
           "separator_before": false,
           "children": []

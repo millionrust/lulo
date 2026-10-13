@@ -759,10 +759,11 @@ fn clear_recent_documents(cx: &mut App) {
         .detach();
 }
 
-/// File ▸ Open…: the portal's open panel, then one window for the choice.
+/// File ▸ Open…: the open panel, then one window for the choice.
 pub(crate) fn choose_and_open(quit_if_cancelled: bool, cx: &mut App) {
+    let chosen = choose_documents(cx);
     cx.spawn(async move |cx| {
-        let chosen = rmac_portal::choose_preview_documents().await;
+        let chosen = chosen.await;
         cx.update(|cx| match chosen {
             Ok(paths) if !paths.is_empty() => open_window(paths, cx),
             Ok(_) if quit_if_cancelled && cx.windows().is_empty() => cx.quit(),
@@ -778,6 +779,42 @@ pub(crate) fn choose_and_open(quit_if_cancelled: bool, cx: &mut App) {
         });
     })
     .detach();
+}
+
+/// The documents the user picks in the open panel: the desktop portal's on
+/// Lulo OS, and the system's own Open dialog elsewhere (on Windows, found by
+/// the robot in scripts/robot/windows: Open… used to fail there with "the
+/// Preview open panel is available in the supported Linux session"). On
+/// Windows the dialog opens when this is called, so callers ask for the
+/// future before they spawn the task that waits for it.
+fn choose_documents(
+    cx: &mut App,
+) -> impl std::future::Future<Output = Result<Vec<PathBuf>, String>> + 'static {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = cx;
+        async move {
+            rmac_portal::choose_preview_documents()
+                .await
+                .map_err(|error| error.to_string())
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let receiver = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some("Open".into()),
+        });
+        async move {
+            match receiver.await {
+                Ok(Ok(paths)) => Ok(paths.unwrap_or_default()),
+                Ok(Err(error)) => Err(format!("could not show the Open panel: {error}")),
+                Err(_) => Err("the Open panel went away".to_string()),
+            }
+        }
+    }
 }
 
 /// A running Preview's `OpenWindow` requests for these documents: one
@@ -833,6 +870,12 @@ fn main() {
             rmac_ui::init_application(cx);
             bind_keys(cx);
             rmac_ui::set_menu_enabled("preview::NewFromClipboard", false, cx);
+            // Take Screenshot hands off to Lulo OS's `screenshot` service,
+            // which Windows does not have: the robot (scripts/robot/windows)
+            // found its three items did nothing there, so the submenu is
+            // left out rather than listed dead.
+            #[cfg(windows)]
+            rmac_ui::set_menu_hidden("preview::TakeScreenshotMenu", true, cx);
             cx.on_window_closed(|cx, _| {
                 let has_document_window = OPEN_VIEWS
                     .with(|views| views.borrow().iter().any(|view| view.upgrade().is_some()));

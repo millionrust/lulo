@@ -54,6 +54,10 @@ notify = "7"
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
+# Lulo voice's speech-to-text runtime (ADR 0024 §8), only in
+# rmac-intelligence-service on Linux: the system ONNX Runtime 1.23+ loaded
+# with dlopen. No prebuilt download, no TLS, no ndarray.
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "load-dynamic"] }
 rmac-calendar-agent = { version = "=0.9.0-beta.1", path = "crates/calendar-agent" }
 rmac-calendar-eds = { version = "=0.9.0-beta.1", path = "crates/rmac-calendar-eds" }
 rmac-calendar-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-calendar-runtime" }

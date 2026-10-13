@@ -164,6 +164,21 @@ pub fn right_group(width: f32, search_field: bool) -> RightGroup {
     }
 }
 
+/// Where the toolbar title must end: 12 before the first right-hand control,
+/// which is the markup toggle (48 left of the zoom group) whenever the
+/// toolbar shows.
+pub fn title_right(group: &RightGroup, toolbar_shown: bool) -> f32 {
+    let first_control = if toolbar_shown {
+        group.zoom - MARKUP_TOGGLE_OFFSET
+    } else {
+        group.zoom
+    };
+    first_control - 12.0
+}
+
+/// The markup toggle's left edge, left of the zoom group.
+pub const MARKUP_TOGGLE_OFFSET: f32 = 48.0;
+
 /// Window size for an image of `pixels`: the image at actual size under the
 /// toolbar, scaled down to fit the default window box.
 pub fn image_window_size(pixels: (f32, f32)) -> (f32, f32) {
@@ -199,6 +214,16 @@ mod tests {
         let images = right_group(800.0, false);
         assert_eq!(images.info, 756.0);
         assert_eq!(images.zoom, 756.0 - 18.5 - 36.0 - 16.5 - 110.0);
+    }
+
+    #[test]
+    fn the_title_ends_before_the_markup_toggle() {
+        for width in [500.0, 648.0, 800.0, 1121.0] {
+            let group = right_group(width, false);
+            let markup_left = group.zoom - MARKUP_TOGGLE_OFFSET;
+            assert!(title_right(&group, true) <= markup_left - 12.0, "{width}");
+            assert!(title_right(&group, false) <= group.zoom - 12.0, "{width}");
+        }
     }
 
     #[test]

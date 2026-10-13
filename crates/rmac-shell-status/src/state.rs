@@ -2,8 +2,8 @@ use rmac_compositor::FocusTarget;
 
 use crate::{
     BatteryIndicator, BluetoothIndicator, Change, Event, FocusIndicator, FocusedContext,
-    NetworkIndicator, NetworkState, NotificationIndicator, OutputContext, Snapshot, SoundIndicator,
-    VpnIndicator,
+    MicrophoneIndicator, NetworkIndicator, NetworkState, NotificationIndicator, OutputContext,
+    Snapshot, SoundIndicator, VpnIndicator,
 };
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -55,6 +55,9 @@ impl State {
             show_battery_percentage: indicators.power && indicators.battery_percentage,
             focus: indicators.focus.then(|| self.focus.clone()).flatten(),
             notifications: indicators.notifications.then_some(self.notifications),
+            microphone: (!self.audio.recording.is_empty()).then(|| MicrophoneIndicator {
+                apps: self.audio.recording.clone(),
+            }),
             clock: self.settings.clock.clone(),
         }
     }

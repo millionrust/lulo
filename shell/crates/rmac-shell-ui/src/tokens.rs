@@ -318,6 +318,11 @@ pub fn system_red() -> u32 {
     hex(current().colors.system_red)
 }
 
+/// The privacy indicator's orange (the microphone in use, BAR-09).
+pub fn system_orange() -> u32 {
+    hex(current().colors.system_orange)
+}
+
 pub fn system_blue() -> u32 {
     hex(current().colors.system_blue)
 }

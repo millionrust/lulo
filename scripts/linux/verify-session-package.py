@@ -83,6 +83,8 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-clipboard-service",
     "rmac-intelligence-service",
     "rmac-intelligence-fetch",
+    "rmac-voice-service",
+    "rmac-voice-hud",
     "rmac-shortcut-broker",
     "rmac-shortcut-dispatch",
     "rmac-locker",
@@ -126,6 +128,8 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-top-bar.service",
     "rmac-update-check.service",
     "rmac-update-check.timer",
+    "rmac-voice-hud.service",
+    "rmac-voice.service",
     "rmac-wallpaper.service",
 )
 EXPECTED_PATHS = {
@@ -165,6 +169,7 @@ EXPECTED_PATHS = {
     Path("usr/share/dbus-1/services/org.rmac.NotificationCenter1.service"),
     Path("usr/share/dbus-1/services/org.rmac.Focus1.service"),
     Path("usr/share/dbus-1/services/org.rmac.Intelligence1.service"),
+    Path("usr/share/dbus-1/services/org.rmac.Voice1.service"),
     Path(
         "usr/share/dbus-1/services/"
         "org.freedesktop.impl.portal.desktop.rmac.filechooser.service"

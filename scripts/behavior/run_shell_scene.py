@@ -58,6 +58,20 @@ SCENE_PINS = [
     "org.rmac.Weather",
     "org.rmac.Preview",
 ]
+# rmac-shell-settings' DEFAULT_PINNED_APPS, and the pins among them whose
+# app Lulo on Windows does not ship (none now: Mail ships there too).
+DEFAULT_PINS = [
+    "org.rmac.Files",
+    "org.rmac.AppDrawer",
+    "org.rmac.Notes",
+    "org.rmac.TextEditor",
+    "org.rmac.Terminal",
+    "org.rmac.SystemSettings",
+    "org.rmac.Weather",
+    "org.rmac.Calculator",
+    "org.rmac.Mail",
+]
+NOT_ON_WINDOWS: set[str] = set()
 HICOLOR_INDEX = (
     "[Icon Theme]\nName=Hicolor\nComment=Fallback icon theme\nDirectories=scalable/apps\n\n"
     "[scalable/apps]\nSize=64\nMinSize=8\nMaxSize=1024\nContext=Applications\nType=Scalable\n"
@@ -92,7 +106,12 @@ def prepare_profile(home: Path, default_dock: bool = False) -> None:
     settings = home / ".config/rmac"
     settings.mkdir(parents=True, exist_ok=True)
     if default_dock:
-        (settings / "shell.json").write_text('{"version": 3, "settings": {}}\n')
+        # A fresh profile's own pins (`DEFAULT_PINNED_APPS`) less the ones
+        # whose app does not build for Windows yet: the Windows Dock leaves
+        # an uninstalled pin out (rmac-dock, ADR 0023), while Lulo OS always
+        # has every Lulo app installed and draws them all.
+        pins = ",".join(f'"{app}"' for app in DEFAULT_PINS if app not in NOT_ON_WINDOWS)
+        (settings / "shell.json").write_text(f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n')
     else:
         pins = ",".join(f'"{app}"' for app in SCENE_PINS)
         (settings / "shell.json").write_text(f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n')
@@ -101,6 +120,33 @@ def prepare_profile(home: Path, default_dock: bool = False) -> None:
             shutil.rmtree(item)
         else:
             item.unlink()
+
+
+def write_scheme(config: Path, scheme: str) -> None:
+    """An app window scene's appearance, in the theme store every Lulo app
+    reads (`rmac-theme`), the same file on Lulo OS and on Windows."""
+    if scheme:
+        (config / "rmac").mkdir(parents=True, exist_ok=True)
+        (config / "rmac/theme.json").write_text(
+            f'{{"version": 1, "preferences": {{"color_scheme": "{scheme}"}}}}\n')
+
+
+def window_box(windows: list[dict], pid: int) -> tuple[int, int, int, int] | None:
+    """The screen box of `pid`'s window from `niri msg -j windows` (scale 1):
+    the window itself, without the shadow niri draws round it."""
+    for window in windows:
+        if window.get("pid") != pid:
+            continue
+        layout = window.get("layout") or {}
+        position = layout.get("tile_pos_in_workspace_view")
+        size = layout.get("window_size")
+        if not position or not size:
+            continue
+        offset = layout.get("window_offset_in_tile") or [0, 0]
+        x = round(position[0] + offset[0])
+        y = round(position[1] + offset[1])
+        return (x, y, x + int(size[0]), y + int(size[1]))
+    return None
 
 
 def scene_environment() -> dict[str, str]:
@@ -181,6 +227,15 @@ class Run:
         outputs = json.loads(result.stdout) if result.returncode == 0 and result.stdout.strip() else {}
         return next(iter(outputs), None)
 
+    def app_window(self, pid: int):
+        import json
+
+        result = subprocess.run([self.args.niri, "msg", "-j", "windows"], env=self.env,
+                                capture_output=True, text=True, timeout=10)
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        return window_box(json.loads(result.stdout), pid)
+
     def binary(self, *names: str) -> Path:
         for name in names:
             candidate = Path(self.args.bin_dir) / name
@@ -190,6 +245,7 @@ class Run:
 
     def run(self) -> int:
         prepare_profile(self.home, self.args.default_dock)
+        write_scheme(Path(self.env.get("XDG_CONFIG_HOME", self.home / ".config")), self.args.scheme)
         ready = self.work / "ready"
         ready.mkdir(exist_ok=True)
         try:
@@ -225,6 +281,16 @@ class Run:
                     self.spawn([str(apps / "rmac-app-drawer"), "--service", "--show"], "apps", panel_env)
                 else:
                     raise SystemExit(f"unknown --open {self.args.open!r}")
+            app = None
+            if self.args.launch:
+                # An app window scene: one Lulo app's own window over the
+                # desktop, as scripts/windows/shell_scene.py --launch draws it.
+                apps = Path(self.args.app_bin_dir or self.args.bin_dir)
+                app = self.spawn([str(apps / self.args.launch)], "app",
+                                 {**scene_environment(), "VK_ICD_FILENAMES": LAVAPIPE})
+                if not self.wait_for(lambda: self.app_window(app.pid), 60):
+                    print(f"FAIL {self.args.launch} opened no window", flush=True)
+                    return 1
             # Icons and the wallpaper decode off the UI thread; let them land.
             time.sleep(self.args.settle)
             output = Path(self.args.output)
@@ -235,6 +301,22 @@ class Run:
                 print(f"FAIL capture: {result.stderr.decode(errors='replace')[-300:]}", flush=True)
                 return 1
             print(f"PASS captured the Lulo OS scene to {output}", flush=True)
+            if app is not None and self.args.window_output:
+                box = self.app_window(app.pid)
+                if box is None:
+                    print(f"FAIL {self.args.launch}'s window went away", flush=True)
+                    return 1
+                left, top, right, bottom = box
+                window_output = Path(self.args.window_output)
+                window_output.parent.mkdir(parents=True, exist_ok=True)
+                result = subprocess.run(
+                    ["grim", "-g", f"{left},{top} {right - left}x{bottom - top}", str(window_output)],
+                    env=self.env, capture_output=True, check=False)
+                if result.returncode != 0 or not window_output.is_file():
+                    print(f"FAIL window capture: {result.stderr.decode(errors='replace')[-300:]}",
+                          flush=True)
+                    return 1
+                print(f"PASS {self.args.launch}'s window {box} to {window_output}", flush=True)
             return 0
         finally:
             for process in reversed(self.children):
@@ -298,10 +380,18 @@ def main() -> int:
                         help="directory with rmac-launcher and rmac-quick-settings (for --open)")
     parser.add_argument("--default-dock", action="store_true",
                         help="the Dock keeps a fresh profile's own pins")
+    parser.add_argument("--launch", default="",
+                        help="an app window scene: start this Lulo app from --app-bin-dir")
+    parser.add_argument("--window-output", default="",
+                        help="with --launch: also save the app's window alone here")
+    parser.add_argument("--scheme", choices=["", "light", "dark"], default="",
+                        help="the appearance the scene's profile asks for")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.output = str(Path(args.output).resolve())
+    if args.window_output:
+        args.window_output = str(Path(args.window_output).resolve())
     args.bin_dir = str(Path(args.bin_dir).resolve())
     if args.app_bin_dir:
         args.app_bin_dir = str(Path(args.app_bin_dir).resolve())

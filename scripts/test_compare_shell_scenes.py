@@ -34,7 +34,7 @@ class CompareShellScenes(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             first = scene(Path(directory) / "linux.png")
             second = scene(Path(directory) / "windows.png")
-            _, _, _, scores = compare_shell_scenes.compare(first, second, 1.5, 32)
+            _, _, _, scores, _ = compare_shell_scenes.compare(first, second, 1.5, 32)
             self.assertEqual(compare_shell_scenes.failures(scores, 6.0, 0.03), [])
             self.assertEqual(scores["screen"]["mean"], 0.0)
 
@@ -42,7 +42,7 @@ class CompareShellScenes(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             first = scene(Path(directory) / "linux.png")
             second = scene(Path(directory) / "windows.png", dock_x=380)
-            _, _, _, scores = compare_shell_scenes.compare(first, second, 1.5, 32)
+            _, _, _, scores, _ = compare_shell_scenes.compare(first, second, 1.5, 32)
             problems = compare_shell_scenes.failures(scores, 1.0, 0.01)
             self.assertTrue(any(problem.startswith("dock") for problem in problems), problems)
 
@@ -50,16 +50,33 @@ class CompareShellScenes(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             first = scene(Path(directory) / "linux.png")
             second = scene(Path(directory) / "windows.png", text_shift=1)
-            _, _, _, scores = compare_shell_scenes.compare(first, second, 1.5, 32)
+            _, _, _, scores, _ = compare_shell_scenes.compare(first, second, 1.5, 32)
             self.assertEqual(compare_shell_scenes.failures(scores, 6.0, 0.03), [])
 
     def test_the_diff_sheet_shows_both_screens_and_the_differences(self):
         with tempfile.TemporaryDirectory() as directory:
             first = scene(Path(directory) / "linux.png")
             second = scene(Path(directory) / "windows.png", bar_colour=(200, 0, 0))
-            linux, windows, difference, _ = compare_shell_scenes.compare(first, second, 1.5, 32)
+            linux, windows, difference, _, _ = compare_shell_scenes.compare(first, second, 1.5, 32)
             sheet = compare_shell_scenes.diff_image(linux, windows, difference)
             self.assertEqual(sheet.size, (1200, 300))
+
+    def test_window_scenes_score_the_title_bar_on_its_own(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def window(path: Path, title_bar) -> Path:
+                image = Image.new("RGB", (230, 400), (30, 30, 40))
+                ImageDraw.Draw(image).rectangle((0, 0, 229, 51), fill=title_bar)
+                image.save(path)
+                return path
+
+            first = window(Path(directory) / "linux.png", (50, 50, 60))
+            second = window(Path(directory) / "windows.png", (200, 200, 210))
+            _, _, _, scores, sizes = compare_shell_scenes.compare(first, second, 1.5, 32, "window")
+            self.assertEqual(set(scores), {"window", "title bar", "content"})
+            self.assertLess(scores["content"]["mean"], 1.0)
+            problems = compare_shell_scenes.failures(scores, 6.0, 0.03)
+            self.assertTrue(any(problem.startswith("title bar") for problem in problems), problems)
+            self.assertEqual(sizes, ((230, 400), (230, 400)))
 
 
 if __name__ == "__main__":

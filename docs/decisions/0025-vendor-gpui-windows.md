@@ -240,6 +240,37 @@ original measurement, run 37596770109, gave the same 6 to 13 ticks and 375 to
 - The window is visible 70 to 175 ms before its first frame is presented
   (WIN-OS-16).
 
+## Text (branch `op/win-visual`)
+
+Lulo's windows on Windows read heavier and softer than the same windows on
+Lulo OS (owner, 2026-10-13). Both draw Inter from the same OTF files with
+the same gamma (1.8), contrast (1.0 grayscale, 0.5 subpixel) and shaders;
+the DirectWrite parameters on the owner's laptop were read with a probe and
+match `gpui_wgpu`'s defaults. What differed was the rasterizer: DirectWrite
+drew Inter's CFF outlines with its own hinting and antialiasing, where
+`gpui_wgpu` renders them with swash, hinted.
+
+- `direct_write.rs` now rasterizes the glyphs of the fonts the app added
+  itself (`add_fonts`: Lulo's Inter and JetBrains Mono) with the same swash
+  calls `CosmicTextSystem` makes on Lulo OS: hinted, the same subpixel
+  offsets, grayscale for a transparent window and LCD subpixel coverage for
+  an opaque one (the window decides, as on Lulo OS). A DirectWrite face is
+  matched to its swash face by its `head` table; a face DirectWrite
+  simulates stays DirectWrite's, as do system fallbacks and emoji.
+  DirectWrite still shapes and lays out every line.
+- Fonts added from `'static` bytes are lent to DirectWrite with an owner
+  instead of copied: each face had cost a private copy of its file in
+  every process (about 600 KB an Inter face; 2.4 MB for the four faces
+  shipped before this branch).
+- The CI window scenes (`shell-scenes.yml`) put Calculator and Text Editor
+  from the same commit side by side (mean difference about 1 in 255, the
+  title bar band under 3). On the owner's laptop, against the same apps
+  in a nested Lulo OS at scale 1, Text Editor's toolbar text now differs
+  by a mean of 2.2 in 255 (DirectWrite: 6.0) and Files' sidebar by 5.7 to
+  8.3 (DirectWrite: 11.6 to 13.9; the rest is the words Windows' Files uses
+  and icons a debug build does not embed).
+- `RMAC_TEXT_TRACE=1` reports on stderr which faces swash took over.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_windows` and re-applying the

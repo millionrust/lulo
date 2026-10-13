@@ -47,9 +47,9 @@ pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
     body_bg, cycle_through_windows, double_click_title_bar_action, fill_focused_window,
     minimize_focused_window, page, quit_application, title_bar, title_bar_content,
-    title_bar_drag_region, toolbar, toolbar_group, toolbar_title, traffic_lights,
-    traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin, windowed_process_ids,
-    TrafficLights,
+    title_bar_drag_region, toggle_full_screen_focused_window, toolbar, toolbar_group,
+    toolbar_title, traffic_lights, traffic_lights_active, traffic_lights_fixed_size,
+    traffic_lights_origin, windowed_process_ids, TrafficLights,
 };
 pub use components::{
     alert, alert_cancel_default, alert_with_icon, dialog, dialog_button, Dialog, DialogButtonKind,

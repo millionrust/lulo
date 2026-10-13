@@ -1,0 +1,21 @@
+[package]
+name = "rmac-voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+description = "Lulo's talk key (ADR 0024 §8): the listening pill shown while ⌥Space is held, which hands the transcript to Spotlight. Started by the key, gone when done."
+
+[[bin]]
+name = "rmac-voice-hud"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+blocking.workspace = true
+futures-util.workspace = true
+gpui.workspace = true
+rmac-intelligence = { workspace = true, features = ["client"] }
+rmac-shortcuts.workspace = true
+rmac-ui.workspace = true

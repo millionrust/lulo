@@ -57,9 +57,14 @@ fn send_window_action(action: WindowAction, _cx: &mut App) {
 }
 
 /// Windows carries out the same request through GPUI (see [`native`]).
+///
+/// Deferred, like Hide, Quit and Cycle Through Windows below: a key press
+/// (Ctrl+M) runs its action while GPUI has the focused window leased for
+/// dispatch, so updating that window there fails silently and the key did
+/// nothing. A menu command arrives outside any window update and worked.
 #[cfg(not(unix))]
 fn send_window_action(action: WindowAction, cx: &mut App) {
-    native::perform(action, cx);
+    cx.defer(move |cx| native::perform(action, cx));
 }
 
 /// The command word Mission Control's resident service
@@ -199,6 +204,12 @@ pub fn minimize_focused_window(cx: &mut App) {
     send_window_action(WindowAction::Minimize, cx);
 }
 
+/// Enter or leave full screen for this process's focused window, the same
+/// path the green button's plain click uses (F11 on Windows).
+pub fn toggle_full_screen_focused_window(cx: &mut App) {
+    send_window_action(WindowAction::ToggleFullscreen, cx);
+}
+
 /// Window ▸ Zoom (⌃⌘Z): toggle this process's focused window between its
 /// user size and the working area, the same path the green button's
 /// ⌥-click and the title bar's double-click (when set to Zoom) already
@@ -221,7 +232,7 @@ pub fn fill_focused_window(cx: &mut App) {
 /// back. With `others`, ⌥⌘H parks every other application's windows instead.
 pub fn hide_application(others: bool, cx: &mut App) {
     #[cfg(not(unix))]
-    native::hide_application(others, cx);
+    cx.defer(move |cx| native::hide_application(others, cx));
     #[cfg(unix)]
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
@@ -264,7 +275,7 @@ pub fn hide_application(others: bool, cx: &mut App) {
 /// window does not quit the app by surprise.
 pub fn quit_application(cx: &mut App) {
     #[cfg(not(unix))]
-    native::quit_application(cx);
+    cx.defer(native::quit_application);
     #[cfg(unix)]
     cx.spawn(async move |cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
@@ -344,7 +355,7 @@ fn arm_quit_after_last_window(cx: &mut App) {
 /// sharing its app id.
 pub fn cycle_through_windows(cx: &mut App) {
     #[cfg(not(unix))]
-    native::cycle_through_windows(cx);
+    cx.defer(native::cycle_through_windows);
     #[cfg(unix)]
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
@@ -870,9 +881,9 @@ impl RenderOnce for TrafficLights {
             .use_keyed_state("tl-zoom-focus", cx, |_, cx| cx.focus_handle())
             .read(cx)
             .clone();
-        let close_is_focused = close_focus.is_focused(window);
-        let min_is_focused = min_focus.is_focused(window);
-        let zoom_is_focused = zoom_focus.is_focused(window);
+        let close_is_focused = mac::shows_focus_ring(close_focus.is_focused(window), window);
+        let min_is_focused = mac::shows_focus_ring(min_focus.is_focused(window), window);
+        let zoom_is_focused = mac::shows_focus_ring(zoom_focus.is_focused(window), window);
         let zoom = traffic_light(
             "tl-zoom",
             "Enter Full Screen",

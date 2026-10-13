@@ -20,12 +20,16 @@ detail), `docs/journey-suite.md` (the package-scoped fixture runner).
 
 | Job | What it checks | Run it locally |
 |---|---|---|
+| `changes` | Whether anything outside `docs/**/*.md` changed (the compare API, against the previous push, the PR base or, for a new branch, `dev`); when only docs changed, the Rust jobs below are skipped — see [Build speed](#build-speed) | — |
 | `release-contracts` | `scripts/run-release-contract-checks.py` — the committed release-contract suite | `python3 scripts/run-release-contract-checks.py` |
 | `dependency-policy` | `cargo deny check` (advisories, licenses, bans, sources) against the root `deny.toml` | `cargo install --locked cargo-deny --version 0.19.8 && cargo deny --locked --log-level error check --hide-inclusion-graph` |
 | `linux` | Formatting, the shared-control/gpui_component/no-mac-captures/design-token boundary scripts, wording, Clippy (`-D warnings`), `cargo test --workspace --all-features`, and the full `scripts/test_*.py` suite | See below |
 | `linux-2604` | `linux`'s formatting/Clippy/tests/Python-suite steps (not its repo-specific boundary scripts) on `ubuntu-26.04` instead of `ubuntu-24.04`. **Non-blocking** (`continue-on-error: true`) — see [Ubuntu 26.04](#ubuntu-2604) | Same `cargo`/`python3` commands as `linux`, below |
 | `macos` | Clippy, tests, and the Python suite on `macos-15` | Same commands as `linux`, minus the Linux-only boundary scripts |
-| `windows` | ADR 0023 phases 1–2 on `windows-latest`: Clippy (`-D warnings`, `--all-targets`) and unit tests for Calculator, Notes, Text Editor, `rmac-ui`, `rmac-editor`, `rmac-storage`, `rmac-recent-documents`, `rmac-sound` and the `rmac-notes-*` crates, a debug build of the three apps, and `scripts/windows/launch_smoke.py`, which starts each app with a private profile, checks it opens a window, taps Alt to open the menu strip's first menu, presses Ctrl+N, and hands a second Text Editor launch to the running one (screenshots are uploaded). **Blocking**: every check step runs (each `continue-on-error: true`, so one run shows all breakage) and the final "Windows summary" step fails the job if Clippy, the tests, the icons, the build or the launch check failed; the idle gate (`scripts/windows/idle_gate.py`, ADR 0025) fails it directly — every app but Terminal within one tick of CPU over the 20 s idle window, lulo-shell's idle working set within 60 MB, and a missing results file or an expected app without a reading is a failure — see [Windows](#windows) | Windows only; see [Windows](#windows) |
+| `windows-clippy` | Clippy (`-D warnings`, `--all-targets`) on `windows-latest` for the Windows packages (`RMAC_WINDOWS_PACKAGES` in `ci.yml`: Calculator, Notes, Text Editor, Preview, Clock, Weather, Terminal, Files, System Settings, the Lulo layer and the shared crates they use) | Windows only; see [Windows](#windows) |
+| `windows-tests` | The same packages' unit tests, with `gpui_windows`' | Windows only; see [Windows](#windows) |
+| `windows-build` | The exe icons (`scripts/windows/make_icons.sh`) and one debug build of the apps and the Lulo layer, uploaded as the `windows-apps` artifact | Windows only; see [Windows](#windows) |
+| `windows-launch` | Three parts on three runners, each on `windows-build`'s exes: `scripts/windows/launch_smoke.py` starts each app with a private profile, checks it opens a window, taps Alt to open the menu strip's first menu, presses Ctrl+N, and hands a second Text Editor launch to the running one; the Lulo layer part checks lulo-session and lulo-shell and the installer upgrade. Each part's idle gate (`scripts/windows/idle_gate.py`, ADR 0025) fails it directly — every app but Terminal within one tick of CPU over the 20 s idle window, lulo-shell's idle working set within 60 MB, and a missing results file or an expected app without a reading is a failure — see [Windows](#windows) | Windows only; see [Windows](#windows) |
 | `upstream-gpui-linux` | The separately locked `shell/` workspace: formatting, its own `cargo deny`, `cargo test --lib`, Clippy on the `wayland` feature, and a nested-Wayland smoke check | See `shell/` steps below |
 
 ## `runtime.yml` — every push and pull request
@@ -34,11 +38,19 @@ The `build` job compiles every root workspace app binary and every shell
 workspace binary with `--features wayland` using the debug profile without
 debug symbols. It strips and compresses one artifact of the installed binary
 names; playback jobs restore the short shell entry points after download.
-Eight `scenarios` jobs divide all recorded Mac and Lulo behavior
-cases with `run_lulo.py --shard INDEX/8`; each gets its own private D-Bus,
-Sway, XDG directories and app processes. Thirteen `checks` jobs run menu
-dismissal, power dialogs, window movement and the ten everyday journeys in
-private nested Sway/niri sessions. They download the same binaries. Only Lulo
+Four `scenarios` jobs play two of the eight shards each, one after the
+other (`run_lulo.py --shard INDEX/8`, so the summary still sees
+`scenario-0` to `scenario-7`); each shard gets its own private D-Bus,
+Sway, XDG directories and app processes. Four `checks` jobs run the
+eighteen checks (menu dismissal, power dialogs, window movement, idle
+CPU, desktop paint, Spotlight intents, Writing Tools, the Intelligence unit and the ten
+everyday journeys) one after another in private nested Sway/niri sessions,
+each with its own result directory; idle-cpu runs first on its runner and
+intelligence-unit, which changes the runner's lingering and AppArmor
+settings, last on its. They download the same binaries. Eight playback
+runners instead of 25 keep CI and this workflow together under the free
+plan's limit of about 20 concurrent jobs, so no playback waits in a queue
+(see [Build speed](#build-speed)). Only Lulo
 screenshots are uploaded, together with result JSON and logs.
 The menu bar journey covers controls available on a headless host; CI has no
 battery or audio output, so it stops after opening Control Centre. The separate
@@ -287,13 +299,15 @@ crates, PipeWire, D-Bus Focus state, xattrs) are `cfg(unix)` or
 `cfg(target_os = "linux")`; `deny.toml` lists `x86_64-pc-windows-msvc` so
 `cargo deny` covers the Windows dependency graph.
 
-The `windows` job saves one Cargo cache per lockfile even when a step fails,
-and runs every later step after a Clippy failure, so one run reports all
-Windows breakage. It is blocking. Under `continue-on-error` a failed step's
-API conclusion still reads "success", which once let a run whose Windows
-build had failed look green (run 37715212884): the last step, "Windows
-summary", reads each check step's real `outcome` and fails the job if any
-failed. Since `gpui_windows` is vendored and parks idle windows (ADR 0025),
+The Windows checks run as five jobs side by side: `windows-clippy`,
+`windows-tests` and `windows-build`, then three `windows-launch` parts
+(apps 1, apps 2 and the Lulo layer) on the exes `windows-build` uploads,
+so nothing is built twice. Every job is blocking and none uses
+`continue-on-error` (under it a failed step's API conclusion reads
+"success", which once let a run whose Windows build had failed look green,
+run 37715212884); in a launch part the idle gate and the installer check
+still run after a failed launch check (`!cancelled()`), so one run reports
+every kind of Windows breakage. Since `gpui_windows` is vendored and parks idle windows (ADR 0025),
 `launch_smoke.py --results` records each app's idle CPU and `idle_gate.py`
 fails the job when any app but Terminal used more than one 15.6 ms tick
 over the 20 s idle window, naming the wake-ups and threads that did it,
@@ -303,8 +317,7 @@ used (WIN-OS-53; the GPU-backed reading on the owner's Radeon laptop is in
 ADR 0023, since the runner renders with WARP), when the results file is
 missing, or when an app named with `--expect` has no reading. The
 "Installer upgrade" step (`scripts/windows/upgrade_smoke.py`, WIN-OS-54)
-installs three MSIs over each other and fails the job, through the summary
-step, unless each newer or re-stamped one replaced the installed files. No Windows check is non-blocking today: the launch and Lulo layer
+installs three MSIs over each other and fails the Lulo layer part unless each newer or re-stamped one replaced the installed files. No Windows check is non-blocking today: the launch and Lulo layer
 checks (real input on the runner's desktop) have run clean, and one that
 turns out flaky is to be listed here with its reason before it is made
 non-blocking. The same run prints each app's start-up phases
@@ -320,4 +333,81 @@ cargo test --locked --no-fail-fast -p rmac-calculator -p rmac-notes -p rmac-text
   -p rmac-ui -p rmac-storage -p rmac-recent-documents
 cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor --bins
 python scripts/windows/launch_smoke.py target/debug rmac-calculator rmac-notes rmac-text-editor
+python scripts/windows/launch_smoke.py --shell target/debug   # the Lulo layer alone
 ```
+
+## Build speed
+
+Adopted 2026-10-13 (op/ci-speed). Everything here is free and open source;
+no paid or larger runners and no paid cache.
+
+- **No `target` caches.** Each Rust job used to save its whole `target`
+  directory with `actions/cache` (12.6 GB for `linux`, 8 GB for `windows`,
+  5.5 GB for `macos`). One entry was already over the repository's 10 GB
+  cache budget, so the entries evicted each other, every run missed, and
+  saving took up to 12 minutes (the Windows job's "Save Cargo data"). The
+  Cargo registry and Git checkouts are not cached either: fetching them
+  takes about a minute, which is cheaper than the budget they would take.
+- **sccache** ([mozilla-actions/sccache-action], Apache-2.0) wraps rustc
+  (`RUSTC_WRAPPER=sccache`, `SCCACHE_GHA_ENABLED=true`) in every compiling
+  job of `ci.yml` and in the `runtime.yml` build. It stores each compiled
+  crate as its own GitHub Actions cache entry, keyed by the compiler, its
+  arguments and its sources, so the jobs share entries and only what
+  changed is written. A branch run reads its own entries and those of the
+  default branch (`dev`), so once `dev` has run, agent branches start warm.
+  The "Set up sccache" post step prints the hit rate. sccache cannot cache
+  executables (test binaries, apps, build scripts, proc macros), incremental
+  compiles, or `clippy-driver` on workspace crates; those still compile.
+- **No debug info, no incremental state** (`CARGO_PROFILE_DEV_DEBUG=0`,
+  `CARGO_INCREMENTAL=0`) in CI only: smaller objects compile, link and
+  cache faster, and sccache needs non-incremental compiles. Panic messages
+  keep their file and line.
+- **mold** (MIT) links on the Linux jobs and the runtime build
+  (`RUSTFLAGS=-C linker-features=-lld -C link-arg=-fuse-ld=mold`, set in
+  the workflow, not in `.cargo/config`). `release.yml`, `candidate.yml` and
+  `native-reproducibility.yml` do not set it, so packages and their
+  reproducibility check are built exactly as before.
+- **cargo-nextest is not used:** running the tests takes about 25 s of
+  the Linux job's test step (the rest is compiling), and no doc-test runs
+  (every one is `ignore`d), so nextest would save seconds at the cost of
+  installing it.
+- **Windows** runs as five jobs side by side instead of one 44-minute job
+  (see [Windows](#windows)): Clippy, tests and the build start together,
+  and three launch parts share the build's exes.
+- **Runtime playback** runs on eight runners instead of 25 (two scenario
+  shards or several checks per runner), so CI and runtime together stay
+  under the free plan's limit of about 20 concurrent jobs and no playback
+  job waits in a queue.
+- **Docs-only changes:** when only `docs/**/*.md` changed, `runtime.yml`
+  does not run (`paths-ignore`), and `ci.yml`'s `changes` job skips the
+  Rust, macOS, Windows and shell jobs; the Python suite and release
+  contracts, which read the docs, still run. Any other file — including a
+  change that looks Linux-only — runs everything.
+- **Superseded runs:** a newer push to the same branch cancels the older
+  CI run (except on `dev`), as `runtime.yml` already did.
+
+Measured on 2026-10-13 (minutes each job ran, queueing left out; runs
+38369865321/38369865318 before, 38396292030/38396292063 after, both with
+no warm sccache entries):
+
+| Job | Before | After |
+|---|---|---|
+| Windows (one job / slowest path: build, then a launch part) | 43.8 | 10.2 + 5.6 |
+| Windows Clippy / tests (alongside the build) | in the above | 7.0 / 6.9 |
+| Linux checks | 18.5 | 13.4 |
+| Linux checks (Ubuntu 26.04) | 23.8 | 13.7 |
+| macOS checks | 18.2 | 15.0 |
+| Current GPUI Linux runtime gate | 10.2 | 11.4 |
+| CI workflow, first job to last | 43.9 | 19.4 |
+| Runtime build | 14.0 | 14.5 |
+| Runtime playback jobs | 25, 1.3–6.3 each | 8, 5.8–7.5 each (11.8 for the runner whose desktop-paint check fails, as before) |
+
+These are cold numbers. While other branches still ran the old workflow
+(until this lands on `dev`), each of their 5–16 GB `target` caches evicted
+every sccache entry within minutes, so no run could read the previous
+run's entries; within one run, jobs shared about 25% of the Linux compiles.
+Once no workflow saves a `target` cache, a run reads the crates earlier
+runs compiled, and only the changed crates and the executables (which
+sccache never caches) compile.
+
+[mozilla-actions/sccache-action]: https://github.com/mozilla-actions/sccache-action

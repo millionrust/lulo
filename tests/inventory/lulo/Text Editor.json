@@ -242,6 +242,13 @@
           "children": []
         },
         {
+          "label": "Complete",
+          "action": "text_editor::Complete",
+          "shortcut": "⌥⎋",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Select All",
           "action": "input::SelectAll",
           "shortcut": "⌘A",

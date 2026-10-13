@@ -281,6 +281,17 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &ReturnToDefaultSize, window, _| {
                 this.return_to_default_size(window);
             }))
+            .on_action(cx.listener(|_, _: &ReturnAllToDefaultSize, _, cx| {
+                // Like Close All: each Terminal window of this app, once the
+                // current action has returned.
+                cx.defer(|cx| {
+                    for handle in cx.windows() {
+                        let _ = handle.update(cx, |_, window, cx| {
+                            window.dispatch_action(Box::new(ReturnToDefaultSize), cx);
+                        });
+                    }
+                });
+            }))
             // Shell ▸ New Tab ▸ <profile>: same shape as the window submenu,
             // but a tab in this window rather than a new window.
             .on_action(cx.listener(|this, _: &TabBasicDefault, window, cx| {

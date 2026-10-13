@@ -47,12 +47,16 @@ pub(crate) enum ColKey {
     Sandbox,
     /// Wake-ups since the last sample (MON-MENU-011).
     IdleWakeUps,
+    /// Busiest graphics engine's utilisation (MON-MENU-003).
+    GpuPercent,
+    /// Total graphics-engine busy time (MON-MENU-004).
+    GpuTime,
 }
 
 impl ColKey {
     /// Canonical order, also the order shown in the chooser. Process Name
     /// leads, matching the Mac (MON-02); PID moves later rather than first.
-    pub(crate) const ALL: [Self; 22] = [
+    pub(crate) const ALL: [Self; 24] = [
         Self::Name,
         Self::Cpu,
         Self::CpuTime,
@@ -75,6 +79,8 @@ impl ColKey {
         Self::Kind,
         Self::Sandbox,
         Self::IdleWakeUps,
+        Self::GpuPercent,
+        Self::GpuTime,
     ];
 
     pub(crate) fn id(self) -> &'static str {
@@ -101,6 +107,8 @@ impl ColKey {
             Self::Kind => "kind",
             Self::Sandbox => "sandbox",
             Self::IdleWakeUps => "idle_wakeups",
+            Self::GpuPercent => "gpu_percent",
+            Self::GpuTime => "gpu_time",
         }
     }
 
@@ -138,6 +146,8 @@ impl ColKey {
             Self::Kind => 110.0,
             Self::Sandbox => 80.0,
             Self::IdleWakeUps => 120.0,
+            Self::GpuPercent => 90.0,
+            Self::GpuTime => 100.0,
         }
     }
 
@@ -161,6 +171,8 @@ impl ColKey {
                 | Self::RealShared
                 | Self::Compressed
                 | Self::IdleWakeUps
+                | Self::GpuPercent
+                | Self::GpuTime
         )
     }
 
@@ -176,6 +188,8 @@ impl ColKey {
                 | Self::Kind
                 | Self::Sandbox
                 | Self::IdleWakeUps
+                | Self::GpuPercent
+                | Self::GpuTime
         )
     }
 
@@ -221,6 +235,8 @@ impl From<ColKey> for ProcessColumn {
             ColKey::Kind => Self::Kind,
             ColKey::Sandbox => Self::Sandbox,
             ColKey::IdleWakeUps => Self::IdleWakeUps,
+            ColKey::GpuPercent => Self::GpuPercent,
+            ColKey::GpuTime => Self::GpuTime,
         }
     }
 }
@@ -250,6 +266,8 @@ impl From<ProcessColumn> for ColKey {
             ProcessColumn::Kind => Self::Kind,
             ProcessColumn::Sandbox => Self::Sandbox,
             ProcessColumn::IdleWakeUps => Self::IdleWakeUps,
+            ProcessColumn::GpuPercent => Self::GpuPercent,
+            ProcessColumn::GpuTime => Self::GpuTime,
         }
     }
 }
@@ -443,6 +461,8 @@ mod tests {
             ColKey::Kind,
             ColKey::Sandbox,
             ColKey::IdleWakeUps,
+            ColKey::GpuPercent,
+            ColKey::GpuTime,
         ];
         assert_eq!(parse(&format(&expected)).unwrap(), expected);
         let titles: Vec<_> = expected.iter().map(|key| key.title()).collect();
@@ -456,7 +476,9 @@ mod tests {
                 "Compressed Memory",
                 "Kind",
                 "Sandbox",
-                "Idle Wake Ups"
+                "Idle Wake Ups",
+                "% GPU",
+                "GPU Time"
             ]
         );
         // The resident-size column keeps the Mac's other name.

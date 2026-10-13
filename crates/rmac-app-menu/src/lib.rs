@@ -1195,14 +1195,18 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             ),
             item!("Show Previous Tab", "terminal::PrevTab", "⇧⌘[", separator),
             item!("Show Next Tab", "terminal::NextTab", "⇧⌘]"),
-            // TRM-MENU-011: back to Settings ▸ Window ▸ Size. Return All to
-            // Default Size stays out: every Terminal window is its own
-            // process, with no channel to resize the others' windows.
+            // TRM-MENU-011/012: back to Settings ▸ Window ▸ Size, for this
+            // window or for every Terminal window of the app.
             item!(
                 "Return to Default Size",
                 "terminal::ReturnToDefaultSize",
                 "",
                 separator
+            ),
+            item!(
+                "Return All to Default Size",
+                "terminal::ReturnAllToDefaultSize",
+                ""
             ),
         ],
     },
@@ -1846,6 +1850,11 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                         "activity_monitor::ToggleIdleWakeUpsColumn",
                         ""
                     ),
+                    // MON-MENU-003/004: from the DRM clients each process
+                    // holds open (`/proc/<pid>/fdinfo`), where the driver
+                    // reports them.
+                    item!("% GPU", "activity_monitor::ToggleGpuPercentColumn", ""),
+                    item!("GPU Time", "activity_monitor::ToggleGpuTimeColumn", ""),
                 ]
             ),
             submenu!(
@@ -1923,6 +1932,8 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 "activity_monitor::ShowWindowedProcesses",
                 ""
             ),
+            // MON-MENU-015: processes holding a graphics (DRM) client.
+            item!("GPU Processes", "activity_monitor::ShowGpuProcesses", ""),
             item!(
                 "Selected Processes",
                 "activity_monitor::ShowSelectedProcesses",

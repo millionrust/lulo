@@ -27,11 +27,13 @@ pub(crate) enum ViewFilter {
     InactiveProcesses,
     /// MON-MENU-023: only processes that own a window.
     WindowedProcesses,
+    /// MON-MENU-015: only processes that hold a graphics (DRM) client.
+    GpuProcesses,
     SelectedProcesses,
 }
 
 impl ViewFilter {
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::All,
         Self::AllHierarchical,
         Self::MyProcesses,
@@ -40,6 +42,7 @@ impl ViewFilter {
         Self::ActiveProcesses,
         Self::InactiveProcesses,
         Self::WindowedProcesses,
+        Self::GpuProcesses,
         Self::SelectedProcesses,
     ];
 
@@ -54,6 +57,7 @@ impl ViewFilter {
             Self::ActiveProcesses => "Active Processes",
             Self::InactiveProcesses => "Inactive Processes",
             Self::WindowedProcesses => "Windowed Processes",
+            Self::GpuProcesses => "GPU Processes",
             Self::SelectedProcesses => "Selected Processes",
         }
     }
@@ -79,7 +83,7 @@ impl ViewFilter {
                 matches!(status, "Idle" | "Stopped" | "Zombie" | "Dead" | "Tracing")
             }
             // Decided by the caller from the compositor's window list.
-            Self::WindowedProcesses | Self::SelectedProcesses => false,
+            Self::WindowedProcesses | Self::GpuProcesses | Self::SelectedProcesses => false,
         }
     }
 
@@ -91,12 +95,16 @@ impl ViewFilter {
         current_uid: Option<u32>,
         selected_pid: Option<u32>,
         has_window: bool,
+        uses_gpu: bool,
     ) -> bool {
         if self == Self::SelectedProcesses {
             return selected_pid == Some(pid);
         }
         if self == Self::WindowedProcesses {
             return has_window;
+        }
+        if self == Self::GpuProcesses {
+            return uses_gpu;
         }
         self.matches(uid, status, current_uid)
     }
@@ -180,17 +188,40 @@ mod tests {
     #[test]
     fn selected_processes_only_shows_the_selected_pid() {
         let filter = ViewFilter::SelectedProcesses;
-        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), Some(42), false));
-        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), Some(42), false));
-        assert!(!filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, false));
+        assert!(filter.matches_row(
+            42,
+            Some(1000),
+            "Sleeping",
+            Some(1000),
+            Some(42),
+            false,
+            false
+        ));
+        assert!(!filter.matches_row(
+            43,
+            Some(1000),
+            "Sleeping",
+            Some(1000),
+            Some(42),
+            false,
+            false
+        ));
+        assert!(!filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, false, false));
     }
 
     #[test]
     fn windowed_processes_follow_the_compositor_window_list() {
         let filter = ViewFilter::WindowedProcesses;
-        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, true));
-        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), None, false));
+        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, true, false));
+        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), None, false, false));
         assert!(!filter.matches(Some(1000), "Sleeping", Some(1000)));
+    }
+
+    #[test]
+    fn gpu_processes_are_the_ones_holding_a_graphics_client() {
+        let filter = ViewFilter::GpuProcesses;
+        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, false, true));
+        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), None, true, false));
     }
 
     /// `ProcessStatus`'s `Display` impl is what rows actually store

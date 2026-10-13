@@ -77,6 +77,11 @@ fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-h", Backspace, CONTEXT),
         KeyBinding::new("ctrl-f", MoveRight, CONTEXT),
         KeyBinding::new("ctrl-b", MoveLeft, CONTEXT),
+        // ⌃N and ⌃P move down and up a line, and ⌃Y yanks what ⌃K last
+        // killed (the shared kill ring in gpui-component's input state).
+        KeyBinding::new("ctrl-n", MoveDown, CONTEXT),
+        KeyBinding::new("ctrl-p", MoveUp, CONTEXT),
+        KeyBinding::new("ctrl-y", Yank, CONTEXT),
         KeyBinding::new("cmd-right", MoveEnd, CONTEXT),
         KeyBinding::new("cmd-z", Undo, CONTEXT),
         KeyBinding::new("cmd-shift-z", Redo, CONTEXT),
@@ -102,6 +107,25 @@ mod tests {
         assert!(bindings
             .iter()
             .all(|binding| binding.action().name() != "input::Search"));
+    }
+
+    #[test]
+    fn the_rest_of_the_emacs_keys_are_bound() {
+        let bindings = bindings();
+        for (key, action) in [
+            ("ctrl-n", "input::MoveDown"),
+            ("ctrl-p", "input::MoveUp"),
+            ("ctrl-y", "input::Yank"),
+            ("ctrl-k", "input::DeleteToEndOfLine"),
+        ] {
+            assert!(
+                bindings.iter().any(|binding| {
+                    binding.action().name() == action
+                        && binding.keystrokes()[0].inner().unparse() == key
+                }),
+                "{key} should run {action}"
+            );
+        }
     }
 
     #[test]

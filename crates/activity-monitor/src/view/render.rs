@@ -18,13 +18,13 @@ use crate::{
     RefreshEverySecond, RefreshEveryTwoSeconds, SampleProcess, SendSignalToProcess,
     SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses, ShowAllProcesses,
     ShowAllProcessesHierarchically, ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess,
-    ShowGpuHistoryWindow, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
+    ShowGpuHistoryWindow, ShowGpuProcesses, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
     ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ShowWindowedProcesses,
     ToggleBytesReadColumn, ToggleBytesWrittenColumn, ToggleCompressedColumn, ToggleCpuColumn,
-    ToggleCpuTimeColumn, ToggleEnergyColumn, ToggleFootprintColumn, ToggleIdleWakeUpsColumn,
-    ToggleKindColumn, ToggleMemoryColumn, TogglePidColumn, ToggleRealPrivateColumn,
-    ToggleRealSharedColumn, ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn,
-    UseSelectionForFind,
+    ToggleCpuTimeColumn, ToggleEnergyColumn, ToggleFootprintColumn, ToggleGpuPercentColumn,
+    ToggleGpuTimeColumn, ToggleIdleWakeUpsColumn, ToggleKindColumn, ToggleMemoryColumn,
+    TogglePidColumn, ToggleRealPrivateColumn, ToggleRealSharedColumn, ToggleSandboxColumn,
+    ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -166,6 +166,15 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ShowInactiveProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::InactiveProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowGpuProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::GpuProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleGpuPercentColumn, _, cx| {
+                this.toggle_column(ColKey::GpuPercent, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleGpuTimeColumn, _, cx| {
+                this.toggle_column(ColKey::GpuTime, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowWindowedProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::WindowedProcesses, cx);

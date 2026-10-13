@@ -39,10 +39,14 @@ pub enum ProcessColumn {
     Sandbox,
     /// Wake-ups from sleep since the last sample (MON-MENU-011).
     IdleWakeUps,
+    /// Busiest graphics engine's utilisation (MON-MENU-003).
+    GpuPercent,
+    /// Total graphics-engine busy time (MON-MENU-004).
+    GpuTime,
 }
 
 impl ProcessColumn {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 24] = [
         Self::Pid,
         Self::Name,
         Self::Cpu,
@@ -65,6 +69,8 @@ impl ProcessColumn {
         Self::Kind,
         Self::Sandbox,
         Self::IdleWakeUps,
+        Self::GpuPercent,
+        Self::GpuTime,
     ];
 
     pub const fn title(self) -> &'static str {
@@ -94,6 +100,8 @@ impl ProcessColumn {
             Self::Kind => "Kind",
             Self::Sandbox => "Sandbox",
             Self::IdleWakeUps => "Idle Wake Ups",
+            Self::GpuPercent => "% GPU",
+            Self::GpuTime => "GPU Time",
         }
     }
 }

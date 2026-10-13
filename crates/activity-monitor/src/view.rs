@@ -311,6 +311,10 @@ impl MonitorView {
                 ViewFilter::WindowedProcesses,
             ),
             (
+                "activity_monitor::ShowGpuProcesses",
+                ViewFilter::GpuProcesses,
+            ),
+            (
                 "activity_monitor::ShowSelectedProcesses",
                 ViewFilter::SelectedProcesses,
             ),
@@ -358,6 +362,11 @@ impl MonitorView {
                 "activity_monitor::ToggleIdleWakeUpsColumn",
                 ColKey::IdleWakeUps,
             ),
+            (
+                "activity_monitor::ToggleGpuPercentColumn",
+                ColKey::GpuPercent,
+            ),
+            ("activity_monitor::ToggleGpuTimeColumn", ColKey::GpuTime),
         ] {
             rmac_ui::set_menu_checked(action, visible.contains(&column), cx);
         }

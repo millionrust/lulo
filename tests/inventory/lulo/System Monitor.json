@@ -243,6 +243,55 @@
               "shortcut": "",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Memory",
+              "action": "activity_monitor::ToggleFootprintColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Real Private Memory",
+              "action": "activity_monitor::ToggleRealPrivateColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Real Shared Memory",
+              "action": "activity_monitor::ToggleRealSharedColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Compressed Memory",
+              "action": "activity_monitor::ToggleCompressedColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Kind",
+              "action": "activity_monitor::ToggleKindColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Sandbox",
+              "action": "activity_monitor::ToggleSandboxColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Idle Wake Ups",
+              "action": "activity_monitor::ToggleIdleWakeUpsColumn",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
         },
@@ -342,6 +391,13 @@
         {
           "label": "Inactive Processes",
           "action": "activity_monitor::ShowInactiveProcesses",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Windowed Processes",
+          "action": "activity_monitor::ShowWindowedProcesses",
           "shortcut": "",
           "separator_before": false,
           "children": []

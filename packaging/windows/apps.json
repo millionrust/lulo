@@ -105,6 +105,41 @@
     "shortcut": false
   },
   {
+    "id": "player",
+    "app_id": "org.rmac.Player",
+    "display_name": "Player",
+    "bin": "rmac-player",
+    "extensions": [
+      "mp3",
+      "m4a",
+      "wav",
+      "flac",
+      "ogg",
+      "opus",
+      "mp4",
+      "m4v",
+      "mov",
+      "mkv",
+      "webm"
+    ]
+  },
+  {
+    "id": "archive-utility",
+    "app_id": "org.rmac.ArchiveUtility",
+    "display_name": "Archive Utility",
+    "bin": "rmac-archive-utility",
+    "extensions": [
+      "zip",
+      "tar",
+      "gz",
+      "tgz",
+      "bz2",
+      "tbz2",
+      "xz",
+      "txz"
+    ]
+  },
+  {
     "id": "lulo-session",
     "display_name": "Lulo",
     "bin": "lulo-session",

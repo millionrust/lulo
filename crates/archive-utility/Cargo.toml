@@ -22,3 +22,6 @@ gpui-component-assets.workspace = true
 rmac-archive.workspace = true
 rmac-ui.workspace = true
 rust-embed.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true

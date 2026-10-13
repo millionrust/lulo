@@ -17,7 +17,17 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use libloading::Library;
 
+#[cfg(not(windows))]
 const LIBRARY_NAMES: [&str; 3] = ["libmpv.so.2", "libmpv.so.1", "libmpv.so"];
+/// Windows has no system libmpv: it is loaded from beside the executable
+/// (Windows searches the application's folder first for a bare DLL name).
+#[cfg(windows)]
+const LIBRARY_NAMES: [&str; 3] = ["libmpv-2.dll", "mpv-2.dll", "mpv.dll"];
+
+#[cfg(not(windows))]
+const MISSING: &str = "Media Player needs libmpv. Install the libmpv2 package.";
+#[cfg(windows)]
+const MISSING: &str = "Media Player needs libmpv. Put libmpv-2.dll beside rmac-player.exe.";
 
 // mpv_format
 const FORMAT_STRING: c_int = 1;
@@ -96,7 +106,7 @@ impl Api {
             .iter()
             // SAFETY: loading libmpv runs only its own initialisers.
             .find_map(|name| unsafe { Library::new(name) }.ok())
-            .ok_or_else(|| "Media Player needs libmpv. Install the libmpv2 package.".to_owned())?;
+            .ok_or_else(|| MISSING.to_owned())?;
         macro_rules! symbol {
             ($name:literal) => {
                 // SAFETY: the signatures match mpv/client.h and mpv/render.h

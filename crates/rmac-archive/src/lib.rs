@@ -20,60 +20,22 @@
 //! until the whole archive has expanded, so a failure or cancel leaves the
 //! folder exactly as it was.
 
-// Both read and write every entry through `O_NOFOLLOW` opens, POSIX modes
-// and Unix symlinks (`expand.rs`'s `symlink`, `compress.rs`'s
-// `PermissionsExt`); porting that safely needs a real design pass, not a
-// line-by-line swap, so Windows gets an honest "not available yet" instead
-// (ADR 0023 phase 4; tracked as WIN-OS-20 in docs/parity.md). `naming` has
-// no archive I/O at all and stays available everywhere, so Files can still
-// recognise an archive by name and offer Finder's own real naming rule for
-// the file Compress would create.
-#[cfg(target_os = "linux")]
+// Expanding and compressing open every entry without following links and
+// keep POSIX modes on Unix; `platform` holds the few calls that differ, and
+// Windows refuses the names it treats specially (ADR 0023 phase 2f).
 mod compress;
-#[cfg(target_os = "linux")]
 mod expand;
 mod naming;
-#[cfg(target_os = "linux")]
+mod platform;
 mod staging;
 
 use std::fmt;
 use std::io;
 use std::path::Path;
 
-#[cfg(target_os = "linux")]
 pub use compress::compress;
-#[cfg(target_os = "linux")]
 pub use expand::expand;
 pub use naming::{archive_stem, compressed_name, format_of, unique_path, Format};
-
-/// Windows: expanding and compressing archives is not implemented yet
-/// (see the module doc above). `std::sync::atomic::AtomicBool` and
-/// `Progress`'s callback are accepted and ignored so callers do not need
-/// their own `cfg` split.
-#[cfg(not(target_os = "linux"))]
-pub fn compress(
-    _items: &[std::path::PathBuf],
-    _cancel: &std::sync::atomic::AtomicBool,
-    _progress: &mut dyn FnMut(Progress),
-) -> Result<std::path::PathBuf, Error> {
-    Err(Error::Io(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "Compress isn't available on Windows yet",
-    )))
-}
-
-/// Windows: see `compress` above.
-#[cfg(not(target_os = "linux"))]
-pub fn expand(
-    _archive: &Path,
-    _cancel: &std::sync::atomic::AtomicBool,
-    _progress: &mut dyn FnMut(Progress),
-) -> Result<std::path::PathBuf, Error> {
-    Err(Error::Io(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "Expand isn't available on Windows yet",
-    )))
-}
 
 /// Bytes processed so far out of the job's total (both in the units the job
 /// can measure up front: compressed bytes read when expanding, source bytes
@@ -129,7 +91,6 @@ const EXPANSION_LIMIT: &str = "rmac-archive: expansion limit exceeded";
 /// Not `Interrupted`: std's read loops (`read_exact`, `read_to_end`, copy)
 /// silently retry that kind, so a cancelled read would spin forever. Used
 /// by `staging.rs` (Linux-only for now) and by the round-trip test below.
-#[cfg(any(target_os = "linux", test))]
 pub(crate) fn cancelled_io() -> io::Error {
     io::Error::other(CANCELLED)
 }

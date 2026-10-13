@@ -1023,19 +1023,14 @@ class Run:
         box = (OUTPUT_W - 420, 30, OUTPUT_W, 540)
         has_backlight = self.has_fake_backlight()
         rows = 5 if has_backlight else 4
-        # Rows of 64 pt, 12 pt gaps and 12 pt padding top and bottom.
-        surface_height = rows * 64 + (rows - 1) * 12 + 24
-        # The last module ends one padding above the surface's bottom edge.
-        # A wallpaper too dark for the backdrop's dimming to show still shows
-        # the glass modules, so the bottom may read this much short.
-        padding = 12
 
         def bottom(image: Image.Image, baseline_box: Image.Image) -> int:
             """Lowest row, in screen pixels, where `image` (the panel's box)
-            differs from the empty desktop's. The threshold is low so the
-            panel's dimming of a bright wallpaper counts: at 60 it only saw
-            the lighter modules, and on the CI runner's teal wallpaper that
-            read 26 px short."""
+            differs from the empty desktop's. Only meaningful between two
+            frames of the same run: the panel's shadow and dimming reach
+            further on a bright wallpaper, and the old threshold of 60 read
+            26 px short on the CI runner's teal one, so the absolute height
+            is judged from the Sound module's own pixels instead."""
             difference = ImageChops.difference(image, baseline_box).convert("L")
             mask = difference.point(lambda value: 255 if value > 14 else 0)
             region = mask.getbbox()
@@ -1056,12 +1051,32 @@ class Run:
             fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
             return int(fields[11]) + int(fields[12])
 
-        def trace_marks() -> str:
+        def trace_lines() -> list[tuple[str, int]]:
             try:
-                lines = (self.out / "quick-settings-trace.csv").read_text().splitlines()
+                text = (self.out / "quick-settings-trace.csv").read_text()
             except OSError:
+                return []
+            rows = []
+            for line in text.splitlines():
+                name, _, micros = line.rpartition(",")
+                if micros.isdigit():
+                    rows.append((name, int(micros)))
+            return rows
+
+        def trace_marks() -> str:
+            return " ".join(name for name, _ in trace_lines() if name.startswith("quick_settings_"))
+
+        def trace_recent(seconds: float) -> str:
+            """What the frame trace saw in its last `seconds`, by event."""
+            rows = trace_lines()
+            if not rows:
                 return "no trace"
-            return " ".join(line.split(",")[0] for line in lines if line.startswith("quick_settings_"))
+            cutoff = rows[-1][1] - int(seconds * 1_000_000)
+            counts: dict[str, int] = {}
+            for name, micros in rows:
+                if micros >= cutoff:
+                    counts[name] = counts.get(name, 0) + 1
+            return ", ".join(f"{name} x{count}" for name, count in sorted(counts.items())) or "none"
 
         self.close_everything()
         time.sleep(0.5)
@@ -1092,15 +1107,31 @@ class Run:
         late = self.capture("control-centre-first-open-settled")
         self.keep_capture("control-centre-first-open-settled")
         late_bottom = bottom(late.crop(box), baseline_box)
-        expected = CONTROL_CENTRE_TOP + surface_height
         detail = (f"backlight={has_backlight}, early={early_bottom}, settled={late_bottom}, "
-                  f"expected about {expected}, trace: {trace_marks()}")
+                  f"trace: {trace_marks()}")
         self.check("Control Centre first open: the surface does not change height after opening",
                    abs(early_bottom - late_bottom) <= 3, detail)
-        self.check("Control Centre first open: the first frame is already the full height",
-                   early_bottom >= expected - padding - 2, detail)
-        self.check("Control Centre first open: Sound is not cut off",
-                   expected - padding - 2 <= late_bottom <= expected + 4, detail)
+        module = self.extents(sound) if sound is not None else None
+        self.check("Control Centre first open: the Sound module has screen extents", module is not None, detail)
+        if module is not None:
+            left = OUTPUT_W - CONTROL_CENTRE_RIGHT - CONTROL_CENTRE_WIDTH + module[0]
+            top = CONTROL_CENTRE_TOP + module[1]
+            # The last row sits one gap below the rows above it.
+            self.check("Control Centre first open: Sound is the last row of the surface",
+                       top == CONTROL_CENTRE_TOP + 12 + (rows - 1) * 76, f"{detail}, sound at y={top}")
+            region = (left - box[0], top - box[1], left - box[0] + module[2], top - box[1] + module[3])
+
+            def drawn(image: Image.Image) -> float:
+                """How much of the Sound module's area differs from the empty
+                desktop: a module the surface cuts off is not painted at all."""
+                difference = ImageChops.difference(image.crop(region), baseline_box.crop(region)).convert("L")
+                area = max(1, (region[2] - region[0]) * (region[3] - region[1]))
+                return sum(difference.histogram()[15:]) / area
+
+            self.check("Control Centre first open: Sound is painted on the first frame",
+                       drawn(early) > 0.6, f"{detail}, drawn={drawn(early):.2f}")
+            self.check("Control Centre first open: Sound is painted once settled",
+                       drawn(late.crop(box)) > 0.6, f"{detail}, drawn={drawn(late.crop(box)):.2f}")
         self.check("Control Centre first open: Display is a row only with a backlight",
                    (sound is not None and (self.find_button("Display details") is not None) == has_backlight),
                    detail)
@@ -1137,7 +1168,7 @@ class Run:
         time.sleep(2.0)
         ticks = cpu_ticks(pid) - before
         self.check("Control Centre grow-out: no frames are drawn once the motion ends",
-                   ticks <= 6, f"ticks={ticks}")
+                   ticks <= 6, f"ticks={ticks}, last 2 s of the frame trace: {trace_recent(2.0)}")
         self.close_everything()
 
     def control_centre_sound_outputs(self) -> None:

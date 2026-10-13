@@ -852,6 +852,8 @@ def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | N
     Calculator to the whole monitor, over the Lulo bar and Dock."""
     if not bring_forward(hwnd):
         return "could not bring the window forward to test Ctrl+M"
+    if app != "rmac-calculator":
+        focus_content(hwnd)
     if app == "rmac-calculator":
         before = window_rect(hwnd)
         key(VK_MENU)
@@ -902,6 +904,14 @@ def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | N
     return None
 
 
+def focus_content(hwnd: int) -> None:
+    """Click the window's lower content area, as a user would before typing,
+    so keys reach the view and not whatever last held focus."""
+    left, top, right, bottom = window_rect(hwnd)
+    click((left + right) // 2, bottom - max((bottom - top) // 4, 20))
+    time.sleep(0.4)
+
+
 def check_open_panel(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
     """Ctrl+O shows Windows' Open dialog, and Esc cancels it.
 
@@ -909,6 +919,7 @@ def check_open_panel(app: str, process: subprocess.Popen, hwnd: int) -> str | No
     portal on every platform, so on Windows it did nothing."""
     if not bring_forward(hwnd):
         return "could not bring the window forward to test Ctrl+O"
+    focus_content(hwnd)
     before = {window for window, _ in visible_windows(process.pid)}
     chord(VK_CONTROL, "o")
     dialog = None

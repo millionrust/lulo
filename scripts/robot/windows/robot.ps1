@@ -39,6 +39,15 @@ $stamp = $started.ToString('yyyyMMdd-HHmmss')
 $out = Join-Path $Scratch "out\$stamp"
 New-Item -ItemType Directory -Force $out | Out-Null
 $findings = New-Object System.Collections.ArrayList
+# Every process the robot started, the only ones its clean-up may end. Also
+# written to launched.txt so invoke.ps1 can end them if it has to stop the run.
+$script:launched = New-Object System.Collections.Generic.List[int]
+Remove-Item (Join-Path $Scratch 'launched.txt') -ErrorAction SilentlyContinue
+function Remember-Launch([int]$id) {
+    if ($script:launched.Contains($id)) { return }
+    $script:launched.Add($id)
+    Add-Content (Join-Path $Scratch 'launched.txt') $id
+}
 $measures = [ordered]@{}
 $shotIndex = 0
 
@@ -241,7 +250,7 @@ function Start-App($key) {
         return $null
     }
     $t0 = Get-Date
-    $run.Proc = $R::Launch((Join-Path $Bin $spec.Exe), $spec.Args, $fixtures, (Profile-Env $run), $run.Err)
+    $run.Proc = $R::Launch((Join-Path $Bin $spec.Exe), $spec.Args, $fixtures, (Profile-Env $run), $run.Err); Remember-Launch $run.Proc.Id
     Mark
     while (((Get-Date) - $t0).TotalSeconds -lt 30) {
         $w = @($R::WindowsOf($run.Proc.Id, $true))
@@ -785,6 +794,7 @@ function Exercise-Shell {
             $p = $null
             while (((Get-Date) - $t0).TotalSeconds -lt 20) {
                 $p = Get-Process rmac-text-editor -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($p) { Remember-Launch $p.Id }
                 if ($p -and @($R::WindowsOf($p.Id, $true)).Count) { break }
                 Start-Sleep -Milliseconds 50
             }
@@ -842,7 +852,7 @@ function Exercise-FolderOpen {
     $exe = Join-Path $Bin 'rmac-files.exe'
     if (Get-Process rmac-files -ErrorAction SilentlyContinue) { return }
     $run = New-Run 'files-folder' 'Files'
-    $run.Proc = $R::Launch($exe, "`"$fixtures`"", $fixtures, (Profile-Env $run), $run.Err)
+    $run.Proc = $R::Launch($exe, "`"$fixtures`"", $fixtures, (Profile-Env $run), $run.Err); Remember-Launch $run.Proc.Id
     $t0 = Get-Date
     while (((Get-Date) - $t0).TotalSeconds -lt 20 -and -not @($R::WindowsOf($run.Proc.Id, $true)).Count) { Start-Sleep -Milliseconds 50 }
     $w = @($R::WindowsOf($run.Proc.Id, $true))
@@ -934,9 +944,13 @@ try {
     Add-Finding 'info' 'robot' 'robot' "run stopped early: $_"
 } finally {
     # Leave the desktop as it was: our apps closed, menus closed, Lulo mode as found, the clipboard back.
-    foreach ($spec in $AppTable.Values) {
-        Get-Process ($spec.Exe -replace '\.exe$', '') -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($Bin, [StringComparison]::OrdinalIgnoreCase) -and $_.StartTime -gt $started } | ForEach-Object { "robot: closing leftover $($_.Name) $($_.Id)"; $_.Kill() }
+    # Only processes the robot started itself: an app the user opened while
+    # the robot waited is theirs, even though it started after the robot.
+    foreach ($id in $script:launched) {
+        $p = Get-Process -Id $id -ErrorAction SilentlyContinue
+        if ($p -and $p.Name -like 'rmac-*') { Write-Host "robot: closing leftover $($p.Name) $id"; $p.Kill() }
     }
+    Remove-Item (Join-Path $Scratch 'launched.txt') -ErrorAction SilentlyContinue
     try { Close-ShellMenus } catch { }
     if ($initial -and $initial.on -and -not (Get-Process lulo-session -ErrorAction SilentlyContinue)) {
         "robot: Lulo mode was on; starting it again"

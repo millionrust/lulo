@@ -33,11 +33,18 @@ try {
         if ((Get-Date) -gt $deadline) {
             Stop-ScheduledTask -TaskName $TaskName
             Write-Output "robot: timed out after $TimeoutSeconds s"
-            # The robot's own clean-up did not run: end the Lulo apps it started
-            # (never the Lulo layer, which the user started).
-            Get-Process rmac-* -ErrorAction SilentlyContinue |
-                Where-Object { $_.StartTime -gt $began } |
-                ForEach-Object { Write-Output "robot: ending leftover $($_.Name) $($_.Id)"; Stop-Process -Id $_.Id }
+            # The robot's own clean-up did not run: end the apps it recorded as
+            # started itself (launched.txt), never anything the user opened.
+            $list = Join-Path (Split-Path -Parent (Split-Path -Parent $Script)) 'launched.txt'
+            if (Test-Path $list) {
+                foreach ($id in Get-Content $list) {
+                    $p = Get-Process -Id ([int]$id) -ErrorAction SilentlyContinue
+                    if ($p -and $p.Name -like 'rmac-*' -and $p.StartTime -gt $began) {
+                        Write-Output "robot: ending leftover $($p.Name) $id"; Stop-Process -Id $p.Id
+                    }
+                }
+                Remove-Item $list
+            }
             break
         }
         Start-Sleep -Seconds 2

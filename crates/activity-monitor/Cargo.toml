@@ -27,6 +27,7 @@ rmac-print-linux.workspace = true
 zbus.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+raw-window-handle.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",

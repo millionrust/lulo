@@ -147,7 +147,7 @@ impl MonitorView {
         // An inactive window has no graph to update and no timer to run.
         cx.observe_window_activation(window, move |view, window, cx| {
             let _ = wake.try_send(());
-            if window.is_window_active() {
+            if refreshing(window) {
                 view.refresh(cx);
                 cx.notify();
             }
@@ -156,7 +156,7 @@ impl MonitorView {
         cx.spawn_in(window, async move |this, cx| loop {
             let (active, seconds) = this
                 .update_in(cx, |view, window, _| {
-                    (window.is_window_active(), view.refresh_seconds)
+                    (refreshing(window), view.refresh_seconds)
                 })
                 .unwrap_or((false, REFRESH_SECS as u64));
             let timer_expired = futures_lite::future::race(
@@ -178,7 +178,7 @@ impl MonitorView {
             .await;
             if this
                 .update_in(cx, |view, window, cx| {
-                    if timer_expired && window.is_window_active() {
+                    if timer_expired && refreshing(window) {
                         view.refresh(cx);
                         cx.notify();
                     }
@@ -1084,4 +1084,32 @@ fn hide_linux_only_commands(cx: &mut gpui::App) {
     ] {
         rmac_ui::set_menu_hidden(action, !column.available(), cx);
     }
+}
+
+/// Whether this window is one to keep fresh: the active window, and on Windows
+/// also not minimised (a minimised window stays the thread's "active" window,
+/// yet nobody can see what a refresh would draw).
+fn refreshing(window: &Window) -> bool {
+    window.is_window_active() && !window_is_minimised(window)
+}
+
+#[cfg(windows)]
+fn window_is_minimised(window: &Window) -> bool {
+    use raw_window_handle::RawWindowHandle;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::IsIconic;
+
+    let Ok(handle) = raw_window_handle::HasWindowHandle::window_handle(window) else {
+        return false;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return false;
+    };
+    // SAFETY: a plain query on this process's own window handle.
+    unsafe { IsIconic(HWND(handle.hwnd.get() as *mut _)) }.as_bool()
+}
+
+#[cfg(not(windows))]
+fn window_is_minimised(_window: &Window) -> bool {
+    false
 }

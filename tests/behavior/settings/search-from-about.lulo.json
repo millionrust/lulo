@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "scenario": "settings/search-from-about",
+  "observations": {
+    "typed": {
+      "focus": {
+        "role": "search-field",
+        "value": "display",
+        "label": "Search"
+      }
+    }
+  }
+}

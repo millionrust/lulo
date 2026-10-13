@@ -5677,6 +5677,20 @@ mod linux_wayland {
     /// origin workspace is recorded so Show All can bring it back.
     fn dispatch_app_menu_action(app_id: String, action: String, cx: &mut App) {
         cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+            // Quit asks a Lulo app to quit itself, the way its own ⌘Q does:
+            // its windows close through their unsaved-changes guards and
+            // then the process exits. Closing the windows from here left
+            // apps that run without windows (Text Editor, Preview, Terminal)
+            // resident after Quit (live robot, 2026-10-13). An app that
+            // predates the quit action refuses it, and gets the close.
+            if action == "app::quit"
+                && rmac_app_menu::bus_name(&app_id).is_some()
+                && rmac_app_menu::activate(&app_id, rmac_app_menu::QUIT_ACTION)
+                    .await
+                    .is_ok()
+            {
+                return;
+            }
             let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
                 eprintln!("could not read windows to {action}");
                 return;

@@ -521,6 +521,77 @@ finding gets a `BUG-*` row in `docs/parity.md`'s "Bugs found by monkey
 testing" section; a fixed one gets a regression test in `tests/behavior` or
 a unit test next to the fix, cited from that row.
 
+## Live robot
+
+`scripts/robot/` drives the owner's **real** Lulo session on the reference
+laptop with real keyboard and mouse input, to find what nested sessions
+miss: real hardware, the real Dock and menu bar, real data. It exists only
+because the owner granted it on 2026-10-13 ("write code for robot test i
+give full permission to use keyboard and mouse so u can find issues and
+fix"). Every other runner here refuses the live session; `wlinput.Wayland`
+accepts it only through the robot's own `guard`, which requires
+`RMAC_ROBOT_LIVE_CONSENT=owner-granted-2026-10-13` and `--live`.
+
+```sh
+# On the laptop, in the owner's session (WAYLAND_DISPLAY=wayland-1):
+python3 scripts/robot/robot.py --probe          # read-only: globals, shell pids, D-Bus count
+RMAC_ROBOT_LIVE_CONSENT=owner-granted-2026-10-13 python3 scripts/robot/robot.py \
+  --live --apps Calculator,Clock --shell --max-seconds 540 --out ~/lulo-robot-runs/run1
+```
+
+**What it does.** For each app (`--apps`, or `all`): launch it through
+`niri msg action spawn` and time the first window; screenshot; walk every
+menu-bar menu and submenu through the real menu bar (⌃F2, the arrow keys,
+Right into each submenu); activate every *allowed* item through the app's
+own `org.rmac.AppMenu2.Activate` (the call the menu bar makes, so the robot
+always knows exactly which item ran) and dismiss whatever opened with Esc,
+then ⌘W; press the app's main shortcuts; resize the window small and large
+with niri; quit with ⌘Q and time the exit. `--shell` tours the Lulo menu
+(and opens About This Lulo OS), the status items and Notification Centre
+(found on the screenshot), Spotlight queries (never Return), the Apps grid,
+every Dock icon's right-click menu and the desktop's right-click menu.
+
+**What it detects** (`report.json` beside the screenshots in `--out`):
+crashes and panics (the app's pid vanishing, `journalctl --user` lines from
+Lulo processes), hangs (an app not answering its menu-layout request within
+2 s: that request is validated on the UI thread), slow opens (first window
+over 1 s) and slow quits (over 2 s, or still running 12 s after ⌘Q), menu
+items with no visible effect, windows that will not close on Esc or ⌘W,
+blank or black windows, and screenshot heuristics (`vision.py`): low
+contrast, text cut by a panel edge, pixels left behind after a menu closes.
+Visual findings are heuristics and marked low for review.
+
+**Safety** (`safety.py`, unit-tested in `scripts/test_robot_safety.py`):
+
+- A deny list of labels and actions it never activates: anything that
+  deletes, empties, erases, sends, replies, forwards, shuts down, restarts,
+  logs out, sleeps, locks, uninstalls, removes, resets, force quits,
+  discards, closes, minimises, saves, pastes, prints, or touches Wi-Fi,
+  Bluetooth, network, users, sharing or accounts. Mail, Notes, Calendar and
+  Files only get their View/Go/Window/Help items, since their other commands
+  act on the owner's data. Chords that toggle the screen reader or lock the
+  session are never pressed.
+- One app at a time, quit before the next; an app that is already running
+  (the owner's instance) is skipped. `busctl --user list` is counted before
+  and after every app and the run stops if it climbs.
+- It waits for two minutes without input from the laptop's own keyboard,
+  touchpad and touchscreen (their interrupt counts in `/proc/interrupts`;
+  the robot's virtual devices raise none) and aborts the moment they move.
+  It also aborts if niri, the menu bar or the Dock exits or restarts.
+- It works only on `~/RobotScratch` (a text file, a PNG, a folder); the one
+  Notes note it makes is titled "Robot test" and moved to Recently Deleted
+  only after the notes store confirms it is that note.
+- It leaves the session as it found it: small app-state files
+  (`~/.config/rmac/*.json`, window state, recent documents) are snapshotted
+  and written back; the Dock's recent-apps section, which the Dock keeps in
+  memory, is rebuilt by relaunching apps in order; volume, brightness and
+  appearance are checked at the end.
+
+Two things the robot learned about input on the live session: niri runs key
+binds only for physical keyboards, so the robot reaches global shortcuts
+(⌃F2, ⌘Space) by spawning exactly what the bind spawns; and screenshots of
+the owner's screen stay on the laptop, never in git.
+
 ## Parallel visual journeys
 
 `tests/parallel/` contains ten first-hour journeys that use the same JSON

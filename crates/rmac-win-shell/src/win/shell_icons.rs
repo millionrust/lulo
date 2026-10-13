@@ -108,7 +108,9 @@ pub fn ensure_running_icon(app_id: &str, exe_path: &str) {
 /// its windows appear (the window list's own events; nothing polls).
 pub fn watch_running(cx: &mut gpui::App) {
     // Icons cached before they were fitted into the grid.
-    if let Some(old) = cache().and_then(|cache| cache.parent().map(|parent| parent.join("lulo-icons"))) {
+    if let Some(old) =
+        cache().and_then(|cache| cache.parent().map(|parent| parent.join("lulo-icons")))
+    {
         cx.background_executor()
             .spawn(async move {
                 let _ = blocking::unblock(move || std::fs::remove_dir_all(old)).await;

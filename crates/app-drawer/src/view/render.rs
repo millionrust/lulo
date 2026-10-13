@@ -1,5 +1,6 @@
 mod content;
 
+use crate::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
 use gpui::{
     div, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, DragMoveEvent,
     InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
@@ -7,7 +8,6 @@ use gpui::{
     StyledImage as _, Window,
 };
 use gpui_component::StyledExt as _;
-use crate::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
 use rmac_ui::{mac, Button, EmptyState, SearchField, Spinner};
 
 use crate::catalog::{App, Category};

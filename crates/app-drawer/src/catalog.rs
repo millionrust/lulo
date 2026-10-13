@@ -5,8 +5,8 @@ use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
-use gpui::SharedString;
 use crate::accessibility::{ApplicationCategory, ApplicationSemantics};
+use gpui::SharedString;
 
 #[cfg(not(target_os = "macos"))]
 use category::categorize_desktop;

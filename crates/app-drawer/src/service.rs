@@ -276,7 +276,8 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     };
     #[cfg(windows)]
-    let handle = rmac_shell_layer::open_layer_window(cx, drawer_options(bounds), windows_layer(), build);
+    let handle =
+        rmac_shell_layer::open_layer_window(cx, drawer_options(bounds), windows_layer(), build);
     #[cfg(not(windows))]
     let handle = cx.open_window(drawer_options(bounds), build);
     if let (Ok(handle), Some(view)) = (handle, drawer) {
@@ -462,7 +463,8 @@ pub fn asset(path: &str) -> Option<std::borrow::Cow<'static, [u8]>> {
 pub fn run_standalone() {
     #[cfg(target_os = "linux")]
     {
-        if let Err(error) = rmac_shortcuts::dispatch(&rmac_shortcuts::ShortcutId("app-drawer".into()))
+        if let Err(error) =
+            rmac_shortcuts::dispatch(&rmac_shortcuts::ShortcutId("app-drawer".into()))
         {
             eprintln!("Could not open Apps: {error}");
             std::process::exit(1);

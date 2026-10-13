@@ -401,8 +401,12 @@ mod grid_tests {
             .filter(|(_, _, pixel)| pixel[3] > 16)
             .map(|(x, y, _)| (x, y))
             .collect();
-        let width = opaque.iter().map(|p| p.0).max().unwrap() - opaque.iter().map(|p| p.0).min().unwrap() + 1;
-        let height = opaque.iter().map(|p| p.1).max().unwrap() - opaque.iter().map(|p| p.1).min().unwrap() + 1;
+        let width = opaque.iter().map(|p| p.0).max().unwrap()
+            - opaque.iter().map(|p| p.0).min().unwrap()
+            + 1;
+        let height = opaque.iter().map(|p| p.1).max().unwrap()
+            - opaque.iter().map(|p| p.1).min().unwrap()
+            + 1;
         (width, height)
     }
 
@@ -413,7 +417,10 @@ mod grid_tests {
         assert_eq!(fitted.dimensions(), (96, 96));
         let (width, height) = body_extent(&fitted);
         // 824/1024 of 96 is 77.25.
-        assert!((76..=78).contains(&width) && (76..=78).contains(&height), "{width}x{height}");
+        assert!(
+            (76..=78).contains(&width) && (76..=78).contains(&height),
+            "{width}x{height}"
+        );
         assert_eq!(fitted.get_pixel(0, 0)[3], 0);
         assert_eq!(fitted.get_pixel(48, 48)[3], 255);
     }

@@ -323,8 +323,8 @@ pub fn run() -> i32 {
                         "rmac-menu-material",
                         "rmac-app-drawer",
                     ]
-                        .iter()
-                        .any(|prefix| namespace.starts_with(prefix));
+                    .iter()
+                    .any(|prefix| namespace.starts_with(prefix));
                     if panel {
                         let timer = executor.timer(Duration::from_secs(2));
                         executor

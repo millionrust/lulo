@@ -195,6 +195,25 @@ class Check:
             self.facts["impostor_caller"] = output[-300:]
             if ANSWER in output or "refused" not in output:
                 self.errors.append(f"a copy outside the trusted paths was answered: {output!r}")
+        # Writing Tools: the answer streams back as signals addressed to the
+        # caller alone, through the same unit; a copy named like Notes
+        # outside the trusted paths is refused.
+        writing = run([str(bench), "write-service", "--task", "proofread", "--runs", "1"],
+                      self.env, timeout=120)
+        output = (writing.stdout + writing.stderr).strip()
+        self.facts["writing_caller"] = output.splitlines()[-2:] if output else []
+        if "first delta" not in output or "error" in output.lower():
+            self.errors.append(f"writing_caller: no streamed answer from the service: {output[-400:]!r}")
+        with tempfile.TemporaryDirectory(prefix="lulo-not-trusted-") as directory:
+            impostor = Path(directory) / "rmac-notes"
+            shutil.copy2(bench, impostor)
+            impostor.chmod(0o755)
+            refused = run([str(impostor), "write-service", "--task", "proofread", "--runs", "1"],
+                          self.env, timeout=60)
+            output = (refused.stdout + refused.stderr).strip()
+            self.facts["writing_impostor"] = output[-300:]
+            if "first delta" in output or "refused" not in output:
+                self.errors.append(f"a Notes copy outside the trusted paths was answered: {output!r}")
         service = self.facts["service"]
         if service.get("user_namespace") != self.facts["own_user_namespace"]:
             self.errors.append(f"the service ran in another user namespace: {service}")

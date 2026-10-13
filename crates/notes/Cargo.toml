@@ -25,6 +25,7 @@ rmac-portal.workspace = true
 rmac-print.workspace = true
 rmac-spelling.workspace = true
 rmac-storage.workspace = true
+rmac-writing-tools.workspace = true
 chrono.workspace = true
 sha2.workspace = true
 

@@ -8,8 +8,8 @@ mod save_sheet;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, AccessibleAction, ClickEvent, Context, InteractiveElement as _, IntoElement,
-    KeyDownEvent, ParentElement, Render, Role, SharedString, StatefulInteractiveElement as _,
-    Styled, Window,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::rich;
@@ -144,7 +144,20 @@ impl EditorView {
             // Format ▸ Text ▸ Show Ruler toggles.
             .child(self.render_format_bar(bar_width, cx))
             .when(self.show_ruler, |body| body.child(self.render_ruler(cx)))
-            .child(div().flex_1().min_h(px(0.0)).child(self.rich.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    // The rich body draws its own text, so its right-click
+                    // menu is Lulo's (Cut, Copy, Paste, Writing Tools).
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            this.open_rich_menu(event.position, window, cx)
+                        }),
+                    )
+                    .child(self.rich.clone()),
+            )
             .when(editable, |body| {
                 body.on_a11y_action(
                     AccessibleAction::SetValue,
@@ -215,7 +228,7 @@ impl Render for EditorView {
             None
         };
 
-        div()
+        let root = div()
             .size_full()
             .v_flex()
             .track_focus(&self.focus)
@@ -753,6 +766,10 @@ impl Render for EditorView {
                             .min_h(px(0.0))
                             .appearance(false)
                             .disabled(!editable)
+                            .context_menu(rmac_writing_tools::text_menu(
+                                self.input.clone(),
+                                editable,
+                            ))
                             .font_family(font_family)
                             .text_size(px(size))
                             .line_height(px(line_height))
@@ -851,5 +868,83 @@ impl Render for EditorView {
                         .attached(),
                 )
             })
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
+                if rmac_ui::ContextMenuState::dismiss(&mut this.rich_menu, window, cx) {
+                    cx.notify();
+                }
+            }))
+            .child(self.writing_tools.clone())
+            .when_some(self.render_rich_menu(cx), |d, menu| d.child(menu));
+        let view = cx.entity().downgrade();
+        rmac_writing_tools::on_actions(root, &self.writing_tools, move |_, cx| {
+            let view = view.upgrade()?;
+            let this = view.read(cx);
+            if this.editing_blocked() || this.recovery_loading || this.print_busy {
+                return None;
+            }
+            Some(if this.rich_text {
+                rmac_writing_tools::target(&this.rich)
+            } else {
+                rmac_writing_tools::target(&this.input)
+            })
+        })
+    }
+}
+
+impl EditorView {
+    /// Right-click in the rich-text body: the standard text commands, then
+    /// Writing Tools (the plain body's own field menu offers the same).
+    fn open_rich_menu(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let focus = gpui::Focusable::focus_handle(self.rich.read(cx), cx);
+        self.rich_menu = Some(rmac_ui::ContextMenuState::open(
+            position, &focus, window, cx,
+        ));
+        cx.notify();
+    }
+
+    fn render_rich_menu(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let state = self.rich_menu.as_ref()?;
+        let position = state.position();
+        let editable = !self.editing_blocked() && self.rich.read(cx).is_editable();
+        let selected = !self.rich.read(cx).selected_range().is_empty();
+        let item = |menu: rmac_ui::ContextMenu,
+                    label: &'static str,
+                    enabled: bool,
+                    action: Box<dyn gpui::Action>| {
+            if enabled {
+                menu.item(label, action)
+            } else {
+                menu.disabled_item(label, action)
+            }
+        };
+        let menu = rmac_ui::ContextMenu::new(position);
+        let menu = item(
+            menu,
+            "Cut",
+            editable && selected,
+            Box::new(rmac_ui::input_actions::Cut),
+        );
+        let menu = item(
+            menu,
+            "Copy",
+            selected,
+            Box::new(rmac_ui::input_actions::Copy),
+        );
+        let menu = item(
+            menu,
+            "Paste",
+            editable && cx.read_from_clipboard().is_some(),
+            Box::new(rmac_ui::input_actions::Paste),
+        );
+        let menu = menu
+            .separator()
+            .item("Select All", Box::new(rmac_ui::input_actions::SelectAll));
+        let menu = rmac_writing_tools::context_menu_rows(menu, position, editable, cx);
+        Some(menu.render(state).into_any_element())
     }
 }

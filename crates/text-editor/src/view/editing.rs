@@ -567,6 +567,11 @@ impl EditorView {
         ] {
             rmac_ui::set_menu_enabled(action, can_transform, cx);
         }
+        // Edit ▸ Writing Tools works on the document's selection, or all of
+        // it when nothing is selected (as the Mac does).
+        let document_editable =
+            !self.editing_blocked() && !self.recovery_loading && !self.print_busy;
+        rmac_writing_tools::publish_menu_state(document_editable, cx);
         let can_insert = !self.recovery_loading
             && !self.file_busy
             && !self.file_action_blocked()

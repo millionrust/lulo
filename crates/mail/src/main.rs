@@ -208,6 +208,20 @@ fn main() {
                 KeyBinding::new("cmd-,", ShowSettings, Some("Mail")),
             ]);
             rmac_ui::install_app_menu(MAIL, cx);
+            // Edit ▸ Writing Tools in compose windows; hidden until Lulo
+            // Intelligence is known to be on with its model present.
+            rmac_writing_tools::init(cx);
+            cx.observe_new(|_: &mut MailView, window, cx| {
+                if let Some(window) = window {
+                    cx.observe_window_activation(window, |_, window, cx| {
+                        if window.is_window_active() {
+                            rmac_writing_tools::refresh(cx);
+                        }
+                    })
+                    .detach();
+                }
+            })
+            .detach();
             for action in [
                 "mail::NewMessage",
                 "mail::Reply",

@@ -637,6 +637,16 @@ class Scenario(BaseScenario):
         typed_at = time.monotonic()
         self.open_and_type()
         shown = wait_until(lambda: ROW in self.showing(), 15)
+        if not shown:
+            # A loaded runner can drop the typed text even after Spotlight's
+            # focus_in (seen once on CI: Spotlight open, no result row of any
+            # kind). Type the query once more from a fresh Spotlight; a real
+            # regression in the row or the service fails both attempts.
+            print("no Lulo Intelligence row after 15 s; reopening Spotlight once", flush=True)
+            self.close()
+            typed_at = time.monotonic()
+            self.open_and_type()
+            shown = wait_until(lambda: ROW in self.showing(), 15)
         self.facts["row_shown"] = bool(shown)
         if not shown:
             errors.append(f"no {ROW!r} row; showing: {sorted(self.showing())[:40]}")

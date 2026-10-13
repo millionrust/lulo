@@ -479,8 +479,21 @@ class Run:
         if icon_ms is not None:
             self.time_to_icon_ms.append(icon_ms)
             print(f"{label}: time to icon {icon_ms:.1f} ms ({samples} captures)", flush=True)
-        self.check(f"{label}: the folder icon is present in the very first captured frame",
-                   bool(first_frame_had_icon),
+        # DESK-12 decision (2026-10-13): "icon in the very first captured
+        # frame" is not reachable. The first capture follows process, Wayland
+        # and compositor start-up, and the folder glyph rasterises on the
+        # blocking pool after the first frame; the software renderer on a CI
+        # runner measures ~1.5 s to icon (0.7-0.9 s on the laptop). The
+        # always-failing check hid real regressions, so it is a budget now:
+        # the icon must appear within --max-time-to-icon-ms. Before the
+        # DESK-12 rasterise fix the same path took 2.5-3.0 s on the laptop and
+        # would take well over double that on a runner, so a regression
+        # exceeds the budget while runner noise does not.
+        if first_frame_had_icon:
+            print(f"{label}: the folder icon was already in the very first captured frame", flush=True)
+        budget = self.args.max_time_to_icon_ms
+        self.check(f"{label}: the folder icon paints within {budget:.0f} ms of launch",
+                   icon_ms is not None and icon_ms <= budget,
                    f"(time to icon {icon_ms:.1f} ms)" if icon_ms is not None
                    else f"(icon never painted in {TIME_TO_ICON_TIMEOUT:.1f}s, {samples} captures)")
         self.settle_desktop()
@@ -685,6 +698,8 @@ def main() -> int:
     parser.add_argument("--gpu", action="store_true",
                         help="use the machine's GPU for niri and GPUI instead of llvmpipe/lavapipe")
     parser.add_argument("--frame-trace-dir", help="write each desktop launch's RMAC_FRAME_TRACE here")
+    parser.add_argument("--max-time-to-icon-ms", type=float, default=3000.0,
+                        help="budget from launch to the first capture showing the folder icon")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

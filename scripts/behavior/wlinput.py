@@ -13,6 +13,8 @@ an injector. Touch gestures therefore need a physical touchscreen or a kernel
 uinput device; this helper intentionally cannot synthesize them.
 
 It refuses to connect to the owner's live session: see ``assert_nested``.
+The one exception is ``scripts/robot``, which passes its own ``guard`` (an
+explicit, owner-granted consent check) to drive the live session.
 The behaviour runner imports it; ``python3 wlinput.py key cmd-shift-n`` and
 ``python3 wlinput.py type hello`` also work by hand inside a nested
 compositor.
@@ -207,9 +209,10 @@ class Wayland:
     """A minimal client: one registry, a seat, a virtual keyboard and a
     virtual pointer."""
 
-    def __init__(self, environ: Optional[dict[str, str]] = None) -> None:
+    def __init__(self, environ: Optional[dict[str, str]] = None,
+                 guard: Callable[[dict[str, str]], None] = assert_nested) -> None:
         environ = dict(os.environ if environ is None else environ)
-        assert_nested(environ)
+        guard(environ)
         display = environ["WAYLAND_DISPLAY"]
         path = display if display.startswith("/") else os.path.join(environ["XDG_RUNTIME_DIR"], display)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

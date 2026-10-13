@@ -86,8 +86,9 @@ mod linux_wayland {
     const READY_FILE_ENV: &str = "RMAC_TOP_BAR_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_TOP_BAR_RENDER_COUNT_DIR";
 
-    const STATUS_ASSET_NAMES: [&str; 10] = [
+    const STATUS_ASSET_NAMES: [&str; 11] = [
         "status/battery.svg",
+        "status/battery-bolt.svg",
         "status/bluetooth.svg",
         "status/control-center.svg",
         "status/focus.svg",
@@ -191,6 +192,9 @@ mod linux_wayland {
             }
             let bytes: Option<&'static [u8]> = match path {
                 "status/battery.svg" => Some(include_bytes!("../../../assets/status/battery.svg")),
+                "status/battery-bolt.svg" => {
+                    Some(include_bytes!("../../../assets/status/battery-bolt.svg"))
+                }
                 "status/bluetooth.svg" => {
                     Some(include_bytes!("../../../assets/status/bluetooth.svg"))
                 }
@@ -5091,7 +5095,10 @@ mod linux_wayland {
     }
 
     /// The battery is drawn rather than loaded so its fill tracks the level,
-    /// turning red at 10% or below while discharging, as on macOS. Like the
+    /// turning red at 10% or below while discharging, as on macOS. While the
+    /// battery charges, a bolt sits over the body, as macOS shows it: a
+    /// knocked-out outline in the opposite colour keeps it readable over the
+    /// fill. Like the
     /// other status glyphs it takes the bar's label colour, so it is dark on
     /// the Light bar and white on the Dark one; the outline and nub are that
     /// colour at 55% opacity.
@@ -5110,6 +5117,29 @@ mod linux_wayland {
             })
             .unwrap_or((100, false));
         let fill_width = ((WIDTH - 2.0 * INSET - 2.4) * f32::from(percentage) / 100.0).max(1.5);
+        let charging = battery.is_some_and(|battery| {
+            matches!(
+                battery.state,
+                rmac_power::BatteryState::Charging | rmac_power::BatteryState::PendingCharge
+            )
+        });
+        // The bolt's knockout is the opposite of the label colour: dark on
+        // the Dark bar's white fill, light on the Light bar's dark fill.
+        let knockout = if tokens::is_dark() {
+            0x000000D9
+        } else {
+            0xFFFFFFD9
+        };
+        let bolt = |size: f32, color: u32| {
+            svg()
+                .path("status/battery-bolt.svg")
+                .absolute()
+                .w(px(size * 10.0 / 14.0))
+                .h(px(size))
+                .left(px((WIDTH - size * 10.0 / 14.0) / 2.0))
+                .top(px((HEIGHT - size) / 2.0))
+                .text_color(rgba(color))
+        };
         div()
             .flex()
             .items_center()
@@ -5130,7 +5160,10 @@ mod linux_wayland {
                             .w(px(fill_width))
                             .rounded(px(1.8))
                             .bg(rgba(if low { 0xFF453AFF } else { label })),
-                    ),
+                    )
+                    .when(charging, |body| {
+                        body.child(bolt(13.0, knockout)).child(bolt(10.0, label))
+                    }),
             )
             .child(
                 div()

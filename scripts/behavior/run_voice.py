@@ -155,6 +155,23 @@ class Scenario(intents.BaseScenario):
     def spotlight_open(self) -> bool:
         return "Spotlight Search" in self.showing()
 
+    def spotlight_query(self) -> str:
+        """The text in Spotlight's search field (its accessible text; the
+        field's name stays "Spotlight Search")."""
+        import pyatspi
+
+        for node, _pid in self.driver.accessible():
+            try:
+                if not node.getState().contains(pyatspi.STATE_SHOWING):
+                    continue
+                if node.getRoleName() in {"entry", "text", "search entry"}:
+                    text = self.driver.text_of(node)
+                    if text and text != "Spotlight Search":
+                        return text
+            except Exception:  # noqa: BLE001
+                continue
+        return ""
+
     # ---- the scenario ----------------------------------------------------
 
     def off(self) -> None:
@@ -206,7 +223,9 @@ class Scenario(intents.BaseScenario):
         if not shown:
             self.errors.append(f"no {ROW!r} row after letting go; showing: {sorted(self.showing())[:40]}")
             return
-        typed = any(SPEECH in name for name in self.showing())
+        query = self.spotlight_query()
+        self.facts["spotlight_query"] = query
+        typed = SPEECH in query.lower()
         self.facts["transcript_in_spotlight"] = typed
         if not typed:
             self.errors.append("Spotlight does not show the transcript")
@@ -260,8 +279,10 @@ class Scenario(intents.BaseScenario):
         opened = intents.wait_until(self.spotlight_open, 10, 0.2)
         time.sleep(2.5)
         names = self.showing()
+        query = self.spotlight_query()
         self.facts["unsupported_spotlight"] = bool(opened)
-        self.facts["unsupported_query_shown"] = any("weather" in name for name in names)
+        self.facts["unsupported_query"] = query
+        self.facts["unsupported_query_shown"] = "weather" in query.lower()
         self.facts["unsupported_rows"] = sorted(
             name for name in names if name.endswith(intents.ASSIST_SUFFIX))
         if not opened:
@@ -287,8 +308,10 @@ class Scenario(intents.BaseScenario):
             self.errors.append("a hands-free request never reached Spotlight")
         else:
             time.sleep(1)
-            if not any(SPEECH in name for name in self.showing()):
-                self.errors.append("the hands-free transcript is not in Spotlight")
+            query = self.spotlight_query()
+            self.facts["tap_query"] = query
+            if SPEECH not in query.lower():
+                self.errors.append(f"the hands-free transcript is not in Spotlight: {query!r}")
             self.close()
 
     def run(self) -> dict:

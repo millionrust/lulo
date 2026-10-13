@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Talk to Lulo pill</title>
+<!--
+  Talk to Lulo (ADR 0024 §8): the listening pill shown while ⌥Space is held.
+  Modelled on the macOS 26 dictation pill (a capsule with the microphone and
+  a live level meter); original drawing, no Apple artwork. It opens where
+  Spotlight's bar opens (horizontally centred, a fifth of the way down), so
+  the transcript appears in Spotlight where the pill was.
+
+    surface      layer-shell overlay, 460 x 64, transparent; takes the
+                 keyboard (exclusive) to hear ⌥ being let go
+    pill         44 tall, fully rounded; HUD material; menu shadow;
+                 8 left padding, 16 right, 10 between items
+    microphone   28 circle, system orange while listening (the same colour
+                 as the menu bar's microphone-in-use dot), system grey while
+                 working; 15 pt mic glyph in white
+    meter        9 bars, 3 wide, 3 apart, 3 to 20 tall, rounded, primary
+                 text colour; the newest level in the middle bar, older
+                 ones spreading outwards; moves only when the service sends
+                 a level (about 20 a second, only while listening)
+    label        13 regular, secondary: "Listening…", then "Working…";
+                 messages ("Lulo didn't catch that.", "Turn on Talk to Lulo
+                 in System Settings ▸ Lulo Intelligence.") replace the
+                 microphone and meter, primary colour, 16 padding each side
+    keys         let go of ⌥: transcribe and open Spotlight with the text;
+                 Escape: cancel, nothing is kept; a quick tap listens
+                 hands-free until a pause or a second press
+-->
+<link rel="stylesheet" href="lab.css">
+<style>
+  body { background: #3a3f4b; font: 13px -apple-system, "Inter", sans-serif; margin: 0; }
+  .screen { position: relative; width: 1280px; height: 800px; margin: 20px;
+            background: linear-gradient(160deg, #4b5d7a, #2a2f3a); border-radius: 8px; overflow: hidden; }
+  .bar { height: 32px; background: rgba(30,30,34,.55); }
+  .surface { position: absolute; left: 50%; top: 160px; width: 460px; height: 64px;
+             transform: translateX(-50%); display: flex; justify-content: center; align-items: flex-start;
+             outline: 1px dashed rgba(255,255,255,.15); }
+  .pill { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 16px 0 8px;
+          border-radius: 22px; background: rgba(40,40,46,.92);
+          box-shadow: 0 6px 18px rgba(0,0,0,.45); color: rgba(255,255,255,.55); }
+  .mic { width: 28px; height: 28px; border-radius: 14px; background: #ff9f0a;
+         display: flex; align-items: center; justify-content: center; }
+  .mic.working { background: #8e8e93; }
+  .meter { height: 20px; display: flex; align-items: center; gap: 3px; }
+  .meter i { display: block; width: 3px; border-radius: 1.5px; background: rgba(255,255,255,.9); }
+  .meter.idle i { background: rgba(255,255,255,.4); }
+  .message { padding: 0 16px; color: rgba(255,255,255,.9); }
+  .states { position: absolute; left: 40px; bottom: 40px; display: grid; gap: 18px; }
+  .states .pill { position: static; }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="bar"></div>
+  <div class="surface">
+    <div class="pill">
+      <div class="mic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><rect x="6" y="2" width="4" height="7.5" rx="2" fill="#fff"/><path d="M3.8 7.8a4.2 4.2 0 0 0 8.4 0M8 12v2"/></svg></div>
+      <div class="meter"><i style="height:4px"></i><i style="height:7px"></i><i style="height:12px"></i><i style="height:16px"></i><i style="height:20px"></i><i style="height:14px"></i><i style="height:9px"></i><i style="height:5px"></i><i style="height:3px"></i></div>
+      <span>Listening…</span>
+    </div>
+  </div>
+  <div class="states">
+    <div class="pill">
+      <div class="mic working"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><rect x="6" y="2" width="4" height="7.5" rx="2" fill="#fff"/><path d="M3.8 7.8a4.2 4.2 0 0 0 8.4 0M8 12v2"/></svg></div>
+      <div class="meter idle"><i style="height:3px"></i><i style="height:3px"></i><i style="height:3px"></i><i style="height:3px"></i><i style="height:3px"></i><i style="height:3px"></i><i style="height:3px"></i><i style="height:3px"></i><i style="height:3px"></i></div>
+      <span>Working…</span>
+    </div>
+    <div class="pill message">Lulo didn’t catch that.</div>
+    <div class="pill message">Turn on Talk to Lulo in System Settings ▸ Lulo Intelligence.</div>
+  </div>
+</div>
+</body>
+</html>

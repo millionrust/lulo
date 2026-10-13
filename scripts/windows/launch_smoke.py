@@ -786,6 +786,47 @@ def check_clock_tabs(app: str, hwnd: int) -> str | None:
     return None
 
 
+#: Calculator's History button in its title area, from the window's left
+#: edge and the content's top (pt), as UI Automation reports it at 100 %.
+CALCULATOR_HISTORY_BUTTON = (125, 25)
+
+
+def check_title_area_button(app: str, hwnd: int) -> str | None:
+    """A click on a button inside a title-area drag region reaches it.
+
+    Found by the robot: on Windows the press started the system window move,
+    which swallowed the release, so Calculator's History and Mode buttons,
+    Text Editor's format bar and every toolbar control in a drag region did
+    nothing. Clicking History opens Calculator's history panel."""
+    if not bring_forward(hwnd):
+        return "could not bring Calculator forward to test its History button"
+    origin_x, origin_y = client_origin(hwnd)
+    left, top, right, bottom = window_rect(hwnd)
+    try:
+        scale = (user32().GetDpiForWindow(hwnd) or 96) / 96.0
+    except AttributeError:
+        scale = 1.0
+    x = origin_x + int(CALCULATOR_HISTORY_BUTTON[0] * scale)
+    y = origin_y + int((STRIP_HEIGHT + CALCULATOR_HISTORY_BUTTON[1]) * scale)
+    before = grab((left, top, right, bottom))
+    if before is None:
+        print(f"{app}: title-area button check skipped (Pillow is not installed)")
+        return None
+    rect_before = window_rect(hwnd)
+    click(x, y)
+    time.sleep(KEY_SETTLE_SECONDS)
+    after = grab((left, top, right, bottom))
+    changed = changed_fraction(before, after)
+    moved = window_rect(hwnd) != rect_before
+    print(f"{app}: click on History at ({x}, {y}): {changed:.1%} changed, window moved {moved} (origin {origin_x})")
+    # Close the history panel again.
+    click(x, y)
+    time.sleep(KEY_SETTLE_SECONDS)
+    if changed < 0.02 or moved:
+        return "a click on Calculator's History button (in its title area) did nothing"
+    return None
+
+
 WM_CLOSE = 0x0010
 CONSOLE_HOSTS = ("conhost.exe", "openconsole.exe")
 TH32CS_SNAPPROCESS = 0x00000002
@@ -988,6 +1029,10 @@ def launch(
         ]
         if app == "rmac-preview" and arguments:
             error = check_preview_pdf(hwnd, screenshots)
+            if error:
+                errors.append(error)
+        if app == "rmac-calculator":
+            error = check_title_area_button(app, hwnd)
             if error:
                 errors.append(error)
         if app == "rmac-clock":

@@ -80,6 +80,14 @@ pub struct WindowsWindowState {
     /// Shared with [`WindowsPlatformState::cursor_visible`].
     pub cursor_visible: Arc<AtomicBool>,
     pub nc_button_pressed: Cell<Option<u32>>,
+    /// rmac: a press on a title-area drag region that becomes a window move
+    /// only once the pointer travels (screen point of the press), so a
+    /// click on a control inside the region still reaches it (see
+    /// `handle_nc_mouse_down_msg`).
+    pub pending_caption_move: Cell<Option<(i32, i32)>>,
+    /// rmac: set while the deferred press is handed to `DefWindowProc` to
+    /// start the system move.
+    pub starting_caption_move: Cell<bool>,
 
     pub display: Cell<WindowsDisplay>,
     /// Flag to instruct the `VSyncProvider` thread to invalidate the directx devices
@@ -182,6 +190,8 @@ impl WindowsWindowState {
             current_cursor: Cell::new(current_cursor),
             cursor_visible,
             nc_button_pressed: Cell::new(nc_button_pressed),
+            pending_caption_move: Cell::new(None),
+            starting_caption_move: Cell::new(false),
             display: Cell::new(display),
             fullscreen: Cell::new(fullscreen),
             initial_placement: Cell::new(initial_placement),

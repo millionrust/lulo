@@ -307,7 +307,8 @@ function Check-Bounds($run, $hwnd, $state) {
     $bad = @()
     foreach ($n in $R::Tree($hwnd, 12, 600)) {
         if ($n.Depth -eq 0 -or -not $n.Name -or $n.Offscreen -or $n.Bounds.IsEmpty) { continue }
-        if ($n.Type -in @('TitleBar', 'MenuBar', 'MenuItem')) { continue }
+        # Rows of a list or tree scroll inside their view: past the edge is not overflow.
+        if ($n.Type -in @('TitleBar', 'MenuBar', 'MenuItem', 'ListItem', 'TreeItem', 'DataItem')) { continue }
         if ($n.Bounds.Height -le 2) { continue } # DWM's own hidden caption buttons
         $b = $n.Bounds
         if ($b.Left -lt $f.Left - 2 -or $b.Right -gt $f.Right + 2 -or $b.Top -lt $f.Top - 2 -or $b.Bottom -gt $f.Bottom + 2) {
@@ -477,7 +478,16 @@ function Walk-Menus($run) {
     $catalogue = [ordered]@{}
     foreach ($button in $menuButtons) {
         $menuName = $button.Name -replace ' menu$', ''
-        $open = { param($b) $c = Center $b; Click $c[0] $c[1]; Start-Sleep -Milliseconds 600 }
+        $open = {
+            param($b)
+            # The bar's titles move when it swaps menus (the desktop's for the app's):
+            # find the title by name again before each click.
+            if ($viaBar) {
+                $fresh = @(Bar-Buttons | Where-Object { $_.Name -eq $b.Name }) | Select-Object -First 1
+                if ($fresh) { $b = $fresh }
+            }
+            $c = Center $b; Click $c[0] $c[1]; Start-Sleep -Milliseconds 600
+        }
         Focus-App $run
         & $open $button
         $panel = @(if ($viaBar) { Shell-Menus } else { Strip-Menus $run.Main }) | Select-Object -First 1
@@ -516,6 +526,9 @@ function Walk-Menus($run) {
             } -QuietExpected:$quiet)
             if ($run.Proc.HasExited) { return $catalogue }
             if ($item.Name -eq 'Enter Full Screen') { Leave-FullScreen $run $button $viaBar $open }
+            # An item named "…" opens a sheet or panel inside the window: cancel it
+            # so it does not block the next items.
+            if ($item.Name -match '(…|\.\.\.)$') { Focus-App $run; Keys $VK.Esc; Start-Sleep -Milliseconds 300 }
         }
     }
     $catalogue | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $run.Dir 'menus.json')
@@ -534,8 +547,10 @@ function Leave-FullScreen($run, $button, $viaBar, $open) {
     $exit = @(Items-Of $p | Where-Object { $_.Name -match '^(Exit|Leave|Enter) Full Screen$' }) | Select-Object -First 1
     if (-not $exit) {
         Close-ShellMenus
-        Add-Finding 'medium' 'menus' $run.Name "the menu has no 'Exit Full Screen' while the window is full screen" '' (Shot "$($run.Key)-no-exit-full-screen")
+        Add-Finding 'medium' 'menus' $run.Name "the menu has no 'Exit Full Screen' while the window is full screen (the bar is covered)" '' (Shot "$($run.Key)-no-exit-full-screen")
         Keys $VK.Esc
+        # Windows' own full-screen key.
+        Focus-App $run; Keys 0x7A
     } else {
         if ($exit.Name -ne 'Exit Full Screen') { Add-Finding 'low' 'menus' $run.Name "the full-screen item still reads '$($exit.Name)' while the window is full screen" }
         Click $exit.X $exit.Y
@@ -897,6 +912,7 @@ function Scan-EventLog {
 $initial = $null; $clip = $null
 try {
     Wait-ForIdle
+    $deadline = (Get-Date).AddMinutes($MaxMinutes)
     $other = Other-TestRunning
     if ($other) { throw "robot: another Lulo test is running ($other); not starting" }
     $initial = Lulo-State
@@ -932,6 +948,7 @@ try {
     }
     if ($clip) { Restore-Clipboard $clip }
     Scan-EventLog
+    if ($R::TreeTimeouts) { Add-Finding 'high' 'hang' 'robot' "$($R::TreeTimeouts) UI Automation walk(s) got no answer within 8 s (a window stopped responding)" }
     $report = [ordered]@{ started = $started.ToString('s'); seconds = [int]((Get-Date) - $started).TotalSeconds; bin = $Bin; menuMode = $MenuMode; measures = $measures; findings = $findings }
     $report | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 (Join-Path $out 'findings.json')
     "robot: done in $($report.seconds) s, $($findings.Count) finding(s), results in $out"

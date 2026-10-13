@@ -10,7 +10,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Script,
     [string]$Arguments = '',
-    [int]$TimeoutSeconds = 660,
+    # Longer than the robot's own 10-minute limit plus its wait for an idle PC.
+    [int]$TimeoutSeconds = 1500,
     [string]$TaskName = 'LuloRobot'
 )
 $ErrorActionPreference = 'Stop'
@@ -24,6 +25,7 @@ $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -Ru
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds ($TimeoutSeconds + 60)) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal -Settings $settings -Force | Out-Null
 try {
+    $began = Get-Date
     Start-ScheduledTask -TaskName $TaskName
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     Start-Sleep -Seconds 2
@@ -31,6 +33,11 @@ try {
         if ((Get-Date) -gt $deadline) {
             Stop-ScheduledTask -TaskName $TaskName
             Write-Output "robot: timed out after $TimeoutSeconds s"
+            # The robot's own clean-up did not run: end the Lulo apps it started
+            # (never the Lulo layer, which the user started).
+            Get-Process rmac-* -ErrorAction SilentlyContinue |
+                Where-Object { $_.StartTime -gt $began } |
+                ForEach-Object { Write-Output "robot: ending leftover $($_.Name) $($_.Id)"; Stop-Process -Id $_.Id }
             break
         }
         Start-Sleep -Seconds 2

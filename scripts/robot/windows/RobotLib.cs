@@ -384,17 +384,27 @@ namespace LuloRobot
         }
 
         // The UIA elements under a window, depth first, with their names and bounds.
+        // A window that stops answering would block UI Automation for good, so
+        // the walk runs on its own thread and gives up after a few seconds.
         public static List<Node> Tree(IntPtr hwnd, int maxDepth, int maxNodes)
         {
             List<Node> nodes = new List<Node>();
-            try
+            Thread worker = new Thread(delegate ()
             {
-                AutomationElement root = AutomationElement.FromHandle(hwnd);
-                Walk(root, 0, maxDepth, maxNodes, nodes);
-            }
-            catch (Exception) { }
+                try
+                {
+                    AutomationElement root = AutomationElement.FromHandle(hwnd);
+                    Walk(root, 0, maxDepth, maxNodes, nodes);
+                }
+                catch (Exception) { }
+            });
+            worker.IsBackground = true;
+            worker.Start();
+            if (!worker.Join(8000)) { TreeTimeouts++; return new List<Node>(); }
             return nodes;
         }
+
+        public static int TreeTimeouts = 0;
 
         static void Walk(AutomationElement e, int depth, int maxDepth, int maxNodes, List<Node> nodes)
         {

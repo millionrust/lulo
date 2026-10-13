@@ -522,6 +522,11 @@ class Run:
                     print(f"focus diagnostic ({label}): windows="
                           f"{[(w.get('app_id'), w.get('is_focused')) for w in self.niri('windows') or []]} "
                           f"workspaces={self.niri('workspaces')}", flush=True)
+                    log = self.out / "top-bar.log"
+                    if log.exists():
+                        for line in log.read_text(errors="replace").splitlines():
+                            if "focus" in line.lower():
+                                print(f"top-bar: {line}", flush=True)
         finally:
             probe.terminate()
             try:
@@ -788,7 +793,16 @@ class Run:
                     continue
             return found
 
-        candidates = self.wait_for(lambda: rows() or None, 5) or []
+        # On a loaded runner the layer exists before the launcher's field has
+        # the keyboard, and the first key press is dropped; type again if no
+        # row appeared (a second "e" still matches).
+        candidates = []
+        for _ in range(3):
+            candidates = self.wait_for(lambda: rows() or None, 5) or []
+            if candidates:
+                break
+            print("Spotlight expanded: no result rows yet, typing again", flush=True)
+            self.keys.type_text("e")
         self.check("Spotlight expanded: typing \"e\" shows at least one result row",
                    bool(candidates), f"{len(candidates)} candidates")
         if not candidates:

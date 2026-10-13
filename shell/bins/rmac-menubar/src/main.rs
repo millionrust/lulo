@@ -1323,8 +1323,12 @@ mod linux_wayland {
                 // this behaviour suite) waits for Escape to give a window
                 // back its keyboard.
                 for attempt in 0..30 {
-                    let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
-                        return;
+                    let snapshot = match rmac_compositor_niri::snapshot().await {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            eprintln!("could not read the compositor to return focus: {error:?}");
+                            return;
+                        }
                     };
                     // The window niri's layout still has active under the
                     // bar's on-demand layer focus, queried fresh right now,
@@ -1380,6 +1384,9 @@ mod linux_wayland {
                         .any(|candidate| candidate.id == target && candidate.focused);
                     if settled {
                         return;
+                    }
+                    if attempt == 29 {
+                        eprintln!("focus was not returned to window {target:?} after 30 attempts");
                     }
                     if attempt < 29 {
                         cx.background_executor()

@@ -622,19 +622,28 @@ class Run:
             lambda: self.window_matching(app_id, grew_substantially),
             8.0,
         )
+        history_file = self.runtime / "rmac" / "tile-history.json"
         if not zoomed and app_id != "org.rmac.Calculator":
-            # A press pair that arrives while the window is still taking
-            # pointer focus after its last move is swallowed by the focus
-            # transfer, as with the Dock probe's first click. Nothing zoomed
-            # and nothing moved, so the same gesture once more is safe.
-            print(f"double-click on {title} did not zoom in 8 s; repeating once", flush=True)
-            retry = self.window(app_id) or window
-            rx, ry, rw, _ = self.geometry(retry)
-            self.double_click((rx + rw * 0.5, ry + 18))
+            # Zoom is a toggle: Mission Control records the window's frame
+            # in the tile history on Fill and restores it on the next Zoom.
+            # Only repeat the gesture when no Zoom was recorded (the press
+            # pair never reached the service, e.g. swallowed by a pointer
+            # focus transfer); a recorded Zoom that has not shown up yet must
+            # not be toggled back by a second double-click.
+            history = history_file.read_text() if history_file.exists() else "missing"
+            recorded = history.strip() not in ("missing", "", "{}", "[]", '{"windows":{}}')
+            print(f"double-click on {title} did not zoom in 8 s; history={history!r}; "
+                  f"window={self.window(app_id)}", flush=True)
+            if not recorded:
+                retry = self.window(app_id) or window
+                rx, ry, rw, _ = self.geometry(retry)
+                self.double_click((rx + rw * 0.5, ry + 18))
             zoomed = self.wait_for(
                 lambda: self.window_matching(app_id, grew_substantially),
                 15.0,
             )
+            if not zoomed:
+                print(f"still not zoomed; window={self.window(app_id)}", flush=True)
         if zoomed:
             time.sleep(2)
             zoomed = self.window(app_id) or zoomed

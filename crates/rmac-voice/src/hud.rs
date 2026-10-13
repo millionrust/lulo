@@ -101,13 +101,15 @@ impl Pill {
         .detach();
         // No word of the keyboard in time (it never came, or ⌥ was already
         // up): listen hands-free.
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(KEYBOARD_WAIT).await;
-            let _ = this.update(cx, |this, _| {
+            let _ = this.update_in(cx, |this, window, cx| {
                 if this.mode == Mode::Undecided {
-                    this.mode = Mode::HandsFree;
-                    rmac_ui::trace_mark("voice_hands_free");
-                    let _ = this.controls.try_send(Control::EndOnPause);
+                    // The window's own idea of the keys, in case the
+                    // compositor sent them before the pill was listening.
+                    let alt = window.modifiers().alt;
+                    rmac_ui::trace_mark(&format!("voice_keyboard_wait:alt={alt}"));
+                    this.modifiers_changed(alt, cx);
                 }
             });
         })
@@ -133,6 +135,7 @@ impl Pill {
     }
 
     fn modifiers_changed(&mut self, alt: bool, cx: &mut Context<Self>) {
+        rmac_ui::trace_mark(&format!("voice_modifiers:alt={alt}"));
         let (mode, change) = self.mode.on_modifiers(alt);
         self.mode = mode;
         match change {
@@ -468,15 +471,11 @@ pub fn run() {
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
             let (press_tx, press_rx) = async_channel::bounded(4);
-            let (ready_tx, _ready_rx) = async_channel::bounded(1);
             cx.background_executor()
                 .spawn(async move {
-                    if let Err(error) = rmac_shortcuts::watch_dispatches_ready(
-                        ShortcutId(SHORTCUT.into()),
-                        press_tx,
-                        ready_tx,
-                    )
-                    .await
+                    if let Err(error) =
+                        rmac_shortcuts::watch_dispatches(ShortcutId(SHORTCUT.into()), press_tx)
+                            .await
                     {
                         eprintln!("rmac-voice-hud: {error}");
                     }

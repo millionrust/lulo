@@ -5163,7 +5163,13 @@ impl PreviewView {
             .absolute()
             .left(px(title_left))
             .top_0()
-            .w(px((group.zoom - title_left - 12.0).max(0.0)))
+            // The title ends before the first right-hand control: the
+            // markup toggle when the toolbar shows, which sits 48 left of the
+            // zoom group. Up to the zoom group, a narrow window drew the
+            // toggle over the title (found by the robot on Windows).
+            .w(px((metrics::title_right(&group, self.toolbar_shown)
+                - title_left)
+                .max(0.0)))
             .h(px(self.toolbar_height()))
             .text_color(rgb(palette.glyph))
             .map(|block| match subtitle {
@@ -5404,21 +5410,25 @@ impl PreviewView {
             .when(self.toolbar_shown, |toolbar| {
                 toolbar.child(rmac_ui::KeyboardAction::new(
                     "preview-toggle-markup-keyboard",
-                    capsule("preview-toggle-markup", group.zoom - 48.0, 36.0)
-                        .role(Role::Button)
-                        .aria_label("Show Markup Toolbar")
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .when(self.markup_shown, |button| {
-                            button.bg(rgb(palette.selection))
-                        })
-                        .text_color(rgb(palette.glyph))
-                        .child("✎")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.markup_shown = !this.markup_shown;
-                            cx.notify();
-                        })),
+                    capsule(
+                        "preview-toggle-markup",
+                        group.zoom - metrics::MARKUP_TOGGLE_OFFSET,
+                        36.0,
+                    )
+                    .role(Role::Button)
+                    .aria_label("Show Markup Toolbar")
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .when(self.markup_shown, |button| {
+                        button.bg(rgb(palette.selection))
+                    })
+                    .text_color(rgb(palette.glyph))
+                    .child("✎")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.markup_shown = !this.markup_shown;
+                        cx.notify();
+                    })),
                     {
                         let view = cx.entity();
                         move |_, cx| {

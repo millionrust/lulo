@@ -73,6 +73,12 @@ pub const APPLICATION_MENU: &str = "Application";
 /// panel. The menu bar shows it as "About <App>".
 pub const ABOUT_ACTION: &str = "rmac::ShowAboutPanel";
 
+/// The menu bar's Application ▸ Quit, sent to the app so it quits itself
+/// (rmac-ui's `QuitApplication`, the same as its ⌘Q). The row is
+/// synthesized by the menu bar, not exported, so every endpoint accepts
+/// this one action in addition to its published rows.
+pub const QUIT_ACTION: &str = "rmac_ui::QuitApplication";
+
 /// The label of an exported menu whose items join the menu bar's standard
 /// Window menu, after its window commands and before the list of windows.
 pub const WINDOW_MENU: &str = "Window";
@@ -3069,6 +3075,7 @@ fn activatable_actions(menus: &[Menu]) -> BTreeSet<String> {
         .iter()
         .flat_map(Menu::leaves)
         .map(|(_, item)| item.action.clone())
+        .chain(std::iter::once(QUIT_ACTION.to_owned()))
         .collect()
 }
 
@@ -3928,6 +3935,10 @@ mod tests {
         let mut published = Published::new(menus.clone());
         assert!(published.activatable.contains("notes::ToggleItalic"));
         assert!(!published.activatable.contains("notes::FontMenu"));
+        // The menu bar's synthesized Quit reaches every app (live robot,
+        // 2026-10-13: closing windows alone left apps running).
+        assert!(published.activatable.contains(QUIT_ACTION));
+        assert!(valid_action(QUIT_ACTION));
         assert_eq!(published.replace(menus.clone()), None);
         let checked = apply_state(&menus, |_| {
             Some(ItemState {

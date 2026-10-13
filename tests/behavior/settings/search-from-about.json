@@ -1,0 +1,16 @@
+{
+  "title": "Settings: ⌘F and typing work after opening General ▸ About",
+  "app": "settings",
+  "lulo_only": true,
+  "steps": [
+    {"menu_action": "system_settings::ShowAbout", "settle": 1.2},
+    {"key": "cmd-f"},
+    {"type": "display", "settle": 1.0},
+    {"observe": "typed", "facts": ["focus"]}
+  ],
+  "omit": [
+    "typed.focus.selection",
+    "typed.focus.selected_text",
+    "typed.focus.selected_all"
+  ]
+}

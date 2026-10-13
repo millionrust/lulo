@@ -802,3 +802,20 @@ fn the_assist_row_leads_only_its_own_query_and_confident_matches_skip_it() {
         .iter()
         .all(|ranked| ranked.result.category != Category::Intelligence));
 }
+
+#[test]
+fn scattered_letters_match_titles_but_not_long_secondary_text() {
+    // Live robot, 2026-10-13: "notes" also listed Disks, Language Support
+    // and Passwords and Keys, whose keyword text holds n…o…t…e…s.
+    assert!(query_matches("notes", "Notes", None));
+    assert!(!query_matches(
+        "notes",
+        "Disks",
+        Some("Disks gnome-disks partition mount format storage utilities")
+    ));
+    // Real matches in secondary text still count: a word prefix or substring.
+    assert!(query_matches("partition", "Disks", Some("partition mount")));
+    assert!(query_matches("mount", "Disks", Some("partition mount")));
+    // A title still matches by subsequence ("txe" → "Text Editor").
+    assert!(query_matches("txe", "Text Editor", None));
+}

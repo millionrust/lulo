@@ -400,6 +400,12 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
         .detach();
         cx.spawn(async move |cx| {
             while let Ok(action_name) = activation_rx.recv().await {
+                // The menu bar's Quit: no key window needs to answer it (an
+                // app with no windows open quits too).
+                if action_name == rmac_app_menu::QUIT_ACTION {
+                    cx.update(crate::chrome::quit_application);
+                    continue;
+                }
                 cx.update(|cx| match cx.build_action(&action_name, None) {
                     Ok(action) => crate::menu_target::dispatch_menu_action(action, cx),
                     Err(error) => eprintln!("ignored unavailable {app_id} menu action: {error}"),

@@ -697,8 +697,14 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
   ran at install time, so every upgrade turned Start Lulo at Sign-In off; uninstall still
   clears it through `--uninstall`. `upgrade_smoke.py` (CI) checks start / no start / start
   across three installs; `installer_smoke.py` (windows-preview.yml) checks `lulo-session`
-  and `lulo-shell` are running after a real install. Still open: `Software\Lulo\Shell` (the
-  Dock's monitor and similar settings) is lost on every upgrade, for the same reason.
+  and `lulo-shell` are running after a real install.
+- **Keeps the Lulo layer's settings across upgrades** (branch `op/win-upgrade-keep`).
+  `HKCU\Software\Lulo\Shell` (the Dock's monitor, the hotkey notice and similar) was removed
+  by a `removeOnUninstall` `<RemoveRegistryKey>`, which also ran while an upgrade removed the
+  old product. `lulo-session --uninstall` now removes it, on a real uninstall only, as it
+  does Start Lulo at Sign-In; `upgrade_smoke.py` sets a value there, upgrades, and checks it
+  survives and is gone after uninstall. The first upgrade from an older MSI still loses the
+  key: that removal runs from the old product's own tables.
 - **Installs every Lulo Windows app** (Calculator, Notes, Text Editor, Preview, Clock,
   Weather, Terminal, and now Files and the Lulo layer -- `lulo-session.exe` and
   `lulo-shell.exe`, ADR 0023 phase 3, merged from `op/win-shell`) to

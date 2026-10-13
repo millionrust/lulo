@@ -244,6 +244,9 @@ pub fn run(arguments: &[String]) -> i32 {
             folders::turn_off();
             let _ = registry::set_starts_at_sign_in(None);
             registry::forget_lulo_mode();
+            // Last: restoring the desktop above reads the AppBars' handles
+            // from these settings.
+            registry::forget_shell_settings();
             0
         }
         Some("--after-install") => start_after_install(),

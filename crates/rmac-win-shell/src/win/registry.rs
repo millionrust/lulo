@@ -6,15 +6,16 @@
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
-    HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
-    RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
+    RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegDeleteValueW, RegGetValueW, RegOpenKeyExW,
+    RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, KEY_WRITE, REG_DWORD,
+    REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
 };
 
 pub const SHELL_KEY: &str = r"Software\Lulo\Shell";
-/// Whether Lulo mode is on, kept apart from `SHELL_KEY`: the installer
-/// removes that key with the old product during an upgrade, and this must
-/// outlive the upgrade it decides about (see `session.rs`, `--after-install`).
+/// Whether Lulo mode is on, kept apart from `SHELL_KEY`: an upgrade from an
+/// installer older than op/win-upgrade-keep still removes that key with the
+/// old product, and this must outlive the upgrade it decides about (see
+/// `session.rs`, `--after-install`).
 const SESSION_KEY: &str = r"Software\Lulo\Session";
 const LULO_MODE: &str = "LuloMode";
 const LAST_STARTED: &str = "LastStarted";
@@ -104,6 +105,16 @@ pub fn record_session_start() {
 pub fn forget_lulo_mode() {
     delete_value_in(SESSION_KEY, LULO_MODE);
     delete_value_in(SESSION_KEY, LAST_STARTED);
+}
+
+/// Forget the Lulo layer's settings (`SHELL_KEY` and everything under it).
+/// Uninstall only: the installer used to remove the key itself, which also
+/// happened while an upgrade removed the old product, so every upgrade
+/// lost them.
+pub fn forget_shell_settings() {
+    // SAFETY: deletes one subtree of the user's own hive; a missing key is
+    // nothing to delete.
+    let _ = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, &HSTRING::from(SHELL_KEY)) };
 }
 
 fn set_user_dword(path: &str, name: &str, value: u32) -> bool {

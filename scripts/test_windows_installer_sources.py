@@ -103,6 +103,15 @@ class InstallBringsLuloBack(unittest.TestCase):
         ]
         self.assertFalse([key for key in removed if key.endswith(r"CurrentVersion\Run")], removed)
 
+    def test_upgrade_keeps_the_lulo_layer_settings(self) -> None:
+        # A removeOnUninstall <RemoveRegistryKey> also runs while an upgrade
+        # removes the old product; `lulo-session --uninstall` removes them.
+        removed = [
+            key.get("Key")
+            for key in self.product().iter("{http://wixtoolset.org/schemas/v4/wxs}RemoveRegistryKey")
+        ]
+        self.assertNotIn(r"Software\Lulo\Shell", removed)
+
 
 if __name__ == "__main__":
     unittest.main()

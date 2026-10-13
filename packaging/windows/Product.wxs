@@ -149,12 +149,15 @@
          on uninstall by RestoreWindowsDesktop (the session's uninstall switch),
          not here: a <RemoveRegistryValue> runs at *install* time, so it
          turned the user's Start Lulo at Sign-In off on every upgrade.
-         The uninstall switch also forgets HKCU\Software\Lulo\Session (Lulo mode).
+         The uninstall switch also forgets HKCU\Software\Lulo\Session (Lulo mode)
+         and HKCU\Software\Lulo\Shell. The Shell key was removed here with
+         a removeOnUninstall <RemoveRegistryKey>, which also ran while an
+         upgrade removed the old product, so every upgrade lost the user's
+         settings; the uninstall switch runs only on a real uninstall.
          A dummy KeyPath value gives the component one (required) and is
          itself removed on uninstall the ordinary way. -->
     <Component Id="Comp_LuloShellRegistryCleanup" Directory="INSTALLFOLDER" Guid="*">
       <RegistryValue Root="HKCU" Key="Software\Lulo\Installer" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
-      <RemoveRegistryKey Root="HKCU" Key="Software\Lulo\Shell" Action="removeOnUninstall" />
     </Component>
   </Package>
 </Wix>

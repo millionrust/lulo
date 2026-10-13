@@ -95,6 +95,14 @@ fn bus_driver_signals_are_not_power_changes() {
 }
 
 #[test]
+fn a_mocked_service_call_log_is_not_a_power_change() {
+    assert!(is_mock_call_log(Some("org.freedesktop.DBus.Mock")));
+    assert!(!is_mock_call_log(Some("org.freedesktop.UPower")));
+    assert!(!is_mock_call_log(Some("org.freedesktop.DBus.Properties")));
+    assert!(!is_mock_call_log(None));
+}
+
+#[test]
 fn owner_events_distinguish_upower_outages_from_optional_profile_changes() {
     assert_eq!(
         power_owner_event("org.freedesktop.UPower", ""),

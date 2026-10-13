@@ -93,6 +93,7 @@ rmac-notes-store = { version = "=0.9.0-beta.1", path = "crates/rmac-notes-store"
 rmac-notes-storage = { version = "=0.9.0-beta.1", path = "crates/rmac-notes-storage" }
 rmac-notes-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-notes-runtime" }
 rmac-notifications = { version = "=0.9.0-beta.1", path = "crates/rmac-notifications" }
+rmac-notification-center-app = { version = "=0.9.0-beta.1", path = "crates/notification-center-app" }
 rmac-notifications-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-notifications-linux" }
 rmac-notifications-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-notifications-runtime" }
 rmac-notifications-store = { version = "=0.9.0-beta.1", path = "crates/rmac-notifications-store" }
@@ -151,6 +152,7 @@ rmac-shell-settings = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-set
 # The shell's views, shared by Lulo OS (the `shell/` workspace's binaries)
 # and Windows (`rmac-win-shell`); ADR 0023, "Phase 3 revised: shared shell
 # views".
+rmac-shell-app-switcher = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-app-switcher" }
 rmac-shell-dock = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-dock" }
 rmac-shell-layer = { version = "=0.9.0-beta.1", path = "shell/crates/rmac-shell-layer" }
 rmac-shell-menubar = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-menubar" }

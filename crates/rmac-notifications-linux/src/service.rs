@@ -27,11 +27,18 @@ const EVENT_CAPACITY: usize = 32;
 const FOCUS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 const MEDIA_ADMISSIONS: usize = 4;
 
+/// The same service without a session bus, for Windows (ADR 0023).
+pub mod local;
+
 #[derive(Clone)]
 pub struct HistoryAuthority {
     center: Arc<Mutex<rmac_notifications_store::Center>>,
     store: rmac_notifications_store::Store,
     focus_connection: Option<Connection>,
+    /// Whether the Focus service decides delivery (Lulo OS). Without it
+    /// (Windows, which has no Focus service yet) the Center's own policy
+    /// alone does, instead of failing closed.
+    focus_enforced: bool,
     origins: crate::origin::Origins,
 }
 
@@ -58,6 +65,7 @@ impl HistoryAuthority {
             center: Arc::new(Mutex::new(center)),
             store,
             focus_connection: Some(focus_connection),
+            focus_enforced: true,
             origins: crate::origin::Origins::default(),
         })
     }
@@ -68,6 +76,7 @@ impl HistoryAuthority {
             center: Arc::new(Mutex::new(rmac_notifications_store::Center::default())),
             store: rmac_notifications_store::Store::at(path),
             focus_connection: None,
+            focus_enforced: true,
             origins: crate::origin::Origins::default(),
         }
     }
@@ -79,6 +88,9 @@ impl HistoryAuthority {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .policy(app_id)
             .delivery(false);
+        if !self.focus_enforced {
+            return base;
+        }
         let lookup = async {
             match &self.focus_connection {
                 Some(connection) => {
@@ -453,10 +465,11 @@ impl CenterInterface {
         };
         let activation_token = validate_activation_token(activation_token)?;
         ServiceHandle {
-            connection: connection.clone(),
+            connection: Some(connection.clone()),
             core: self.core.clone(),
             events: self.events.clone(),
             history: self.history.clone(),
+            local: None,
         }
         .invoke_from_center(id, selection, activation_token)
         .await
@@ -1101,10 +1114,13 @@ impl PortalInterface {
 
 #[derive(Clone, Debug)]
 pub struct ServiceHandle {
-    connection: Connection,
+    /// The session bus; `None` for the bus-less service ([`local`]).
+    connection: Option<Connection>,
     core: SharedCore,
     events: Sender<RuntimeEvent>,
     history: HistoryAuthority,
+    /// The bus-less service's apps and Center watchers.
+    local: Option<std::sync::Arc<local::Link>>,
 }
 
 impl ServiceHandle {
@@ -1120,8 +1136,13 @@ impl ServiceHandle {
         &self,
         indicator: rmac_notifications::Indicator,
     ) -> Result<(), ServiceError> {
-        let emitter =
-            SignalEmitter::new(&self.connection, CENTER_PATH).map_err(|_| ServiceError::Bus)?;
+        let Some(connection) = &self.connection else {
+            if let Some(local) = &self.local {
+                local.changed();
+            }
+            return Ok(());
+        };
+        let emitter = SignalEmitter::new(connection, CENTER_PATH).map_err(|_| ServiceError::Bus)?;
         CenterInterface::changed(&emitter, indicator.unread_count, indicator.has_urgent)
             .await
             .map_err(|_| ServiceError::Bus)
@@ -1237,9 +1258,23 @@ impl ServiceHandle {
                 .await
                 .map_err(|_| ActionError::DocumentUnavailable);
         }
+        let Some(connection) = &self.connection else {
+            // Without a bus only Lulo apps post, over the notification
+            // pipe, and they hear their actions there.
+            return match (source, &self.local) {
+                (Source::Freedesktop { .. }, Some(local)) => {
+                    local.answer(
+                        invocation.notification_id,
+                        rmac_notifications::pipe::Answer::Action(invocation.action_id.clone()),
+                    );
+                    Ok(())
+                }
+                _ => Err(ActionError::Transport),
+            };
+        };
         match source {
             Source::Freedesktop { .. } => {
-                let emitter = SignalEmitter::new(&self.connection, LEGACY_PATH)
+                let emitter = SignalEmitter::new(connection, LEGACY_PATH)
                     .map_err(|_| ActionError::Transport)?;
                 if let Some(token) = activation_token {
                     emitter
@@ -1266,7 +1301,7 @@ impl ServiceHandle {
                 app_id,
                 external_id,
             } => {
-                let emitter = SignalEmitter::new(&self.connection, PORTAL_PATH)
+                let emitter = SignalEmitter::new(connection, PORTAL_PATH)
                     .map_err(|_| ActionError::Transport)?;
                 PortalInterfaceSignals::action_invoked(
                     &emitter,
@@ -1288,8 +1323,12 @@ impl ServiceHandle {
         activation_token: Option<&str>,
     ) -> Result<(), ActionError> {
         let object_path = application_object_path(app_id.as_str())?;
+        let connection = self
+            .connection
+            .as_ref()
+            .ok_or(ActionError::InvalidApplication)?;
         let proxy = Proxy::new(
-            &self.connection,
+            connection,
             app_id.as_str(),
             object_path.as_str(),
             "org.freedesktop.Application",
@@ -1316,7 +1355,13 @@ impl ServiceHandle {
     }
 
     async fn emit_legacy_closed(&self, id: NotificationId, reason: u32) -> Result<(), ActionError> {
-        SignalEmitter::new(&self.connection, LEGACY_PATH)
+        let Some(connection) = &self.connection else {
+            if let Some(local) = &self.local {
+                local.answer(id, rmac_notifications::pipe::Answer::Closed(reason));
+            }
+            return Ok(());
+        };
+        SignalEmitter::new(connection, LEGACY_PATH)
             .map_err(|_| ActionError::Transport)?
             .notification_closed(id.get(), reason)
             .await
@@ -1380,10 +1425,11 @@ pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceE
         .map_err(|_| ServiceError::Bus)?;
     Ok((
         ServiceHandle {
-            connection,
+            connection: Some(connection),
             core,
             events,
             history,
+            local: None,
         },
         receiver,
     ))

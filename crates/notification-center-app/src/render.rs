@@ -5,6 +5,9 @@
 
 mod history;
 
+use crate::accessibility::{
+    EDIT_WIDGETS_LABEL, EMPTY_TITLE, LOADING_LABEL, SHOW_LESS_LABEL, UNAVAILABLE_TITLE,
+};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     canvas, div, linear_color_stop, linear_gradient, px, rgba, size, AccessibleAction, AnyElement,
@@ -13,9 +16,6 @@ use gpui::{
     StatefulInteractiveElement as _, Styled as _, Window,
 };
 use gpui_component::{IconName, StyledExt as _};
-use rmac_notification_center_app::accessibility::{
-    EDIT_WIDGETS_LABEL, EMPTY_TITLE, LOADING_LABEL, SHOW_LESS_LABEL, UNAVAILABLE_TITLE,
-};
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, HistoryRecord};
 use rmac_ui::{mac, Button, ButtonRole};

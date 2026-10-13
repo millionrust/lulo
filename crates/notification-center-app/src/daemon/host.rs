@@ -143,13 +143,26 @@ impl BannerHost {
         };
 
         cx.spawn(async move |this, cx: &mut AsyncApp| {
-            let (service, events) = match rmac_notifications_linux::service::serve().await {
+            // Lulo OS serves the session bus; Windows has none, so Lulo
+            // apps post over the notification pipe instead (ADR 0023).
+            #[cfg(not(windows))]
+            let served = rmac_notifications_linux::service::serve().await;
+            #[cfg(windows)]
+            let served = rmac_notifications_linux::service::local::serve().await;
+            let (service, events) = match served {
                 Ok(served) => served,
                 Err(error) => {
                     eprintln!("{error}");
+                    // Hosted in `lulo-shell`, the rest of the shell keeps
+                    // running without notifications.
+                    #[cfg(windows)]
+                    return;
+                    #[cfg(not(windows))]
                     std::process::exit(1);
                 }
             };
+            #[cfg(windows)]
+            crate::pipe_server::start(service.clone());
             let handle = service.clone();
             if this
                 .update(cx, move |this, _| this.service = Some(handle))
@@ -189,7 +202,7 @@ impl BannerHost {
         let (compositor_tx, compositor_rx) = async_channel::bounded(64);
         cx.background_executor()
             .spawn(async move {
-                if let Err(error) = rmac_compositor_niri::watch(compositor_tx).await {
+                if let Err(error) = rmac_compositor_system::watch(compositor_tx).await {
                     eprintln!("notification banners: compositor watcher stopped: {error}");
                 }
             })
@@ -207,6 +220,12 @@ impl BannerHost {
         .detach();
 
         let (lock_tx, lock_rx) = async_channel::bounded(8);
+        // logind's lock state (Lulo OS). Windows draws nothing over its own
+        // lock screen, so its banners need no gate: the watcher's end lets
+        // them through.
+        #[cfg(windows)]
+        drop(lock_tx);
+        #[cfg(not(windows))]
         cx.background_executor()
             .spawn(async move {
                 if rmac_notifications_linux::lock_state::watch(lock_tx)
@@ -753,7 +772,7 @@ impl BannerHost {
         if let Some(window) = window {
             cx.spawn(async move |_, _: &mut AsyncApp| {
                 let action = rmac_compositor::Action::FocusWindow { window };
-                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                     eprintln!("notification banners: could not focus the application: {error:?}");
                 }
             })

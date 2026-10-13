@@ -29,6 +29,16 @@ press, and the press reaches it through the same dispatch socket.
 6. Both services exit by themselves once idle.
 
     python3 scripts/behavior/run_voice.py --bin-dir DIR --niri NIRI
+
+**`--real-model CLIPS.jsonl`** (the reference laptop, never CI): the real
+Moonshine and Qwen engines, the models from `--models DIR` (a directory with
+the verified voice files and the Tiny `.gguf`, linked read-only into the
+private data folder), ONNX Runtime from `--ort-dir` if it is not installed.
+Each clip is "spoken" while the key is held for the clip's length; the
+script records the transcript, the Spotlight row, and the time from letting
+go of the key to the row being drawn (the HUD's `voice_released` mark to
+Spotlight's `assist_row_applied` and next `present`, both on the system's
+monotonic clock). Nothing is confirmed.
 """
 
 from __future__ import annotations
@@ -343,9 +353,99 @@ class Scenario(intents.BaseScenario):
         return {"facts": self.facts, "errors": self.errors}
 
 
+class RealModelScenario(Scenario):
+    """`--real-model`: release-to-row on recorded clips, real engines."""
+
+    def current(self) -> Path:
+        return self.clip
+
+    def run(self) -> dict:
+        original_spawn = self.driver.session.spawn
+
+        def spawn_with_trace(argv, name, extra=None):
+            if name == HUD:
+                extra = {**(extra or {}), "RMAC_FRAME_TRACE": str(self.hud_trace)}
+            if name == "rmac-launcher":
+                extra = {**(extra or {}), "RMAC_FRAME_TRACE": str(self.launcher_trace)}
+            return original_spawn(argv, name, extra)
+
+        self.driver.session.spawn = spawn_with_trace
+        set_voice(self.config_home, True, True)
+        self.driver.start()
+        manifest = Path(self.args.real_model)
+        clips = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
+        launcher = intents.TraceWatcher(self.launcher_trace)
+        results = []
+        # The first press after a fresh start pays the language model's
+        # one-time prompt evaluation (ADR 0024 phase 1.1); warm up once.
+        for warm, entry in [(True, clips[0])] + [(False, entry) for entry in clips]:
+            source = manifest.parent / entry["file"]
+            if self.clip.is_symlink() or self.clip.exists():
+                self.clip.unlink()
+            self.clip.symlink_to(source)
+            seconds = wav_seconds(source)
+            self.start_hud()
+            self.hold()
+            intents.wait_until(lambda: "Listening…" in self.hud_names(), 8, 0.05)
+            time.sleep(seconds + 0.4)
+            released = time.monotonic()
+            self.release()
+            opened = intents.wait_until(self.spotlight_open, 10, 0.1)
+            row = None
+            if opened and launcher.wait_for("assist_row_applied", released, 8 if not warm else 25):
+                time.sleep(0.3)
+                row = next((name for name in self.showing()
+                            if name.endswith(intents.ASSIST_SUFFIX)), None)
+            else:
+                time.sleep(1.0)
+            launcher._read()
+            hud = intents.TraceWatcher(self.hud_trace)
+            hud.wait_for("voice_handed", released, 3)
+            released_mark = next((moment for moment, event in hud.events
+                                  if event == "voice_released" and moment >= released - 1), None)
+            transcript_mark = next((event for moment, event in hud.events
+                                    if event.startswith("voice_transcript")), "")
+            applied = next((moment for moment, event in launcher.events
+                            if event == "assist_row_applied" and moment >= released), None)
+            presented = next((moment for moment, event in launcher.events
+                              if applied is not None and event == "present" and moment >= applied), None)
+            record = {
+                "file": entry["file"], "accent": entry.get("accent"),
+                "reference": entry["text"], "query": self.spotlight_query() if opened else None,
+                "row": row, "want": entry.get("intent"),
+                "release_to_row_ms": round((presented - released_mark) * 1000)
+                if presented and released_mark else None,
+                "service": transcript_mark,
+            }
+            if not warm:
+                results.append(record)
+                print(json.dumps(record), flush=True)
+            if opened:
+                self.close()
+            intents.wait_until(self.hud_gone, 5, 0.1)
+        self.facts["clips"] = results
+        times = sorted(r["release_to_row_ms"] for r in results if r["release_to_row_ms"] is not None)
+        if times:
+            self.facts["release_to_row_p50_ms"] = times[len(times) // 2]
+            self.facts["release_to_row_p90_ms"] = times[min(len(times) - 1, int(len(times) * 0.9))]
+        self.facts["rows_shown"] = sum(1 for r in results if r["row"])
+        gone = intents.wait_until(
+            lambda: not intents.service_pids(self.voice) and not intents.service_pids(self.service),
+            75, 0.5)
+        self.facts["services_exited_when_idle"] = bool(gone)
+        return {"facts": self.facts, "errors": self.errors}
+
+
+def wav_seconds(path: Path) -> float:
+    import wave
+
+    with wave.open(str(path)) as clip:
+        return clip.getnframes() / clip.getframerate()
+
+
 def inner(args) -> int:
     work = Path(args.inner)
-    scenario = Scenario(args, work)
+    scenario = (RealModelScenario if args.real_model else Scenario)(args, work)
     try:
         result = scenario.run()
     except Exception as error:  # noqa: BLE001 - a crash must fail, never pass
@@ -398,12 +498,25 @@ def outer(args) -> int:
         (services / "org.rmac.Intelligence1.service").write_text(
             f"[D-BUS Service]\nName=org.rmac.Intelligence1\nExec={links / INTELLIGENCE}\n")
         clip = work / "clip.wav"
-        write_clip(clip)
         env["RMAC_VOICE_CAPTURE_FILE"] = str(clip)
-        env["RMAC_VOICE_ENGINE"] = "fixture"
-        env["RMAC_VOICE_IDLE_SECONDS"] = str(IDLE_SECONDS)
-        env["RMAC_INTELLIGENCE_ENGINE"] = "fixture"
-        env["RMAC_INTELLIGENCE_IDLE_SECONDS"] = str(IDLE_SECONDS)
+        if args.real_model:
+            # The verified models, linked read-only by directory (the
+            # checksum check refuses a symlinked file, not a symlinked
+            # folder; see run_spotlight_intents.link_real_model).
+            private = Path(env["XDG_DATA_HOME"]) / "lulo" / "intelligence"
+            private.mkdir(parents=True, exist_ok=True)
+            (private / "models").symlink_to(Path(args.models).expanduser().resolve(),
+                                            target_is_directory=True)
+            if args.ort_dir:
+                ort = Path(args.ort_dir).expanduser().resolve()
+                env["LD_LIBRARY_PATH"] = str(ort)
+                env["ORT_DYLIB_PATH"] = str(next(ort.glob("libonnxruntime.so.1.*.*")))
+        else:
+            write_clip(clip)
+            env["RMAC_VOICE_ENGINE"] = "fixture"
+            env["RMAC_VOICE_IDLE_SECONDS"] = str(IDLE_SECONDS)
+            env["RMAC_INTELLIGENCE_ENGINE"] = "fixture"
+            env["RMAC_INTELLIGENCE_IDLE_SECONDS"] = str(IDLE_SECONDS)
         # The nested niri binds the talk key as the session's fallback does.
         source_root = work / "voice-source"
         shell_kdl = source_root / "packaging/rmac-session/shell.kdl"
@@ -416,6 +529,8 @@ def outer(args) -> int:
         command = ["dbus-run-session", f"--config-file={config}", "--", sys.executable,
                    str(Path(__file__).resolve()), "--inner", str(work), "--bin-dir", str(links),
                    "--niri", args.niri]
+        if args.real_model:
+            command += ["--real-model", str(Path(args.real_model).expanduser().resolve())]
         return subprocess.call(command, env=env, close_fds=True)
     finally:
         if run_lulo.reap(work / "runtime"):
@@ -437,6 +552,9 @@ def main() -> int:
                         help="take the voice and intelligence services, the HUD, Spotlight "
                              "and the dispatcher from here instead")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--real-model", help="CLIPS.jsonl: measure on recorded clips with the real engines")
+    parser.add_argument("--models", help="--real-model: the folder of verified model files")
+    parser.add_argument("--ort-dir", help="--real-model: a folder holding libonnxruntime.so.1.*")
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     parser.set_defaults(frame_only=False, full_too=False, dump_a11y=False)
     args = parser.parse_args()

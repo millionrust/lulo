@@ -442,6 +442,7 @@ impl DirectWriteState {
         let set = unsafe { components.builder.CreateFontSet()? };
         let collection = unsafe { components.factory.CreateFontCollectionFromFontSet(&set)? };
         self.custom_font_collection = collection;
+        text_trace(|| format!("added fonts: {} swash faces", self.swash_faces.len()));
 
         Ok(())
     }
@@ -805,15 +806,26 @@ impl DirectWriteState {
     /// its `head` table. A face DirectWrite simulates (bold or oblique from
     /// another weight or style) stays DirectWrite's.
     fn swash_face_for(&self, font_face: &IDWriteFontFace3) -> Option<usize> {
-        if self.swash_faces.is_empty()
-            || unsafe { font_face.GetSimulations() } != DWRITE_FONT_SIMULATIONS_NONE
-        {
-            return None;
-        }
-        let head = font_table(font_face, *b"head")?;
-        self.swash_faces
-            .iter()
-            .position(|face| face.head() == Some(head.as_slice()))
+        let simulations = unsafe { font_face.GetSimulations() };
+        let head = font_table(font_face, *b"head");
+        let found = if simulations != DWRITE_FONT_SIMULATIONS_NONE {
+            None
+        } else {
+            head.as_ref().and_then(|head| {
+                self.swash_faces
+                    .iter()
+                    .position(|face| face.head() == Some(head.as_slice()))
+            })
+        };
+        text_trace(|| {
+            format!(
+                "face: {} swash faces, simulations {}, head {:?} bytes, swash face {found:?}",
+                self.swash_faces.len(),
+                simulations.0,
+                head.as_ref().map(Vec::len),
+            )
+        });
+        found
     }
 
     /// rmac: `params`' glyph as `gpui_wgpu`'s `CosmicTextSystem` renders it
@@ -849,10 +861,15 @@ impl DirectWriteState {
         } else {
             Format::Alpha
         };
-        let mut image = Render::new(&[Source::Bitmap(StrikeWith::ExactSize), Source::Outline])
-            .format(format)
-            .offset(offset)
-            .render(&mut scaler, glyph_id)?;
+        let Some(mut image) =
+            Render::new(&[Source::Bitmap(StrikeWith::ExactSize), Source::Outline])
+                .format(format)
+                .offset(offset)
+                .render(&mut scaler, glyph_id)
+        else {
+            text_trace(|| format!("swash could not render glyph {glyph_id}"));
+            return None;
+        };
         use swash::scale::image::Content;
         match (image.content, params.subpixel_rendering) {
             (Content::Mask, false) | (Content::SubpixelMask, true) => Some(image),
@@ -1828,6 +1845,16 @@ fn get_font_names_from_collection(
         }
 
         result
+    }
+}
+
+/// rmac: with `RMAC_TEXT_TRACE=1`, report on stderr which fonts swash draws
+/// (ADR 0025, "Text").
+fn text_trace(message: impl FnOnce() -> String) {
+    static TRACE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *TRACE.get_or_init(|| std::env::var_os("RMAC_TEXT_TRACE").is_some_and(|value| value == "1"))
+    {
+        eprintln!("gpui_windows text: {}", message());
     }
 }
 

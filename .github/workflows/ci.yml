@@ -38,7 +38,7 @@ env:
     -p rmac-system-settings -p rmac-appearance-portal
     -p rmac-app-menu -p rmac-win-shell -p rmac-compositor-system
     -p rmac-shell-runtime -p rmac-launcher-app -p rmac-quick-settings-app -p rmac-osd
-    -p rmac-app-drawer -p rmac-shell-settings
+    -p rmac-app-drawer
 
 jobs:
   # Only `docs/**/*.md` changed: the Rust, Windows and macOS jobs are
@@ -448,6 +448,9 @@ jobs:
         run: |
           cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
           (cd shell && cargo test --locked --no-fail-fast -p rmac-shell-layer --lib)
+          # The settings store's own tests assume Unix files; the Windows
+          # Dock migration is checked on its own.
+          cargo test --locked -p rmac-shell-settings --lib a_windows_dock_saved_before_apps
 
   windows-build:
     name: Windows build

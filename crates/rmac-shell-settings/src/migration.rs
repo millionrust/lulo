@@ -101,6 +101,20 @@ pub(super) fn migrate_application_ids(mut settings: ShellSettings) -> ShellSetti
                 .insert(1, AppId(rmac_apps::identity::APP_DRAWER.into()));
         }
     }
+    // An untouched earlier default Dock gains Weather, Calculator and Mail,
+    // the apps pinned since (owner, 2026-10-13). A Dock the user changed
+    // keeps exactly what they chose.
+    if settings
+        .pinned_apps
+        .iter()
+        .map(|app| app.0.as_str())
+        .eq(super::model::PREVIOUS_DEFAULT_PINNED_APPS)
+    {
+        settings.pinned_apps = super::model::DEFAULT_PINNED_APPS
+            .into_iter()
+            .map(|identity| AppId(identity.into()))
+            .collect();
+    }
     let mut files_origin: Option<bool> = None;
     settings.pinned_apps.retain_mut(|app| {
         let legacy = app.0 == LEGACY_FILES_APP_ID;

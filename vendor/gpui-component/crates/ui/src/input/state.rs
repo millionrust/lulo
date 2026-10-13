@@ -1906,6 +1906,14 @@ impl InputState {
         offset: Option<Point<Pixels>>,
         cx: &mut Context<Self>,
     ) {
+        self.clamp_scroll_offset(offset);
+        cx.notify();
+    }
+
+    /// Clamp `offset` (or the current one) into the scrollable range and
+    /// apply it; true when the offset changed.
+    pub(super) fn clamp_scroll_offset(&mut self, offset: Option<Point<Pixels>>) -> bool {
+        let previous = self.scroll_handle.offset();
         let mut offset = offset.unwrap_or(self.scroll_handle.offset());
         // In addition to left alignment, a cursor position will be reserved on the right side
         let safe_x_offset = if self.text_align == TextAlign::Left {
@@ -1926,7 +1934,7 @@ impl InputState {
         };
         offset.x = offset.x.clamp(safe_x_range.start, safe_x_range.end);
         self.scroll_handle.set_offset(offset);
-        cx.notify();
+        offset != previous
     }
 
     /// Scroll to make the given offset visible.

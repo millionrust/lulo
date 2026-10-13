@@ -256,6 +256,13 @@
           "children": []
         },
         {
+          "label": "Print",
+          "action": "finder::PrintSelection",
+          "shortcut": "⌘P",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Find",
           "action": "finder::Find",
           "shortcut": "⌘F",

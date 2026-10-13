@@ -30,7 +30,9 @@ gpui::actions!(
         HideApplication,
         HideOtherApplications,
         QuitApplication,
-        CycleThroughWindows
+        CycleThroughWindows,
+        /// F11 on Windows: enter or leave full screen.
+        ToggleFullScreenWindow
     ]
 );
 
@@ -67,6 +69,17 @@ pub(crate) fn init(cx: &mut App) {
             ),
         ],
     );
+    // Windows' full-screen key, shown as Enter Full Screen's hint there (the
+    // Mac's Globe+F has no Windows equivalent). Without it a full-screen
+    // window covers the Lulo bar, and the robot (scripts/robot/windows)
+    // found no way back out of full screen.
+    #[cfg(windows)]
+    {
+        cx.bind_keys([KeyBinding::new("f11", ToggleFullScreenWindow, None)]);
+        cx.on_action(|_: &ToggleFullScreenWindow, cx| {
+            crate::chrome::toggle_full_screen_focused_window(cx)
+        });
+    }
     cx.on_action(|_: &MinimizeWindow, cx| crate::chrome::minimize_focused_window(cx));
     cx.on_action(|_: &ZoomWindow, cx| crate::chrome::zoom_focused_window(cx));
     cx.on_action(|_: &HideApplication, cx| crate::chrome::hide_application(false, cx));

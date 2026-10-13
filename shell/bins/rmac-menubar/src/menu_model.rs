@@ -39,6 +39,8 @@ pub const MENU_ICON_BOX: f32 = 16.0;
 pub const KEY_CELL: f32 = 13.75;
 pub const KEY_LETTER_GAP: f32 = 3.1;
 pub const KEY_LETTER_WIDTH: f32 = 12.0;
+/// Windows: the width of one character of a written-out chord ("Ctrl+N").
+pub const WINDOWS_HINT_CHAR_WIDTH: f32 = 7.5;
 pub const KEY_RIGHT: f32 = 14.0;
 /// Submenu chevron: 5 × 9 glyph ending 17 pt from the right edge.
 pub const CHEVRON_RIGHT: f32 = 17.0;
@@ -858,6 +860,12 @@ pub fn split_shortcut(shortcut: &str) -> Shortcut {
 pub fn shortcut_width(shortcut: &str) -> f32 {
     if shortcut.is_empty() || shortcut == SUBMENU_MARK {
         return 0.0;
+    }
+    // Windows shows the chord as text ("Ctrl+Shift+N"): about the width of
+    // the menu font's average character per character.
+    if cfg!(windows) {
+        let text = rmac_app_menu::windows_keys::windows_hint(shortcut);
+        return text.chars().count() as f32 * WINDOWS_HINT_CHAR_WIDTH;
     }
     let parts = split_shortcut(shortcut);
     parts.modifiers.len() as f32 * KEY_CELL
@@ -2637,6 +2645,12 @@ mod tests {
         assert_eq!(split_shortcut("⌘+").key, "+");
         assert_eq!(shortcut_width(""), 0.0);
         assert_eq!(shortcut_width(SUBMENU_MARK), 0.0);
+        if cfg!(windows) {
+            // Written out as Windows menus do: "Ctrl+Q", "Ctrl+Alt+H".
+            assert_eq!(shortcut_width("⌘Q"), 6.0 * WINDOWS_HINT_CHAR_WIDTH);
+            assert_eq!(shortcut_width("⌥⌘H"), 10.0 * WINDOWS_HINT_CHAR_WIDTH);
+            return;
+        }
         assert_eq!(
             shortcut_width("⌘Q"),
             KEY_CELL + KEY_LETTER_GAP + KEY_LETTER_WIDTH

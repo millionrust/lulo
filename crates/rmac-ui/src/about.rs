@@ -75,6 +75,57 @@ pub(crate) fn show(app_id: &'static str, cx: &mut App) {
     }
 }
 
+/// Windows has no icon theme: the About panel there showed an empty square
+/// where the icon belongs (found by the robot, scripts/robot/windows). The
+/// apps shipped on Windows carry their master SVG, written once to a cache
+/// file so `svg_icon` rasterises it at the drawn size like any other icon.
+#[cfg(windows)]
+fn bundled_icon(app_id: &str) -> Option<PathBuf> {
+    use rmac_apps::identity as id;
+    let (name, svg): (&str, &[u8]) = match app_id {
+        id::CALCULATOR => (
+            "calculator",
+            include_bytes!("../../../assets/icons/calculator.svg"),
+        ),
+        id::CLOCK => ("clock", include_bytes!("../../../assets/icons/clock.svg")),
+        id::FILES => ("files", include_bytes!("../../../assets/icons/files.svg")),
+        id::NOTES => ("notes", include_bytes!("../../../assets/icons/notes.svg")),
+        id::PREVIEW => (
+            "preview",
+            include_bytes!("../../../assets/icons/preview.svg"),
+        ),
+        id::SYSTEM_SETTINGS => (
+            "system-settings",
+            include_bytes!("../../../assets/icons/system-settings.svg"),
+        ),
+        id::TERMINAL => (
+            "terminal",
+            include_bytes!("../../../assets/icons/terminal.svg"),
+        ),
+        id::TEXT_EDITOR => (
+            "text-editor",
+            include_bytes!("../../../assets/icons/text-editor.svg"),
+        ),
+        id::WEATHER => (
+            "weather",
+            include_bytes!("../../../assets/icons/weather.svg"),
+        ),
+        _ => return None,
+    };
+    let directory = std::env::temp_dir().join("lulo-about-icons");
+    let path = directory.join(format!("{name}.svg"));
+    if std::fs::read(&path).ok().as_deref() != Some(svg) {
+        std::fs::create_dir_all(&directory).ok()?;
+        std::fs::write(&path, svg).ok()?;
+    }
+    Some(path)
+}
+
+#[cfg(not(windows))]
+fn bundled_icon(_app_id: &str) -> Option<PathBuf> {
+    None
+}
+
 struct AboutPanel {
     name: SharedString,
     icon: Option<PathBuf>,
@@ -95,7 +146,9 @@ impl AboutPanel {
             let icon = cx
                 .background_executor()
                 .spawn(async move {
-                    rmac_apps::ThemedIconResolver::current().resolve(app_id, ICON_PIXELS)
+                    rmac_apps::ThemedIconResolver::current()
+                        .resolve(app_id, ICON_PIXELS)
+                        .or_else(|| bundled_icon(app_id))
                 })
                 .await;
             if icon.is_none() {
@@ -167,5 +220,32 @@ impl Render for AboutPanel {
                             .child(COPYRIGHT),
                     ),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Every app the Windows installer ships has its icon bundled for the
+    /// About panel, and the file exists.
+    #[test]
+    fn every_windows_app_bundles_its_about_icon() {
+        let source = include_str!("about.rs");
+        let apps = include_str!("../../../packaging/windows/apps.json");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut checked = 0;
+        for line in apps.lines() {
+            let Some(rest) = line.trim().strip_prefix("\"id\": \"") else {
+                continue;
+            };
+            let id = rest.trim_end_matches("\",");
+            if id.starts_with("lulo-") {
+                continue;
+            }
+            let icon = format!("assets/icons/{id}.svg");
+            assert!(source.contains(&icon), "about.rs does not bundle {icon}");
+            assert!(root.join(&icon).is_file(), "{icon} is missing");
+            checked += 1;
+        }
+        assert_eq!(checked, 9);
     }
 }

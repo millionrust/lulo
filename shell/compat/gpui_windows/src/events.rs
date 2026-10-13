@@ -73,9 +73,10 @@ impl WindowsWindowInner {
             // Treat double click as a second single click, since we track the double clicks ourselves.
             // If you don't interact with any elements, this will fall through to the windows default
             // behavior of toggling whether the window is maximized.
-            WM_NCLBUTTONDBLCLK | WM_NCLBUTTONDOWN => {
+            WM_NCLBUTTONDBLCLK => {
                 self.handle_nc_mouse_down_msg(handle, MouseButton::Left, wparam, lparam)
             }
+            WM_NCLBUTTONDOWN => self.handle_nc_left_down_msg(handle, wparam, lparam),
             WM_NCRBUTTONDOWN => {
                 self.handle_nc_mouse_down_msg(handle, MouseButton::Right, wparam, lparam)
             }
@@ -318,6 +319,9 @@ impl WindowsWindowInner {
     }
 
     fn handle_mouse_move_msg(&self, handle: HWND, lparam: LPARAM, wparam: WPARAM) -> Option<isize> {
+        if self.start_pending_caption_move(handle, lparam) {
+            return Some(0);
+        }
         self.start_tracking_mouse(handle, TME_LEAVE);
         self.restore_cursor_after_hide();
 
@@ -471,6 +475,8 @@ impl WindowsWindowInner {
         button: MouseButton,
         lparam: LPARAM,
     ) -> Option<isize> {
+        // A press on the caption that never became a move ends as a click.
+        self.state.pending_caption_move.set(None);
         unsafe { ReleaseCapture().log_err() };
 
         let Some(mut func) = self.state.callbacks.input.take() else {
@@ -1048,6 +1054,80 @@ impl WindowsWindowInner {
         } else {
             None
         }
+    }
+
+    /// rmac: a left press on the caption (a title-area drag region) no
+    /// longer starts the system move at once. GPUI's buttons answer a click
+    /// on release, and the move loop swallowed the release, so every control
+    /// inside a drag region (Clock's tabs, Text Editor's format bar, a
+    /// toolbar's buttons) did nothing on Windows (found by the robot,
+    /// scripts/robot/windows). As on Linux (`pending_window_move`), the
+    /// press waits: moving the pointer past the drag threshold starts the
+    /// system move, releasing it first completes the click. A second press
+    /// in quick succession zooms, as a caption double-click does.
+    fn handle_nc_left_down_msg(
+        &self,
+        handle: HWND,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> Option<isize> {
+        if self.state.starting_caption_move.get() {
+            // The deferred press, handed back to start the system move.
+            return None;
+        }
+        let result = self.handle_nc_mouse_down_msg(handle, MouseButton::Left, wparam, lparam);
+        if result.is_some() || wparam.0 as u32 != HTCAPTION {
+            return result;
+        }
+        if self.state.click_state.current_count.get() >= 2 {
+            if self.is_resizable {
+                let show = if self.state.is_maximized() {
+                    SW_RESTORE
+                } else {
+                    SW_MAXIMIZE
+                };
+                unsafe { ShowWindowAsync(handle, show).ok().log_err() };
+            }
+            return Some(0);
+        }
+        self.state.pending_caption_move.set(Some((
+            lparam.signed_loword().into(),
+            lparam.signed_hiword().into(),
+        )));
+        unsafe { SetCapture(handle) };
+        Some(0)
+    }
+
+    /// rmac: start the deferred system move once the pointer has travelled
+    /// past the drag threshold (see `handle_nc_left_down_msg`).
+    fn start_pending_caption_move(&self, handle: HWND, lparam: LPARAM) -> bool {
+        let Some((x, y)) = self.state.pending_caption_move.get() else {
+            return false;
+        };
+        let mut point = POINT {
+            x: lparam.signed_loword().into(),
+            y: lparam.signed_hiword().into(),
+        };
+        unsafe { ClientToScreen(handle, &mut point).ok().log_err() };
+        let (drag_x, drag_y) =
+            unsafe { (GetSystemMetrics(SM_CXDRAG), GetSystemMetrics(SM_CYDRAG)) };
+        if (point.x - x).abs() <= drag_x && (point.y - y).abs() <= drag_y {
+            return false;
+        }
+        self.state.pending_caption_move.set(None);
+        unsafe { ReleaseCapture().log_err() };
+        let press = LPARAM((((y & 0xFFFF) << 16) | (x & 0xFFFF)) as isize);
+        self.state.starting_caption_move.set(true);
+        unsafe {
+            SendMessageW(
+                handle,
+                WM_NCLBUTTONDOWN,
+                Some(WPARAM(HTCAPTION as usize)),
+                Some(press),
+            )
+        };
+        self.state.starting_caption_move.set(false);
+        true
     }
 
     fn handle_nc_mouse_up_msg(

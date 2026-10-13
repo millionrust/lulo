@@ -20,6 +20,7 @@ mod session;
 mod session_restore;
 mod settings;
 mod settings_window;
+mod shell_children;
 mod shell_integration;
 mod storage;
 mod title;

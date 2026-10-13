@@ -13,7 +13,9 @@ never reads or writes a real profile. For each app the check:
    panel opens (a menu command reaches the app);
 4. presses Ctrl+N, the Windows spelling of ⌘N, and checks the app answers:
    Text Editor opens a second window, the others stay running;
-5. for Text Editor, launches the app a second time with no arguments and
+5. presses Ctrl+M and checks the window minimises (and, for Calculator,
+   that Zoom leaves the fixed-size window alone);
+6. for Text Editor, launches the app a second time with no arguments and
    checks that launch hands off to the running process (it exits and a
    window opens in the first one) instead of starting a second app.
 6. for Calculator and Text Editor, before any key, puts a blue backdrop
@@ -103,6 +105,8 @@ VK_CONTROL = 0x11
 VK_ESCAPE = 0x1B
 VK_DOWN = 0x28
 VK_RETURN = 0x0D
+VK_SHIFT = 0x10
+VK_F11 = 0x7A
 KEYEVENTF_KEYUP = 0x0002
 
 # How often `launch()` polls for the first visible window: the resolution
@@ -838,6 +842,255 @@ def check_new_shortcut(
     return None
 
 
+def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
+    """Ctrl+M minimises the window, and Calculator ignores Zoom.
+
+    Found by the robot (scripts/robot/windows): a window key's action ran
+    while GPUI had the window leased for key dispatch, so Ctrl+M, Ctrl+H,
+    Ctrl+Q and Ctrl+` did nothing from the keyboard (the menu items worked).
+    And Window ▸ Zoom (⌃⌘Z, Alt+Shift+Z here) maximised the fixed-size
+    Calculator to the whole monitor, over the Lulo bar and Dock."""
+    if not bring_forward(hwnd):
+        return "could not bring the window forward to test Ctrl+M"
+    if app != "rmac-calculator":
+        focus_content(hwnd)
+    if app == "rmac-calculator":
+        before = window_rect(hwnd)
+        key(VK_MENU)
+        key(VK_SHIFT)
+        tap(ord("Z"))
+        key(VK_SHIFT, up=True)
+        key(VK_MENU, up=True)
+        time.sleep(KEY_SETTLE_SECONDS)
+        after = window_rect(hwnd)
+        print(f"{app}: Alt+Shift+Z (Zoom): {before} -> {after}")
+        if after != before:
+            user32().ShowWindow(hwnd, 9)  # SW_RESTORE
+            return f"Zoom resized the fixed-size Calculator window from {before} to {after}"
+    if app != "rmac-calculator":
+        # F11 enters full screen and leaves it again (the robot found a
+        # full-screen window had no way out on Windows: the Mac's Globe+F
+        # has no Windows key, and the window covers the Lulo bar).
+        before = window_rect(hwnd)
+        tap(VK_F11)
+        time.sleep(KEY_SETTLE_SECONDS)
+        full = window_rect(hwnd)
+        tap(VK_F11)
+        time.sleep(KEY_SETTLE_SECONDS)
+        after = window_rect(hwnd)
+        width = user32().GetSystemMetrics(0)
+        height = user32().GetSystemMetrics(1)
+        print(f"{app}: F11: {before} -> {full} -> {after}")
+        if full[2] - full[0] < width or full[3] - full[1] < height:
+            return f"F11 did not make the window full screen ({full})"
+        if after != before:
+            user32().ShowWindow(hwnd, 9)  # SW_RESTORE
+            return f"a second F11 did not bring the window back to {before} ({after})"
+    if app == "rmac-terminal":
+        # Ctrl+letter keys belong to the shell in Terminal (Ctrl+M is Return).
+        return None
+    chord(VK_CONTROL, "m")
+    deadline = time.monotonic() + KEY_SETTLE_SECONDS * 2
+    minimised = False
+    while time.monotonic() < deadline and not minimised:
+        time.sleep(0.1)
+        minimised = bool(user32().IsIconic(hwnd))
+    print(f"{app}: Ctrl+M: minimised={minimised}")
+    bring_forward(hwnd)
+    if process.poll() is not None:
+        return f"exited with {process.returncode} after Ctrl+M"
+    if not minimised:
+        return "Ctrl+M did not minimise the window"
+    return None
+
+
+def focus_content(hwnd: int) -> None:
+    """Click the window's lower content area, as a user would before typing,
+    so keys reach the view and not whatever last held focus."""
+    left, top, right, bottom = window_rect(hwnd)
+    click((left + right) // 2, bottom - max((bottom - top) // 4, 20))
+    time.sleep(0.4)
+
+
+def check_open_panel(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
+    """Ctrl+O shows Windows' Open dialog, and Esc cancels it.
+
+    Found by the robot: Preview's File ▸ Open… asked the Linux desktop
+    portal on every platform, so on Windows it did nothing."""
+    if not bring_forward(hwnd):
+        return "could not bring the window forward to test Ctrl+O"
+    focus_content(hwnd)
+    before = {window for window, _ in visible_windows(process.pid)}
+    chord(VK_CONTROL, "o")
+    dialog = None
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and dialog is None:
+        time.sleep(0.2)
+        for window, _title in visible_windows(process.pid):
+            if window not in before:
+                buffer = ctypes.create_unicode_buffer(64)
+                user32().GetClassNameW(window, buffer, 64)
+                if buffer.value == "#32770":
+                    dialog = window
+    print(f"{app}: Ctrl+O: open dialog {'shown' if dialog else 'not shown'}")
+    if dialog is None:
+        return "Ctrl+O showed no Open dialog"
+    user32().SetForegroundWindow(dialog)
+    time.sleep(0.3)
+    tap(VK_ESCAPE)
+    time.sleep(KEY_SETTLE_SECONDS)
+    bring_forward(hwnd)
+    if process.poll() is not None:
+        return f"exited with {process.returncode} after the Open dialog was cancelled"
+    return None
+
+
+WM_NCHITTEST = 0x0084
+HTCLIENT = 1
+#: Clock's tab capsule (crates/clock/src/metrics.rs): centred, 396 pt wide,
+#: 7 pt from the top, 38 pt tall.
+CLOCK_TABS_CENTRE_Y = 7 + 38 / 2
+
+
+def check_clock_tabs(app: str, hwnd: int) -> str | None:
+    """Clock's tabs take clicks: the pointer over a tab hit-tests as client
+    area, not as the caption of the title-area drag region beneath them.
+
+    Found by the robot: clicking World Clock, Alarms, Stopwatch or Timers
+    did nothing on Windows (the click started a window move instead)."""
+    if not bring_forward(hwnd):
+        return "could not bring Clock forward to test its tabs"
+    left, top, right, _bottom = window_rect(hwnd)
+    origin_x, origin_y = client_origin(hwnd)
+    try:
+        scale = (user32().GetDpiForWindow(hwnd) or 96) / 96.0
+    except AttributeError:
+        scale = 1.0
+    x = (left + right) // 2 - int(120 * scale)  # the first tab, World Clock
+    # The in-window menu strip sits above the content here (no Lulo bar).
+    y = origin_y + int((STRIP_HEIGHT + CLOCK_TABS_CENTRE_Y) * scale)
+    user32().SetCursorPos(x, y)
+    time.sleep(0.4)
+    user32().SendMessageW.restype = ctypes.c_ssize_t
+    result = user32().SendMessageW(
+        wintypes.HWND(hwnd), WM_NCHITTEST, 0, wintypes.LPARAM(((y & 0xFFFF) << 16) | (x & 0xFFFF))
+    )
+    print(f"{app}: hit test over the World Clock tab at ({x}, {y}): {result} (origin {origin_x}, {origin_y})")
+    if result != HTCLIENT:
+        return f"Clock's tabs hit-test as {result}, not client area: clicks on them move the window"
+    return None
+
+
+#: Calculator's History button in its title area, from the window's left
+#: edge and the content's top (pt), as UI Automation reports it at 100 %.
+CALCULATOR_HISTORY_BUTTON = (125, 25)
+
+
+def check_title_area_button(app: str, hwnd: int) -> str | None:
+    """A click on a button inside a title-area drag region reaches it.
+
+    Found by the robot: on Windows the press started the system window move,
+    which swallowed the release, so Calculator's History and Mode buttons,
+    Text Editor's format bar and every toolbar control in a drag region did
+    nothing. Clicking History opens Calculator's history panel."""
+    if not bring_forward(hwnd):
+        return "could not bring Calculator forward to test its History button"
+    origin_x, origin_y = client_origin(hwnd)
+    left, top, right, bottom = window_rect(hwnd)
+    try:
+        scale = (user32().GetDpiForWindow(hwnd) or 96) / 96.0
+    except AttributeError:
+        scale = 1.0
+    x = origin_x + int(CALCULATOR_HISTORY_BUTTON[0] * scale)
+    y = origin_y + int((STRIP_HEIGHT + CALCULATOR_HISTORY_BUTTON[1]) * scale)
+    before = grab((left, top, right, bottom))
+    if before is None:
+        print(f"{app}: title-area button check skipped (Pillow is not installed)")
+        return None
+    rect_before = window_rect(hwnd)
+    click(x, y)
+    time.sleep(KEY_SETTLE_SECONDS)
+    after = grab((left, top, right, bottom))
+    changed = changed_fraction(before, after)
+    moved = window_rect(hwnd) != rect_before
+    print(f"{app}: click on History at ({x}, {y}): {changed:.1%} changed, window moved {moved} (origin {origin_x})")
+    # Close the history panel again.
+    click(x, y)
+    time.sleep(KEY_SETTLE_SECONDS)
+    if changed < 0.02 or moved:
+        return "a click on Calculator's History button (in its title area) did nothing"
+    return None
+
+
+WM_CLOSE = 0x0010
+CONSOLE_HOSTS = ("conhost.exe", "openconsole.exe")
+TH32CS_SNAPPROCESS = 0x00000002
+
+
+class _PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ctypes.c_size_t),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", wintypes.LONG),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.WCHAR * 260),
+    ]
+
+
+def process_tree() -> dict[int, tuple[int, str]]:
+    """Every process: pid -> (parent pid, exe name)."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    tree: dict[int, tuple[int, str]] = {}
+    if not snapshot or snapshot == wintypes.HANDLE(-1).value:
+        return tree
+    try:
+        entry = _PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+        more = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+        while more:
+            tree[entry.th32ProcessID] = (entry.th32ParentProcessID, entry.szExeFile)
+            more = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    return tree
+
+
+def check_terminal_closes(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
+    """Closing Terminal's window at an idle prompt closes it without asking.
+
+    Found by the robot: on Windows every close asked "Do you want to
+    terminate running processes in this window?", the shell itself
+    counting as a running program."""
+    # The shell (Terminal's child that is not its console host) must be idle:
+    # a program it runs is a real reason to ask.
+    tree = process_tree()
+    shells = [pid for pid, (parent, name) in tree.items() if parent == process.pid and name.lower() not in CONSOLE_HOSTS]
+    busy = {
+        pid: name
+        for pid, (parent, name) in tree.items()
+        if parent in shells and name.lower() not in CONSOLE_HOSTS
+    }
+    print(f"{app}: shells {[tree[pid][1] for pid in shells]}, their programs {sorted(busy.values())}")
+    if busy:
+        print(f"{app}: the shell is running {sorted(busy.values())}; the idle-close check is skipped")
+        return None
+    user32().PostMessageW(wintypes.HWND(hwnd), WM_CLOSE, 0, 0)
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        time.sleep(0.2)
+        if process.poll() is not None or hwnd not in {w for w, _ in visible_windows(process.pid)}:
+            print(f"{app}: the idle window closed without asking")
+            return None
+    return "closing Terminal at an idle prompt asked to terminate running processes"
+
+
 def check_single_instance(
     binary: Path, environment: dict[str, str], process: subprocess.Popen, log: Path
 ) -> str | None:
@@ -974,6 +1227,27 @@ def launch(
         ]
         if app == "rmac-preview" and arguments:
             error = check_preview_pdf(hwnd, screenshots)
+            if error:
+                errors.append(error)
+        if app == "rmac-calculator":
+            error = check_title_area_button(app, hwnd)
+            if error:
+                errors.append(error)
+        if app == "rmac-clock":
+            error = check_clock_tabs(app, hwnd)
+            if error:
+                errors.append(error)
+        if app == "rmac-preview":
+            error = check_open_panel(app, process, hwnd)
+            if error:
+                errors.append(error)
+        # After the checks above: it toggles full screen and minimises.
+        error = check_window_keys(app, process, hwnd)
+        if error:
+            errors.append(error)
+        if app == "rmac-terminal" and not errors:
+            # Last: it closes the window.
+            error = check_terminal_closes(app, process, hwnd)
             if error:
                 errors.append(error)
         if app == "rmac-text-editor" and not errors:

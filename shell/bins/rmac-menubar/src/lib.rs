@@ -65,10 +65,10 @@ mod bar {
     use crate::menu_model::{
         self, app_menu_height, app_menu_item_top, app_menu_width, battery_menu_rows,
         bluetooth_menu_rows, focus_menu_rows, menu_item_icon, next_status_selection,
-        quit_all_interrupted_copy, quit_all_progress, sound_menu_rows, split_shortcut,
-        status_menu_height, status_menu_left, wifi_menu_rows, BadgeGlyph, BluetoothMenuInput,
-        IconColumn, LowBatteryWatch, MenuScroll, QuitAllProgress, SoundMenuInput, StatusAction,
-        StatusMenuKind, StatusRow, WifiMenuInput, QUIT_ALL_CHECK,
+        quit_all_interrupted_copy, quit_all_progress, sound_menu_rows, status_menu_height,
+        status_menu_left, wifi_menu_rows, BadgeGlyph, BluetoothMenuInput, IconColumn,
+        LowBatteryWatch, MenuScroll, QuitAllProgress, SoundMenuInput, StatusAction, StatusMenuKind,
+        StatusRow, WifiMenuInput, QUIT_ALL_CHECK,
     };
 
     // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): the bar
@@ -5277,8 +5277,23 @@ mod bar {
 
     /// A shortcut drawn the macOS way: each modifier centred in its own
     /// cell, the key left-aligned in the last one.
-    fn shortcut_keys(shortcut: &str, color: u32) -> impl IntoElement {
-        let parts = split_shortcut(shortcut);
+    /// Windows: the apps answer Ctrl, Alt and Shift chords, so the bar
+    /// shows them as Windows menus write them ("Ctrl+Shift+N"), the same
+    /// text the apps' in-window menus show, not the Mac's ⌘⌥⇧ glyphs (found
+    /// by the robot, scripts/robot/windows).
+    #[cfg(windows)]
+    fn shortcut_keys(shortcut: &str, color: u32) -> AnyElement {
+        div()
+            .flex_none()
+            .ml(px(menu_model::SHORTCUT_GAP))
+            .text_color(rgba(color))
+            .child(rmac_app_menu::windows_keys::windows_hint(shortcut))
+            .into_any_element()
+    }
+
+    #[cfg(not(windows))]
+    fn shortcut_keys(shortcut: &str, color: u32) -> AnyElement {
+        let parts = menu_model::split_shortcut(shortcut);
         div()
             .flex()
             .flex_none()
@@ -5299,6 +5314,7 @@ mod bar {
                         .child(parts.key.clone()),
                 )
             })
+            .into_any_element()
     }
 
     fn load_wifi_menu(rescan: bool) -> Option<WifiMenuData> {

@@ -176,8 +176,17 @@ pub fn parse_hint(hint: &str) -> Option<(bool, bool, bool, bool, String)> {
         "⎋" | "Esc" => "escape".to_owned(),
         "←" => "left".to_owned(),
         "→" => "right".to_owned(),
-        "↑" => "up".to_owned(),
-        "↓" => "down".to_owned(),
+        // AppKit's function-key characters, kept as the Mac recorded them
+        // (Preview's Go menu): without these, Windows menus showed
+        // "Up []" and "Previous Document [Alt+]" (found by the robot).
+        "\u{F700}" | "↑" => "up".to_owned(),
+        "\u{F701}" | "↓" => "down".to_owned(),
+        "\u{F702}" => "left".to_owned(),
+        "\u{F703}" => "right".to_owned(),
+        "\u{F729}" => "home".to_owned(),
+        "\u{F72B}" => "end".to_owned(),
+        "\u{F72C}" => "pageup".to_owned(),
+        "\u{F72D}" => "pagedown".to_owned(),
         "−" => "-".to_owned(),
         "⇞" => "pageup".to_owned(),
         "⇟" => "pagedown".to_owned(),
@@ -188,8 +197,23 @@ pub fn parse_hint(hint: &str) -> Option<(bool, bool, bool, bool, String)> {
     Some((command, control, option, shift, key))
 }
 
+/// Enter Full Screen's hint as the menus record it (Globe+F on the Mac).
+pub const FULL_SCREEN_HINT: &str = "F";
+
 /// The Windows chord a Mac menu hint stands for (see the module docs).
 pub fn hint_chord(hint: &str) -> Option<Chord> {
+    // The Mac's Enter Full Screen key is Globe+F, recorded as a bare "F".
+    // Windows' full-screen key is F11, which every Lulo app answers there
+    // (`rmac_ui`'s window keys); a bare "F" would read as "press F".
+    if hint == FULL_SCREEN_HINT {
+        return Some(Chord {
+            win: false,
+            ctrl: false,
+            alt: false,
+            shift: false,
+            key: "f11".to_owned(),
+        });
+    }
     let (command, control, option, shift, key) = parse_hint(hint)?;
     mac_to_windows(command, control, option, shift, &key)
 }
@@ -252,6 +276,56 @@ mod tests {
         assert_eq!(windows_hint("Space"), "Space");
         assert_eq!(windows_hint("⌃K"), "");
         assert_eq!(windows_hint(""), "");
+    }
+
+    #[test]
+    fn full_screen_reads_as_f11() {
+        assert_eq!(windows_hint(FULL_SCREEN_HINT), "F11");
+        // Only Enter Full Screen uses the bare Globe-key hint.
+        for app_id in crate::MENU_APPS {
+            for menu in crate::static_definition(app_id).unwrap_or_default() {
+                for item in &menu.items {
+                    if item.shortcut == FULL_SCREEN_HINT {
+                        assert_eq!(item.label, "Enter Full Screen", "{app_id}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn appkit_function_key_characters_read_as_keys() {
+        // Preview's Go menu keeps the Mac's private-use key characters.
+        assert_eq!(windows_hint("\u{F72C}"), "Page Up");
+        assert_eq!(windows_hint("⌥\u{F72D}"), "Alt+Page Down");
+        assert_eq!(windows_hint("\u{F700}"), "Up");
+        assert_eq!(windows_hint("⌥\u{F701}"), "Alt+Down");
+        assert_eq!(windows_hint("\u{F702}"), "Left");
+        assert_eq!(windows_hint("\u{F703}"), "Right");
+        assert_eq!(windows_hint("\u{F729}"), "Home");
+        assert_eq!(windows_hint("\u{F72B}"), "End");
+        // Every hint in every app's menus reads as a key on Windows: none is
+        // left with an empty key name ("Alt+") or an unprintable character.
+        for app_id in crate::MENU_APPS {
+            for menu in crate::static_definition(app_id).unwrap_or_default() {
+                let mut items = menu.items.clone();
+                while let Some(item) = items.pop() {
+                    items.extend(item.children.clone());
+                    let shown = windows_hint(&item.shortcut);
+                    // "Ctrl++" (Zoom In) is a real key; "Alt+" is not.
+                    let no_key = shown.ends_with('+') && !shown.ends_with("++");
+                    assert!(
+                        !no_key
+                            && !shown
+                                .chars()
+                                .any(|c| ('\u{F700}'..='\u{F8FF}').contains(&c)),
+                        "{app_id} {}: {:?} shows as {shown:?}",
+                        item.label,
+                        item.shortcut
+                    );
+                }
+            }
+        }
     }
 
     #[test]

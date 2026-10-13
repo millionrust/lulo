@@ -787,6 +787,10 @@ impl ClockView {
             };
             div()
                 .id("clock-add")
+                // Above the title area's drag region: on Windows that region
+                // is the window's caption, which takes the click for a move
+                // unless this hitbox hides it (see `clock-tabs`).
+                .occlude()
                 .role(Role::Button)
                 .aria_label(label)
                 .absolute()
@@ -839,6 +843,13 @@ impl ClockView {
             .child(
                 div()
                     .id("clock-tabs")
+                    // The tabs sit over the title area's drag region. On
+                    // Windows that region answers WM_NCHITTEST as the caption
+                    // whenever its hitbox is under the pointer, so a click on
+                    // a tab moved the window instead of switching tabs (found
+                    // by the robot, scripts/robot/windows). Occluding hides
+                    // the drag hitbox under the tabs.
+                    .occlude()
                     .absolute()
                     .left(px(tabs_left))
                     .top(px(m::TABS_TOP))

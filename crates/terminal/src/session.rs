@@ -1288,10 +1288,10 @@ impl Session {
     /// The name of the program running in the foreground, when there is one
     /// (a job, not the idle shell) — what Terminal lists before it closes.
     pub(super) fn foreground_job_name(&self) -> Option<String> {
-        if !self.has_foreground_job() {
-            return None;
-        }
-        self.job_state.label()
+        // The label first: it is a cached read, while the foreground check
+        // takes a process snapshot on Windows (and renders call this).
+        let label = self.job_state.label()?;
+        self.has_foreground_job().then_some(label)
     }
 
     pub(super) fn has_foreground_job(&self) -> bool {
@@ -1302,7 +1302,14 @@ impl Session {
             .as_ref()
             .and_then(|master| master.process_group_leader())
             .and_then(|pid| u32::try_from(pid).ok());
-        #[cfg(not(unix))]
+        // Windows' pseudo console has no foreground process group: the shell
+        // counts as in the foreground while it has no program of its own
+        // running, so an idle prompt closes without asking (as on the Mac).
+        #[cfg(windows)]
+        let foreground_process_group = self
+            .shell_pid
+            .filter(|shell| crate::shell_children::shell_has_job(*shell) == Some(false));
+        #[cfg(not(any(unix, windows)))]
         let foreground_process_group = None;
         foreground_job_requires_confirmation(
             may_be_running,
@@ -1330,11 +1337,20 @@ impl Session {
                 return Err(SessionControlError);
             }
         }
-        self.killer
-            .as_mut()
-            .ok_or(SessionControlError)?
-            .kill()
-            .map_err(|_| SessionControlError)
+        let killed = self.killer.as_mut().ok_or(SessionControlError)?.kill();
+        // Windows: the pseudo console's killer reports failure even when the
+        // shell did end ("The shell exited with status 1"), and the window
+        // then refused to close with "Terminal could not terminate every
+        // shell safely" (found by the robot). An ended shell is a success.
+        #[cfg(windows)]
+        if killed.is_err()
+            && self
+                .shell_pid
+                .is_some_and(crate::shell_children::has_exited)
+        {
+            return Ok(());
+        }
+        killed.map_err(|_| SessionControlError)
     }
 
     pub(super) fn write(&mut self, bytes: &[u8]) -> Result<(), SessionWriteError> {

@@ -17,7 +17,7 @@ pub struct WindowsApp {
 
 /// Every Lulo app that builds for Windows, in the Dock's order: Files first,
 /// where the Mac's Dock has the Finder.
-pub const WINDOWS_APPS: [WindowsApp; 9] = [
+pub const WINDOWS_APPS: [WindowsApp; 10] = [
     WindowsApp {
         app_id: identity::FILES,
         name: "Files",
@@ -57,6 +57,11 @@ pub const WINDOWS_APPS: [WindowsApp; 9] = [
         app_id: identity::WEATHER,
         name: "Weather",
         exe: "rmac-weather.exe",
+    },
+    WindowsApp {
+        app_id: identity::MAIL,
+        name: "Mail",
+        exe: "rmac-mail.exe",
     },
     WindowsApp {
         app_id: identity::PREVIEW,

@@ -15,7 +15,7 @@ pub struct LuloApp {
 
 /// The Lulo apps that build for Windows (ADR 0023 phases 2 and 4), in the
 /// Dock's order: Files first, where the Mac's Dock has the Finder.
-pub const LULO_APPS: [LuloApp; 8] = [
+pub const LULO_APPS: [LuloApp; 9] = [
     LuloApp {
         app_id: "org.rmac.Files",
         name: "Files",
@@ -45,6 +45,12 @@ pub const LULO_APPS: [LuloApp; 8] = [
         name: "Weather",
         exe: "rmac-weather.exe",
         icon: "apps/org.rmac.Weather.svg",
+    },
+    LuloApp {
+        app_id: "org.rmac.Mail",
+        name: "Mail",
+        exe: "rmac-mail.exe",
+        icon: "apps/org.rmac.Mail.svg",
     },
     LuloApp {
         app_id: "org.rmac.Preview",

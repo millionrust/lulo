@@ -30,6 +30,7 @@ const ENTRIES: &[(&str, &[u8])] = files! {
     "org.rmac.Clock" => "../../../packaging/rmac-apps/applications/org.rmac.Clock.desktop",
     "org.rmac.Weather" => "../../../packaging/rmac-apps/applications/org.rmac.Weather.desktop",
     "org.rmac.Preview" => "../../../packaging/rmac-apps/applications/org.rmac.Preview.desktop",
+    "org.rmac.Mail" => "../../../packaging/rmac-apps/applications/org.rmac.Mail.desktop",
 };
 
 /// Apps' entry: Apps runs inside `lulo-shell`, so its entry asks the

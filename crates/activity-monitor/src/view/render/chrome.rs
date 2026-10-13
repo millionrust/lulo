@@ -103,7 +103,7 @@ impl MonitorView {
                     .text_color(mac::text_tertiary())
                     .child("Columns"),
             )
-            .children(ColKey::ALL.into_iter().map(|key| {
+            .children(ColKey::ALL.into_iter().filter(|key| key.available()).map(|key| {
                 let on = visible.contains(&key);
                 let disabled = key.required();
                 div()

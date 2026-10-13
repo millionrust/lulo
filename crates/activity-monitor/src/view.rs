@@ -271,6 +271,8 @@ impl MonitorView {
             },
             cx,
         );
+        #[cfg(windows)]
+        hide_linux_only_commands(cx);
         let has_selection = self.selected_proc(cx).is_some();
         rmac_ui::set_menu_enabled("activity_monitor::QuitProcess", has_selection, cx);
         rmac_ui::set_menu_enabled("activity_monitor::InspectProcess", has_selection, cx);
@@ -1024,5 +1026,38 @@ impl MonitorView {
             cx.update(|cx| crate::sample_window::show(report, cx));
         })
         .detach();
+    }
+}
+
+/// Commands that need a Linux kernel service, left out of the menus on
+/// Windows rather than shown greyed out or doing nothing: signals other than
+/// quit and force quit, stack sampling, DRM graphics clients and the
+/// `/proc`-only columns, the Dock's tile, GPU history and printing.
+#[cfg(windows)]
+fn hide_linux_only_commands(cx: &mut gpui::App) {
+    for action in [
+        "activity_monitor::SendSignalToProcess",
+        "activity_monitor::SampleProcess",
+        "activity_monitor::ShowGpuProcesses",
+        "activity_monitor::ShowGpuHistoryWindow",
+        "activity_monitor::PrintProcesses",
+        "activity_monitor::DockIconMenu",
+    ] {
+        rmac_ui::set_menu_hidden(action, true, cx);
+    }
+    for (action, column) in [
+        ("activity_monitor::ToggleFootprintColumn", ColKey::Footprint),
+        ("activity_monitor::ToggleRealPrivateColumn", ColKey::RealPrivate),
+        ("activity_monitor::ToggleRealSharedColumn", ColKey::RealShared),
+        ("activity_monitor::ToggleCompressedColumn", ColKey::Compressed),
+        ("activity_monitor::ToggleKindColumn", ColKey::Kind),
+        ("activity_monitor::ToggleSandboxColumn", ColKey::Sandbox),
+        ("activity_monitor::ToggleIdleWakeUpsColumn", ColKey::IdleWakeUps),
+        ("activity_monitor::ToggleGpuPercentColumn", ColKey::GpuPercent),
+        ("activity_monitor::ToggleGpuTimeColumn", ColKey::GpuTime),
+        ("activity_monitor::TogglePortsColumn", ColKey::Ports),
+        ("activity_monitor::TogglePreventingSleepColumn", ColKey::PreventingSleep),
+    ] {
+        rmac_ui::set_menu_hidden(action, !column.available(), cx);
     }
 }

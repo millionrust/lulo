@@ -86,6 +86,7 @@ fn full_process_name(process: &Process) -> SharedString {
 /// this splits on the *last* `)` rather than counting whitespace-separated
 /// fields from the start, the same way the kernel's own documentation
 /// describes parsing this file.
+#[cfg_attr(windows, allow(dead_code))]
 fn read_cpu_time_seconds(pid: u32) -> Option<u64> {
     let content = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let after_comm = content.rsplit_once(')')?.1;
@@ -115,6 +116,58 @@ fn clock_ticks_per_second() -> u64 {
 #[cfg(not(target_os = "linux"))]
 fn clock_ticks_per_second() -> u64 {
     100
+}
+
+/// A process's CPU seconds since it started. Linux reads `/proc`; Windows has
+/// no `/proc`, so ask the kernel (`GetProcessTimes`) directly.
+#[cfg(windows)]
+fn process_cpu_time_seconds(process: &Process) -> Option<u64> {
+    crate::windows_host::process_cpu_seconds(process.pid().as_u32())
+}
+
+#[cfg(not(windows))]
+fn process_cpu_time_seconds(process: &Process) -> Option<u64> {
+    read_cpu_time_seconds(process.pid().as_u32())
+}
+
+/// The numeric owner the View filter compares (MON-03). A Unix uid is used
+/// as it is. A Windows owner is a SID: the built-in service accounts (SYSTEM,
+/// LOCAL SERVICE, NETWORK SERVICE and per-service SIDs) map to 0, below the
+/// filter's system limit, and every other account to a stable hash above it.
+#[cfg(not(windows))]
+fn owner_key(uid: &sysinfo::Uid) -> u32 {
+    **uid
+}
+
+#[cfg(windows)]
+fn owner_key(uid: &sysinfo::Uid) -> u32 {
+    let sid = uid.to_string();
+    const SERVICE_PREFIXES: [&str; 6] = [
+        "S-1-5-18", "S-1-5-19", "S-1-5-20", "S-1-5-80-", "S-1-5-90-", "S-1-5-96-",
+    ];
+    if SERVICE_PREFIXES
+        .iter()
+        .any(|prefix| sid == *prefix || sid.starts_with(prefix))
+    {
+        return 0;
+    }
+    // FNV-1a: stable between runs, unlike the standard hasher.
+    let mut hash: u32 = 0x811c_9dc5;
+    for byte in sid.bytes() {
+        hash = (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193);
+    }
+    1_000_000 + hash % 1_000_000
+}
+
+/// What to show for an owner the account list does not know.
+#[cfg(not(windows))]
+fn owner_fallback_name(uid: u32) -> SharedString {
+    SharedString::from(format!("uid {uid}"))
+}
+
+#[cfg(windows)]
+fn owner_fallback_name(uid: u32) -> SharedString {
+    SharedString::from(if uid == 0 { "SYSTEM" } else { "—" })
 }
 
 /// One process-table snapshot. The command search text stays private because it
@@ -555,13 +608,13 @@ impl ProcessTableDelegate {
 
                 let cpu = process.cpu_usage();
                 let disk = disk_usage.read_bytes + disk_usage.written_bytes;
-                let cpu_time = read_cpu_time_seconds(process.pid().as_u32());
-                let uid = process.user_id().map(|uid| **uid);
+                let cpu_time = process_cpu_time_seconds(process);
+                let uid = process.user_id().map(owner_key);
                 let user = process
                     .user_id()
                     .and_then(|uid| users.get_user_by_id(uid))
                     .map(|user| SharedString::from(user.name().to_string()))
-                    .or_else(|| uid.map(|uid| SharedString::from(format!("uid {uid}"))))
+                    .or_else(|| uid.map(owner_fallback_name))
                     .unwrap_or_else(|| SharedString::from("—"));
                 ProcRow {
                     pid: process.pid().as_u32(),
@@ -594,7 +647,7 @@ impl ProcessTableDelegate {
             .ok()
             .and_then(|pid| self.system.process(pid))
             .and_then(|process| process.user_id())
-            .map(|uid| **uid);
+            .map(owner_key);
 
         self.fill_extras();
         self.apply_view();

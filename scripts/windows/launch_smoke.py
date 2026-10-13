@@ -786,6 +786,25 @@ def check_clock_tabs(app: str, hwnd: int) -> str | None:
     return None
 
 
+WM_CLOSE = 0x0010
+
+
+def check_terminal_closes(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
+    """Closing Terminal's window at an idle prompt closes it without asking.
+
+    Found by the robot: on Windows every close asked "Do you want to
+    terminate running processes in this window?", the shell itself
+    counting as a running program."""
+    user32().PostMessageW(wintypes.HWND(hwnd), WM_CLOSE, 0, 0)
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        time.sleep(0.2)
+        if process.poll() is not None or hwnd not in {w for w, _ in visible_windows(process.pid)}:
+            print(f"{app}: the idle window closed without asking")
+            return None
+    return "closing Terminal at an idle prompt asked to terminate running processes"
+
+
 def check_single_instance(
     binary: Path, environment: dict[str, str], process: subprocess.Popen, log: Path
 ) -> str | None:
@@ -928,6 +947,11 @@ def launch(
                 errors.append(error)
         if app == "rmac-preview":
             error = check_open_panel(app, process, hwnd)
+            if error:
+                errors.append(error)
+        if app == "rmac-terminal" and not errors:
+            # Last: it closes the window.
+            error = check_terminal_closes(app, process, hwnd)
             if error:
                 errors.append(error)
         if app == "rmac-text-editor" and not errors:

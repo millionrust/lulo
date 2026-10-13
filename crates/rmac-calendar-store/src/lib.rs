@@ -6,6 +6,7 @@
 //! return errors rather than producing a misleading schedule.
 
 mod ical;
+pub mod local;
 mod layout;
 mod recurrence;
 

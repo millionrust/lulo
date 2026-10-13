@@ -1,14 +1,14 @@
 //! Event persistence and undo commands. Call `load` and `apply` only on workers.
 
 use crate::WeekSnapshot;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use crate::{Calendar, CalendarColor, Event};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use chrono::Datelike;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use rmac_calendar_store::expand;
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 use rmac_calendar_store::Calendar as IcalCalendar;
 use rmac_calendar_store::{Event as IcalEvent, TimeValue, Zone};
 use serde::{Deserialize, Serialize};
@@ -330,9 +330,105 @@ pub fn apply(change: &Mutation) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows has no Evolution Data Server: events live in Lulo's own calendar
+/// files (`rmac_calendar_store::local`).
+#[cfg(windows)]
+fn local_store() -> Result<rmac_calendar_store::local::LocalStore, String> {
+    rmac_calendar_store::local::LocalStore::default_root()
+        .map(rmac_calendar_store::local::LocalStore::open)
+        .ok_or_else(|| "Calendar couldn't find its data folder".to_owned())
+}
+
+#[cfg(windows)]
+pub fn apply(change: &Mutation) -> Result<(), String> {
+    let store = local_store()?;
+    let failed = |_| "Couldn't save the change".to_owned();
+    match change {
+        Mutation::Create { source, event } => store.create(source, event).map_err(failed)?,
+        Mutation::Modify {
+            source,
+            after,
+            scope,
+            ..
+        } => store.modify(source, after, scope).map_err(failed)?,
+        Mutation::Delete {
+            source,
+            event,
+            scope,
+        } => store.remove(source, event, scope).map_err(failed)?,
+        Mutation::MoveSource {
+            from,
+            to,
+            before,
+            after,
+        } => {
+            store.create(to, after).map_err(failed)?;
+            if store.remove(from, before, "all").is_err() {
+                let _ = store.remove(to, after, "all");
+                return Err("Couldn't move event".into());
+            }
+        }
+    }
+    // Reminders follow the events: re-arm the one Task Scheduler task.
+    let _ = rmac_calendar_agent::ensure_enabled();
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn apply(_change: &Mutation) -> Result<(), String> {
     Err("Calendar service unavailable".into())
+}
+
+/// Expand `ical`'s events over `from..to` into `snapshot` as calendar
+/// `calendar_index`'s occurrences.
+#[cfg(any(target_os = "linux", windows))]
+fn push_events(
+    snapshot: &mut WeekSnapshot,
+    calendar_index: usize,
+    ical: &IcalCalendar,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<(), String> {
+    let start = from.and_hms_opt(0, 0, 0).ok_or("Invalid date")?.and_utc();
+    let end = to.and_hms_opt(0, 0, 0).ok_or("Invalid date")?.and_utc();
+    for occurrence in expand(ical, start, end, chrono_tz::UTC, 10_000)
+        .map_err(|_| "Couldn't expand repeating events".to_owned())?
+    {
+        let Some(master) = ical
+            .events
+            .iter()
+            .find(|event| event.uid == occurrence.uid && event.recurrence_id.is_none())
+        else {
+            continue;
+        };
+        let source_event = ical
+            .events
+            .iter()
+            .find(|event| {
+                event.uid == occurrence.uid
+                    && event
+                        .recurrence_id
+                        .and_then(|id| id.resolve(chrono_tz::UTC).ok())
+                        == Some(occurrence.recurrence_id)
+            })
+            .unwrap_or(master);
+        snapshot.events.push(Event {
+            id: format!(
+                "{}#{}#{}",
+                calendar_index,
+                occurrence.uid,
+                occurrence.recurrence_id.timestamp()
+            ),
+            title: occurrence.summary,
+            location: property(source_event, "LOCATION"),
+            calendar: calendar_index,
+            start: occurrence.start,
+            end: occurrence.end,
+            all_day: occurrence.all_day,
+            ical: Some(source_event.clone()),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -402,45 +498,7 @@ pub fn load() -> Result<WeekSnapshot, String> {
                 IcalCalendar::parse(&wrapped).map_err(|_| "Couldn't read an event".to_owned())?;
             ical.events.extend(parsed.events);
         }
-        let start = from.and_hms_opt(0, 0, 0).ok_or("Invalid date")?.and_utc();
-        let end = to.and_hms_opt(0, 0, 0).ok_or("Invalid date")?.and_utc();
-        for occurrence in expand(&ical, start, end, chrono_tz::UTC, 10_000)
-            .map_err(|_| "Couldn't expand repeating events".to_owned())?
-        {
-            let Some(master) = ical
-                .events
-                .iter()
-                .find(|event| event.uid == occurrence.uid && event.recurrence_id.is_none())
-            else {
-                continue;
-            };
-            let source_event = ical
-                .events
-                .iter()
-                .find(|event| {
-                    event.uid == occurrence.uid
-                        && event
-                            .recurrence_id
-                            .and_then(|id| id.resolve(chrono_tz::UTC).ok())
-                            == Some(occurrence.recurrence_id)
-                })
-                .unwrap_or(master);
-            snapshot.events.push(Event {
-                id: format!(
-                    "{}#{}#{}",
-                    calendar_index,
-                    occurrence.uid,
-                    occurrence.recurrence_id.timestamp()
-                ),
-                title: occurrence.summary,
-                location: property(source_event, "LOCATION"),
-                calendar: calendar_index,
-                start: occurrence.start,
-                end: occurrence.end,
-                all_day: occurrence.all_day,
-                ical: Some(source_event.clone()),
-            });
-        }
+        push_events(&mut snapshot, calendar_index, &ical, from, to)?;
     }
     snapshot.slots =
         snapshot.slots_for(today - Duration::days(today.weekday().num_days_from_monday() as i64));
@@ -455,7 +513,49 @@ pub fn load() -> Result<WeekSnapshot, String> {
     Ok(snapshot)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+pub fn load() -> Result<WeekSnapshot, String> {
+    if std::env::var(crate::FIXTURE_ENV).is_ok_and(|value| value == "1") {
+        return Ok(crate::fixture_snapshot());
+    }
+    let store = local_store()?;
+    let mut snapshot = WeekSnapshot::empty();
+    let today = Utc::now().date_naive();
+    let from = today
+        .checked_sub_signed(Duration::days(366 * 2))
+        .ok_or("Invalid date")?;
+    let to = today
+        .checked_add_signed(Duration::days(366 * 3))
+        .ok_or("Invalid date")?;
+    for source in store
+        .sources()
+        .map_err(|_| "Couldn't load calendars".to_owned())?
+    {
+        let ical = store
+            .read(&source.uid)
+            .map_err(|_| "Couldn't load events".to_owned())?;
+        let calendar_index = snapshot.calendars.len();
+        snapshot.calendars.push(Calendar {
+            name: source.name.clone(),
+            account: "On My Computer".into(),
+            color: CalendarColor::ALL[calendar_index % CalendarColor::ALL.len()],
+            visible: true,
+            id: source.uid.clone(),
+            source_uid: Some(source.uid),
+            writable: true,
+            removed: false,
+            subscription_url: None,
+        });
+        push_events(&mut snapshot, calendar_index, &ical, from, to)?;
+    }
+    snapshot.slots =
+        snapshot.slots_for(today - Duration::days(today.weekday().num_days_from_monday() as i64));
+    // Re-arm reminders (one Task Scheduler task for the next one due).
+    let _ = rmac_calendar_agent::ensure_enabled();
+    Ok(snapshot)
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn load() -> Result<WeekSnapshot, String> {
     if std::env::var(crate::FIXTURE_ENV).is_ok_and(|value| value == "1") {
         return Ok(crate::fixture_snapshot());
@@ -485,7 +585,20 @@ pub fn self_emails() -> Vec<String> {
         .collect()
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the addresses of the mail accounts Mail holds.
+#[cfg(windows)]
+pub fn self_emails() -> Vec<String> {
+    use rmac_accounts_linux::winstore::WinAccounts;
+    WinAccounts::session()
+        .and_then(|store| store.stored())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|account| account.identity.trim().to_ascii_lowercase())
+        .filter(|identity| !identity.is_empty())
+        .collect()
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn self_emails() -> Vec<String> {
     Vec::new()
 }
@@ -511,7 +624,16 @@ pub fn respond_to_invitation(source: &str, event: &IcalEvent) -> Result<(), Stri
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the reply is saved on the event; there is no calendar server
+/// here to deliver it, so the organiser is not told.
+#[cfg(windows)]
+pub fn respond_to_invitation(source: &str, event: &IcalEvent) -> Result<(), String> {
+    local_store()?
+        .modify(source, event, "this")
+        .map_err(|_| "Couldn't update the invitation".to_owned())
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn respond_to_invitation(_source: &str, _event: &IcalEvent) -> Result<(), String> {
     Err("Calendar service unavailable".into())
 }

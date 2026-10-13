@@ -91,6 +91,20 @@
     "extensions": []
   },
   {
+    "id": "calendar",
+    "app_id": "org.rmac.Calendar",
+    "display_name": "Calendar",
+    "bin": "rmac-calendar",
+    "extensions": []
+  },
+  {
+    "id": "calendar-agent",
+    "display_name": "Calendar Reminders",
+    "bin": "rmac-calendar-agent",
+    "extensions": [],
+    "shortcut": false
+  },
+  {
     "id": "lulo-session",
     "display_name": "Lulo",
     "bin": "lulo-session",

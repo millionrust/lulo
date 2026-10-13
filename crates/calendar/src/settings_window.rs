@@ -369,7 +369,11 @@ impl SettingsView {
                 .pt(px(28.0))
                 .text_color(mac::text_secondary())
                 .child("No Internet Accounts yet.")
-                .child("Add one in System Settings ▸ Internet Accounts.")
+                .child(if cfg!(windows) {
+                    "Accounts aren't available on Windows yet."
+                } else {
+                    "Add one in System Settings ▸ Internet Accounts."
+                })
                 .into_any_element();
         }
         let mut list = div().v_flex().gap_2();

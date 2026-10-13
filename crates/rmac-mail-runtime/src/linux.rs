@@ -18,8 +18,7 @@ use zbus::{
 
 use crate::imap::ImapAuth;
 use crate::{
-    account_id, Account, Backend, BackendFactory, Error, EventSink, ImapFactory, ImapSettings,
-    NewMail, Runtime, Snapshot, Transport,
+    account_id, Account, Error, EventSink, ImapSettings, NewMail, Runtime, Snapshot, Transport,
 };
 
 /// The GOA account list is authoritative. Other IMAP accounts may provide

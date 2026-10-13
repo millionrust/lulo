@@ -386,4 +386,28 @@ no paid or larger runners and no paid cache.
 - **Superseded runs:** a newer push to the same branch cancels the older
   CI run (except on `dev`), as `runtime.yml` already did.
 
+Measured on 2026-10-13 (minutes each job ran, queueing left out; runs
+38369865321/38369865318 before, 38396292030/38396292063 after, both with
+no warm sccache entries):
+
+| Job | Before | After |
+|---|---|---|
+| Windows (one job / slowest path: build, then a launch part) | 43.8 | 10.2 + 5.6 |
+| Windows Clippy / tests (alongside the build) | in the above | 7.0 / 6.9 |
+| Linux checks | 18.5 | 13.4 |
+| Linux checks (Ubuntu 26.04) | 23.8 | 13.7 |
+| macOS checks | 18.2 | 15.0 |
+| Current GPUI Linux runtime gate | 10.2 | 11.4 |
+| CI workflow, first job to last | 43.9 | 19.4 |
+| Runtime build | 14.0 | 14.5 |
+| Runtime playback jobs | 25, 1.3–6.3 each | 8, 5.8–7.5 each (11.8 for the runner whose desktop-paint check fails, as before) |
+
+These are cold numbers. While other branches still ran the old workflow
+(until this lands on `dev`), each of their 5–16 GB `target` caches evicted
+every sccache entry within minutes, so no run could read the previous
+run's entries; within one run, jobs shared about 25% of the Linux compiles.
+Once no workflow saves a `target` cache, a run reads the crates earlier
+runs compiled, and only the changed crates and the executables (which
+sccache never caches) compile.
+
 [mozilla-actions/sccache-action]: https://github.com/mozilla-actions/sccache-action

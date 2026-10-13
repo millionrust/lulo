@@ -1180,6 +1180,9 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
             service.update(cx, |service, _| service.pending = Some(Vec::new()));
             let service = service.clone();
             cx.spawn(async move |cx: &mut AsyncApp| {
+                // A fresh reading: the last one may predate a change the
+                // window list's event filter let pass without reading.
+                rmac_compositor_system::refresh();
                 let snapshot = rmac_compositor_system::snapshot().await;
                 cx.update(|cx| {
                     let queued = service.update(cx, |service, _| {

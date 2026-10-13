@@ -234,6 +234,35 @@ def switch_flickered(changes: list[Optional[int]], original: Optional[int], targ
     return path != [target]
 
 
+def keyboard_flickered(events: Events) -> bool:
+    """The switch target's own trace after the stroke: it flickers when it
+    gains the keyboard, loses it and gains it again (drawn active, inactive,
+    active)."""
+
+    entries = sum(1 for event, _ in events if event == "focus_in")
+    return entries > 1
+
+
+def settled_switch_ms(events: Events, mark: int, start: float) -> Optional[float]:
+    """Harness-clock ms from `start` (time.monotonic()) to the target's first
+    `present` after its last `focus_in` past `mark`. Trace rows count
+    microseconds from the trace's `monotonic_origin` (CLOCK_MONOTONIC, the
+    clock time.monotonic() reads on Linux)."""
+
+    origin = next((micros for event, micros in events if event == "monotonic_origin"), None)
+    if origin is None:
+        return None
+    later = events[mark:]
+    last_entry = max((index for index, (event, _) in enumerate(later) if event == "focus_in"),
+                     default=None)
+    if last_entry is None:
+        return None
+    present = next((micros for event, micros in later[last_entry:] if event == "present"), None)
+    if present is None:
+        return None
+    return ((origin + present) / 1_000_000 - start) * 1000.0
+
+
 def percentile(values: list[float], pct: float) -> Optional[float]:
     if not values:
         return None
@@ -907,6 +936,7 @@ class InteractionScenarios:
             switcher_frames: list[Optional[float]] = []
             flickers: list[bool] = []
             panels: list[bool] = []
+            settled: list[Optional[float]] = []
             for _ in range(max(3, self.args.repeat)):
                 target = self._switch_target(apps)
                 if target is None:
@@ -916,6 +946,7 @@ class InteractionScenarios:
                 baseline = self._presents(target[1])
                 service_baseline = self._presents(service_trace)
                 mark = self._mark(service_trace)
+                target_mark = self._mark(target[1])
                 focus_mark = focus.mark()
                 start = time.monotonic()
                 self.input.key("alt-tab")
@@ -926,12 +957,19 @@ class InteractionScenarios:
                 time.sleep(0.4)
                 self._settle(target[1], 2.0)
                 flickers.append(target_id is None
-                                or switch_flickered(focus.since(focus_mark), original_id, target_id))
+                                or switch_flickered(focus.since(focus_mark), original_id, target_id)
+                                or keyboard_flickered(self._since(target[1], target_mark)))
                 panels.append(self._panel_shown(service_trace, mark))
+                settled.append(settled_switch_ms(read_trace(target[1]), target_mark, start))
             done = [s for s in switches if s is not None]
             frames = [f for f in switcher_frames if f is not None]
-            switch_ms = statistics.median(done) if done else None
-            return {"switches": switches, "switch_ms": switch_ms,
+            landed = [s for s in settled if s is not None]
+            # Scored on the target's frame after its LAST keyboard enter: an
+            # early active frame that is taken back is not a switch.
+            switch_ms = statistics.median(landed) if landed else None
+            return {"switches": switches,
+                    "first_present_ms": statistics.median(done) if done else None,
+                    "settled": settled, "switch_ms": switch_ms,
                     "switcher_first_frame_ms": statistics.median(frames) if frames else None,
                     "flickers": flickers, "panel_shown": panels,
                     "pass": (switch_ms is not None and switch_ms <= CMD_TAB_TAP_TARGET_MS
@@ -978,6 +1016,7 @@ class InteractionScenarios:
         try:
             reveals: list[Optional[float]] = []
             commits: list[Optional[float]] = []
+            settled: list[Optional[float]] = []
             flickers: list[bool] = []
             for _ in range(max(3, self.args.repeat)):
                 target = self._switch_target(apps)
@@ -986,6 +1025,7 @@ class InteractionScenarios:
                 original_id = self._focused_window_id()
                 target_id = self._window_id(target[2])
                 mark = self._mark(service_trace)
+                target_mark = self._mark(target[1])
                 focus_mark = focus.mark()
                 start = time.monotonic()
                 # niri's Mod is Alt in the nested session, but the switcher
@@ -1003,12 +1043,17 @@ class InteractionScenarios:
                 time.sleep(0.4)
                 self._settle(target[1], 2.0)
                 flickers.append(target_id is None
-                                or switch_flickered(focus.since(focus_mark), original_id, target_id))
+                                or switch_flickered(focus.since(focus_mark), original_id, target_id)
+                                or keyboard_flickered(self._since(target[1], target_mark)))
+                settled.append(settled_switch_ms(read_trace(target[1]), target_mark, start))
             shown = [r for r in reveals if r is not None]
             done = [c for c in commits if c is not None]
             reveal_ms = statistics.median(shown) if shown else None
             return {"reveals": reveals, "commits": commits, "reveal_ms": reveal_ms,
                     "release_to_switch_ms": statistics.median(done) if done else None,
+                    "settled": settled,
+                    "release_to_settled_ms": (statistics.median([x for x in settled if x is not None])
+                                              if any(x is not None for x in settled) else None),
                     "flickers": flickers,
                     "pass": (reveal_ms is not None and reveal_ms <= 50.0 and bool(done)
                              and not any(flickers))}

@@ -331,8 +331,14 @@ pub(crate) mod linux_wayland {
         /// Counts opens of this (kept) surface; timers of an earlier open
         /// do nothing.
         generation: u64,
-        /// The switch this open made ahead of knowing whether ⌘ is held.
+        /// The switch to make ahead of knowing whether ⌘ is held, once this
+        /// surface has the keyboard.
+        plan: Option<OptimisticPlan>,
+        /// That switch, once started.
         optimistic: Option<Optimistic>,
+        /// A commit waiting for the optimistic switch to land before it gives
+        /// the keyboard back.
+        committing: bool,
     }
 
     impl SwitcherView {
@@ -341,7 +347,7 @@ pub(crate) mod linux_wayland {
             session: Session,
             items: BTreeMap<String, Item>,
             display_width: f32,
-            optimistic: Option<Optimistic>,
+            plan: Option<OptimisticPlan>,
             window: &mut Window,
             cx: &mut Context<Self>,
         ) -> Self {
@@ -351,6 +357,15 @@ pub(crate) mod linux_wayland {
                 if window.is_window_active() {
                     if !this.was_active {
                         this.was_active = true;
+                        // SPEED-11: switch now that this surface holds the
+                        // keyboard. niri moves its focus to the next app but
+                        // cannot hand that app the keyboard while the
+                        // switcher holds it, so the app never shows active,
+                        // then inactive, then active again; when the switcher
+                        // closes the keyboard goes straight to it.
+                        if let Some(plan) = this.plan.take() {
+                            this.optimistic = Some(Optimistic::start(plan, cx));
+                        }
                         if window.modifiers().platform {
                             // ⌘ is still held: show the panel now.
                             this.saw_command = true;
@@ -380,7 +395,9 @@ pub(crate) mod linux_wayland {
                 pending_quit: false,
                 display_id: window.display(cx).map(|display| display.id()),
                 generation: 0,
-                optimistic,
+                plan,
+                optimistic: None,
+                committing: false,
             };
             view.start(window, cx);
             view
@@ -404,9 +421,6 @@ pub(crate) mod linux_wayland {
                 cx.background_executor().timer(ACTIVATION_TIMEOUT).await;
                 let _ = this.update_in(cx, |this, window, cx| {
                     if this.generation == generation && !this.was_active {
-                        // Without the keyboard there was no way to browse:
-                        // keep the switch a quick tap would have made.
-                        this.optimistic = None;
                         this.close(window, cx);
                     }
                 });
@@ -420,11 +434,13 @@ pub(crate) mod linux_wayland {
             session: Session,
             items: BTreeMap<String, Item>,
             display_width: f32,
-            optimistic: Option<Optimistic>,
+            plan: Option<OptimisticPlan>,
             window: &mut Window,
             cx: &mut Context<Self>,
         ) {
-            self.optimistic = optimistic;
+            self.plan = plan;
+            self.optimistic = None;
+            self.committing = false;
             self.layout = model::layout(session.apps.len(), display_width);
             self.session = session;
             self.items = items;
@@ -513,6 +529,7 @@ pub(crate) mod linux_wayland {
                 return;
             }
             self.closing = true;
+            self.plan = None;
             // Closing without a commit cancels (Esc, ⌘., another surface
             // taking the keyboard): put back the app that was frontmost.
             if let Some(optimistic) = self.optimistic.take() {
@@ -562,7 +579,7 @@ pub(crate) mod linux_wayland {
         }
 
         fn commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-            if self.closing {
+            if self.closing || self.committing {
                 return;
             }
             gpui_linux::trace_mark("switcher_commit");
@@ -571,11 +588,46 @@ pub(crate) mod linux_wayland {
                 .service
                 .upgrade()
                 .map(|service| service.read(cx).compositor.snapshot());
-            let optimistic = self.optimistic.take();
-            self.close(window, cx);
             let Some(app) = selected else {
+                self.close(window, cx);
                 return;
             };
+            let needs_activation = model::commit_needs_activation(
+                self.optimistic
+                    .as_ref()
+                    .map(|optimistic| optimistic.plan.app_id.as_str()),
+                self.optimistic
+                    .as_ref()
+                    .and_then(|optimistic| optimistic.outcome.get()),
+                &app,
+            );
+            if !needs_activation {
+                if let Some(done) = self
+                    .optimistic
+                    .as_ref()
+                    .filter(|optimistic| optimistic.outcome.get().is_none())
+                    .map(|optimistic| optimistic.done.clone())
+                {
+                    // Give the keyboard back only once niri has moved its
+                    // focus, so it goes to the chosen app and never to the
+                    // one that was frontmost on the way.
+                    self.committing = true;
+                    let generation = self.generation;
+                    cx.spawn_in(window, async move |this, cx| {
+                        let _ = done.recv().await;
+                        let _ = this.update_in(cx, |this, window, cx| {
+                            if this.generation == generation && this.committing {
+                                this.committing = false;
+                                this.commit(window, cx);
+                            }
+                        });
+                    })
+                    .detach();
+                    return;
+                }
+            }
+            let optimistic = self.optimistic.take();
+            self.close(window, cx);
             let needs_activation = model::commit_needs_activation(
                 optimistic
                     .as_ref()
@@ -1052,12 +1104,11 @@ pub(crate) mod linux_wayland {
                 .collect::<BTreeMap<_, _>>();
             (session, items, state.focused_output(), plan)
         };
-        // SPEED-11: switch now, while the surface maps and learns whether ⌘
-        // is still held. A quick tap then only closes the surface; a browse
-        // shows the panel as before and focuses its final choice.
-        let mut optimistic = plan
-            .filter(|_| optimistic_enabled())
-            .map(|plan| Optimistic::start(plan, cx));
+        // SPEED-11: the switcher focuses this app as soon as it holds the
+        // keyboard (`SwitcherView::new`). A quick tap then only closes the
+        // surface; a browse shows the panel as before and focuses its final
+        // choice.
+        let mut plan = plan.filter(|_| optimistic_enabled());
         let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
         let display = output
             .and_then(|uuid| displays.get(&uuid).cloned())
@@ -1072,7 +1123,7 @@ pub(crate) mod linux_wayland {
                 && gpui_linux::set_layer_window_mapped(handle.into(), true)
             {
                 gpui_linux::trace_mark("switcher_reshown");
-                let mut moved = optimistic.take();
+                let mut moved = plan.take();
                 let reopened = handle.update(cx, |view, window, cx| {
                     view.reopen(
                         session.clone(),
@@ -1087,7 +1138,7 @@ pub(crate) mod linux_wayland {
                     service.update(cx, |service, _| service.open = Some(handle));
                     return;
                 }
-                optimistic = moved;
+                plan = moved;
             }
             let _ = handle.update(cx, |_, window, _| window.remove_window());
         }
@@ -1117,9 +1168,7 @@ pub(crate) mod linux_wayland {
             ..Default::default()
         };
         match cx.open_window(options, move |window, cx| {
-            cx.new(|cx| {
-                SwitcherView::new(weak, session, items, display_width, optimistic, window, cx)
-            })
+            cx.new(|cx| SwitcherView::new(weak, session, items, display_width, plan, window, cx))
         }) {
             Ok(handle) => {
                 // Allocate the swapchain at the widest panel this display can

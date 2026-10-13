@@ -1773,9 +1773,10 @@ menu. All of these pass ("every Lulo layer check passed", job of run 37832355013
   kept its decoded copy beside the layer's; the bar's window was the screen's size while
   no menu was open (it is now the bar until a menu opens, as a full-screen swap chain is
   charged to the process on a real GPU); and picture atlas pages started at 1024². The
-  runner now holds 42 MB private at idle and 57 MB 30 s after Spotlight and a menu
-  (budget 60 MB); the laptop's release build 52.3 MB at start and 56.6 MB 30 s after the
-  Lulo menu and two status menus (the 11a6dfbd preview, same tour: 96.3 and 100.6 MB). Idle CPU stays within 2 ticks: the
+  runner now holds 33.5 MB private at idle and 50.6 MB 30 s after Spotlight and a menu
+  (budget 60 MB); the laptop's release build 56.9 MB at start and 60.8 MB 30 s after the
+  Lulo menu and two status menus (the 11a6dfbd preview, same tour: 96.1 and 100.1 MB);
+  Apps costs about 4 MB once, the first time it opens, and nothing on later opens. Idle CPU stays within 2 ticks: the
   running-app icon reader takes the window list's own snapshots and writes nothing into
   the watched applications folder.
 - **The hotkey notice** (WIN-OS-62): recorded once and traced, but Lulo OS's notification

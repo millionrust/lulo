@@ -322,20 +322,35 @@ mod bar {
             receiver: async_channel::Receiver<rmac_shell_runtime::Update>,
             cx: &mut Context<Self>,
         ) -> Self {
+            // One timer for the clock's next minute (or second), kept across
+            // status updates: a timer made per update and dropped still fires
+            // on Windows' thread pool, so a burst of updates woke the idle
+            // shell once per update at the next minute.
+            type ClockTick = std::pin::Pin<Box<futures_util::future::Fuse<gpui::Task<()>>>>;
+            let mut clock: Option<(bool, ClockTick)> = None;
             cx.spawn(async move |this, cx| loop {
                 let show_seconds = this
                     .read_with(cx, |this, _| this.update.snapshot.status.clock.show_seconds)
                     .unwrap_or(false);
-                let epoch_millis = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis();
+                if clock
+                    .as_ref()
+                    .is_none_or(|(seconds, _)| *seconds != show_seconds)
+                {
+                    let epoch_millis = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis();
+                    let timer = cx
+                        .background_executor()
+                        .timer(delay_until_next_clock_tick(epoch_millis, show_seconds))
+                        .fuse();
+                    clock = Some((show_seconds, Box::pin(timer)));
+                }
+                let Some((_, tick)) = clock.as_mut() else {
+                    break;
+                };
                 let update = receiver.recv().fuse();
-                let tick = cx
-                    .background_executor()
-                    .timer(delay_until_next_clock_tick(epoch_millis, show_seconds))
-                    .fuse();
-                futures_util::pin_mut!(update, tick);
+                futures_util::pin_mut!(update);
                 futures_util::select! {
                     update = update => {
                         let Ok(update) = update else { break };
@@ -387,6 +402,7 @@ mod bar {
                         }
                     }
                     _ = tick => {
+                        clock = None;
                         if this.update(cx, |_, cx| cx.notify()).is_err() {
                             break;
                         }

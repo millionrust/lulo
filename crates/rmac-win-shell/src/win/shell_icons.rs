@@ -64,6 +64,7 @@ pub fn icon(source: &Path) -> Option<PathBuf> {
     }
     std::fs::create_dir_all(&folder).ok()?;
     let exe = std::env::current_exe().ok()?;
+    let _busy = super::settle::busy();
     let status = std::process::Command::new(exe)
         .arg(SAVE_SWITCH)
         .arg(PIXELS.to_string())

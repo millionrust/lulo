@@ -188,6 +188,14 @@ description Rust sets from a thread's name), and writes everything to
 app but Terminal used more than one tick; it is the one blocking step of the
 otherwise non-blocking `windows` CI job.
 
+### Window frame
+
+`src/rmac_window_frame.rs` (ADR 0023, "Window chrome: Lulo's own corners and shadow")
+implements the core's `PlatformWindow::set_frame_style`: a rounded
+`IDCompositionRectangleClip` on the swap chain's visual (`directx_renderer.rs`, applied
+again on resize and after a device loss) and an owned, layered, click-through tool window
+for the shadow and hairline, updated from `WM_WINDOWPOSCHANGED` and `WM_ACTIVATE` only.
+
 ## Results
 
 CI `windows-latest`, debug builds, 20 s idle window after a 10 s settle.

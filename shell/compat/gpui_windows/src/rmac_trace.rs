@@ -96,11 +96,11 @@ fn private_mb() -> f64 {
 /// One start-up phase reached, with the private bytes at that moment.
 pub(crate) fn startup(phase: &str) {
     if startup_enabled() {
-        eprintln!(
+        trace_line(format!(
             "gpui_windows startup: {phase} at {:.1} ms, private {:.1} MB",
             since_process_start_ms(),
             private_mb()
-        );
+        ));
     }
 }
 
@@ -119,10 +119,10 @@ pub(crate) fn pool_task(source: &str, detail: impl Display, run: impl FnOnce()) 
     let before = current_thread_cpu_100ns();
     run();
     let used = current_thread_cpu_100ns().saturating_sub(before);
-    eprintln!(
+    trace_line(format!(
         "gpui_windows cpu: {source} {detail} {used} at {:.1} ms",
         since_process_start_ms()
-    );
+    ));
 }
 
 fn current_thread_cpu_100ns() -> u64 {
@@ -140,9 +140,18 @@ fn current_thread_cpu_100ns() -> u64 {
 /// spawn site.
 pub(crate) fn wake(source: &str, detail: impl Display) {
     if wake_enabled() {
-        eprintln!(
+        trace_line(format!(
             "gpui_windows wake: {source} {detail} at {:.1} ms",
             since_process_start_ms()
-        );
+        ));
     }
+}
+
+/// One trace line in a single write. The shell, its apps and helpers share
+/// one log file, and `eprintln!` writes a line in pieces, so lines from two
+/// processes could interleave mid-line and hide a line from the smoke.
+fn trace_line(mut line: String) {
+    use std::io::Write;
+    line.push('\n');
+    let _ = std::io::stderr().lock().write_all(line.as_bytes());
 }

@@ -84,6 +84,31 @@ const CLIENT_FRAME_INSET: f32 = 12.0;
 #[cfg(not(target_os = "linux"))]
 const CLIENT_FRAME_INSET: f32 = 0.0;
 
+/// The rmac apps whose windows have a unified 52 pt toolbar, which niri
+/// rounds at the toolbar radius (`packaging/rmac-session/shell.kdl`); every
+/// other window takes the title-bar radius.
+#[cfg(any(windows, test))]
+const TOOLBAR_APPS: [&str; 6] = [
+    "org.rmac.Files",
+    "org.rmac.SystemSettings",
+    "org.rmac.Calculator",
+    "org.rmac.Clock",
+    "org.rmac.Notes",
+    "org.rmac.SystemMonitor",
+];
+
+/// The corner radius niri gives `app_id`'s windows on Lulo OS: `toolbar`
+/// for the unified-toolbar apps, `title_bar` for the rest. Windows draws
+/// the same corners itself (`window_frame_windows`).
+#[cfg(any(windows, test))]
+pub(crate) fn window_corner_radius(app_id: &str, title_bar: f32, toolbar: f32) -> f32 {
+    if TOOLBAR_APPS.contains(&app_id) {
+        toolbar
+    } else {
+        title_bar
+    }
+}
+
 /// Outer window bounds for a visible window of `width` × `height`.
 pub fn outer_window_size(width: f32, height: f32) -> (f32, f32) {
     (

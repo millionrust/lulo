@@ -1040,16 +1040,11 @@ pub struct Window {
     input_latency_tracker: InputLatencyTracker,
     last_input_modality: InputModality,
     pub(crate) refreshing: bool,
-    /// rmac (ADR 0026): bumped by every `bounds_changed`. A cached view whose
-    /// subtree read the window's geometry while it rendered records the
-    /// epoch it saw and is reused only while the epoch is unchanged.
-    pub(crate) geometry_epoch: u64,
-    /// rmac (ADR 0026): counts reads of the window's geometry
-    /// (`viewport_size`, `bounds`, `window_bounds`, `inner_window_bounds`,
-    /// `is_maximized`, `is_fullscreen`, `window_decorations`). A cached view
-    /// compares it before and after rendering to learn whether its subtree
-    /// depends on the geometry.
-    pub(crate) geometry_reads: Cell<u64>,
+    /// rmac (ADR 0026): which parts of the window's geometry were read
+    /// (`crate::rmac_resize::GEOMETRY_*` bits). A cached view collects the
+    /// reads of its own render, layout, prepaint and paint, and is reused
+    /// only while those parts still have the values it saw.
+    pub(crate) geometry_reads: Cell<u8>,
     pub(crate) activation_observers: SubscriberSet<(), AnyObserver>,
     pub(crate) focus: Option<FocusId>,
     focus_enabled: bool,
@@ -1756,7 +1751,6 @@ impl Window {
             input_latency_tracker: InputLatencyTracker::new()?,
             last_input_modality: InputModality::Mouse,
             refreshing: false,
-            geometry_epoch: 0,
             geometry_reads: Cell::new(0),
             activation_observers: SubscriberSet::new(),
             focus: None,
@@ -1998,7 +1992,7 @@ impl Window {
     ///
     /// On some platforms (namely Windows) this is different than the bounds being the size of the display
     pub fn is_maximized(&self) -> bool {
-        self.note_geometry_read();
+        self.note_geometry_read(crate::rmac_resize::GEOMETRY_MAXIMIZED);
         self.platform_window.is_maximized()
     }
 
@@ -2025,13 +2019,13 @@ impl Window {
     /// Return the `WindowBounds` to indicate that how a window should be opened
     /// after it has been closed
     pub fn window_bounds(&self) -> WindowBounds {
-        self.note_geometry_read();
+        self.note_geometry_read(crate::rmac_resize::GEOMETRY_WINDOW_BOUNDS);
         self.platform_window.window_bounds()
     }
 
     /// Return the `WindowBounds` excluding insets (Wayland and X11)
     pub fn inner_window_bounds(&self) -> WindowBounds {
-        self.note_geometry_read();
+        self.note_geometry_read(crate::rmac_resize::GEOMETRY_INNER_BOUNDS);
         self.platform_window.inner_window_bounds()
     }
 
@@ -2274,11 +2268,11 @@ impl Window {
         // rmac (ADR 0026): a new size or position no longer forces a full
         // refresh, which re-rendered every cached view on every configure of
         // a live resize. The next frame lays the window out again, and a
-        // cached view is reused when its own bounds, content mask and text
-        // style are unchanged and nothing it rendered read the window's
-        // geometry (`geometry_epoch`). A new scale factor or display still
-        // refreshes everything: every cached glyph and image is stale then.
-        self.geometry_epoch = self.geometry_epoch.wrapping_add(1);
+        // cached view is reused when its own bounds, clip and text style are
+        // unchanged and the parts of the window's geometry it read still
+        // have the values it saw (`geometry_snapshot`). A new scale factor or
+        // display still refreshes everything: every cached glyph and image
+        // is stale then.
         if scale_or_display_changed || crate::rmac_resize::full_refresh_on_resize() {
             self.refresh();
         } else if self.invalidator.not_drawing() {
@@ -2290,17 +2284,36 @@ impl Window {
             .retain(&(), |callback| callback(self, cx));
     }
 
-    /// rmac (ADR 0026): records that the caller read the window's geometry,
-    /// so a cached view rendering it is re-rendered after the next
-    /// `bounds_changed`.
-    pub(crate) fn note_geometry_read(&self) {
-        self.geometry_reads
-            .set(self.geometry_reads.get().wrapping_add(1));
+    /// rmac (ADR 0026): records that the caller read part of the window's
+    /// geometry, so a cached view rendering it is re-rendered once that part
+    /// changes.
+    pub(crate) fn note_geometry_read(&self, part: u8) {
+        self.geometry_reads.set(self.geometry_reads.get() | part);
+    }
+
+    /// rmac (ADR 0026): the current values of the parts of the geometry in
+    /// `reads`, without recording a read.
+    pub(crate) fn geometry_snapshot(&self, reads: u8) -> crate::rmac_resize::GeometrySnapshot {
+        use crate::rmac_resize::*;
+        let part = |bit: u8| reads & bit != 0;
+        GeometrySnapshot {
+            reads,
+            viewport_size: part(GEOMETRY_VIEWPORT).then_some(self.viewport_size),
+            bounds: part(GEOMETRY_BOUNDS).then(|| self.platform_window.bounds()),
+            window_bounds: part(GEOMETRY_WINDOW_BOUNDS)
+                .then(|| self.platform_window.window_bounds()),
+            inner_window_bounds: part(GEOMETRY_INNER_BOUNDS)
+                .then(|| self.platform_window.inner_window_bounds()),
+            maximized: part(GEOMETRY_MAXIMIZED).then(|| self.platform_window.is_maximized()),
+            fullscreen: part(GEOMETRY_FULLSCREEN).then(|| self.platform_window.is_fullscreen()),
+            decorations: part(GEOMETRY_DECORATIONS)
+                .then(|| self.platform_window.window_decorations()),
+        }
     }
 
     /// Returns the bounds of the current window in the global coordinate space, which could span across multiple displays.
     pub fn bounds(&self) -> Bounds<Pixels> {
-        self.note_geometry_read();
+        self.note_geometry_read(crate::rmac_resize::GEOMETRY_BOUNDS);
         self.platform_window.bounds()
     }
 
@@ -2320,7 +2333,7 @@ impl Window {
 
     /// Returns whether or not the window is currently fullscreen
     pub fn is_fullscreen(&self) -> bool {
-        self.note_geometry_read();
+        self.note_geometry_read(crate::rmac_resize::GEOMETRY_FULLSCREEN);
         self.platform_window.is_fullscreen()
     }
 
@@ -2345,7 +2358,7 @@ impl Window {
 
     /// Returns the size of the drawable area within the window.
     pub fn viewport_size(&self) -> Size<Pixels> {
-        self.note_geometry_read();
+        self.note_geometry_read(crate::rmac_resize::GEOMETRY_VIEWPORT);
         self.viewport_size
     }
 
@@ -2400,7 +2413,7 @@ impl Window {
 
     /// Returns whether the title bar window controls need to be rendered by the application (Wayland and X11)
     pub fn window_decorations(&self) -> Decorations {
-        self.note_geometry_read();
+        self.note_geometry_read(crate::rmac_resize::GEOMETRY_DECORATIONS);
         self.platform_window.window_decorations()
     }
 

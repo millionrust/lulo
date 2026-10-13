@@ -58,6 +58,15 @@ impl PageBox {
     }
 }
 
+/// `-upw PASSWORD`, the user password every poppler tool takes ahead of the
+/// file name; empty when the document is not locked.
+pub fn password_args(password: Option<&str>) -> Vec<OsString> {
+    match password {
+        Some(password) => vec!["-upw".into(), password.into()],
+        None => Vec::new(),
+    }
+}
+
 /// `pdfinfo -isodates -box -f 1 -l N FILE`.
 pub fn info_args(path: &Path, pages: Option<usize>) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec!["-isodates".into()];
@@ -621,6 +630,15 @@ pub fn missing_tool_message(tool: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn password_args_name_the_user_password_flag() {
+        assert!(password_args(None).is_empty());
+        assert_eq!(
+            password_args(Some("-open sesame")),
+            vec![OsString::from("-upw"), OsString::from("-open sesame")]
+        );
+    }
 
     const SUMMARY: &str = "Title:           Report &amp; Notes\n\
 Author:          \n\

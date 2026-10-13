@@ -30,6 +30,7 @@ pub mod shortcuts;
 mod speech;
 mod svg_icon;
 pub mod text_assist;
+pub mod text_complete;
 mod text_keys;
 mod text_transform;
 pub mod theme;
@@ -39,15 +40,16 @@ mod window_frame_windows;
 
 pub use accessibility::AccessibleTextInput;
 pub use app_menu::{
-    set_menu_checked, set_menu_children, set_menu_enabled, set_menu_label, set_menu_mixed,
-    ShowAboutPanel,
+    set_menu_checked, set_menu_children, set_menu_enabled, set_menu_hidden, set_menu_label,
+    set_menu_mixed, ShowAboutPanel,
 };
 pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
     body_bg, cycle_through_windows, double_click_title_bar_action, fill_focused_window,
     minimize_focused_window, page, quit_application, title_bar, title_bar_content,
     title_bar_drag_region, toolbar, toolbar_group, toolbar_title, traffic_lights,
-    traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin, TrafficLights,
+    traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin, windowed_process_ids,
+    TrafficLights,
 };
 pub use components::{
     alert, alert_cancel_default, alert_with_icon, dialog, dialog_button, Dialog, DialogButtonKind,
@@ -57,10 +59,10 @@ pub use context_menu::{type_select_match, ContextMenu, ContextMenuState, MenuChe
 pub use controls::{
     overlay_scrollbar, slider_bulge_lerp, uniform_list_scrollbar, Button, ButtonRole, Checkbox,
     CollectionState, DocumentTitleMenu, InputEvent, InputState, KeyboardAction, List, ListRow,
-    PopUpButton, PopupMenuItem, Position, Radio, RadioGroup, Rope, RopeExt, ScrollPosition,
-    SearchField, SegmentedControl, SelectAll, Slider, SliderAxis, SliderBulge, SliderEvent,
-    SliderState, SwitchSize, Table, Tabs, TextField, Toggle, ToggleState, Tree, TreeRow,
-    SLIDER_BULGE_MS, SLIDER_PRESS_MS,
+    NativeMenu, PopUpButton, PopupMenuItem, Position, Radio, RadioGroup, Rope, RopeExt,
+    ScrollPosition, SearchField, SegmentedControl, SelectAll, Slider, SliderAxis, SliderBulge,
+    SliderEvent, SliderState, SwitchSize, Table, Tabs, TextField, TextMenuBuilder, Toggle,
+    ToggleState, Tree, TreeRow, SLIDER_BULGE_MS, SLIDER_PRESS_MS,
 };
 pub use controls::{tooltip_view, Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{

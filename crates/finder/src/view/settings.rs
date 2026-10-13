@@ -290,6 +290,11 @@ pub(super) struct FinderSettings {
     /// the setting on for the first time changes nothing until the owner
     /// adds a field.
     pub(super) preview_info_fields: Vec<String>,
+    /// Go ▸ Connect to Server… (FILES-39): the addresses the owner added
+    /// with "+" to the Favourite Servers list, in the order added.
+    pub(super) favourite_servers: Vec<String>,
+    /// The servers most recently connected to, newest first.
+    pub(super) recent_servers: Vec<String>,
 }
 
 impl Default for FinderSettings {
@@ -301,6 +306,8 @@ impl Default for FinderSettings {
             advanced: AdvancedSettings::default(),
             hidden_toolbar_items: Vec::new(),
             preview_info_fields: vec!["Modified".to_string()],
+            favourite_servers: Vec::new(),
+            recent_servers: Vec::new(),
         }
     }
 }

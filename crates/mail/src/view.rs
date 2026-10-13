@@ -1293,6 +1293,10 @@ impl MailView {
 
 impl Render for MailView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if window.is_window_active() {
+            // Writing Tools work in a compose window, never on the mailbox.
+            rmac_writing_tools::publish_menu_state(false, cx);
+        }
         if self.accounts.is_empty() {
             return self.empty_state(cx);
         }

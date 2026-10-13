@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::file_ops::{self, CopyActivity, FileSystem};
 use crate::operation_journal::{EntryIdentity, TreeSnapshot};
+use crate::redo::RedoStep;
 
 const UNDO_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 64 * 1024;
@@ -508,6 +509,8 @@ pub(crate) struct UndoStore {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UndoAvailability {
+    /// The newest receipt's id: changes whenever a new operation is archived.
+    pub(crate) id: String,
     pub(crate) label: String,
     #[cfg(any(target_os = "linux", all(test, unix)))]
     pub(crate) uses_trash: bool,
@@ -518,6 +521,10 @@ pub(crate) struct UndoOutcome {
     pub(crate) label: String,
     /// Every item restored by a Move or Move to Trash Undo.
     pub(crate) restored_to: Vec<PathBuf>,
+    /// What Edit ▸ Redo must do to repeat the operation just undone, in the
+    /// order it originally ran. `None` when any part of it (a replacement,
+    /// or putting an item back from the Bin) cannot be replayed safely.
+    pub(crate) redo: Option<Vec<RedoStep>>,
 }
 
 impl UndoStore {
@@ -673,6 +680,7 @@ impl UndoStore {
             return Ok(None);
         };
         Ok(Some(UndoAvailability {
+            id: record.id.clone(),
             label: undo_label(&record),
             #[cfg(any(target_os = "linux", all(test, unix)))]
             uses_trash: matches!(record.kind, UndoKind::Trash | UndoKind::Restore),
@@ -710,6 +718,7 @@ impl UndoStore {
             )
         });
         let mut restored_to = Vec::new();
+        let mut redo = Some(Vec::new());
         for mut record in records.into_iter().rev() {
             self.resume_inferred(&mut record)?;
             if !self.record_path(&record.id).exists() {
@@ -717,6 +726,10 @@ impl UndoStore {
             }
             if cancel.load(Ordering::Acquire) {
                 return Err(interrupted());
+            }
+            match (redo_step(&record), redo.as_mut()) {
+                (Some(step), Some(steps)) => steps.push(step),
+                _ => redo = None,
             }
             match record.kind {
                 UndoKind::Copy | UndoKind::NewFolder => {
@@ -739,7 +752,16 @@ impl UndoStore {
                 restored_to.push(record.source());
             }
         }
-        Ok(Some(UndoOutcome { label, restored_to }))
+        // Undone newest first; Redo replays oldest first.
+        let redo = redo.map(|mut steps| {
+            steps.reverse();
+            steps
+        });
+        Ok(Some(UndoOutcome {
+            label,
+            restored_to,
+            redo,
+        }))
     }
 
     #[cfg(test)]
@@ -1830,6 +1852,28 @@ impl UndoStore {
     }
 }
 
+/// How to do `record`'s operation again after it has been undone, for the
+/// kinds Redo can replay through the ordinary journalled paths.
+fn redo_step(record: &UndoRecord) -> Option<RedoStep> {
+    match record.kind {
+        UndoKind::Copy => Some(RedoStep::Copy {
+            from: record.source(),
+            to: record.destination(),
+        }),
+        UndoKind::NewFolder => Some(RedoStep::NewFolder {
+            path: record.destination(),
+        }),
+        UndoKind::Move => Some(RedoStep::Move {
+            from: record.source(),
+            to: record.destination(),
+        }),
+        UndoKind::Trash => Some(RedoStep::Trash {
+            path: record.source(),
+        }),
+        UndoKind::Replace | UndoKind::MoveReplace | UndoKind::Restore => None,
+    }
+}
+
 fn undo_label(record: &UndoRecord) -> String {
     let name = match record.kind {
         UndoKind::Move | UndoKind::MoveReplace | UndoKind::Trash | UndoKind::Restore => record
@@ -2211,6 +2255,39 @@ mod tests {
         assert_eq!(store.count().unwrap(), 0);
     }
 
+    #[test]
+    fn undo_reports_the_steps_redo_must_repeat_in_their_original_order() {
+        let root = TestDirectory::new("redo-steps");
+        let store = UndoStore::open(root.0.join("undo")).unwrap();
+        let first = root.0.join("first");
+        let second = root.0.join("second");
+        with_undo_batch(|| {
+            for folder in [&first, &second] {
+                fs::create_dir(folder).unwrap();
+                store.archive_created_folder(folder).unwrap();
+            }
+        });
+        // The newest receipt has an id that changes with every operation.
+        let before = store.latest().unwrap().unwrap();
+        assert!(!before.id.is_empty());
+        let outcome = store
+            .execute_latest(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            outcome.redo,
+            Some(vec![
+                RedoStep::NewFolder { path: first },
+                RedoStep::NewFolder { path: second },
+            ])
+        );
+        assert!(store.latest().unwrap().is_none());
+    }
+
     impl FileSystem for CrossCopyFileSystem {
         fn create_dir(&self, path: &Path) -> io::Result<()> {
             fs::create_dir(path)
@@ -2498,6 +2575,14 @@ mod tests {
         assert_eq!(fs::read(&source).unwrap(), b"bytes");
         assert!(!destination.exists());
         assert_eq!(journal.undo_store().count().unwrap(), 0);
+        // Redo repeats exactly this copy.
+        assert_eq!(
+            outcome.redo,
+            Some(vec![RedoStep::Copy {
+                from: source,
+                to: destination
+            }])
+        );
     }
 
     #[test]
@@ -2556,11 +2641,13 @@ mod tests {
         ticket.replace_copy().unwrap();
         ticket.commit().unwrap();
 
-        journal
+        let outcome = journal
             .undo_store()
             .execute_latest(&RealFileSystem, &AtomicBool::new(false), &mut |_| {})
             .unwrap()
             .unwrap();
+        // A replacement is not redone blindly: Redo stays unavailable.
+        assert_eq!(outcome.redo, None);
 
         assert_eq!(fs::read(&source).unwrap(), b"new");
         assert_eq!(fs::read(&destination).unwrap(), b"old");

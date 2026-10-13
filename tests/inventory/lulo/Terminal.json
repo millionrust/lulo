@@ -1211,6 +1211,20 @@
           "children": []
         },
         {
+          "label": "Return to Default Size",
+          "action": "terminal::ReturnToDefaultSize",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Return All to Default Size",
+          "action": "terminal::ReturnAllToDefaultSize",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Bring All to Front",
           "action": "window::bring-all-to-front",
           "shortcut": "",

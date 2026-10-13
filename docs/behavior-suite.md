@@ -307,6 +307,33 @@ it on the reference laptop: there that manager is the owner's live session,
 and a nested `systemd --user` has no delegated cgroup. `run_spotlight_intents.py`
 covers the Spotlight rows themselves in a private nested session.
 
+The same check also streams one Writing Tools answer (`rmac-intelligence-bench
+write-service`) through the unit, so the `Delta`/`Done` signals sent to the
+caller alone are seen to arrive, and refuses a copy of the caller named
+`rmac-notes` outside the trusted paths.
+
+## Writing Tools in Text Editor and Notes
+
+`scripts/behavior/run_writing_tools.py` (the `writing-tools` Lulo runtime
+check) is the private nested-niri scenario for ADR 0024 phase 2. The model is
+the fixture engine, which writes a fixed answer one word every 150 ms. With
+Lulo Intelligence off, Text Editor's `AppMenu2` layout (what the menu bar
+draws) has no Writing Tools, activating Proofread is refused, and the service
+never starts. Turned on, Edit ▸ Writing Tools lists all nine commands in Text
+Editor and in Notes; Proofread on a typed paragraph opens the panel and the
+answer is read from it at least three times as it grows (the first delta
+arrives well before `writing_tools_done` on Text Editor's frame trace);
+Replace puts the proofread text in the document and ⌘Z restores the
+original. Make Friendly is then stopped with Escape after its first words:
+the panel closes, `writing_tools_cancelled` is marked, nothing finishes
+afterwards and the document is untouched. The text's right-click menu is
+checked for Writing Tools, and the service must exit once idle.
+
+```sh
+python3 scripts/behavior/run_writing_tools.py --bin-dir /usr/libexec/rmac \
+  --override-bin-dir DIR   # DIR: freshly built service, Text Editor, Notes
+```
+
 ## Lulo Intelligence's Spotlight rows, with the real model
 
 `scripts/behavior/run_spotlight_intents.py` is the private nested-niri

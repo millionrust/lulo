@@ -119,6 +119,14 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   Centre and Notification Centre about 0.35 s to open. The targets are 0.3 s
   and 0.1 s. Oversized icon drawing is already fixed. Further speed fixes come
   in the first Beta updates (docs/perf/speed-sweep-2026-10-05.md).
+- **System Settings' live resize** now keeps about 94–97 % of frames on time
+  when dragging the window's edge (target 95 %). niri's own Mod-drag resize
+  reaches about 83–91 %, and each drag still starts with one slow frame of
+  40–70 ms. **⌘Tab's quick tap** (press and release) still takes about
+  100 ms in the nested test session (target 50 ms). Holding ⌘ and releasing
+  on an app now switches in about 28 ms (was 56). The remaining quick-tap
+  time is spent waiting for niri. See
+  docs/perf/speed-round-12-2026-10-13.md and parity rows SPEED-11/SPEED-12.
 
 ## Feature limits
 

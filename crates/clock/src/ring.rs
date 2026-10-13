@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
-use rmac_clock::alarms::Ring;
+use rmac_clock::alarms::{AlarmSound, Ring};
 use rmac_clock::format::{time_12h, WallTime};
 use rmac_clock::{now_millis, schedule, store, tz};
 
@@ -26,6 +26,7 @@ enum Ringing {
         title: String,
         time: String,
         snooze: bool,
+        sound: AlarmSound,
     },
     Timer {
         label: String,
@@ -108,6 +109,7 @@ fn collect_due() -> std::io::Result<Vec<Ringing>> {
                     title: alarm.title().to_owned(),
                     time: time_12h(wall.hour, wall.minute),
                     snooze: alarm.snooze,
+                    sound: alarm.sound,
                 });
                 alarm.mark_rung(ring);
             }
@@ -165,6 +167,10 @@ fn open_clock() {
 /// Post the notification and repeat the alert sound until it is answered
 /// or [`RING_FOR`] passes.
 fn ring(ringing: &Ringing) -> Option<Outcome> {
+    let cue = match ringing {
+        Ringing::Alarm { sound, .. } => sound.cue(),
+        Ringing::Timer { .. } => rmac_sound::Cue::Alert,
+    };
     let (summary, body, snooze) = match ringing {
         Ringing::Alarm {
             title,
@@ -186,7 +192,7 @@ fn ring(ringing: &Ringing) -> Option<Outcome> {
     let started = Instant::now();
     let mut outcome = None;
     while started.elapsed() < RING_FOR {
-        rmac_sound::play_blocking(rmac_sound::Cue::Alert);
+        rmac_sound::play_blocking(cue);
         match posted
             .as_ref()
             .map(|(_, answers)| answers.recv_timeout(REPEAT_EVERY))

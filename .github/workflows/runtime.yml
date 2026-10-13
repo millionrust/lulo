@@ -127,7 +127,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The seventeen checks packed onto four runners, run one after another,
+  # The eighteen checks packed onto four runners, run one after another,
   # each with its own private session and result directory: about six
   # minutes of playback per runner (run 38369865318's timings). idle-cpu
   # runs first on a fresh runner; intelligence-unit, which turns on lingering
@@ -144,7 +144,7 @@ jobs:
           - idle-cpu power-dialogs spotlight-intents
           - desktop-paint window-move 01-files 02-text-editor 09-menu-bar
           - menu-dismiss 03-settings 04-calculator 06-notes
-          - 05-preview 07-terminal 08-shell 10-spotlight intelligence-unit
+          - 05-preview 07-terminal 08-shell 10-spotlight writing-tools intelligence-unit
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -197,6 +197,9 @@ jobs:
               # Desktop icons and img() loads paint on an idle, inactive surface with no input.
               # ADR 0024: "Lulo can do this" rows off/on, confirm, idle exit.
               spotlight-intents) /usr/bin/python3 scripts/behavior/run_spotlight_intents.py --niri "$niri" --bin-dir runtime-bin ;;
+              # ADR 0024 phase 2: Edit ▸ Writing Tools off/on, the streaming
+              # panel, Replace, Undo and Cancel in Text Editor; Notes' menu.
+              writing-tools) /usr/bin/python3 scripts/behavior/run_writing_tools.py --niri "$niri" --bin-dir runtime-bin ;;
               # ADR 0024: the caller check under the real systemd user unit, with
               # Ubuntu's user-namespace AppArmor policy on, as on the laptop.
               intelligence-unit)

@@ -311,6 +311,27 @@ pub fn cycle_through_windows(cx: &mut App) {
     .detach();
 }
 
+/// The ids of processes that own a window, from the compositor, for System
+/// Monitor's View ▸ Windowed Processes. `None` when the compositor cannot be
+/// asked (no niri socket, or not a niri session).
+#[cfg(unix)]
+pub async fn windowed_process_ids() -> Option<Vec<u32>> {
+    let snapshot = rmac_compositor_niri::snapshot().await.ok()?;
+    Some(
+        snapshot
+            .windows
+            .iter()
+            .filter_map(|window| window.pid.and_then(|pid| u32::try_from(pid).ok()))
+            .collect(),
+    )
+}
+
+/// Windows has no niri session; Windowed Processes then shows nothing.
+#[cfg(not(unix))]
+pub async fn windowed_process_ids() -> Option<Vec<u32>> {
+    None
+}
+
 /// This app's own windows (there must be at least two: this process's own,
 /// plus any other process sharing its app id, as `hidden_windows` already
 /// resolves "this application" for ⌘H), most-recently focused first (a

@@ -499,6 +499,52 @@ macro_rules! speech_submenu {
     };
 }
 
+/// Edit ▸ Writing Tools (ADR 0024 feature 2), as macOS 26 shows it with
+/// Apple Intelligence on: Show Writing Tools, Proofread and Rewrite, the
+/// three tones, then Summarise, Create Key Points and Make List. Make Table
+/// and Compose are left out: Notes, Text Editor and Mail's plain fields
+/// have no tables, and Compose writes new text from a prompt, which the
+/// closed task list does not do. Every app uses the shared
+/// `writing_tools::` actions (`rmac-writing-tools`), which also hides the
+/// whole submenu while Lulo Intelligence is off or has no model.
+macro_rules! writing_tools_submenu {
+    ($prefix:literal, separator) => {
+        submenu!(
+            "Writing Tools",
+            concat!($prefix, "::WritingToolsMenu"),
+            [
+                item!(
+                    "Show Writing Tools",
+                    concat!($prefix, "::ShowWritingTools"),
+                    ""
+                ),
+                item!("Proofread", concat!($prefix, "::Proofread"), "", separator),
+                item!("Rewrite", concat!($prefix, "::Rewrite"), ""),
+                item!(
+                    "Make Friendly",
+                    concat!($prefix, "::MakeFriendly"),
+                    "",
+                    separator
+                ),
+                item!(
+                    "Make Professional",
+                    concat!($prefix, "::MakeProfessional"),
+                    ""
+                ),
+                item!("Make Concise", concat!($prefix, "::MakeConcise"), ""),
+                item!("Summarise", concat!($prefix, "::Summarise"), "", separator),
+                item!(
+                    "Create Key Points",
+                    concat!($prefix, "::CreateKeyPoints"),
+                    ""
+                ),
+                item!("Make List", concat!($prefix, "::MakeList"), ""),
+            ],
+            separator
+        )
+    };
+}
+
 /// Edit ▸ Substitutions, Clock's shape: a plain `NSTextField` context
 /// (the alarm-name field) collapses the individual smart toggles under
 /// one "Smart Substitutions" master switch, with no "Show Substitutions"
@@ -676,6 +722,10 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 "⌥⇧⌘V"
             ),
             item!("Delete", "input::Delete", ""),
+            // TXT-MENU-001: completes the word before the caret from the
+            // document's own words and the system word list; press again for
+            // the next match (`rmac_ui::text_complete`).
+            item!("Complete", "text_editor::Complete", "⌥⎋"),
             item!("Select All", "input::SelectAll", "⌘A"),
             submenu!(
                 "Insert",
@@ -718,6 +768,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 ]
             ),
             speech_submenu!("text_editor"),
+            writing_tools_submenu!("writing_tools", separator),
         ],
     },
     MenuSpec {
@@ -1191,6 +1242,19 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             ),
             item!("Show Previous Tab", "terminal::PrevTab", "⇧⌘[", separator),
             item!("Show Next Tab", "terminal::NextTab", "⇧⌘]"),
+            // TRM-MENU-011/012: back to Settings ▸ Window ▸ Size, for this
+            // window or for every Terminal window of the app.
+            item!(
+                "Return to Default Size",
+                "terminal::ReturnToDefaultSize",
+                "",
+                separator
+            ),
+            item!(
+                "Return All to Default Size",
+                "terminal::ReturnAllToDefaultSize",
+                ""
+            ),
         ],
     },
     MenuSpec {
@@ -1322,6 +1386,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ]
             ),
             speech_submenu!("notes"),
+            writing_tools_submenu!("writing_tools", separator),
         ],
     },
     MenuSpec {
@@ -1588,6 +1653,8 @@ const FILES_MENUS: &[MenuSpec] = &[
         label: "Edit",
         items: &[
             item!("Undo", "finder::UndoOperation", "⌘Z"),
+            // FILES-32: repeats the operation Undo just reversed.
+            item!("Redo", "finder::RedoOperation", "⇧⌘Z"),
             item!("Cut", "finder::CutItems", "⌘X", separator),
             item!("Copy", "finder::CopyItems", "⌘C"),
             // ⌥ alternates of Copy and Paste on the Mac.
@@ -1691,6 +1758,8 @@ const FILES_MENUS: &[MenuSpec] = &[
             // (which has its own Clear Menu) instead.
             item!("Recent Folders", "finder::ShowRecentFolders", ""),
             item!("Go to Folder…", "finder::GoToFolder", "⇧⌘G", separator),
+            // FILES-39: mounts the address through GVFS (`gio mount`).
+            item!("Connect to Server…", "finder::ConnectToServer", "⌘K"),
         ],
     },
     MenuSpec {
@@ -1746,6 +1815,14 @@ const MONITOR_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Close", "activity_monitor::Close", "⌘W"),
             item!("Close All", "activity_monitor::CloseAll", "⌥⌘W"),
+            // MON-MENU-002: the process list as shown, through the print
+            // portal (`process_print`).
+            item!(
+                "Print…",
+                "activity_monitor::PrintProcesses",
+                "⌘P",
+                separator
+            ),
         ],
     },
     MenuSpec {
@@ -1804,6 +1881,36 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                         "activity_monitor::ToggleBytesWrittenColumn",
                         ""
                     ),
+                    // MON-MENU-006/007/008/009/011/016/017: filled from /proc
+                    // only while one of them is shown.
+                    item!("Memory", "activity_monitor::ToggleFootprintColumn", ""),
+                    item!(
+                        "Real Private Memory",
+                        "activity_monitor::ToggleRealPrivateColumn",
+                        ""
+                    ),
+                    item!(
+                        "Real Shared Memory",
+                        "activity_monitor::ToggleRealSharedColumn",
+                        ""
+                    ),
+                    item!(
+                        "Compressed Memory",
+                        "activity_monitor::ToggleCompressedColumn",
+                        ""
+                    ),
+                    item!("Kind", "activity_monitor::ToggleKindColumn", ""),
+                    item!("Sandbox", "activity_monitor::ToggleSandboxColumn", ""),
+                    item!(
+                        "Idle Wake Ups",
+                        "activity_monitor::ToggleIdleWakeUpsColumn",
+                        ""
+                    ),
+                    // MON-MENU-003/004: from the DRM clients each process
+                    // holds open (`/proc/<pid>/fdinfo`), where the driver
+                    // reports them.
+                    item!("% GPU", "activity_monitor::ToggleGpuPercentColumn", ""),
+                    item!("GPU Time", "activity_monitor::ToggleGpuTimeColumn", ""),
                 ]
             ),
             submenu!(
@@ -1874,6 +1981,15 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 "activity_monitor::ShowInactiveProcesses",
                 ""
             ),
+            // MON-MENU-023: processes that own a window, from the
+            // compositor's window list.
+            item!(
+                "Windowed Processes",
+                "activity_monitor::ShowWindowedProcesses",
+                ""
+            ),
+            // MON-MENU-015: processes holding a graphics (DRM) client.
+            item!("GPU Processes", "activity_monitor::ShowGpuProcesses", ""),
             item!(
                 "Selected Processes",
                 "activity_monitor::ShowSelectedProcesses",
@@ -2068,7 +2184,10 @@ const MAIL_MENUS: &[MenuSpec] = &[
     },
     MenuSpec {
         label: "Edit",
-        items: &[item!("Undo", "mail::Undo", "⌘Z")],
+        items: &[
+            item!("Undo", "mail::Undo", "⌘Z"),
+            writing_tools_submenu!("writing_tools", separator),
+        ],
     },
     MenuSpec {
         label: "View",
@@ -2251,11 +2370,14 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
-            // PREV-15: the Mac's File menu also has Duplicate, Enter
-            // Password…, Edit Permissions…, Import from Camera/Scanner and
-            // Share ▸ — none of those has a working implementation to wire
-            // up yet, so none is listed rather than adding a dead item.
-            // Take Screenshot, Export As…, Rename… and Move To… now do.
+            // PRV-MENU-001: enabled for a PDF that is waiting for its
+            // password; the same sheet opens by itself when one is opened.
+            item!("Enter Password…", "preview::EnterPassword", ""),
+            // PREV-15: the Mac's File menu also has Edit Permissions…,
+            // Import from Camera/Scanner and Share ▸ — none of those has a
+            // working implementation to wire up yet, so none is listed
+            // rather than adding a dead item. Duplicate, Enter Password…,
+            // Take Screenshot, Export As…, Rename… and Move To… do work.
             submenu!(
                 "Take Screenshot",
                 "preview::TakeScreenshotMenu",
@@ -2294,13 +2416,16 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             // macOS Preview's own Crop applies to any selection shape.
             item!("Invert Selection", "preview::InvertSelection", "⇧⌘I"),
             // PRV-MENU-005/007: Blank Page splices an empty, same-size page
-            // after the current one (`markup::insert_blank_page`). Page
-            // from File… needs cross-document object import and is left
-            // out rather than faked.
+            // after the current one (`markup::insert_blank_page`); Page from
+            // File… splices in every page of a chosen PDF or image
+            // (`markup::insert_pages_from`).
             submenu!(
                 "Insert",
                 "preview::InsertMenu",
-                [item!("Blank Page", "preview::InsertBlankPage", "")]
+                [
+                    item!("Blank Page", "preview::InsertBlankPage", ""),
+                    item!("Page from File…", "preview::InsertPageFromFile", ""),
+                ]
             ),
             item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(
@@ -4246,6 +4371,55 @@ mod tests {
                 WINDOW_MENU
             ]
         );
+    }
+
+    #[test]
+    fn notes_text_editor_and_mail_have_edit_writing_tools() {
+        for (app, specs) in [
+            (rmac_apps::identity::NOTES, NOTES_MENUS),
+            (rmac_apps::identity::TEXT_EDITOR, TEXT_EDITOR_MENUS),
+            (rmac_apps::identity::MAIL, MAIL_MENUS),
+        ] {
+            let actions = spec_actions(specs);
+            let menus = definition(app, &actions).unwrap();
+            assert!(validate_menus(&menus).is_ok(), "{app}");
+            let edit = menus.iter().find(|menu| menu.label == "Edit").unwrap();
+            let tools = edit
+                .items
+                .iter()
+                .find(|item| item.label == "Writing Tools")
+                .unwrap_or_else(|| panic!("{app} has no Edit ▸ Writing Tools"));
+            assert_eq!(tools.action, "writing_tools::WritingToolsMenu");
+            assert!(tools.separator_before);
+            assert_eq!(
+                tools
+                    .children
+                    .iter()
+                    .map(|item| (item.label.as_str(), item.action.as_str()))
+                    .collect::<Vec<_>>(),
+                [
+                    ("Show Writing Tools", "writing_tools::ShowWritingTools"),
+                    ("Proofread", "writing_tools::Proofread"),
+                    ("Rewrite", "writing_tools::Rewrite"),
+                    ("Make Friendly", "writing_tools::MakeFriendly"),
+                    ("Make Professional", "writing_tools::MakeProfessional"),
+                    ("Make Concise", "writing_tools::MakeConcise"),
+                    ("Summarise", "writing_tools::Summarise"),
+                    ("Create Key Points", "writing_tools::CreateKeyPoints"),
+                    ("Make List", "writing_tools::MakeList"),
+                ]
+            );
+            // Grouped as on the Mac.
+            assert_eq!(
+                tools
+                    .children
+                    .iter()
+                    .filter(|item| item.separator_before)
+                    .map(|item| item.label.as_str())
+                    .collect::<Vec<_>>(),
+                ["Proofread", "Make Friendly", "Summarise"]
+            );
+        }
     }
 
     #[test]

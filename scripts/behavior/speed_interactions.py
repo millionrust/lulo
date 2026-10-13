@@ -38,10 +38,12 @@ all of them); scenario names are the keys of `SCENARIOS`.
 
 from __future__ import annotations
 
+import json
 import math
 import statistics
 import struct
 import subprocess
+import threading
 import time
 import zlib
 from pathlib import Path
@@ -51,10 +53,16 @@ from run_frame_timing import read_trace
 
 FRAME_BUDGET_MS = 1000.0 / 60.0
 FRAME_SHARE_TARGET = 0.99
+# An interactive resize relays out the window on every configure (cached
+# views are reused since ADR 0026, SPEED-12), so its own target is
+# looser than ordinary scrolling's 99 %.
+RESIZE_FRAME_SHARE_TARGET = 0.95
 TYPING_P95_TARGET_MS = 16.0
 SPOTLIGHT_RESULTS_TARGET_MS = 50.0
 FOLDER_OPEN_TARGET_MS = 100.0
 QUICK_LOOK_TARGET_MS = 100.0
+# A press-and-release ⌘Tab tap, as fast as the held path's reveal (SPEED-11).
+CMD_TAB_TAP_TARGET_MS = 50.0
 # A frame this long is a visible hitch (three missed vblanks at 60 Hz).
 STALL_MS = 50.0
 SETTLE_S = 0.3
@@ -200,6 +208,59 @@ def key_press_app_latencies_ms(events: Events) -> list[float]:
         if present is not None:
             out.append((present - callback) / 1000.0)
     return out
+
+
+def focus_path(changes: list[Optional[int]]) -> list[Optional[int]]:
+    """niri's keyboard-focus changes with repeats folded: the windows that
+    were frontmost one after the other."""
+
+    out: list[Optional[int]] = []
+    for window in changes:
+        if not out or out[-1] != window:
+            out.append(window)
+    return out
+
+
+def switch_flickered(changes: list[Optional[int]], original: Optional[int], target: int) -> bool:
+    """A ⌘Tab switch flickers when anything but the target came forward, or
+    the target came forward more than once (an optimistic switch undone and
+    redone, or the original app shown again in between). Focus moving to
+    nothing (a layer surface took the keyboard) does not show."""
+
+    path = [window for window in focus_path(changes) if window is not None]
+    path = focus_path(path)
+    if path and path[0] == original:
+        path = path[1:]
+    return path != [target]
+
+
+def keyboard_flickered(events: Events) -> bool:
+    """The switch target's own trace after the stroke: it flickers when it
+    gains the keyboard, loses it and gains it again (drawn active, inactive,
+    active)."""
+
+    entries = sum(1 for event, _ in events if event == "focus_in")
+    return entries > 1
+
+
+def settled_switch_ms(events: Events, mark: int, start: float) -> Optional[float]:
+    """Harness-clock ms from `start` (time.monotonic()) to the target's first
+    `present` after its last `focus_in` past `mark`. Trace rows count
+    microseconds from the trace's `monotonic_origin` (CLOCK_MONOTONIC, the
+    clock time.monotonic() reads on Linux)."""
+
+    origin = next((micros for event, micros in events if event == "monotonic_origin"), None)
+    if origin is None:
+        return None
+    later = events[mark:]
+    last_entry = max((index for index, (event, _) in enumerate(later) if event == "focus_in"),
+                     default=None)
+    if last_entry is None:
+        return None
+    present = next((micros for event, micros in later[last_entry:] if event == "present"), None)
+    if present is None:
+        return None
+    return ((origin + present) / 1_000_000 - start) * 1000.0
 
 
 def percentile(values: list[float], pct: float) -> Optional[float]:
@@ -352,8 +413,68 @@ def make_picture_folder(root: Path, count: int = 200) -> Path:
 # --------------------------------------------------------------------------
 
 
+class FocusLog:
+    """Every window-focus change the nested niri reports while it runs
+    (`niri msg -j event-stream`, read on a thread: niri pushes events, so
+    nothing polls). Used to prove a ⌘Tab switch shows no other app on the
+    way (SPEED-11's optimistic switch)."""
+
+    def __init__(self, niri: str, env: dict[str, str]) -> None:
+        self._changes: list[Optional[int]] = []
+        self._lock = threading.Lock()
+        self._process = subprocess.Popen(
+            [niri, "msg", "-j", "event-stream"], env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        )
+        self._thread = threading.Thread(target=self._read, daemon=True)
+        self._thread.start()
+        # The stream opens with niri's current state; changes come after.
+        time.sleep(0.3)
+
+    def _read(self) -> None:
+        assert self._process.stdout is not None
+        for line in self._process.stdout:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict) and "WindowFocusChanged" in event:
+                with self._lock:
+                    self._changes.append((event["WindowFocusChanged"] or {}).get("id"))
+
+    def mark(self) -> int:
+        with self._lock:
+            return len(self._changes)
+
+    def since(self, mark: int) -> list[Optional[int]]:
+        with self._lock:
+            return list(self._changes[mark:])
+
+    def close(self) -> None:
+        self._process.terminate()
+        try:
+            self._process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            self._process.wait()
+
+
 class InteractionScenarios:
     # -- helpers ---------------------------------------------------------
+
+    def _window_id(self, app_id: str) -> Optional[int]:
+        window = self.window_by_app_id(app_id)
+        return window.get("id") if window else None
+
+    def _focused_window_id(self) -> Optional[int]:
+        focused = self.niri_msg("focused-window")
+        return focused.get("id") if isinstance(focused, dict) else None
+
+    def _panel_shown(self, trace: Path, mark: int) -> bool:
+        """The switcher grew from its hidden 1 x 1 to the panel (a `resize`
+        row), i.e. it showed on screen."""
+
+        return any(event == "resize" for event, _ in self._since(trace, mark))
 
     def _mark(self, trace: Path) -> int:
         return len(read_trace(trace))
@@ -804,18 +925,29 @@ class InteractionScenarios:
     def scenario_cmd_tab(self) -> dict[str, Any]:
         """A quick Cmd-Tab tap (Mod is Alt in a nested niri) between two
         apps: from the stroke to the newly focused app's first frame drawn
-        active. The switcher's own first frame is reported too."""
+        active. The switcher's own first frame is reported too. Every tap
+        must also switch without flicker: niri brings only the target app
+        forward, once, and the switcher panel never shows (SPEED-11)."""
 
         service, service_trace, apps = self._switcher_session()
+        focus = FocusLog(self.args.niri, self.env)
         try:
             switches: list[Optional[float]] = []
             switcher_frames: list[Optional[float]] = []
+            flickers: list[bool] = []
+            panels: list[bool] = []
+            settled: list[Optional[float]] = []
             for _ in range(max(3, self.args.repeat)):
                 target = self._switch_target(apps)
                 if target is None:
                     break
+                original_id = self._focused_window_id()
+                target_id = self._window_id(target[2])
                 baseline = self._presents(target[1])
                 service_baseline = self._presents(service_trace)
+                mark = self._mark(service_trace)
+                target_mark = self._mark(target[1])
+                focus_mark = focus.mark()
                 start = time.monotonic()
                 self.input.key("alt-tab")
                 switcher_frames.append(self._wait_present(service_trace, service_baseline, start))
@@ -824,14 +956,27 @@ class InteractionScenarios:
                 switches.append(presented if focused else None)
                 time.sleep(0.4)
                 self._settle(target[1], 2.0)
+                flickers.append(target_id is None
+                                or switch_flickered(focus.since(focus_mark), original_id, target_id)
+                                or keyboard_flickered(self._since(target[1], target_mark)))
+                panels.append(self._panel_shown(service_trace, mark))
+                settled.append(settled_switch_ms(read_trace(target[1]), target_mark, start))
             done = [s for s in switches if s is not None]
             frames = [f for f in switcher_frames if f is not None]
-            switch_ms = statistics.median(done) if done else None
-            return {"switches": switches, "switch_ms": switch_ms,
+            landed = [s for s in settled if s is not None]
+            # Scored on the target's frame after its LAST keyboard enter: an
+            # early active frame that is taken back is not a switch.
+            switch_ms = statistics.median(landed) if landed else None
+            return {"switches": switches,
+                    "first_present_ms": statistics.median(done) if done else None,
+                    "settled": settled, "switch_ms": switch_ms,
                     "switcher_first_frame_ms": statistics.median(frames) if frames else None,
-                    "pass": switch_ms is not None and switch_ms <= 100.0,
+                    "flickers": flickers, "panel_shown": panels,
+                    "pass": (switch_ms is not None and switch_ms <= CMD_TAB_TAP_TARGET_MS
+                             and not any(flickers) and not any(panels)),
                     **({} if done else {"error": "Alt-Tab never switched apps"})}
         finally:
+            focus.close()
             for process, _trace, _app in apps:
                 self.stop(process)
             self.stop(service)
@@ -852,20 +997,36 @@ class InteractionScenarios:
             time.sleep(0.003)
         return None
 
+    def _wait_focused(self, app_id: str, start: float, timeout: float = 3.0) -> Optional[float]:
+        """Harness-clock ms from `start` until niri reports `app_id`'s window
+        focused."""
+
+        if self.wait_for(lambda: self._focused_app_id() == app_id, timeout=timeout, step=0.01):
+            return (time.monotonic() - start) * 1000.0
+        return None
+
     def scenario_cmd_tab_hold(self) -> dict[str, Any]:
         """Cmd-Tab with Cmd held, as when browsing the switcher: from the
         Tab stroke to the panel's first full-size frame (target < 50 ms),
-        then from releasing Cmd to the chosen app's next frame."""
+        then from releasing Cmd to the chosen app's next frame. The switch
+        must bring only the chosen app forward, once (SPEED-11)."""
 
         service, service_trace, apps = self._switcher_session()
+        focus = FocusLog(self.args.niri, self.env)
         try:
             reveals: list[Optional[float]] = []
             commits: list[Optional[float]] = []
+            settled: list[Optional[float]] = []
+            flickers: list[bool] = []
             for _ in range(max(3, self.args.repeat)):
                 target = self._switch_target(apps)
                 if target is None:
                     break
+                original_id = self._focused_window_id()
+                target_id = self._window_id(target[2])
                 mark = self._mark(service_trace)
+                target_mark = self._mark(target[1])
+                focus_mark = focus.mark()
                 start = time.monotonic()
                 # niri's Mod is Alt in the nested session, but the switcher
                 # reads ⌘ (Super) as the held modifier, as in the real
@@ -881,16 +1042,97 @@ class InteractionScenarios:
                 commits.append(presented if focused else None)
                 time.sleep(0.4)
                 self._settle(target[1], 2.0)
+                flickers.append(target_id is None
+                                or switch_flickered(focus.since(focus_mark), original_id, target_id)
+                                or keyboard_flickered(self._since(target[1], target_mark)))
+                settled.append(settled_switch_ms(read_trace(target[1]), target_mark, start))
             shown = [r for r in reveals if r is not None]
             done = [c for c in commits if c is not None]
             reveal_ms = statistics.median(shown) if shown else None
             return {"reveals": reveals, "commits": commits, "reveal_ms": reveal_ms,
                     "release_to_switch_ms": statistics.median(done) if done else None,
-                    "pass": reveal_ms is not None and reveal_ms <= 50.0 and bool(done)}
+                    "settled": settled,
+                    "release_to_settled_ms": (statistics.median([x for x in settled if x is not None])
+                                              if any(x is not None for x in settled) else None),
+                    "flickers": flickers,
+                    "pass": (reveal_ms is not None and reveal_ms <= 50.0 and bool(done)
+                             and not any(flickers))}
         finally:
+            focus.close()
             for process, _trace, _app in apps:
                 self.stop(process)
             self.stop(service)
+
+    def _cmd_tab_cancel(self, cancel_key: str) -> dict[str, Any]:
+        """Hold Cmd-Tab until the panel shows, cancel with `cancel_key` while
+        Cmd is still down, then let go: the app that was frontmost must end
+        up frontmost again and the panel must close (SPEED-11's optimistic
+        switch is undone)."""
+
+        service, service_trace, apps = self._switcher_session()
+        focus = FocusLog(self.args.niri, self.env)
+        try:
+            restored: list[Optional[float]] = []
+            reveals: list[Optional[float]] = []
+            paths: list[list[Optional[int]]] = []
+            flickers: list[bool] = []
+            raced = 0
+            for _ in range(max(3, self.args.repeat)):
+                original_app = self._focused_app_id()
+                target = self._switch_target(apps)
+                if original_app is None or target is None:
+                    break
+                mark = self._mark(service_trace)
+                target_mark = self._mark(target[1])
+                focus_mark = focus.mark()
+                start = time.monotonic()
+                self.input.hold("alt-tab", extra=("cmd",))
+                reveals.append(self._wait_reveal(service_trace, mark, start))
+                time.sleep(0.2)
+                if any(event == "switcher_commit" for event, _ in self._since(service_trace, mark)):
+                    # The harness presses Super only after niri's Alt-Tab
+                    # bind fired; when the switcher got the keyboard first
+                    # it saw a quick tap and switched. Not a cancel: let go
+                    # and try again.
+                    raced += 1
+                    self.input.release("alt-tab", extra=("cmd",))
+                    time.sleep(0.5)
+                    self._settle(service_trace, 1.0)
+                    continue
+                start = time.monotonic()
+                self.input.key(cancel_key)
+                time.sleep(0.1)
+                self.input.release("alt-tab", extra=("cmd",))
+                restored.append(self._wait_focused(original_app, start))
+                time.sleep(0.5)
+                if self._focused_app_id() != original_app:
+                    restored[-1] = None
+                paths.append(focus_path(focus.since(focus_mark)))
+                # The app switched to ahead must never get the keyboard.
+                flickers.append(any(event == "focus_in"
+                                    for event, _ in self._since(target[1], target_mark)))
+                self._settle(service_trace, 1.0)
+            done = [r for r in restored if r is not None]
+            return {"restored": restored, "reveals": reveals, "focus_paths": paths,
+                    "flickers": flickers, "raced": raced,
+                    "cancel_to_restored_ms": statistics.median(done) if done else None,
+                    "pass": (bool(restored) and all(r is not None for r in restored)
+                             and not any(flickers))}
+        finally:
+            focus.close()
+            for process, _trace, _app in apps:
+                self.stop(process)
+            self.stop(service)
+
+    def scenario_cmd_tab_cancel_escape(self) -> dict[str, Any]:
+        """Cmd-Tab held, then Esc: the original app stays frontmost."""
+
+        return self._cmd_tab_cancel("escape")
+
+    def scenario_cmd_tab_cancel_period(self) -> dict[str, Any]:
+        """Cmd-Tab held, then Cmd-.: the original app stays frontmost."""
+
+        return self._cmd_tab_cancel(".")
 
     def scenario_minimise_restore(self) -> dict[str, Any]:
         """Mod-M (`mission-control minimize`) parks the focused window; the
@@ -1017,6 +1259,10 @@ class InteractionScenarios:
             self._settle(trace, 3.0)
             events = self._since(trace, mark)
             summary = {**frames_summary(events), **frame_split_ms(events)}
+            # An interactive resize's own, looser frame-share target
+            # (RESIZE_FRAME_SHARE_TARGET), not frames_summary's 99 %.
+            share = summary.get("within_16_7ms_share")
+            summary["pass"] = share is not None and share >= RESIZE_FRAME_SHARE_TARGET
             summary["configures"] = sum(1 for event, _ in events if event == "configure")
             summary["resizes"] = sum(1 for event, _ in events if event == "resize")
             # SPEED-12: swapchain rebuilds versus resizes drawn into the
@@ -1087,6 +1333,8 @@ SCENARIOS: dict[str, str] = {
     "text-editor-rich-typing": "scenario_text_editor_rich_typing",
     "cmd-tab": "scenario_cmd_tab",
     "cmd-tab-hold": "scenario_cmd_tab_hold",
+    "cmd-tab-cancel-escape": "scenario_cmd_tab_cancel_escape",
+    "cmd-tab-cancel-period": "scenario_cmd_tab_cancel_period",
     "minimise-restore": "scenario_minimise_restore",
     "resize-drag": "scenario_resize_drag",
     "resize-drag-long": "scenario_resize_drag_long",

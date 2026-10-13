@@ -13,7 +13,7 @@ use gpui::{
     WindowControlArea,
 };
 use notify::Watcher as _;
-use rmac_clock::alarms::{Alarm, Days};
+use rmac_clock::alarms::{Alarm, AlarmSound, Days};
 use rmac_clock::changes::Change;
 use rmac_clock::cities::{self, City};
 use rmac_clock::countdown::{self, Entry, Field};
@@ -25,7 +25,10 @@ use rmac_clock::stopwatch::{self, LapMark, Phase};
 use rmac_clock::store::{self, State};
 use rmac_clock::tz::{self, Zone};
 use rmac_clock::{now_millis, schedule};
-use rmac_ui::{mac, InputEvent, InputState, SearchField, StyledExt as _, TextField, Toggle};
+use rmac_ui::{
+    mac, InputEvent, InputState, PopUpButton, PopupMenuItem, SearchField, StyledExt as _,
+    TextField, Toggle,
+};
 
 use crate::{
     CheckDocumentNow, CloseWindow, LapReset, NewItem, NoRecentTimers, ShowAlarms,
@@ -1423,6 +1426,32 @@ impl ClockView {
                             "Label",
                             TextField::new(&editor.label).small().w(px(200.0)),
                         ))
+                        .child(labelled("Sound", {
+                            let view = cx.entity();
+                            let current = alarm.sound;
+                            PopUpButton::new("clock-editor-sound", current.label()).dropdown_menu(
+                                move |menu, _, _| {
+                                    AlarmSound::ALL.iter().fold(menu, |menu, &sound| {
+                                        let view = view.clone();
+                                        menu.item(
+                                            PopupMenuItem::new(sound.label())
+                                                .checked(sound == current)
+                                                .on_click(move |_, _, cx| {
+                                                    // Choosing a sound plays it, as the
+                                                    // Mac's pop-up does.
+                                                    let _ = rmac_sound::play(sound.cue());
+                                                    view.update(cx, |this, cx| {
+                                                        if let Some(editor) = this.editor.as_mut() {
+                                                            editor.alarm.sound = sound;
+                                                            cx.notify();
+                                                        }
+                                                    });
+                                                }),
+                                        )
+                                    })
+                                },
+                            )
+                        }))
                         .child(labelled(
                             "Snooze",
                             Toggle::new("clock-editor-snooze")

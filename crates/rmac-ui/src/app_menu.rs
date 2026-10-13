@@ -40,6 +40,10 @@ struct MenuModel {
     definition: Vec<Menu>,
     overrides: BTreeMap<String, ItemState>,
     dynamic_children: BTreeMap<String, Vec<Item>>,
+    /// Commands (or whole submenus, by their own action) left out of the
+    /// published menus, such as Edit ▸ Writing Tools while Lulo Intelligence
+    /// is off.
+    hidden: BTreeSet<String>,
     publisher: Option<rmac_app_menu::Publisher>,
     publish_scheduled: bool,
 }
@@ -71,6 +75,44 @@ pub fn set_menu_label(action: &str, label: &str, cx: &mut App) {
             state.label = Some(label.to_owned());
         }
     });
+}
+
+/// Leave a command, or a whole submenu (named by its own action), out of the
+/// published menus, or put it back. For features that exist only on some
+/// PCs or settings: the Mac shows no Writing Tools without Apple
+/// Intelligence, rather than a greyed-out row.
+pub fn set_menu_hidden(action: &str, hidden: bool, cx: &mut App) {
+    let Some(model) = cx.try_global::<MenuModel>() else {
+        return;
+    };
+    if model.hidden.contains(action) == hidden {
+        return;
+    }
+    let model = cx.global_mut::<MenuModel>();
+    if hidden {
+        model.hidden.insert(action.to_owned());
+    } else {
+        model.hidden.remove(action);
+    }
+    schedule_publish(cx);
+}
+
+/// `items` without the rows (and submenus) whose action is in `hidden`,
+/// keeping the separator a removed row carried on the row after it.
+fn without_hidden(items: Vec<Item>, hidden: &BTreeSet<String>) -> Vec<Item> {
+    let mut kept: Vec<Item> = Vec::with_capacity(items.len());
+    let mut carry_separator = false;
+    for mut item in items {
+        if hidden.contains(&item.action) {
+            carry_separator |= item.separator_before;
+            continue;
+        }
+        item.separator_before = (item.separator_before || carry_separator) && !kept.is_empty();
+        carry_separator = false;
+        item.children = without_hidden(std::mem::take(&mut item.children), hidden);
+        kept.push(item);
+    }
+    kept
 }
 
 /// Replace a submenu's children with app-owned rows, such as a live list of
@@ -182,6 +224,15 @@ pub(crate) fn current_menus(cx: &mut App) -> Vec<Menu> {
     for menu in &mut menus {
         replace_children(&mut menu.items, &dynamic_children, &overrides);
     }
+    let hidden = cx
+        .try_global::<MenuModel>()
+        .map(|model| model.hidden.clone())
+        .unwrap_or_default();
+    if !hidden.is_empty() {
+        for menu in &mut menus {
+            menu.items = without_hidden(std::mem::take(&mut menu.items), &hidden);
+        }
+    }
     // File ▸ Open Recent ▸ (TE-02, PREV-08/PREV-15): built fresh every time
     // a menu is about to open, from whichever documents `app_id` itself
     // recorded — nothing to poll, and nothing to announce when the store
@@ -289,6 +340,7 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
         definition: menus.clone(),
         overrides: BTreeMap::new(),
         dynamic_children: BTreeMap::new(),
+        hidden: BTreeSet::new(),
         publisher: None,
         publish_scheduled: false,
     });
@@ -358,6 +410,41 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
     }
     #[cfg(not(target_os = "linux"))]
     let _ = (menus, open_window);
+}
+
+#[cfg(test)]
+mod hidden_tests {
+    use super::*;
+
+    #[test]
+    fn hidden_rows_and_submenus_leave_the_menu_and_keep_its_separators() {
+        let items = vec![
+            Item::new("Undo", "input::Undo", "⌘Z"),
+            Item::new("Speech", "app::SpeechMenu", "").separated(),
+            Item::submenu(
+                "Writing Tools",
+                "writing_tools::WritingToolsMenu",
+                vec![Item::new("Proofread", "writing_tools::Proofread", "")],
+            )
+            .separated(),
+            Item::new("Emoji", "app::Emoji", ""),
+        ];
+        let hidden: BTreeSet<String> = ["writing_tools::WritingToolsMenu".to_owned()].into();
+        let kept = without_hidden(items.clone(), &hidden);
+        assert_eq!(
+            kept.iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Undo", "Speech", "Emoji"]
+        );
+        // The hidden submenu's separator moves to the row after it.
+        assert!(kept[2].separator_before);
+        // Nothing hidden: unchanged.
+        assert_eq!(without_hidden(items.clone(), &BTreeSet::new()), items);
+        // A hidden first row never leaves a leading separator.
+        let hidden: BTreeSet<String> = ["input::Undo".to_owned()].into();
+        assert!(!without_hidden(items, &hidden)[0].separator_before);
+    }
 }
 
 #[cfg(all(test, windows))]

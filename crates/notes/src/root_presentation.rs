@@ -93,7 +93,7 @@ impl NotesView {
         let customise_toolbar_dialog = self.render_customise_toolbar_dialog(cx);
         let context_menu = self.render_context_menu(cx);
 
-        div()
+        let root = div()
             .key_context("Notes")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let key = &event.keystroke;
@@ -627,6 +627,16 @@ impl NotesView {
                 element.child(dialog)
             })
             .when_some(context_menu, |element, menu| element.child(menu))
-            .into_any_element()
+            .child(self.writing_tools.clone());
+        // Edit ▸ Writing Tools and the body's context menu work on the note
+        // body: its selection, or all of it.
+        let view = cx.entity().downgrade();
+        rmac_writing_tools::on_actions(root, &self.writing_tools, move |_, cx| {
+            let view = view.upgrade()?;
+            let this = view.read(cx);
+            this.body_format_editable()
+                .then(|| rmac_writing_tools::target(&this.body))
+        })
+        .into_any_element()
     }
 }

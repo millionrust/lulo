@@ -87,6 +87,9 @@ struct ComposeView {
     bcc: Entity<InputState>,
     subject: Entity<InputState>,
     body: Entity<InputState>,
+    /// Edit ▸ Writing Tools and its panel, for the message body (ADR 0024
+    /// feature 2).
+    writing_tools: Entity<rmac_writing_tools::WritingTools>,
     accounts: Vec<ComposeAccount>,
     selected_account: usize,
     pending: bool,
@@ -209,6 +212,14 @@ impl ComposeView {
             )
             .detach();
         }
+        // Lulo Intelligence may have been turned on in System Settings
+        // since: Writing Tools look again when this window comes forward.
+        cx.observe_window_activation(window, |_, window, cx| {
+            if window.is_window_active() {
+                rmac_writing_tools::refresh(cx);
+            }
+        })
+        .detach();
         Self {
             focus: cx.focus_handle(),
             to,
@@ -216,6 +227,7 @@ impl ComposeView {
             bcc,
             subject,
             body,
+            writing_tools: cx.new(rmac_writing_tools::WritingTools::new),
             accounts,
             selected_account: 0,
             pending: false,
@@ -655,8 +667,14 @@ impl ComposeView {
 }
 
 impl Render for ComposeView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if window.is_window_active() {
+            // Edit ▸ Writing Tools works on the body while this window is
+            // in front; Mail's main window turns it off again.
+            rmac_writing_tools::publish_menu_state(!self.pending && !self.sent, cx);
+        }
+        let editable = !self.pending && !self.sent;
+        let root = div()
             .size_full()
             .bg(mac::window())
             .track_focus(&self.focus)
@@ -763,6 +781,10 @@ impl Render for ComposeView {
                         TextField::new(&self.body)
                             .h_full()
                             .appearance(false)
+                            .context_menu(rmac_writing_tools::text_menu(
+                                self.body.clone(),
+                                editable,
+                            ))
                             .px_0()
                             .py_0(),
                     ),
@@ -777,5 +799,12 @@ impl Render for ComposeView {
                         .child(status),
                 )
             })
+            .child(self.writing_tools.clone());
+        let view = cx.entity().downgrade();
+        rmac_writing_tools::on_actions(root, &self.writing_tools, move |_, cx| {
+            let view = view.upgrade()?;
+            let this = view.read(cx);
+            (!this.pending && !this.sent).then(|| rmac_writing_tools::target(&this.body))
+        })
     }
 }

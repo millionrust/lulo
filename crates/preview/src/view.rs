@@ -34,18 +34,19 @@ use crate::{
     AnnotateStrikeThrough, AnnotateText, AnnotateUnderline, AutomaticSelection, Back,
     BrowseSavedVersions, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, ContactSheet,
     ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, Duplicate, EnterFullScreen,
-    ExportAs, ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal, FlipVertical, Forward,
-    GoToPage, HideSidebar, InsertBlankPage, InvertSelection, JumpToSelection, ManageSignatures,
-    MoveToFolder, MoveToTrash, NextDocument, NextItem, PageDown, PageUp, PreviousDocument,
-    PreviousItem, PrintDocument, RectangularSelection, Redact, RedoMarkup, RemoveBackground,
-    RenameDocument, RevertMarkup, RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll,
-    ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes, ShowImageBackground, ShowInspector,
-    ShowMagnifier, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails,
-    SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
-    TakeScreenshotSelection, TakeScreenshotWindow, ToggleCheckGrammarWithSpelling,
-    ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleMarkup,
-    ToggleToolbar, TwoPages, UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn,
-    ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit, ZoomToSelection,
+    EnterPassword, ExportAs, ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal,
+    FlipVertical, Forward, GoToPage, HideSidebar, InsertBlankPage, InsertPageFromFile,
+    InvertSelection, JumpToSelection, ManageSignatures, MoveToFolder, MoveToTrash, NextDocument,
+    NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
+    RectangularSelection, Redact, RedoMarkup, RemoveBackground, RenameDocument, RevertMarkup,
+    RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks,
+    ShowHighlightsAndNotes, ShowImageBackground, ShowInspector, ShowMagnifier,
+    ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails, SinglePage, Slideshow,
+    StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen, TakeScreenshotSelection,
+    TakeScreenshotWindow, ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
+    ToggleCorrectSpellingAutomatically, ToggleMarkup, ToggleToolbar, TwoPages, UndoMarkup,
+    UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn,
+    ZoomOut, ZoomToFit, ZoomToSelection,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -64,6 +65,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::CloseWindow",
         "preview::CloseAll",
         "preview::CloseSelected",
+        "preview::EnterPassword",
         "preview::Copy",
         "preview::DeleteSelection",
         "preview::Find",
@@ -93,6 +95,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::FlipVertical",
         "preview::RemoveBackground",
         "preview::InsertBlankPage",
+        "preview::InsertPageFromFile",
         "preview::RectangularSelection",
         "preview::AutomaticSelection",
         "preview::InvertSelection",
@@ -573,6 +576,7 @@ impl Slot {
 
 impl Drop for Slot {
     fn drop(&mut self) {
+        render::forget_password(&self.path);
         let clipboard_copy = clipboard_cache_folder(&self.path).map(Path::to_path_buf);
         let markup_original = self.markup_original.take();
         if clipboard_copy.is_some() || markup_original.is_some() {
@@ -753,6 +757,15 @@ pub(crate) struct PreviewView {
     /// Page's, holding the current document's file name.
     rename_open: bool,
     rename_input: Entity<InputState>,
+    /// File ▸ Enter Password…: the sheet for a locked PDF.
+    password_open: bool,
+    password_input: Entity<InputState>,
+    password_error: Option<SharedString>,
+    /// The locked document the sheet is for, and whether it has already
+    /// been given a password that turned out wrong.
+    password_slot: Option<u64>,
+    password_attempted: Option<u64>,
+    password_focus_pending: bool,
     rename_error: Option<SharedString>,
     rename_busy: bool,
     /// File ▸ Move To… (PRV-MENU-003): true while the folder-picker move
@@ -1628,6 +1641,149 @@ impl PreviewView {
         cx.notify();
     }
 
+    // ---- File ▸ Enter Password… (PRV-MENU-001) -----------------------------
+
+    /// The selected document, when it is a PDF that opened to a request for
+    /// its password.
+    fn locked_slot_id(&self) -> Option<u64> {
+        let slot = self.slot()?;
+        match &slot.state {
+            SlotState::Failed(error) if render::is_locked(error.as_ref()) => Some(slot.id),
+            _ => None,
+        }
+    }
+
+    fn enter_password(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.locked_slot_id() else {
+            return;
+        };
+        self.password_slot = Some(id);
+        self.password_error = None;
+        self.password_open = true;
+        self.password_input
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        self.password_input
+            .update(cx, |input, cx| input.focus(window, cx));
+        cx.notify();
+    }
+
+    fn close_password(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.password_open = false;
+        self.password_error = None;
+        self.password_input
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        window.focus(&self.page_focus, cx);
+        cx.notify();
+    }
+
+    /// OK: try the typed password by reloading the document with it. The
+    /// load handler either opens the document or asks again.
+    fn submit_password(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.password_open {
+            return;
+        }
+        let Some(id) = self.password_slot else {
+            return;
+        };
+        let password = self.password_input.read(cx).value().to_string();
+        if password.is_empty() {
+            self.password_error = Some("Enter the password.".into());
+            cx.notify();
+            return;
+        }
+        let Some(index) = self.slots.iter().position(|slot| slot.id == id) else {
+            self.close_password(window, cx);
+            return;
+        };
+        render::set_password(&self.slots[index].path, &password);
+        self.password_attempted = Some(id);
+        self.slots[index].state = SlotState::Loading;
+        self.close_password(window, cx);
+        self.start_load(index, cx);
+    }
+
+    fn render_password_sheet(
+        &self,
+        palette: Palette,
+        width: f32,
+        height: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let name = self
+            .password_slot
+            .and_then(|id| self.slots.iter().find(|slot| slot.id == id))
+            .map(|slot| slot.name.clone())
+            .unwrap_or_default();
+        div()
+            .id("preview-password")
+            .role(Role::Dialog)
+            .aria_label("Enter Password")
+            .absolute()
+            .left(px((width - 300.0) / 2.0))
+            .top(px(height / 3.0))
+            .w(px(300.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(12.0))
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child("Enter Password"),
+            )
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(rgb(palette.glyph))
+                    .child(format!(
+                        "“{name}” is password protected. Enter a password to open it."
+                    )),
+            )
+            .child(rmac_ui::TextField::new(&self.password_input).small())
+            .when_some(self.password_error.clone(), |card, message| {
+                card.child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(mac::danger())
+                        .child(message),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-password-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.close_password(window, cx)),
+                        ),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-password-ok",
+                            "OK",
+                            rmac_ui::DialogButtonKind::Primary,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.submit_password(window, cx)),
+                        ),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.rename_open || self.rename_busy {
             return;
@@ -2001,6 +2157,21 @@ impl PreviewView {
             },
         )
         .detach();
+        let password_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .placeholder("Password")
+        });
+        cx.subscribe_in(
+            &password_input,
+            window,
+            |this, _, event: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.submit_password(window, cx);
+                }
+            },
+        )
+        .detach();
         let markup_text_input = cx.new(|cx| InputState::new(window, cx).placeholder("Text"));
         cx.subscribe_in(
             &markup_text_input,
@@ -2115,6 +2286,12 @@ impl PreviewView {
             export_as_busy: false,
             rename_open: false,
             rename_input,
+            password_open: false,
+            password_input,
+            password_error: None,
+            password_slot: None,
+            password_attempted: None,
+            password_focus_pending: false,
             rename_error: None,
             rename_busy: false,
             move_busy: false,
@@ -2195,10 +2372,29 @@ impl PreviewView {
                     return;
                 };
                 let opened = result.is_ok();
+                let locked = result
+                    .as_ref()
+                    .err()
+                    .is_some_and(|error| render::is_locked(error));
                 slot.state = match result {
                     Ok(loaded) => SlotState::Ready(loaded),
                     Err(error) => SlotState::Failed(error.into()),
                 };
+                if locked {
+                    // A locked PDF asks for its password straight away, as
+                    // Preview does; a wrong one is said to be wrong.
+                    render::forget_password(&slot.path);
+                    let wrong = view.password_attempted.take() == Some(id);
+                    view.password_open = true;
+                    view.password_slot = Some(id);
+                    view.password_error =
+                        wrong.then(|| SharedString::from("The password is incorrect."));
+                    view.password_focus_pending = true;
+                } else if view.password_slot == Some(id) {
+                    view.password_open = false;
+                    view.password_slot = None;
+                    view.password_error = None;
+                }
                 slot.bookmarks = bookmarks;
                 slot.has_version = has_version;
                 // A PDF with several pages opens with its thumbnails, like
@@ -3319,13 +3515,59 @@ impl PreviewView {
         .detach();
     }
 
-    /// Edit ▸ Insert ▸ Blank Page (PRV-MENU-007): writes the PDF back to its
-    /// own path with an empty, same-size page after the current one, then
-    /// reloads it. A version is recorded first (`versions::record`), so
-    /// Browse Saved Versions can still recover the old bytes; the write is
-    /// temp-file-then-rename, off the UI thread. Refused while markup is
-    /// unsaved, since annotation page indexes would shift.
+    /// Edit ▸ Insert ▸ Blank Page (PRV-MENU-007): an empty, same-size page
+    /// after the current one.
     fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
+        self.edit_pdf_pages("insert a blank page", markup::insert_blank_page, cx);
+    }
+
+    /// Edit ▸ Insert ▸ Page from File… (PRV-MENU-005): choose a PDF or an
+    /// image and splice its pages in after the current one.
+    fn insert_page_from_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.markup_save_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        if slot.kind() != Some(Kind::Pdf) || !slot.markup.items.is_empty() {
+            return;
+        }
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Insert".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(mut files))) = receiver.await else {
+                return;
+            };
+            let Some(other) = files.pop() else { return };
+            let _ = this.update(cx, |this, cx| {
+                this.edit_pdf_pages(
+                    "insert pages from another file",
+                    move |source, temporary, after| {
+                        let incoming = markup::document_for_insertion(&other)?;
+                        markup::insert_pages_from(source, incoming, temporary, after).map(|_| ())
+                    },
+                    cx,
+                );
+            });
+        })
+        .detach();
+    }
+
+    /// Rewrite the selected PDF with `edit` (which writes the new file to
+    /// the temporary path it is given) and reload it. A version is recorded
+    /// first (`versions::record`), so Browse Saved Versions can still recover
+    /// the old bytes; the write is temp-file-then-rename, off the UI thread.
+    /// Refused while markup is unsaved, since annotation page indexes would
+    /// shift.
+    fn edit_pdf_pages(
+        &mut self,
+        what: &'static str,
+        edit: impl FnOnce(&Path, &Path, usize) -> Result<(), String> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
         if self.markup_save_busy {
             return;
         }
@@ -3340,13 +3582,13 @@ impl PreviewView {
         cx.spawn(async move |this, cx| {
             let write_source = source.clone();
             let written = blocking::unblock(move || -> Result<(), String> {
-                let _ = versions::record(&write_source);
                 let temporary = write_source
                     .with_extension(format!("lulo-inserting-{}.pdf", std::process::id()));
-                if let Err(error) = markup::insert_blank_page(&write_source, &temporary, after) {
+                if let Err(error) = edit(&write_source, &temporary, after) {
                     let _ = std::fs::remove_file(&temporary);
                     return Err(error);
                 }
+                let _ = versions::record(&write_source);
                 std::fs::rename(&temporary, &write_source).map_err(|e| e.to_string())
             })
             .await;
@@ -3356,7 +3598,7 @@ impl PreviewView {
                     Some(blocking::unblock(move || render::load(&reload_source)).await)
                 }
                 Err(error) => {
-                    eprintln!("rmac-preview: could not insert a blank page: {error}");
+                    eprintln!("rmac-preview: could not {what}: {error}");
                     None
                 }
             };
@@ -4626,6 +4868,13 @@ impl PreviewView {
         if self.rename_input.focus_handle(cx).is_focused(window) {
             if event.keystroke.key == "escape" {
                 self.close_rename(window, cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.password_open {
+            if event.keystroke.key == "escape" {
+                self.close_password(window, cx);
                 cx.stop_propagation();
             }
             return;
@@ -7120,6 +7369,10 @@ impl Render for PreviewView {
         for image in self.garbage.drain(..) {
             cx.drop_image(image, Some(window));
         }
+        if std::mem::take(&mut self.password_focus_pending) && self.password_open {
+            self.password_input
+                .update(cx, |input, cx| input.focus(window, cx));
+        }
         if window.is_window_active() {
             // View ▸ Hide Sidebar / Thumbnails tick the key window's choice.
             rmac_ui::set_menu_checked("preview::HideSidebar", !self.sidebar, cx);
@@ -7263,6 +7516,11 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_enabled(action, loaded, cx);
             }
             rmac_ui::set_menu_enabled(
+                "preview::EnterPassword",
+                self.locked_slot_id().is_some() && !self.password_open,
+                cx,
+            );
+            rmac_ui::set_menu_enabled(
                 "preview::RenameDocument",
                 loaded && !self.rename_busy && !self.move_busy,
                 cx,
@@ -7314,12 +7572,14 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::GoToPage", pdf, cx);
             // Page indexes in unsaved markup would shift under an insert,
             // so it waits for Save or Revert.
-            rmac_ui::set_menu_enabled(
-                "preview::InsertBlankPage",
-                pdf && !self.markup_save_busy
-                    && self.slot().is_some_and(|slot| slot.markup.items.is_empty()),
-                cx,
-            );
+            for action in ["preview::InsertBlankPage", "preview::InsertPageFromFile"] {
+                rmac_ui::set_menu_enabled(
+                    action,
+                    pdf && !self.markup_save_busy
+                        && self.slot().is_some_and(|slot| slot.markup.items.is_empty()),
+                    cx,
+                );
+            }
             for action in [
                 "preview::AnnotateHighlight",
                 "preview::AnnotateUnderline",
@@ -7537,6 +7797,9 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &RenameDocument, window, cx| {
                 this.rename_document(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &EnterPassword, window, cx| {
+                this.enter_password(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &MoveToFolder, window, cx| {
                 this.move_to_folder(window, cx);
             }))
@@ -7662,6 +7925,9 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &InsertBlankPage, _, cx| {
                 this.insert_blank_page(cx);
             }))
+            .on_action(cx.listener(|this, _: &InsertPageFromFile, window, cx| {
+                this.insert_page_from_file(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &RemoveBackground, _, cx| {
                 this.remove_background(cx);
             }))
@@ -7771,6 +8037,9 @@ impl Render for PreviewView {
             })
             .when(self.rename_open, |root| {
                 root.child(self.render_rename_sheet(palette, width, height, cx))
+            })
+            .when(self.password_open, |root| {
+                root.child(self.render_password_sheet(palette, width, height, cx))
             })
             .when(self.adjust_size_open, |root| {
                 root.child(self.render_size_sheet(

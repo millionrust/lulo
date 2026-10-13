@@ -1,0 +1,17 @@
+{
+  "title": "Shift-Command-Z redoes the Duplicate that Command-Z undid",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-d", "settle": 1.2},
+    {"key": "cmd-z", "settle": 1.2},
+    {"observe": "undone", "facts": ["files"]},
+    {"key": "cmd-shift-z", "settle": 1.5},
+    {"observe": "redone", "facts": ["files"]},
+    {"key": "cmd-z", "settle": 1.2},
+    {"observe": "undone-again", "facts": ["files"]}
+  ]
+}

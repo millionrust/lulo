@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Writing Tools panel</title>
+<!--
+  Writing Tools (ADR 0024 feature 2): the result panel Notes, Text Editor and
+  Mail show for Edit ▸ Writing Tools and the text context menu. Modelled on
+  the macOS 26 Writing Tools popover (Summary / Key Points / List results,
+  and the preview the tone rewrites get here, since nothing is applied
+  without Replace: ADR 0024 §5). Original drawing; no Apple artwork.
+
+    panel        380 wide, floating 16 from the window's right edge and 12
+                 below the toolbar; popover material, radius 12 (popover
+                 token), popover shadow, 1 pt separator border
+    padding      14 sides, 12 top, 12 bottom
+    header       13 semibold title ("Proofread", "Summary"…); 11 secondary
+                 "Lulo Intelligence" under it; 6 below
+    result       13 regular, 18 line, primary text; scrolls past 240 tall;
+                 while waiting: 12 secondary "Reading the text…", then the
+                 answer streams in word by word with "Writing…" below it
+    footer       10 above; 11 secondary "Processed on this PC." on the left;
+                 buttons on the right, 8 apart, small (22 tall):
+                   working   Stop
+                   done      Try Again · Copy · Replace (default)
+                   failed    Close (and Try Again where it can help)
+    chooser      Show Writing Tools: three rows of small buttons
+                 (Proofread Rewrite / Friendly Professional Concise /
+                 Summary Key Points List); a task this PC's model is too
+                 small for is disabled with "Needs a faster PC"
+    keys         Escape stops or closes; Return replaces once done
+-->
+<link rel="stylesheet" href="lab.css">
+<style>
+  body { background: #2b2b2f; font: 13px -apple-system, "Inter", sans-serif; }
+  .window { position: relative; width: 760px; height: 520px; margin: 40px; border-radius: 16px;
+            background: #1e1e1e; box-shadow: 0 20px 60px rgba(0,0,0,.5); overflow: hidden; }
+  .toolbar { height: 52px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .note { padding: 24px 32px; color: rgba(255,255,255,.85); line-height: 20px; }
+  .note mark { background: rgba(10,132,255,.35); color: inherit; }
+  .panel { position: absolute; right: 16px; top: 64px; width: 380px; box-sizing: border-box;
+           padding: 12px 14px; border-radius: 12px; background: rgba(40,40,46,.92);
+           border: 1px solid rgba(255,255,255,.12); box-shadow: 0 6px 18px rgba(0,0,0,.45);
+           color: rgba(255,255,255,.88); }
+  .title { font-weight: 600; }
+  .sub { font-size: 11px; color: rgba(255,255,255,.5); margin-bottom: 6px; }
+  .result { line-height: 18px; max-height: 240px; overflow: auto; }
+  .status { font-size: 12px; color: rgba(255,255,255,.5); margin-top: 4px; }
+  .footer { display: flex; align-items: center; margin-top: 10px; gap: 8px; }
+  .footer .note-small { flex: 1; font-size: 11px; color: rgba(255,255,255,.5); }
+  button { height: 22px; padding: 0 10px; border-radius: 6px; border: 0; font: inherit; font-size: 12px;
+           background: rgba(255,255,255,.12); color: rgba(255,255,255,.88); }
+  button.primary { background: #0a84ff; color: #fff; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="toolbar"></div>
+  <div class="note">
+    <mark>hi tom, thanks for sending the report on friday. i read it over the weekend and its really good.</mark>
+    Can we meet on Tuesday?
+  </div>
+  <div class="panel" role="dialog" aria-label="Writing Tools">
+    <div class="title">Proofread</div>
+    <div class="sub">Lulo Intelligence</div>
+    <div class="result">Hi Tom, thanks for sending the report on Friday. I read it over the weekend and it's really good.</div>
+    <div class="footer">
+      <div class="note-small">Processed on this PC.</div>
+      <button>Try Again</button><button>Copy</button><button class="primary">Replace</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

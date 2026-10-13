@@ -42,8 +42,8 @@ Four `scenarios` jobs play two of the eight shards each, one after the
 other (`run_lulo.py --shard INDEX/8`, so the summary still sees
 `scenario-0` to `scenario-7`); each shard gets its own private D-Bus,
 Sway, XDG directories and app processes. Four `checks` jobs run the
-seventeen checks (menu dismissal, power dialogs, window movement, idle
-CPU, desktop paint, Spotlight intents, the Intelligence unit and the ten
+eighteen checks (menu dismissal, power dialogs, window movement, idle
+CPU, desktop paint, Spotlight intents, Writing Tools, the Intelligence unit and the ten
 everyday journeys) one after another in private nested Sway/niri sessions,
 each with its own result directory; idle-cpu runs first on its runner and
 intelligence-unit, which changes the runner's lingering and AppArmor

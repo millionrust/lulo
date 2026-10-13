@@ -1,0 +1,68 @@
+{
+  "apps": {},
+  "captured_at": "2026-10-13T09:05:50Z",
+  "interactions": {
+    "resize-drag-edge": {
+      "configure_to_present_max_ms": 49.922,
+      "configure_to_present_p95_ms": 25.46,
+      "configures": 99,
+      "final_size": [
+        723,
+        832
+      ],
+      "frame_p50_ms": 8.036,
+      "frame_p95_ms": 24.047,
+      "frames": 103,
+      "pass": false,
+      "render_p50_ms": 6.84,
+      "render_p95_ms": 21.867,
+      "resizes": 96,
+      "stalls": 1,
+      "start_size": [
+        723,
+        832
+      ],
+      "submit_p50_ms": 0.703,
+      "submit_p95_ms": 3.667,
+      "swapchain_kept": 97,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.7766990291262136,
+      "worst_frame_ms": 52.829
+    },
+    "resize-drag-long": {
+      "configure_to_present_max_ms": 490.926,
+      "configure_to_present_p95_ms": 42.36,
+      "configures": 37,
+      "final_size": [
+        963,
+        832
+      ],
+      "frame_p50_ms": 18.847,
+      "frame_p95_ms": 30.62,
+      "frames": 42,
+      "pass": false,
+      "render_p50_ms": 13.603,
+      "render_p95_ms": 29.935,
+      "resizes": 37,
+      "stalls": 0,
+      "start_size": [
+        723,
+        832
+      ],
+      "submit_p50_ms": 0.74,
+      "submit_p95_ms": 9.9,
+      "swapchain_kept": 36,
+      "swapchain_rebuilds": 1,
+      "within_16_7ms_share": 0.4523809523809524,
+      "worst_frame_ms": 42.312
+    }
+  },
+  "panels": {},
+  "profile": "iterate",
+  "repeat": 5,
+  "schema_version": 1,
+  "targets": {
+    "app_first_frame_ms": 300.0,
+    "panel_open_ms": 100.0
+  }
+}

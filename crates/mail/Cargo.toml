@@ -17,6 +17,7 @@ gpui.workspace = true
 rmac-mail-mime.workspace = true
 rmac-editor.workspace = true
 rmac-ui.workspace = true
+rmac-writing-tools.workspace = true
 rmac-mail-storage.workspace = true
 rmac-mail-smtp.workspace = true
 rmac-mail-runtime.workspace = true

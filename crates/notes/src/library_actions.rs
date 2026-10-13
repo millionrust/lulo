@@ -664,6 +664,8 @@ impl NotesView {
             );
         }
         rmac_ui::set_menu_enabled("notes::FindAndReplace", body_editable, cx);
+        // Edit ▸ Writing Tools: the body's selection, or the whole note.
+        rmac_writing_tools::publish_menu_state(body_editable, cx);
         rmac_ui::set_menu_enabled(
             "notes::PrintNote",
             has_note && !self.selected_note_closed(),

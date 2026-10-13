@@ -172,6 +172,7 @@ impl EditorView {
                 KeyBinding::new(rmac_ui::shortcuts::NEW.keystroke, NewFile, Some(CTX)),
                 KeyBinding::new(rmac_ui::shortcuts::OPEN.keystroke, OpenFile, Some(CTX)),
                 KeyBinding::new("cmd-,", ShowSettings, Some(CTX)),
+                KeyBinding::new("alt-escape", Complete, Some(CTX)),
                 KeyBinding::new(rmac_ui::shortcuts::SAVE.keystroke, SaveFile, Some(CTX)),
                 KeyBinding::new(rmac_ui::shortcuts::SAVE_AS.keystroke, SaveFileAs, Some(CTX)),
                 KeyBinding::new(
@@ -384,6 +385,8 @@ impl EditorView {
         let recovery_directory = std::env::temp_dir().join("rmac-text-editor-recovery-pending");
         let recovery_path = recovery::fresh_record_path(&recovery_directory);
 
+        // Edit ▸ Complete reads the system word list; have it cached already.
+        rmac_ui::text_complete::warm_word_list();
         let view = Self {
             alert: None,
             // TXT-SETTINGS-003/004/006/007/012..015/017: seeded from the
@@ -401,6 +404,9 @@ impl EditorView {
             },
             spell_checker: rmac_spelling::shared(),
             data_detectors: settings.data_detectors_default,
+            writing_tools: cx.new(rmac_writing_tools::WritingTools::new),
+            rich_menu: None,
+            completion: None,
             input,
             rich,
             // An untitled rich window starts clean on its empty document.
@@ -509,6 +515,14 @@ impl EditorView {
             pending_startup_path: initial_path,
             pending_open_picker: open_picker_on_ready,
             _subscriptions: vec![
+                // Lulo Intelligence may have been turned on (or its model
+                // downloaded) in System Settings since this window was last
+                // used: look again whenever it becomes active.
+                cx.observe_window_activation(window, |_, window, cx| {
+                    if window.is_window_active() {
+                        rmac_writing_tools::refresh(cx);
+                    }
+                }),
                 sub_main,
                 sub_rich,
                 sub_font_size,

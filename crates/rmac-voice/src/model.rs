@@ -154,5 +154,6 @@ mod tests {
             let message = message_for(&error).unwrap();
             assert!(message.ends_with('.'), "{message}");
         }
+        assert!(NOTHING_HEARD.ends_with('.'));
     }
 }

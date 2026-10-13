@@ -184,6 +184,19 @@ pub fn trim_silence(samples: &[f32], margin: usize) -> &[f32] {
     &samples[start..end]
 }
 
+/// Scale `samples` so the loudest one reaches `peak`, by at most
+/// `max_gain`: a quiet microphone and a loud one give the recogniser the
+/// same level (Moonshine ends early on quiet input).
+pub fn normalise_peak(samples: &[f32], peak: f32, max_gain: f32) -> Vec<f32> {
+    let loudest = samples.iter().fold(0.0f32, |top, sample| top.max(sample.abs()));
+    let gain = if loudest > 0.0 {
+        (peak / loudest).min(max_gain)
+    } else {
+        1.0
+    };
+    samples.iter().map(|sample| sample * gain).collect()
+}
+
 /// The HUD's meter, 0 to 1: loudness from -55 dBFS (silence) to -10 dBFS
 /// (a raised voice close to the microphone), as the Mac's level meter
 /// moves with speech rather than with peaks.
@@ -321,6 +334,17 @@ mod tests {
         assert_eq!(trim_silence(&quiet, 1_600).len(), quiet.len());
         assert_eq!(trim_silence(&speech, 1_600).len(), speech.len());
         assert!(trim_silence(&[], 1_600).is_empty());
+    }
+
+    #[test]
+    fn quiet_speech_is_raised_to_one_level() {
+        let louder = normalise_peak(&[0.1, -0.2, 0.05], 0.9, 30.0);
+        assert!((louder[1] + 0.9).abs() < 1e-6);
+        assert!((louder[0] - 0.45).abs() < 1e-6);
+        // Near-silence is not blown up into noise.
+        let hiss = normalise_peak(&[0.001, -0.001], 0.9, 30.0);
+        assert!((hiss[0] - 0.03).abs() < 1e-6);
+        assert_eq!(normalise_peak(&[0.0, 0.0], 0.9, 30.0), [0.0, 0.0]);
     }
 
     #[test]

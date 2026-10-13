@@ -188,8 +188,10 @@ impl Transcriber for Moonshine {
             return Ok((String::new(), steps));
         }
         let started = Instant::now();
-        let audio = Tensor::from_array((vec![1i64, samples.len() as i64], samples.to_vec()))
-            .map_err(failed)?;
+        // One level for every microphone: Moonshine ends early on quiet input.
+        let level = audio::normalise_peak(samples, 0.9, 30.0);
+        let audio =
+            Tensor::from_array((vec![1i64, level.len() as i64], level)).map_err(failed)?;
         let mut features = run(&mut self.preprocess, vec![SessionInputValue::from(audio)])?;
         let features = features
             .drain(..)

@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::{BufWriter, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use crate::document::{self, ImageKind, Kind};
@@ -365,6 +365,58 @@ pub fn crop(pixels: &RgbaImage, x: u32, y: u32, width: u32, height: u32) -> Rgba
     image::imageops::crop_imm(pixels, x, y, width, height).to_image()
 }
 
+/// What a locked PDF's error says; [`is_locked`] recognises it so the window
+/// can offer File ▸ Enter Password….
+pub const LOCKED_PDF_MESSAGE: &str = "This PDF is password-protected.";
+
+/// True for the error [`load`] returns for a PDF that needs a password.
+pub fn is_locked(error: &str) -> bool {
+    error.contains(LOCKED_PDF_MESSAGE)
+}
+
+/// Passwords the user has typed for open PDFs, by path, for this process
+/// only: never written to disk, and forgotten when the document closes.
+fn passwords() -> &'static Mutex<Vec<(PathBuf, String)>> {
+    static PASSWORDS: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
+    &PASSWORDS
+}
+
+/// Remember `password` for `path` (File ▸ Enter Password…).
+pub fn set_password(path: &Path, password: &str) {
+    let mut known = passwords()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let path = tool_path(path);
+    known.retain(|(known_path, _)| *known_path != path);
+    known.push((path, password.to_owned()));
+}
+
+/// Forget the password for `path`.
+pub fn forget_password(path: &Path) {
+    let path = tool_path(path);
+    passwords()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .retain(|(known_path, _)| *known_path != path);
+}
+
+fn password_for(path: &Path) -> Option<String> {
+    let path = tool_path(path);
+    passwords()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .iter()
+        .find(|(known_path, _)| *known_path == path)
+        .map(|(_, password)| password.clone())
+}
+
+/// `args` with the document's password, if one was entered, ahead of them.
+fn with_password(path: &Path, args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    let mut all = poppler::password_args(password_for(path).as_deref());
+    all.extend(args);
+    all
+}
+
 fn run(tool: &str, args: Vec<std::ffi::OsString>) -> Result<Vec<u8>, String> {
     use crate::bounded::{self, RunError};
 
@@ -387,7 +439,7 @@ fn run(tool: &str, args: Vec<std::ffi::OsString>) -> Result<Vec<u8>, String> {
         let detail = String::from_utf8_lossy(&output.stderr);
         let detail = detail.lines().next().unwrap_or("").trim();
         return Err(if detail.contains("Incorrect password") {
-            "This PDF is password-protected. Preview can’t unlock PDFs yet.".to_owned()
+            format!("{LOCKED_PDF_MESSAGE} Choose File ▸ Enter Password… to open it.")
         } else {
             // Poppler's own message names the absolute file path and can carry
             // bytes from the document; only the exit status leaves Preview.
@@ -413,14 +465,20 @@ fn load_pdf_info(path: &Path) -> Result<PdfInfo, String> {
 #[cfg(not(windows))]
 fn load_pdf_info(path: &Path) -> Result<PdfInfo, String> {
     let path = tool_path(path);
-    let summary = run(poppler::PDFINFO, poppler::info_args(&path, None))
-        .map_err(|error| open_error(&path, &error))?;
+    let summary = run(
+        poppler::PDFINFO,
+        with_password(&path, poppler::info_args(&path, None)),
+    )
+    .map_err(|error| open_error(&path, &error))?;
     let mut info = poppler::parse_info(&String::from_utf8_lossy(&summary))
         .map_err(|error| open_error(&path, &error))?;
     let count = info.pages.len();
     // Per-page boxes; if poppler rejects the range, every page keeps the
     // document's first page size.
-    if let Ok(pages) = run(poppler::PDFINFO, poppler::info_args(&path, Some(count))) {
+    if let Ok(pages) = run(
+        poppler::PDFINFO,
+        with_password(&path, poppler::info_args(&path, Some(count))),
+    ) {
         if let Ok(detailed) = poppler::parse_info(&String::from_utf8_lossy(&pages)) {
             if detailed.pages.len() == count {
                 info.pages = detailed.pages;
@@ -453,9 +511,10 @@ pub fn render_page(
     rotation: Rotation,
 ) -> Result<RgbaImage, String> {
     let dpi = poppler::render_dpi(page_size, pixel_scale);
+    let path = tool_path(path);
     let output = run(
         poppler::PDFTOPPM,
-        poppler::render_args(&tool_path(path), page, dpi),
+        with_password(&path, poppler::render_args(&path, page, dpi)),
     )?;
     let (width, height, raster) =
         poppler::parse_ppm(&output).ok_or_else(|| "pdftoppm returned no page".to_owned())?;
@@ -474,7 +533,11 @@ pub fn render_page(
 /// result (no search hits, no text selection in PDFs) rather than a fake
 /// one, following `poppler::missing_tool_message`'s Windows wording.
 pub fn extract_text(path: &Path) -> Result<Vec<TextPage>, String> {
-    let output = run(poppler::PDFTOTEXT, poppler::text_args(&tool_path(path)))?;
+    let path = tool_path(path);
+    let output = run(
+        poppler::PDFTOTEXT,
+        with_password(&path, poppler::text_args(&path)),
+    )?;
     Ok(poppler::parse_bbox(&String::from_utf8_lossy(&output)))
 }
 
@@ -735,5 +798,40 @@ mod edit_tests {
     fn unique_temp_path_never_collides_across_repeated_calls_for_the_same_destination() {
         let path = PathBuf::from("/tmp/photo.png");
         assert_ne!(unique_temp_path(&path), unique_temp_path(&path));
+    }
+}
+
+#[cfg(test)]
+mod password_tests {
+    use super::*;
+
+    #[test]
+    fn a_locked_error_is_recognised_and_a_password_is_per_document() {
+        assert!(is_locked(&open_error(
+            Path::new("/tmp/a.pdf"),
+            &format!("{LOCKED_PDF_MESSAGE} Choose File ▸ Enter Password… to open it.")
+        )));
+        assert!(!is_locked("pdfinfo failed (exit status: 1)"));
+
+        let one = Path::new("/tmp/rmac-preview-password-one.pdf");
+        let two = Path::new("/tmp/rmac-preview-password-two.pdf");
+        assert!(password_for(one).is_none());
+        set_password(one, "first");
+        set_password(one, "second");
+        assert_eq!(password_for(one).as_deref(), Some("second"));
+        assert!(password_for(two).is_none());
+        // The password goes ahead of the tool's own arguments, only for the
+        // document that has one.
+        let args = with_password(one, vec!["file.pdf".into()]);
+        assert_eq!(
+            args,
+            ["-upw", "second", "file.pdf"].map(std::ffi::OsString::from)
+        );
+        assert_eq!(
+            with_password(two, vec!["file.pdf".into()]),
+            vec![std::ffi::OsString::from("file.pdf")]
+        );
+        forget_password(one);
+        assert!(password_for(one).is_none());
     }
 }

@@ -1076,6 +1076,9 @@ impl FinderView {
             .on_action(
                 cx.listener(|this, _: &GoToFolder, window, cx| this.open_go_to_folder(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &ConnectToServer, window, cx| {
+                this.open_connect_to_server(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &EmptyTrash, _, cx| this.request_empty_trash(cx)))
             .on_action(cx.listener(|this, _: &EmptyTrashImmediately, _, cx| {
                 this.request_empty_trash_immediately(cx)

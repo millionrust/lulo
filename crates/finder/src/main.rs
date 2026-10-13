@@ -5,6 +5,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod conflict;
+mod connect_server;
 mod directory_state;
 mod file_ops;
 mod operation_journal;

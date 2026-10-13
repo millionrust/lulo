@@ -1702,6 +1702,8 @@ const FILES_MENUS: &[MenuSpec] = &[
             // (which has its own Clear Menu) instead.
             item!("Recent Folders", "finder::ShowRecentFolders", ""),
             item!("Go to Folder…", "finder::GoToFolder", "⇧⌘G", separator),
+            // FILES-39: mounts the address through GVFS (`gio mount`).
+            item!("Connect to Server…", "finder::ConnectToServer", "⌘K"),
         ],
     },
     MenuSpec {
@@ -2287,11 +2289,14 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
-            // PREV-15: the Mac's File menu also has Duplicate, Enter
-            // Password…, Edit Permissions…, Import from Camera/Scanner and
-            // Share ▸ — none of those has a working implementation to wire
-            // up yet, so none is listed rather than adding a dead item.
-            // Take Screenshot, Export As…, Rename… and Move To… now do.
+            // PRV-MENU-001: enabled for a PDF that is waiting for its
+            // password; the same sheet opens by itself when one is opened.
+            item!("Enter Password…", "preview::EnterPassword", ""),
+            // PREV-15: the Mac's File menu also has Edit Permissions…,
+            // Import from Camera/Scanner and Share ▸ — none of those has a
+            // working implementation to wire up yet, so none is listed
+            // rather than adding a dead item. Duplicate, Enter Password…,
+            // Take Screenshot, Export As…, Rename… and Move To… do work.
             submenu!(
                 "Take Screenshot",
                 "preview::TakeScreenshotMenu",

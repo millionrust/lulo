@@ -157,6 +157,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             GoToFolder,
             Some("Finder"),
         ),
+        KeyBinding::new("cmd-k", ConnectToServer, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::EMPTY_TRASH.keystroke,
             EmptyTrash,

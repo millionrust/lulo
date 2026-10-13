@@ -224,6 +224,7 @@ impl FinderView {
             info_windows: Vec::new(),
             inspector_window: None,
             go_to: None,
+            connect: None,
             pending_select: None,
             pending_select_many: Vec::new(),
             open_with: None,

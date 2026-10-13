@@ -81,6 +81,7 @@ impl Render for FinderView {
         });
         let open_with_dialog = self.render_open_with(cx);
         let go_to_sheet = self.render_go_to_folder(cx);
+        let connect_sheet = self.render_connect_to_server(cx);
         let archive_sheet = self.render_archive_job(cx);
         let archive_alert = self.render_archive_alert(cx);
         let rename_alert = self.rename_conflict.clone().map(|title| {
@@ -183,6 +184,14 @@ impl Render for FinderView {
                     this.close_view_options(cx);
                     cx.stop_propagation();
                     cx.notify();
+                    return;
+                }
+                if this.connect.is_some() {
+                    // Typing goes to the fields; Escape cancels the sheet.
+                    if event.keystroke.key.as_str() == "escape" {
+                        cx.stop_propagation();
+                        this.close_connect_to_server(window, cx);
+                    }
                     return;
                 }
                 if this.go_to.is_some() {
@@ -551,6 +560,7 @@ impl Render for FinderView {
                     ),
             )
             .when_some(go_to_sheet, |el, sheet| el.child(sheet))
+            .when_some(connect_sheet, |el, sheet| el.child(sheet))
             .when_some(menu_at, |el, state| {
                 let menu = match menu_purpose {
                     MenuPurpose::Context => Self::build_context_menu(

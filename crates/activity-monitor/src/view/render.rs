@@ -20,8 +20,8 @@ use crate::{
     ShowAllProcessesHierarchically, ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess,
     ShowGpuHistoryWindow, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
     ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleBytesReadColumn,
-    ToggleBytesWrittenColumn, ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn,
-    ToggleCompressedColumn, ToggleFootprintColumn, ToggleIdleWakeUpsColumn, ToggleKindColumn,
+    ToggleBytesWrittenColumn, ToggleCompressedColumn, ToggleCpuColumn, ToggleCpuTimeColumn,
+    ToggleEnergyColumn, ToggleFootprintColumn, ToggleIdleWakeUpsColumn, ToggleKindColumn,
     ToggleMemoryColumn, TogglePidColumn, ToggleRealPrivateColumn, ToggleRealSharedColumn,
     ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
 };

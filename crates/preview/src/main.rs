@@ -109,6 +109,7 @@ gpui::actions!(
         Back,
         Forward,
         RenameDocument,
+        EnterPassword,
         MoveToFolder,
         PrintDocument,
         ExportAsPdf,

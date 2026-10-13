@@ -126,16 +126,18 @@ jobs:
           path: ${{ runner.temp }}/runtime-results/
           if-no-files-found: error
           retention-days: 7
-      - name: Fail the job when the shard failed
-        env:
-          SHARD: ${{ matrix.shard }}
+      - name: Fail the job when a scenario shard failed
         run: |
           python3 - <<'PY'
-          import json, os, sys
-          path = os.path.join(os.environ["RUNNER_TEMP"], "runtime-results", f"scenario-{os.environ['SHARD']}", "status.json")
-          code = json.load(open(path))["exit_code"]
-          if code != 0:
-              print(f"::error::scenario shard {os.environ['SHARD']} runner exited {code}")
+          import glob, json, os, sys
+          failed = []
+          for path in sorted(glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "runtime-results", "*", "status.json"))):
+              code = json.load(open(path))["exit_code"]
+              if code != 0:
+                  failed.append(f"{os.path.basename(os.path.dirname(path))} exited {code}")
+          if failed:
+              for item in failed:
+                  print(f"::error::{item}")
               sys.exit(1)
           PY
 
@@ -244,16 +246,18 @@ jobs:
           path: ${{ runner.temp }}/runtime-results/
           if-no-files-found: error
           retention-days: 7
-      - name: Fail the job when the check failed
-        env:
-          SUITE: ${{ matrix.suite }}
+      - name: Fail the job when a check failed
         run: |
           python3 - <<'PY'
-          import json, os, sys
-          path = os.path.join(os.environ["RUNNER_TEMP"], "runtime-results", os.environ["SUITE"], "status.json")
-          code = json.load(open(path))["exit_code"]
-          if code != 0:
-              print(f"::error::{os.environ['SUITE']} runner exited {code}")
+          import glob, json, os, sys
+          failed = []
+          for path in sorted(glob.glob(os.path.join(os.environ["RUNNER_TEMP"], "runtime-results", "*", "status.json"))):
+              code = json.load(open(path))["exit_code"]
+              if code != 0:
+                  failed.append(f"{os.path.basename(os.path.dirname(path))} exited {code}")
+          if failed:
+              for item in failed:
+                  print(f"::error::{item}")
               sys.exit(1)
           PY
 

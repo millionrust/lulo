@@ -474,9 +474,19 @@ pub fn accent_border() -> Hsla {
 pub fn focus_ring() -> Hsla {
     crate::theme::current().colors.focus_ring.hsla()
 }
+/// Whether a focused control shows its focus ring: only once the window's
+/// last input was the keyboard, as on the Mac, where clicking a sidebar
+/// row, a checkbox or a pop-up button never draws a ring round it and Tab
+/// does. A click moves GPUI focus to the control all the same, so without
+/// this every clicked row and button wore the keyboard ring (most visibly
+/// round Settings' selected sidebar row on Windows). GPUI redraws the
+/// window when the input switches between pointer and keyboard.
+pub fn shows_focus_ring(is_focused: bool, window: &gpui::Window) -> bool {
+    is_focused && window.last_input_was_keyboard()
+}
 /// A solid outer ring at the measured keyboard-focus width
 /// (design-lab/chrome.html: 3 pt, widened by the Increase Contrast setting).
-/// Chain with `.when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))` on
+/// Chain with `.when(mac::shows_focus_ring(is_focused, window), |el| el.shadow(mac::focus_ring_shadow()))` on
 /// any control that draws its own focus indication rather than relying on a
 /// wrapped component-library control's built-in ring.
 pub fn focus_ring_shadow() -> Vec<gpui::BoxShadow> {

@@ -1865,7 +1865,7 @@ Windows has no session bus, so:
   app by its executable, anything else named as the window list names it. One thread waits
   for connections; each connection's thread blocks on its notification's answers. Clock's
   alarms and timers (`rmac-clock --ring-due`, started by Task Scheduler) post through it
-  when a Lulo layer runs, with Stop, Snooze and Open, as on Lulo OS (WIN-OS-76).
+  when a Lulo layer runs, with Stop, Snooze and Open, as on Lulo OS (WIN-OS-83).
 - **Surfaces.** Banners are an `Overlay` layer surface anchored top right that never takes
   the keyboard (window regions keep clicks off it outside the cards); the Center panel is
   the same `Exclusive` surface Control Centre is, closing when it loses the keyboard. The
@@ -1882,7 +1882,12 @@ the runner, checks the banner, that the poster hears it close, and that a click 
 clock opens Notification Centre listing it; then the switcher checks above. Both views
 start with the layer, so the idle gate (≤ 2 ticks over 20 s) and the idle memory gate cover
 them; lulo-shell's private bytes after both have been used and closed are gated at 60 MB
-(`idle_gate.py --shell-after-panels-private-mb`). The cross-platform scenes gain a fifth,
+(`idle_gate.py --shell-after-panels-private-mb`). Run 38454571380 (debug, WARP): lulo-shell
+0.0 ticks and no wake-ups over the idle window, 34.2 MB private at idle, 48.8 MB after the
+switcher and Notification Centre closed. The switcher reads the window list when a switch
+starts (z-order is the activation order) and asks for a fresh reading first: the window
+list's event filter (7c67835c) can keep a reading from before the last foreground change,
+which made every switch target the wrong app. The cross-platform scenes gain a fifth,
 Notification Centre open on an empty history (`--open notification-centre`; on Lulo OS the
 daemon and panel run under `dbus-run-session`).
 
@@ -1977,6 +1982,46 @@ The captures are `rmac-calculator-frame.png`, `rmac-calculator-corner.png` (six 
 enlarged) and the same for Text Editor in the `windows-app-screens-1` artifact. The Lulo
 layer's own check (`shell_smoke.py`'s window shadow, a maximised Calculator between the bar
 and the Dock) runs unchanged.
+## App windows like Lulo OS's (branch `op/win-visual`)
+
+The owner: "the windows lulo dont look much like mac or our ubunto lulo". The menu bar and
+Dock already matched; the app windows did not. Each app was opened with a fresh profile in
+Dark and Light on the owner's laptop and, from the same commit, in a nested niri at scale 1
+(the laptop runs Windows at 100 %, and one point is one pixel on both), and the windows were
+compared side by side. What differed, and why:
+
+- **Text heavier and softer.** DirectWrite's own rasterizer drew Inter; Lulo OS draws it with
+  swash. `gpui_windows` now rasterizes the app's own fonts with swash (ADR 0025, "Text").
+- **Thin and Light numbers in Regular.** Only four Inter weights shipped; Calculator's display,
+  Clock's dials and Weather's temperatures ask for Light and Thin. Both now ship.
+- **Terminal's grid in a proportional face.** JetBrains Mono, Lulo OS's monospace face, was
+  missing; DirectWrite fell back to Inter. Its four faces now ship.
+- **No wallpaper tint.** Lulo OS tints window chrome with the wallpaper's colour, which the
+  desktop publishes under `XDG_RUNTIME_DIR`. Windows has none, so the Lulo layer's desktop
+  failed to publish and apps read nothing. Both now use the per-user state folder there, and
+  apps follow it with the parked `ReadDirectoryChangesW` watcher (not `notify`, which wakes ten
+  times a second).
+- **A keyboard focus ring after a click.** A clicked `ListRow`, toggle, checkbox, radio,
+  pop-up button or traffic light took GPUI focus and drew the ring (most visibly round
+  Settings' selected sidebar row). The ring now shows only after keyboard input
+  (`mac::shows_focus_ring`), as on the Mac; this is shared rmac-ui, so Lulo OS gains it too.
+- **No city in World Clock.** Clock names the local zone from `/etc/localtime`; on Windows it
+  now asks WinRT's calendar (`iana-time-zone`), so a fresh World Clock shows the computer's
+  city as on Lulo OS.
+- **Files' Pictures had no icon** (nor Lulo OS's Photos): it named a `photo.svg` that never
+  shipped.
+- **The "blank Weather window"** was Weather's first-run screen ("Choose a Location") behind
+  Settings: its content sits in the middle of the window, under the window in front. Brought
+  to the front, minimised and restored, or put behind another window on the laptop, it drew
+  correctly each time; there was no missed frame.
+- **Shadows and corners** are op/win-corners' (WIN-OS-73).
+- **Sizes.** Windows opens app windows at the Mac's sizes (Text Editor 586 × 488, Weather
+  980 × 720). Lulo OS opens some of them 24 pt smaller (LNX-WIN-01), a Lulo OS difference
+  this branch leaves alone.
+
+`shell-scenes.yml` now also draws two app window scenes on both systems, Calculator in Dark
+and Text Editor in Light, and compares the windows themselves (`compare_shell_scenes.py
+--regions window`: the whole window, its title bar band and its content).
 
 ## Phase plan
 

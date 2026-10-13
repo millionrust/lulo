@@ -38,6 +38,9 @@ parking_lot = "0.12.1"
 rand = "0.9"
 raw-window-handle = "0.6"
 smallvec = { version = "1.6", features = ["union", "const_new"] }
+# rmac: rasterizes the app's own fonts as gpui_wgpu does on Lulo OS
+# (direct_write.rs, `SwashFace`).
+swash = "0.2.6"
 uuid = { version = "1.1.2", features = ["v4", "v5", "v7", "serde"] }
 windows-core = "0.61"
 windows-numerics = "0.2"

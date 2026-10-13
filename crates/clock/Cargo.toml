@@ -39,6 +39,9 @@ zbus.workspace = true
 [target.'cfg(windows)'.dependencies]
 chrono.workspace = true
 chrono-tz.workspace = true
+# The Windows zone's IANA name, for World Clock's own city (already in the
+# lock through chrono).
+iana-time-zone = "0.1"
 # Alarms and timers ring as Lulo notifications through the notification
 # pipe (ADR 0023, "Notification Centre and the app switcher on Windows").
 rmac-notifications.workspace = true

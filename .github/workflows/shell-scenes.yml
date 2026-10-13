@@ -8,8 +8,12 @@ name: Shell scenes
 # then compares the two screens perceptually (scripts/compare_shell_scenes.py)
 # and fails when they drift apart. Five scenes: the desktop alone, Spotlight
 # with a query typed, Control Centre open, Apps open over a fresh
-# profile's own Dock pins, and Notification Centre open on an empty history. The screens and a diff image
-# for each are in the `shell-scene-diff` artifact.
+# profile's own Dock pins, and Notification Centre open on an empty
+# history. Two app window scenes hold the apps' own windows
+# to Lulo OS too (title bar, toolbar, colours, text weight): Calculator in
+# Dark and Text Editor in Light, each opened over the desktop and compared
+# window to window. The screens and a diff image for each are in the
+# `shell-scene-diff` artifact.
 on:
   push:
   pull_request:
@@ -67,10 +71,10 @@ jobs:
       - name: Build the menu bar, the Dock and the desktop
         working-directory: shell
         run: cargo build --locked -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper --bins --features wayland
-      - name: Build Spotlight, Control Centre, Apps and Notification Centre
-        run: >-
-          cargo build --locked -p rmac-launcher-app -p rmac-quick-settings-app -p rmac-app-drawer
-          -p rmac-notification-center-app --bins
+      - name: Build Spotlight, Control Centre, Apps, Notification Centre and the scenes' app windows
+        run: |
+          cargo build --locked -p rmac-launcher-app -p rmac-quick-settings-app -p rmac-app-drawer \
+            -p rmac-notification-center-app -p rmac-calculator -p rmac-text-editor --bins
       - name: Draw the scenes
         run: |
           niri="$RUNNER_TEMP/niri-package/usr/bin/niri"
@@ -83,6 +87,10 @@ jobs:
           scene --output scenes/linux-spotlight.png --open "spotlight:text editor"
           scene --output scenes/linux-control-centre.png --open control-centre
           scene --output scenes/linux-apps.png --open apps --default-dock
+          scene --output scenes/linux-calculator-screen.png --launch rmac-calculator --scheme dark \
+            --window-output scenes/linux-calculator.png
+          scene --output scenes/linux-text-editor-screen.png --launch rmac-text-editor --scheme light \
+            --window-output scenes/linux-text-editor.png
           # Notification Centre's service and panel talk over a session bus.
           dbus-run-session -- /usr/bin/python3 scripts/behavior/run_shell_scene.py --niri "$niri" \
             --bin-dir shell/target/debug --app-bin-dir target/debug \
@@ -121,7 +129,9 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
       - name: Build the Lulo layer
-        run: cargo build --locked -p rmac-win-shell -p rmac-system-settings --bins
+        run: |
+          cargo build --locked -p rmac-win-shell -p rmac-system-settings \
+            -p rmac-calculator -p rmac-text-editor --bins
       - name: Draw the scenes
         run: |
           # The Lulo wallpaper's packaged artwork beside the executables, as
@@ -138,6 +148,12 @@ jobs:
             --output scenes/windows-apps.png --open apps --default-dock
           python scripts/windows/shell_scene.py --bin-dir target/debug \
             --output scenes/windows-notification-centre.png --open notification-centre
+          python scripts/windows/shell_scene.py --bin-dir target/debug \
+            --output scenes/windows-calculator-screen.png --launch rmac-calculator.exe --scheme dark \
+            --window-output scenes/windows-calculator.png
+          python scripts/windows/shell_scene.py --bin-dir target/debug \
+            --output scenes/windows-text-editor-screen.png --launch rmac-text-editor.exe --scheme light \
+            --window-output scenes/windows-text-editor.png
           # Memory probes, not compared: the runner's own status readings,
           # then also its own Desktop folder.
           python scripts/windows/shell_scene.py --bin-dir target/debug \
@@ -195,6 +211,15 @@ jobs:
             python scripts/compare_shell_scenes.py "scenes/linux$scene.png" "scenes/windows$scene.png" \
               --diff "scenes/diff$scene.png" --report "scenes/report$scene.json" || status=1
           done
+          window() {
+            python scripts/compare_shell_scenes.py "scenes/linux$1.png" "scenes/windows$1.png" \
+              --regions window --diff "scenes/diff$1.png" --report "scenes/report$1.json" "${@:2}" || status=1
+          }
+          window -calculator
+          # Text Editor opens at the Mac's 586 x 488 on Windows; on Lulo OS
+          # its window is 24 pt shorter (docs/parity.md LNX-WIN-01), so the
+          # two are compared over the part both show.
+          window -text-editor --size-slack 26
           exit $status
       - name: Upload the comparison
         if: always()

@@ -39,6 +39,7 @@ pub(super) fn surface_unit(id: &ShortcutId) -> Option<&'static str> {
         "app-drawer" => "rmac-app-drawer.service",
         "quick-settings" => "rmac-quick-settings.service",
         "notification-center" => "rmac-notification-center-panel.service",
+        "voice" => "rmac-voice-hud.service",
         _ => return None,
     })
 }

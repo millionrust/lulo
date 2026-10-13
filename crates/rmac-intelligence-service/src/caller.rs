@@ -24,6 +24,8 @@ pub enum Purpose {
     Assist,
     /// `Write` (Writing Tools) and `Cancel`.
     Writing,
+    /// `org.rmac.Voice1`: the talk-key HUD opens the microphone.
+    Voice,
 }
 
 /// The programs that call the service for [`Purpose::Assist`], by file
@@ -34,15 +36,25 @@ pub const CALLERS: &[&str] = &["rmac-launcher", "rmac-system-settings"];
 /// The programs with Writing Tools ([`Purpose::Writing`]).
 pub const WRITING_CALLERS: &[&str] = &["rmac-notes", "rmac-text-editor", "rmac-mail"];
 
+/// The program that holds the microphone open for the talk key
+/// ([`Purpose::Voice`]).
+pub const VOICE_CALLERS: &[&str] = &["rmac-voice-hud"];
+
 /// Measures the service on the reference laptop. Not packaged, so trusted
 /// only beside the service itself.
 pub const DEVELOPMENT_CALLERS: &[&str] = &["rmac-intelligence-bench"];
+
+/// Measures the voice service on the reference laptop; also not packaged.
+pub const VOICE_DEVELOPMENT_CALLERS: &[&str] = &["rmac-voice-bench"];
 
 /// Where the package installs [`CALLERS`].
 const INSTALLED_CALLERS: &[&str] = &[
     "/usr/libexec/rmac/rmac-launcher",
     "/usr/bin/rmac-system-settings",
 ];
+
+/// Where the package installs [`VOICE_CALLERS`].
+const INSTALLED_VOICE_CALLERS: &[&str] = &["/usr/libexec/rmac/rmac-voice-hud"];
 
 /// Where the package installs [`WRITING_CALLERS`].
 const INSTALLED_WRITING_CALLERS: &[&str] = &[
@@ -64,13 +76,22 @@ pub fn trusted_programs(purpose: Purpose) -> Vec<PathBuf> {
 
 /// [`trusted_programs`] for a service installed in `own`.
 pub fn trusted_programs_beside(own: Option<&Path>, purpose: Purpose) -> Vec<PathBuf> {
-    let (installed, names) = match purpose {
-        Purpose::Assist => (INSTALLED_CALLERS, CALLERS),
-        Purpose::Writing => (INSTALLED_WRITING_CALLERS, WRITING_CALLERS),
+    let (installed, names, development) = match purpose {
+        Purpose::Assist => (INSTALLED_CALLERS, CALLERS, DEVELOPMENT_CALLERS),
+        Purpose::Writing => (
+            INSTALLED_WRITING_CALLERS,
+            WRITING_CALLERS,
+            DEVELOPMENT_CALLERS,
+        ),
+        Purpose::Voice => (
+            INSTALLED_VOICE_CALLERS,
+            VOICE_CALLERS,
+            VOICE_DEVELOPMENT_CALLERS,
+        ),
     };
     let mut programs: Vec<PathBuf> = installed.iter().map(PathBuf::from).collect();
     if let Some(own) = own {
-        for name in names.iter().chain(DEVELOPMENT_CALLERS) {
+        for name in names.iter().chain(development) {
             let path = own.join(name);
             if !programs.contains(&path) {
                 programs.push(path);
@@ -322,6 +343,55 @@ mod tests {
                 !executable_allowed(Path::new(refused), &trusted),
                 "{refused}"
             );
+        }
+    }
+
+    #[test]
+    fn only_the_talk_key_hud_opens_the_microphone() {
+        let packaged =
+            trusted_programs_beside(Some(Path::new("/usr/libexec/rmac")), Purpose::Voice);
+        assert_eq!(
+            packaged,
+            [
+                "/usr/libexec/rmac/rmac-voice-hud",
+                "/usr/libexec/rmac/rmac-voice-bench",
+            ]
+            .map(PathBuf::from)
+        );
+        let trusted = trusted_programs_beside(
+            Some(Path::new("/home/u/.local/libexec/rmac")),
+            Purpose::Voice,
+        );
+        for allowed in [
+            "/usr/libexec/rmac/rmac-voice-hud",
+            "/usr/libexec/rmac/rmac-voice-hud (deleted)",
+            "/home/u/.local/libexec/rmac/rmac-voice-hud",
+            "/home/u/.local/libexec/rmac/rmac-voice-bench",
+        ] {
+            assert!(
+                executable_allowed(Path::new(allowed), &trusted),
+                "{allowed}"
+            );
+        }
+        for refused in [
+            "/usr/libexec/rmac/rmac-launcher",
+            "/usr/bin/rmac-notes",
+            "/usr/bin/gdbus",
+            "/usr/bin/pw-record",
+            "/home/u/.local/libexec/rmac/rmac-intelligence-bench",
+            "/tmp/rmac-voice-hud",
+        ] {
+            assert!(
+                !executable_allowed(Path::new(refused), &trusted),
+                "{refused}"
+            );
+        }
+        // And the HUD cannot run Spotlight's intents or Writing Tools.
+        for purpose in [Purpose::Assist, Purpose::Writing] {
+            assert!(!executable_allowed(
+                Path::new("/usr/libexec/rmac/rmac-voice-hud"),
+                &trusted_programs_beside(Some(Path::new("/usr/libexec/rmac")), purpose)
+            ));
         }
     }
 

@@ -19,6 +19,12 @@ whole screen and for the menu bar, the Dock and the desktop between them:
 - `mean`: the mean luminance difference (0 to 255);
 - `changed`: the share of pixels differing by more than `--pixel-threshold`.
 
+With `--regions window` the two images are one app's window alone (the app
+window scenes: `run_shell_scene.py --launch ... --window-output` and
+`shell_scene.py --launch ... --window-output`), and the regions are the
+whole window, its title bar and toolbar band, and the content below; the
+two windows must also be the same size, within `--size-slack` pixels.
+
 It writes a diff image (the Lulo OS screen in grey with the differences in
 red) beside the two screens, and a JSON report, and exits 1 when the whole
 screen or any region is over the limits.
@@ -33,9 +39,17 @@ from pathlib import Path
 
 BAR_HEIGHT = 30
 DOCK_HEIGHT = 110
+# An app window's title bar and toolbar band (the Mac's unified 52 pt bar).
+TITLE_BAND = 52
 
 
-def regions(width: int, height: int) -> dict[str, tuple[int, int, int, int]]:
+def regions(width: int, height: int, kind: str = "shell") -> dict[str, tuple[int, int, int, int]]:
+    if kind == "window":
+        return {
+            "window": (0, 0, width, height),
+            "title bar": (0, 0, width, min(TITLE_BAND, height)),
+            "content": (0, min(TITLE_BAND, height), width, height),
+        }
     return {
         "screen": (0, 0, width, height),
         "menu bar": (0, 0, width, BAR_HEIGHT),
@@ -54,19 +68,28 @@ def score(difference, box: tuple[int, int, int, int], pixel_threshold: int) -> d
     return {"mean": round(mean, 3), "changed": round(changed, 5)}
 
 
-def compare(linux_path: Path, windows_path: Path, blur: float, pixel_threshold: int):
+def compare(linux_path: Path, windows_path: Path, blur: float, pixel_threshold: int,
+            kind: str = "shell"):
     from PIL import Image, ImageChops, ImageFilter
 
     linux = Image.open(linux_path).convert("RGB")
     windows = Image.open(windows_path).convert("RGB")
-    if windows.size != linux.size:
+    sizes = (linux.size, windows.size)
+    if windows.size != linux.size and kind == "window":
+        # Two windows of slightly different sizes line up at their top-left
+        # corner (title bar, toolbar, sidebar): compare what both show.
+        common = (min(linux.width, windows.width), min(linux.height, windows.height))
+        linux = linux.crop((0, 0, *common))
+        windows = windows.crop((0, 0, *common))
+    elif windows.size != linux.size:
         windows = windows.resize(linux.size, Image.Resampling.LANCZOS)
     soft_linux = linux.filter(ImageFilter.GaussianBlur(blur))
     soft_windows = windows.filter(ImageFilter.GaussianBlur(blur))
     difference = ImageChops.difference(soft_linux, soft_windows).convert("L")
     width, height = linux.size
-    scores = {name: score(difference, box, pixel_threshold) for name, box in regions(width, height).items()}
-    return linux, windows, difference, scores
+    scores = {name: score(difference, box, pixel_threshold)
+              for name, box in regions(width, height, kind).items()}
+    return linux, windows, difference, scores, sizes
 
 
 def diff_image(linux, windows, difference):
@@ -105,16 +128,26 @@ def main() -> int:
     parser.add_argument("--pixel-threshold", type=int, default=32)
     parser.add_argument("--max-mean", type=float, default=6.0)
     parser.add_argument("--max-changed", type=float, default=0.03)
+    parser.add_argument("--regions", choices=["shell", "window"], default="shell")
+    parser.add_argument("--size-slack", type=int, default=2,
+                        help="with --regions window: how many pixels the window sizes may differ by")
     args = parser.parse_args()
 
-    linux, windows, difference, scores = compare(args.linux, args.windows, args.blur, args.pixel_threshold)
+    linux, windows, difference, scores, sizes = compare(
+        args.linux, args.windows, args.blur, args.pixel_threshold, args.regions)
     args.diff.parent.mkdir(parents=True, exist_ok=True)
     diff_image(linux, windows, difference).save(args.diff)
     problems = failures(scores, args.max_mean, args.max_changed)
+    if args.regions == "window":
+        (linux_w, linux_h), (windows_w, windows_h) = sizes
+        if abs(linux_w - windows_w) > args.size_slack or abs(linux_h - windows_h) > args.size_slack:
+            problems.append(f"window size: {linux_w} x {linux_h} on Lulo OS, "
+                            f"{windows_w} x {windows_h} on Windows")
     report = {
         "linux": str(args.linux),
         "windows": str(args.windows),
         "size": list(linux.size),
+        "sizes": {"linux": list(sizes[0]), "windows": list(sizes[1])},
         "blur": args.blur,
         "pixel_threshold": args.pixel_threshold,
         "max_mean": args.max_mean,

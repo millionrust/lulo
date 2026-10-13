@@ -448,6 +448,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     let on_demand_units = [
         include_str!("../units/rmac-app-drawer.service"),
         include_str!("../units/rmac-notification-center-panel.service"),
+        include_str!("../units/rmac-voice-hud.service"),
     ];
     for unit in on_demand_units {
         assert!(unit.contains("Restart=no"));
@@ -547,6 +548,8 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     for surface in [
         "rmac-app-drawer.service",
         "rmac-notification-center-panel.service",
+        "rmac-voice-hud.service",
+        "rmac-voice.service",
     ] {
         assert!(!normal_target.contains(surface));
     }
@@ -785,7 +788,9 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     assert!(fallback.contains("Mod+Space repeat=false"));
     assert!(fallback.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));
     assert!(fallback.contains("Mod+Ctrl+N repeat=false"));
-    assert_eq!(fallback.matches("{ spawn ").count(), 3);
+    // Hold ⌥Space to talk to Lulo (ADR 0024 §8).
+    assert!(fallback.contains("Alt+Space repeat=false"));
+    assert_eq!(fallback.matches("{ spawn ").count(), 4);
 }
 
 #[test]
@@ -878,6 +883,92 @@ fn file_chooser_backend_is_a_separate_activated_portal() {
     let target = include_str!("../units/rmac-session.target");
     assert!(!target.contains("rmac-file-chooser.service"));
     assert!(!COMPONENT_UNITS.contains(&"rmac-file-chooser.service"));
+}
+
+/// Unit options that, in a user unit, make systemd run the service in its
+/// own user namespace. From there it cannot read its callers'
+/// /proc/<pid>/exe, and the caller check refuses every request: the
+/// 2026-10-08 production bug (crates/rmac-intelligence-service/src/caller.rs).
+const NAMESPACE_OPTIONS: [&str; 33] = [
+    "PrivateTmp=",
+    "PrivateUsers=",
+    "PrivateDevices=",
+    "PrivateNetwork=",
+    "PrivateIPC=",
+    "PrivateMounts=",
+    "PrivatePIDs=",
+    "ProtectSystem=",
+    "ProtectHome=",
+    "ProtectProc=",
+    "ProcSubset=",
+    "ProtectKernelTunables=",
+    "ProtectKernelModules=",
+    "ProtectKernelLogs=",
+    "ProtectControlGroups=",
+    "ProtectClock=",
+    "ProtectHostname=",
+    "ReadOnlyPaths=",
+    "ReadWritePaths=",
+    "InaccessiblePaths=",
+    "ExecPaths=",
+    "NoExecPaths=",
+    "TemporaryFileSystem=",
+    "BindPaths=",
+    "BindReadOnlyPaths=",
+    "RootDirectory=",
+    "RootImage=",
+    "MountAPIVFS=",
+    "MountImages=",
+    "ExtensionImages=",
+    "ExtensionDirectories=",
+    "NetworkNamespacePath=",
+    "IPCNamespacePath=",
+];
+
+#[test]
+fn voice_starts_on_demand_capped_and_offline() {
+    let unit = include_str!("../units/rmac-voice.service");
+    assert!(unit.contains("Type=dbus"));
+    assert!(unit.contains("BusName=org.rmac.Voice1"));
+    assert!(unit.contains("ExecStart=%h/.local/libexec/rmac/rmac-voice-service"));
+    assert!(unit.contains("Restart=no"));
+    // ADR 0024 §8: memory caps, no swap, no network (PipeWire is a Unix
+    // socket), lower priority than the desktop.
+    for directive in [
+        "MemoryHigh=768M",
+        "MemoryMax=1G",
+        "MemorySwapMax=0",
+        "RestrictAddressFamilies=AF_UNIX",
+        "NoNewPrivileges=yes",
+        "CPUWeight=50",
+    ] {
+        assert!(
+            unit.lines().any(|line| line == directive),
+            "missing {directive}"
+        );
+    }
+    for option in NAMESPACE_OPTIONS {
+        assert!(
+            !unit
+                .lines()
+                .any(|line| line.trim_start().starts_with(option)),
+            "{option} would hide the talk-key HUD from the caller check"
+        );
+    }
+    assert!(!unit.contains("/bin/sh"));
+    let target = include_str!("../units/rmac-session.target");
+    assert!(!target.contains("rmac-voice"));
+    assert!(!COMPONENT_UNITS.contains(&"rmac-voice.service"));
+    assert!(!COMPONENT_UNITS.contains(&"rmac-voice-hud.service"));
+    let activation =
+        include_str!("../../rmac-intelligence-service/install/org.rmac.Voice1.service.in");
+    assert!(activation.contains("Name=org.rmac.Voice1"));
+    assert!(activation.contains("@RMAC_VOICE_EXEC@"));
+    assert!(activation.contains("SystemdService=rmac-voice.service"));
+    // The HUD starts only on the talk key, and leaves when it is done.
+    let hud = include_str!("../units/rmac-voice-hud.service");
+    assert!(hud.contains("ExecStart=%h/.local/libexec/rmac/rmac-voice-hud"));
+    assert!(hud.contains("Restart=no"));
 }
 
 #[test]

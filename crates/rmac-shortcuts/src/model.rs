@@ -29,6 +29,9 @@ pub fn default_shortcuts() -> Vec<ShortcutSpec> {
             "LOGO+CTRL+q",
             "Mod+Ctrl+Q",
         ),
+        // Hold ⌥Space and speak (ADR 0024 §8). The press starts the talk-key
+        // HUD; it sees the release itself, once it has the keyboard.
+        shortcut("voice", "Talk to Lulo", "ALT+space", "Alt+Space"),
     ]
 }
 
@@ -44,6 +47,7 @@ pub fn known_action(id: &ShortcutId) -> bool {
             | "shutdown-dialog"
             | "restart-to-update"
             | "menu-bar-focus"
+            | "voice"
     )
 }
 

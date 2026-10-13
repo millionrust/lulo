@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::manifest::Model;
+use crate::manifest::Pinned;
 use crate::paths;
 
 #[derive(Debug)]
@@ -96,13 +96,13 @@ pub fn hex(bytes: &[u8]) -> String {
 
 /// Whether the model is on disk, judged by its stamp alone (no hashing):
 /// what Settings shows. A stale or missing stamp reads as not verified.
-pub fn is_present(models: &Path, model: &Model) -> bool {
+pub fn is_present(models: &Path, model: &(impl Pinned + ?Sized)) -> bool {
     let path = paths::model_file(models, model);
-    let Ok(current) = identity(&path, model.sha256) else {
+    let Ok(current) = identity(&path, model.sha256()) else {
         return false;
     };
     read_stamp(&paths::stamp_file(models, model)).is_some_and(|stamp| stamp == current)
-        && current.size == model.size
+        && current.size == model.size()
 }
 
 fn read_stamp(path: &Path) -> Option<Stamp> {
@@ -111,14 +111,17 @@ fn read_stamp(path: &Path) -> Option<Stamp> {
 }
 
 /// The verified path of `model`, hashing it only if its stamp is stale.
-pub fn verified_model(models: &Path, model: &Model) -> Result<PathBuf, VerifyError> {
+pub fn verified_model(
+    models: &Path,
+    model: &(impl Pinned + ?Sized),
+) -> Result<PathBuf, VerifyError> {
     let path = paths::model_file(models, model);
-    let current = match identity(&path, model.sha256) {
+    let current = match identity(&path, model.sha256()) {
         Ok(current) => current,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Err(VerifyError::Missing),
         Err(error) => return Err(VerifyError::Io(error)),
     };
-    if current.size != model.size {
+    if current.size != model.size() {
         return Err(VerifyError::WrongSize);
     }
     let stamp_path = paths::stamp_file(models, model);
@@ -126,10 +129,10 @@ pub fn verified_model(models: &Path, model: &Model) -> Result<PathBuf, VerifyErr
         return Ok(path);
     }
     let (sha256, size) = sha256_file(&path).map_err(VerifyError::Io)?;
-    if size != model.size {
+    if size != model.size() {
         return Err(VerifyError::WrongSize);
     }
-    if sha256 != model.sha256 {
+    if sha256 != model.sha256() {
         return Err(VerifyError::WrongChecksum);
     }
     write_stamp(&stamp_path, &current);
@@ -138,8 +141,8 @@ pub fn verified_model(models: &Path, model: &Model) -> Result<PathBuf, VerifyErr
 
 /// Record a file that was just verified (the fetcher calls this after its
 /// streaming hash), so the first load does not hash it again.
-pub fn record_verified(models: &Path, model: &Model) -> io::Result<()> {
-    let current = identity(&paths::model_file(models, model), model.sha256)?;
+pub fn record_verified(models: &Path, model: &(impl Pinned + ?Sized)) -> io::Result<()> {
+    let current = identity(&paths::model_file(models, model), model.sha256())?;
     write_stamp(&paths::stamp_file(models, model), &current);
     Ok(())
 }
@@ -154,6 +157,7 @@ fn write_stamp(path: &Path, stamp: &Stamp) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::Model;
 
     fn scratch(name: &str) -> PathBuf {
         let directory = std::env::temp_dir().join(format!(

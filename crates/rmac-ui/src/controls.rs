@@ -630,7 +630,9 @@ impl RenderOnce for PopUpButtonTrigger {
                 el.opacity(0.5)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             })
-            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .when(mac::shows_focus_ring(is_focused, window), |el| {
+                el.shadow(mac::focus_ring_shadow())
+            })
             // The Mac never shows a control's help tag over its own open
             // menu; the tag covered the first item ("Pin N|More").
             .when(menu_button_icon && !open, |el| {
@@ -1174,7 +1176,9 @@ impl RenderOnce for Toggle {
                 el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
             })
             .when(disabled, |el| el.opacity(0.5))
-            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .when(mac::shows_focus_ring(is_focused, window), |el| {
+                el.shadow(mac::focus_ring_shadow())
+            })
             .child(content);
         if let Some(description) = self.accessible_description {
             switch = crate::accessibility::with_description(switch, description);
@@ -1314,7 +1318,9 @@ impl RenderOnce for Checkbox {
                 el.track_focus(&focus_handle.tab_stop(true).tab_index(0))
             })
             .when(disabled, |el| el.opacity(0.5))
-            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .when(mac::shows_focus_ring(is_focused, window), |el| {
+                el.shadow(mac::focus_ring_shadow())
+            })
             .child(content);
         if let Some(handler) = self.on_change {
             checkbox = checkbox.on_click(move |_, window, cx| {
@@ -1422,7 +1428,9 @@ impl RenderOnce for Radio {
                 el.track_focus(&focus_handle.tab_stop(true).tab_index(0))
             })
             .when(disabled, |el| el.opacity(0.5))
-            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .when(mac::shows_focus_ring(is_focused, window), |el| {
+                el.shadow(mac::focus_ring_shadow())
+            })
             .child(content);
         if let Some(handler) = self.on_change {
             radio = radio.on_click(move |_, window, cx| {
@@ -2443,7 +2451,9 @@ impl RenderOnce for ListRow {
                 el.track_focus(&focus_handle.clone().tab_stop(tab_stop).tab_index(0))
             })
             .when(disabled, |el| el.opacity(0.5))
-            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .when(mac::shows_focus_ring(is_focused, window), |el| {
+                el.shadow(mac::focus_ring_shadow())
+            })
             .when_some(hover, |el, hover_color| {
                 el.hover(move |style| style.bg(hover_color))
             })

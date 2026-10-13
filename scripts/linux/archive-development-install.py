@@ -44,6 +44,7 @@ DBUS_SERVICES = (
     "org.rmac.Focus1.service",
     "org.rmac.Intelligence1.service",
     "org.rmac.NotificationCenter1.service",
+    "org.rmac.Voice1.service",
 )
 PORTAL_FILES = (
     Path("portals/rmac.portal"),

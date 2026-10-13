@@ -49,6 +49,8 @@ SHERB_NOPROGRESSUI = 0x2
 SHERB_NOSOUND = 0x4
 SW_HIDE = 0
 SW_SHOWNOACTIVATE = 4
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x80
 
 
 def empty_recycle_bin() -> None:
@@ -78,6 +80,60 @@ def hide_other_windows() -> list[int]:
         user32.ShowWindow(wintypes.HWND(hwnd), SW_HIDE)
     print(f"hid {len(hidden)} window(s) for the scene")
     return hidden
+
+
+def app_window(pid: int) -> tuple[int, int, int, int] | None:
+    """The screen box of `pid`'s visible app window: its client area, the
+    window as drawn, without any shadow round it. Shell surfaces (tool
+    windows) are skipped."""
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    found: list[tuple[int, int, int, int]] = []
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def visit(hwnd, _lparam):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value != pid or not user32.IsWindowVisible(hwnd):
+            return True
+        if user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW:
+            return True
+        # The client area is the visible window (its swap chain): Lulo's
+        # own frame keeps resize borders and its shadow outside it
+        # (op/win-corners), so the frame bounds are larger than the window.
+        rect = wintypes.RECT()
+        user32.GetClientRect(hwnd, ctypes.byref(rect))
+        origin = wintypes.POINT(0, 0)
+        user32.ClientToScreen(hwnd, ctypes.byref(origin))
+        width, height = rect.right - rect.left, rect.bottom - rect.top
+        if width > 50 and height > 50:
+            found.append((origin.x, origin.y, origin.x + width, origin.y + height))
+        return True
+
+    user32.EnumWindows(callback_type(visit), 0)
+    return found[0] if found else None
+
+
+def bring_forward(pid: int) -> None:
+    """Make `pid`'s window the key window, as niri does with a new window in
+    the Lulo OS scene."""
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def visit(hwnd, _lparam):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd) and not (
+            user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW
+        ):
+            user32.SwitchToThisWindow(hwnd, True)
+            return False
+        return True
+
+    user32.EnumWindows(callback_type(visit), 0)
 
 
 def show_windows(windows: list[int]) -> None:
@@ -150,6 +206,10 @@ def main() -> int:
                         "open that panel in the scene")
     parser.add_argument("--default-dock", action="store_true",
                         help="the Dock keeps a fresh profile's own pins")
+    parser.add_argument("--window-output", default="",
+                        help="with --launch: also save the app's window alone here")
+    parser.add_argument("--scheme", choices=["", "light", "dark"], default="",
+                        help="the appearance the scene's profile asks for")
     args = parser.parse_args()
 
     from PIL import ImageGrab
@@ -168,6 +228,13 @@ def main() -> int:
     }
     if args.open:
         environment["RMAC_SHELL_SCENE_OPEN"] = args.open
+    if args.scheme:
+        # The same theme store file run_shell_scene.py writes on Lulo OS.
+        theme = Path(environment["XDG_CONFIG_HOME"]) / "rmac" / "theme.json"
+        theme.parent.mkdir(parents=True, exist_ok=True)
+        theme.write_text(
+            f'{{"version": 1, "preferences": {{"color_scheme": "{args.scheme}"}}}}\n', encoding="utf-8"
+        )
     if args.smoke_profile:
         for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
             environment.pop(name, None)
@@ -218,9 +285,27 @@ def main() -> int:
         launched = None
         if args.launch:
             launched = subprocess.Popen([str(bin_dir / args.launch)], env=environment)
+            if args.window_output:
+                deadline = time.monotonic() + 60
+                while app_window(launched.pid) is None and time.monotonic() < deadline:
+                    time.sleep(0.25)
+                if app_window(launched.pid) is None:
+                    print(f"FAIL {args.launch} opened no window")
+                    return 1
+                bring_forward(launched.pid)
         time.sleep(args.settle)
-        ImageGrab.grab().save(output)
+        screen = ImageGrab.grab()
+        screen.save(output)
         print(f"PASS captured the Windows scene to {output}")
+        if launched is not None and args.window_output:
+            box = app_window(launched.pid)
+            if box is None:
+                print(f"FAIL {args.launch}'s window went away")
+                return 1
+            window_output = Path(args.window_output).resolve()
+            window_output.parent.mkdir(parents=True, exist_ok=True)
+            screen.crop(box).save(window_output)
+            print(f"PASS {args.launch}'s window {box} to {window_output}")
         return 0
     finally:
         subprocess.run([str(bin_dir / "lulo-session.exe"), "--stop"], env=environment, timeout=60, check=False)

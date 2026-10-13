@@ -256,6 +256,16 @@ impl LauncherView {
             assist: assist::Assist::default(),
         };
         view.ensure_browse_selection();
+        // Lulo voice (ADR 0024 §8): the talk key leaves its transcript for
+        // the next Spotlight, which shows it as if it had been typed. One
+        // small tmpfs read, and only ever a fresh, unused transcript.
+        if view.browse_mode.is_none() {
+            if let Some(text) = rmac_intelligence::voice::handoff::take() {
+                rmac_ui::trace_mark("voice_query");
+                view.query
+                    .update(cx, |state, cx| state.replace_all(text, window, cx));
+            }
+        }
         view.load_assist_setting(cx);
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
         view

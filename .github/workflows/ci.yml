@@ -490,7 +490,7 @@ jobs:
         run: |
           cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
             -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal \
-            -p rmac-finder -p rmac-system-settings -p rmac-win-shell --bins
+            -p rmac-finder -p rmac-system-settings -p rmac-win-shell -p rmac-hardware --bins
 
       - name: Upload the apps
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -455,7 +455,7 @@ pub fn run_service(show_on_start: bool) {
 /// that hosts it.
 pub fn asset(path: &str) -> Option<std::borrow::Cow<'static, [u8]>> {
     use gpui::AssetSource as _;
-    gpui_component_assets::Assets.load(path).ok().flatten()
+    rmac_ui::layered_assets(()).load(path).ok().flatten()
 }
 
 /// Run Apps as an ordinary window (development hosts), or open the

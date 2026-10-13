@@ -109,6 +109,18 @@ jobs:
           path: ${{ runner.temp }}/runtime-results/
           if-no-files-found: error
           retention-days: 7
+      - name: Fail the job when the shard failed
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          path = os.path.join(os.environ["RUNNER_TEMP"], "runtime-results", f"scenario-{os.environ['SHARD']}", "status.json")
+          code = json.load(open(path))["exit_code"]
+          if code != 0:
+              print(f"::error::scenario shard {os.environ['SHARD']} runner exited {code}")
+              sys.exit(1)
+          PY
 
   checks:
     name: ${{ matrix.suite }}
@@ -131,7 +143,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             at-spi2-core curl dbus dbus-user-session fonts-inter foot gir1.2-gtk-4.0 grim libdisplay-info3 \
-            libgbm1 libglib2.0-bin libinput10 libpango-1.0-0 \
+            libgbm1 libglib2.0-bin libinput10 libnotify-bin libpango-1.0-0 \
             libpangocairo-1.0-0 libpipewire-0.3-0t64 libseat1 libxkbcommon-x11-0 \
             mesa-vulkan-drivers poppler-utils python3-dbus python3-dbusmock python3-gi python3-pil \
             python3-pyatspi sway xdg-desktop-portal
@@ -200,6 +212,18 @@ jobs:
           path: ${{ runner.temp }}/runtime-results/
           if-no-files-found: error
           retention-days: 7
+      - name: Fail the job when the check failed
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          path = os.path.join(os.environ["RUNNER_TEMP"], "runtime-results", os.environ["SUITE"], "status.json")
+          code = json.load(open(path))["exit_code"]
+          if code != 0:
+              print(f"::error::{os.environ['SUITE']} runner exited {code}")
+              sys.exit(1)
+          PY
 
   summary:
     name: Runtime summary (non-blocking)

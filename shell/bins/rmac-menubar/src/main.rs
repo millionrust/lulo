@@ -1371,12 +1371,14 @@ mod linux_wayland {
                     let Ok(check) = rmac_compositor_niri::snapshot().await else {
                         return;
                     };
+                    // The workspace's active window never changes while the
+                    // bar holds the on-demand grab, so it cannot confirm
+                    // anything; ask whether the window itself has the keyboard.
                     let settled = check
-                        .workspaces
+                        .windows
                         .iter()
-                        .find(|workspace| workspace.focused)
-                        .and_then(|workspace| workspace.active_window);
-                    if settled == Some(target) {
+                        .any(|candidate| candidate.id == target && candidate.focused);
+                    if settled {
                         return;
                     }
                     if attempt < 29 {

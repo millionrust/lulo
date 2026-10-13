@@ -491,6 +491,77 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Writing Tools",
+          "action": "writing_tools::WritingToolsMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Show Writing Tools",
+              "action": "writing_tools::ShowWritingTools",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Proofread",
+              "action": "writing_tools::Proofread",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Rewrite",
+              "action": "writing_tools::Rewrite",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Friendly",
+              "action": "writing_tools::MakeFriendly",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Make Professional",
+              "action": "writing_tools::MakeProfessional",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Concise",
+              "action": "writing_tools::MakeConcise",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Summarise",
+              "action": "writing_tools::Summarise",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Create Key Points",
+              "action": "writing_tools::CreateKeyPoints",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make List",
+              "action": "writing_tools::MakeList",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         }
       ]
     },

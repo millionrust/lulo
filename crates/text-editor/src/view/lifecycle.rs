@@ -386,6 +386,8 @@ impl EditorView {
             },
             spell_checker: rmac_spelling::shared(),
             data_detectors: settings.data_detectors_default,
+            writing_tools: cx.new(rmac_writing_tools::WritingTools::new),
+            rich_menu: None,
             input,
             rich,
             // An untitled rich window starts clean on its empty document.
@@ -494,6 +496,14 @@ impl EditorView {
             pending_startup_path: initial_path,
             pending_open_picker: open_picker_on_ready,
             _subscriptions: vec![
+                // Lulo Intelligence may have been turned on (or its model
+                // downloaded) in System Settings since this window was last
+                // used: look again whenever it becomes active.
+                cx.observe_window_activation(window, |_, window, cx| {
+                    if window.is_window_active() {
+                        rmac_writing_tools::refresh(cx);
+                    }
+                }),
                 sub_main,
                 sub_rich,
                 sub_font_size,

@@ -7,7 +7,7 @@ use std::time::Instant;
 use rmac_intelligence::config::Config;
 use rmac_intelligence::gate::{self, Decision};
 use rmac_intelligence::manifest::Tier;
-use rmac_intelligence::{paths, verify, Intent};
+use rmac_intelligence::{paths, verify, Intent, Task};
 use serde::Serialize;
 
 /// What one intent request cost. Field names match
@@ -38,6 +38,46 @@ pub struct IntentOutcome {
     pub timing: Timing,
 }
 
+/// What one Writing Tools answer cost. Field names match
+/// `rmac_intelligence::client::WriteTiming`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct WriteTiming {
+    pub first_token_ms: f64,
+    pub total_ms: f64,
+    pub cold: bool,
+    pub queued_ms: f64,
+    pub prefix_ms: f64,
+    pub prefix_evaluated: bool,
+    pub prefix_tokens: u32,
+    pub input_tokens: u32,
+    pub prefill_ms: f64,
+    pub output_tokens: u32,
+    pub decode_ms: f64,
+    pub decode_tok_s: f64,
+}
+
+/// A finished Writing Tools answer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WriteOutcome {
+    /// Everything the model wrote, as streamed.
+    pub raw: String,
+    /// The answer after `rmac_intelligence::writing::finish`.
+    pub text: String,
+    /// It stopped at the task's output cap rather than by itself.
+    pub capped: bool,
+    pub timing: WriteTiming,
+}
+
+/// One Writing Tools request as the worker hands it to the engine.
+pub struct WriteRequest<'a> {
+    pub task: Task,
+    /// Cleaned by `rmac_intelligence::writing::clean_input`.
+    pub text: &'a str,
+    /// 0 for the first answer; Try Again counts up and reseeds sampling.
+    pub attempt: u32,
+    pub received: Instant,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Calibration {
     pub tier: String,
@@ -63,8 +103,13 @@ pub enum EngineError {
     NotSupported(String),
     NotDownloaded,
     LowMemory,
-    /// A newer request from the same caller replaced this one.
+    /// A newer request from the same caller replaced this one, or the
+    /// caller cancelled it.
     Cancelled,
+    /// The text is over the task's input cap.
+    TooLong,
+    /// The task needs a bigger model than this PC runs.
+    NeedsFasterPc,
     Failed(String),
 }
 
@@ -75,7 +120,11 @@ impl fmt::Display for EngineError {
             Self::NotSupported(reason) => formatter.write_str(reason),
             Self::NotDownloaded => formatter.write_str("the model is not downloaded"),
             Self::LowMemory => formatter.write_str("not enough free memory right now"),
-            Self::Cancelled => formatter.write_str("a newer request replaced this one"),
+            Self::Cancelled => formatter.write_str("the request was cancelled"),
+            Self::TooLong => formatter.write_str("the text is longer than this task takes"),
+            Self::NeedsFasterPc => {
+                formatter.write_str("this task needs the Standard model (a faster PC)")
+            }
             Self::Failed(detail) => formatter.write_str(detail),
         }
     }
@@ -94,8 +143,20 @@ pub trait Engine {
         received: Instant,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<IntentOutcome, EngineError>;
+    /// One Writing Tools answer. `sink` gets each piece of text as it is
+    /// written (whole characters only). `cancelled` is asked before every
+    /// forward pass; once it says yes the answer stops with
+    /// [`EngineError::Cancelled`].
+    fn write(
+        &mut self,
+        request: &WriteRequest<'_>,
+        sink: &mut dyn FnMut(&str),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<WriteOutcome, EngineError>;
     fn calibrate(&mut self) -> Result<Calibration, EngineError>;
     fn load_report(&self) -> LoadReport;
+    /// The model tier loaded (the fixture says Standard, so every task runs).
+    fn tier(&self) -> Tier;
 }
 
 /// Which engine `open` builds. The fixture engine is a deterministic

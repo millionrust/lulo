@@ -331,6 +331,11 @@ struct EditorView {
     /// Edit ▸ Substitutions ▸ Data Detectors: checked, persisted for this
     /// session, with no live effect wired yet (see docs/parity.md TE-07).
     data_detectors: bool,
+    /// Edit ▸ Writing Tools and its panel (ADR 0024 feature 2).
+    writing_tools: Entity<rmac_writing_tools::WritingTools>,
+    /// The rich-text body's right-click menu (Cut, Copy, Paste, Select
+    /// All, Writing Tools), while open.
+    rich_menu: Option<rmac_ui::ContextMenuState>,
 }
 
 #[cfg(test)]

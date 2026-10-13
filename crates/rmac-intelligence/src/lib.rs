@@ -10,6 +10,8 @@
 //!   gets; [`config`]: the user's choice; [`fetch`]: the verified download.
 //! - [`guard`]: deterministic checks on the model's answer; [`fuzzy`]:
 //!   light typo correction for app names.
+//! - [`writing`]: Writing Tools' fixed prompts, limits and clean-up;
+//!   [`writing_eval`]: its evaluation set and scoring.
 //! - `client` (feature `client`): the session-bus client.
 
 pub mod config;
@@ -26,6 +28,8 @@ pub mod prefix_state;
 pub mod prompt;
 mod task;
 pub mod verify;
+pub mod writing;
+pub mod writing_eval;
 
 #[cfg(feature = "client")]
 pub mod client;

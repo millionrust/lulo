@@ -44,6 +44,7 @@ pub use gpui_component::input::{
 };
 pub use gpui_component::{
     menu::PopupMenuItem,
+    native_menu::NativeMenu,
     slider::{SliderEvent, SliderState},
     table::{Column, ColumnSort, TableDelegate, TableEvent, TableState},
 };
@@ -1785,8 +1786,12 @@ pub struct TextField {
     size: Size,
     tab_index: isize,
     error: Option<SharedString>,
+    context_menu: Option<TextMenuBuilder>,
     style: StyleRefinement,
 }
+
+/// Builds a text field's right-click menu when it opens.
+pub type TextMenuBuilder = Rc<dyn Fn(NativeMenu, &mut Window, &mut App) -> NativeMenu>;
 
 /// A vertical scroll position owned by a custom-painted view (one that does
 /// its own virtualised layout) and shared with the overlay scroll bar, which
@@ -1854,12 +1859,21 @@ impl TextField {
             size: Size::Medium,
             tab_index: 0,
             error: None,
+            context_menu: None,
             style: StyleRefinement::default(),
         }
     }
 
     pub fn appearance(mut self, appearance: bool) -> Self {
         self.appearance = appearance;
+        self
+    }
+
+    /// Replace the field's right-click menu (Cut, Copy, Paste, Select All)
+    /// with one built when it opens, such as the same rows plus Writing
+    /// Tools.
+    pub fn context_menu(mut self, builder: TextMenuBuilder) -> Self {
+        self.context_menu = Some(builder);
         self
     }
 
@@ -1912,13 +1926,16 @@ impl RenderOnce for TextField {
         if self.error.is_some() {
             style = style.border_color(mac::danger());
         }
-        let input = ComponentInput::new(&self.state)
+        let mut input = ComponentInput::new(&self.state)
             .appearance(self.appearance)
             .cleanable(self.cleanable)
             .disabled(self.disabled)
             .tab_index(self.tab_index)
             .with_size(self.size)
             .refine_style(&style);
+        if let Some(builder) = self.context_menu {
+            input = input.context_menu(move |menu, window, cx| builder(menu, window, cx));
+        }
         match self.error {
             Some(message) => div()
                 .flex()

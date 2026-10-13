@@ -15,6 +15,12 @@
 //!    0 (`llama_state_seq_set_data_ext`), and evaluates only its own tokens
 //!    from the prefix's end position.
 //!
+//! Writing Tools tasks work the same way, each with its own prefix
+//! (`rmac_intelligence::writing`): its state is read from its own file, or
+//! evaluated and saved the first time the task is used, and the most
+//! recent one is kept in memory so Try Again starts at once. The answer is
+//! sampled token by token and streamed to the caller as it is written.
+//!
 //! The model and backend are leaked on purpose: the service never unloads
 //! without exiting, and exiting returns everything to the system.
 
@@ -29,14 +35,18 @@ use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
+use llama_cpp_2::token::logit_bias::LlamaLogitBias;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{LlamaStateSeqFlags, SeqState};
 use rmac_intelligence::decode::{self, Tables, Token, Vocabulary};
 use rmac_intelligence::manifest::Tier;
 use rmac_intelligence::prompt::{self, PromptStyle, ANSWER_PREFIX};
-use rmac_intelligence::{guard, prefix_state, Intent};
+use rmac_intelligence::{guard, prefix_state, writing, Intent, Task};
 
-use crate::engine::{Calibration, Engine, EngineError, IntentOutcome, LoadReport, Timing};
+use crate::engine::{
+    Calibration, Engine, EngineError, IntentOutcome, LoadReport, Timing, WriteOutcome,
+    WriteRequest, WriteTiming,
+};
 
 /// Prefix plus the longest request and answer, with room to spare.
 const CONTEXT_TOKENS: u32 = prefix_state::CONTEXT_TOKENS;
@@ -89,6 +99,8 @@ pub struct LlamaEngine {
     batch: LlamaBatch<'static>,
     pieces: Pieces,
     tables: Tables,
+    /// Each token's non-Latin scripts ([`writing::foreign_scripts`]).
+    token_scripts: Vec<u8>,
     style: PromptStyle,
     tier: Tier,
     prefix: SeqState,
@@ -100,6 +112,27 @@ pub struct LlamaEngine {
     last_rewind_ms: f64,
     /// Set once the first request has been answered.
     warm: bool,
+    state_cache: Option<PathBuf>,
+    /// The last Writing Tools task's prefix state and its length.
+    writing: Option<(Task, SeqState, i32)>,
+}
+
+/// How a writing task's prefix became ready for one request.
+struct WritingPrefix {
+    tokens: i32,
+    ms: f64,
+    evaluated: bool,
+}
+
+/// Threads for prompt processing (a request's own text). The same as for
+/// decoding unless `RMAC_INTELLIGENCE_BATCH_THREADS` says otherwise, for
+/// measuring on the reference laptop.
+fn batch_threads(threads: i32) -> i32 {
+    std::env::var("RMAC_INTELLIGENCE_BATCH_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<i32>().ok())
+        .filter(|count| (1..=16).contains(count))
+        .unwrap_or(threads)
 }
 
 fn failed(error: impl std::fmt::Display) -> EngineError {
@@ -119,7 +152,7 @@ impl LlamaEngine {
             .with_n_ctx(NonZeroU32::new(CONTEXT_TOKENS))
             .with_n_batch(BATCH_TOKENS as u32)
             .with_n_threads(options.threads)
-            .with_n_threads_batch(options.threads);
+            .with_n_threads_batch(batch_threads(options.threads));
         let mut context = model.new_context(backend, parameters).map_err(failed)?;
         let vocab = model.vocab();
         let pieces = Pieces {
@@ -129,6 +162,11 @@ impl LlamaEngine {
                 .collect(),
         };
         let tables = Tables::new(&pieces);
+        let token_scripts = pieces
+            .pieces
+            .iter()
+            .map(|piece| writing::foreign_scripts(piece))
+            .collect();
         let model_load_ms = started.elapsed().as_secs_f64() * 1000.0;
 
         let prefix_text = prompt::prefix(options.style);
@@ -145,8 +183,9 @@ impl LlamaEngine {
         if !restored {
             context.clear_kv_cache();
             feed(&mut context, &mut batch, &prefix_tokens, 0)?;
-            if let Some(file) = &state_file {
-                save(&context, file, &prefix_tokens);
+            if let (Some(file), Some(directory)) = (&state_file, &options.state_cache) {
+                let keep = prefix_state::current_files(directory, tier.model(), options.style);
+                save(&context, file, &prefix_tokens, &keep);
             }
         }
         let prefix = context
@@ -164,6 +203,7 @@ impl LlamaEngine {
             batch,
             pieces,
             tables,
+            token_scripts,
             style: options.style,
             tier,
             prefix,
@@ -173,7 +213,97 @@ impl LlamaEngine {
             guard: options.guard,
             last_rewind_ms: 0.0,
             warm: false,
+            state_cache: options.state_cache,
+            writing: None,
         })
+    }
+
+    /// Put the context at "just after `task`'s prefix": from memory when it
+    /// was the last writing task, else from its saved state file, else by
+    /// evaluating it once (and saving it for the next run).
+    fn writing_prefix(&mut self, task: Task) -> Result<WritingPrefix, EngineError> {
+        let started = Instant::now();
+        let spec = writing::spec(task).ok_or_else(|| failed("not a writing task"))?;
+        self.context.clear_kv_cache();
+        if let Some((cached, state, tokens)) = &self.writing {
+            if *cached == task {
+                let tokens = *tokens;
+                self.context
+                    .state_seq_set(state, SEQUENCE)
+                    .map_err(failed)?;
+                return Ok(WritingPrefix {
+                    tokens,
+                    ms: started.elapsed().as_secs_f64() * 1000.0,
+                    evaluated: false,
+                });
+            }
+        }
+        // Only one writing state is held in memory (each is tens of MB).
+        self.writing = None;
+        let prefix_tokens = self
+            .model
+            .vocab()
+            .tokenize(spec.prefix().as_bytes(), true, true);
+        let file = self
+            .state_cache
+            .as_deref()
+            .and_then(|directory| prefix_state::writing_file(directory, self.tier.model(), task));
+        let restored = file
+            .as_deref()
+            .is_some_and(|file| restore(&mut self.context, file, &prefix_tokens));
+        if !restored {
+            self.context.clear_kv_cache();
+            feed(&mut self.context, &mut self.batch, &prefix_tokens, 0)?;
+            if let (Some(file), Some(directory)) = (&file, &self.state_cache) {
+                let keep = prefix_state::current_files(directory, self.tier.model(), self.style);
+                save(&self.context, file, &prefix_tokens, &keep);
+            }
+        }
+        let state = self
+            .context
+            .state_seq_get(SEQUENCE, LlamaStateSeqFlags::empty())
+            .map_err(failed)?;
+        let tokens = prefix_tokens.len() as i32;
+        self.writing = Some((task, state, tokens));
+        Ok(WritingPrefix {
+            tokens,
+            ms: started.elapsed().as_secs_f64() * 1000.0,
+            evaluated: !restored,
+        })
+    }
+
+    /// The sampler for one answer. Greedy tasks give the same answer for the
+    /// same text; Try Again on a greedy task samples gently instead. Every
+    /// token that starts a character in a script `text` does not use is
+    /// forbidden ([`writing::foreign_scripts`]), so the answer stays in the
+    /// text's language.
+    fn sampler(&self, mut sampling: writing::Sampling, attempt: u32, text: &str) -> LlamaSampler {
+        let allowed = writing::foreign_scripts(text.as_bytes());
+        let banned: Vec<LlamaLogitBias> = self
+            .token_scripts
+            .iter()
+            .enumerate()
+            .filter(|(_, scripts)| **scripts & !allowed != 0)
+            .map(|(token, _)| LlamaLogitBias::new(LlamaToken(token as i32), f32::NEG_INFINITY))
+            .collect();
+        let language = LlamaSampler::logit_bias(self.model.n_vocab(), &banned);
+        if sampling.temperature == 0.0 && attempt > 0 {
+            sampling.temperature = 0.3;
+            sampling.top_k = 20;
+            sampling.top_p = 0.9;
+        }
+        if sampling.temperature == 0.0 {
+            return LlamaSampler::chain_simple([language, LlamaSampler::greedy()]);
+        }
+        let seed = 0x5eed_u32.wrapping_add(attempt.wrapping_mul(7919));
+        LlamaSampler::chain_simple([
+            language,
+            LlamaSampler::penalties(self.model.n_vocab(), 64, sampling.repeat_penalty, 0.0, 0.0),
+            LlamaSampler::top_k(sampling.top_k),
+            LlamaSampler::top_p(sampling.top_p, 1),
+            LlamaSampler::temp(sampling.temperature),
+            LlamaSampler::dist(seed),
+        ])
     }
 
     pub fn threads(&self) -> i32 {
@@ -380,6 +510,131 @@ impl Engine for LlamaEngine {
         })
     }
 
+    fn write(
+        &mut self,
+        request: &WriteRequest<'_>,
+        sink: &mut dyn FnMut(&str),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<WriteOutcome, EngineError> {
+        let spec = writing::spec(request.task).ok_or_else(|| failed("not a writing task"))?;
+        if !spec.offered_on(self.tier) {
+            return Err(EngineError::NeedsFasterPc);
+        }
+        // The text never becomes special tokens: "<|im_end|>" in a note is
+        // just characters. Only the template around it is parsed.
+        let vocab = self.model.vocab();
+        let input = vocab.tokenize(request.text.as_bytes(), false, false);
+        if input.len() as u32 > spec.max_input_tokens {
+            return Err(EngineError::TooLong);
+        }
+        if cancelled() {
+            return Err(EngineError::Cancelled);
+        }
+        let cold = !self.warm;
+        let started = Instant::now();
+        let queued_ms = started.duration_since(request.received).as_secs_f64() * 1000.0;
+        let prefix = self.writing_prefix(request.task)?;
+        let mut tokens = input.clone();
+        tokens.extend(
+            self.model
+                .vocab()
+                .tokenize(spec.request_suffix().as_bytes(), false, true),
+        );
+        let input_tokens = input.len() as u32;
+        let room = CONTEXT_TOKENS as i32 - prefix.tokens - tokens.len() as i32 - 1;
+        let most = (spec.max_output_tokens(input_tokens) as i32).min(room);
+        if most < 16 {
+            return Err(EngineError::TooLong);
+        }
+        let prefill_started = Instant::now();
+        feed(&mut self.context, &mut self.batch, &tokens, prefix.tokens)?;
+        let prefill_ms = prefill_started.elapsed().as_secs_f64() * 1000.0;
+
+        let mut sampler = self.sampler(spec.sampling, request.attempt, request.text);
+        let mut stream = writing::Utf8Stream::default();
+        let mut raw = spec.answer_start.to_owned();
+        if !raw.is_empty() {
+            sink(&raw);
+        }
+        let mut position = prefix.tokens + tokens.len() as i32;
+        let mut first_token_ms = 0.0;
+        let mut decode_started = Instant::now();
+        let mut output_tokens = 0u32;
+        let mut capped = true;
+        for _ in 0..most {
+            // `sample` also accepts the token into the penalty sampler.
+            let token = sampler.sample(&self.context, self.batch.n_tokens() - 1);
+            if output_tokens == 0 {
+                first_token_ms = request.received.elapsed().as_secs_f64() * 1000.0;
+                decode_started = Instant::now();
+            }
+            output_tokens += 1;
+            if self.model.vocab().is_eog(token) {
+                capped = false;
+                break;
+            }
+            let piece = stream.push(self.pieces.piece(token.0));
+            if !piece.is_empty() {
+                let before = raw.len();
+                raw.push_str(&piece);
+                // The model starting a new turn in plain text ends it too.
+                if let Some(stop) = writing::stop_marker(&raw) {
+                    raw.truncate(stop);
+                    if raw.len() > before {
+                        sink(&raw[before..]);
+                    }
+                    capped = false;
+                    break;
+                }
+                sink(&piece);
+            }
+            if cancelled() {
+                return Err(EngineError::Cancelled);
+            }
+            self.batch.clear();
+            self.batch
+                .add(token, position, &[SEQUENCE], true)
+                .map_err(failed)?;
+            self.context.decode(&mut self.batch).map_err(failed)?;
+            position += 1;
+        }
+        let tail = stream.finish();
+        if !tail.is_empty() {
+            raw.push_str(&tail);
+            sink(&tail);
+        }
+        self.warm = true;
+        let decode_ms = decode_started.elapsed().as_secs_f64() * 1000.0;
+        let decode_tok_s = if output_tokens > 1 {
+            f64::from(output_tokens - 1) * 1000.0 / decode_ms.max(1e-3)
+        } else {
+            0.0
+        };
+        Ok(WriteOutcome {
+            text: writing::finish(request.task, request.text, &raw),
+            raw,
+            capped,
+            timing: WriteTiming {
+                first_token_ms,
+                total_ms: request.received.elapsed().as_secs_f64() * 1000.0,
+                cold,
+                queued_ms,
+                prefix_ms: prefix.ms,
+                prefix_evaluated: prefix.evaluated,
+                prefix_tokens: prefix.tokens as u32,
+                input_tokens,
+                prefill_ms,
+                output_tokens,
+                decode_ms,
+                decode_tok_s,
+            },
+        })
+    }
+
+    fn tier(&self) -> Tier {
+        self.tier
+    }
+
     /// Decode 32 tokens one at a time (greedy, unconstrained) after a short
     /// request: the decode rate the hardware gate compares with its floor.
     fn calibrate(&mut self) -> Result<Calibration, EngineError> {
@@ -428,7 +683,7 @@ fn restore(context: &mut LlamaContext<'static>, file: &Path, tokens: &[LlamaToke
     }
 }
 
-fn save(context: &LlamaContext<'static>, file: &Path, tokens: &[LlamaToken]) {
+fn save(context: &LlamaContext<'static>, file: &Path, tokens: &[LlamaToken], keep: &[PathBuf]) {
     let Some(directory) = file.parent() else {
         return;
     };
@@ -458,9 +713,9 @@ fn save(context: &LlamaContext<'static>, file: &Path, tokens: &[LlamaToken]) {
         .is_ok()
     {
         if std::fs::rename(&temporary, file).is_ok() {
-            // An update changed the prompt or the model: the older states
-            // can never be restored again.
-            prefix_state::remove_others(directory, file);
+            // An update changed a prompt or the model: the older states
+            // can never be restored again. Every current task's is kept.
+            prefix_state::remove_others(directory, keep);
         }
     } else {
         let _ = std::fs::remove_file(&temporary);

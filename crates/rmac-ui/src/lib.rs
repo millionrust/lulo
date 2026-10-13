@@ -39,8 +39,8 @@ mod window_frame_windows;
 
 pub use accessibility::AccessibleTextInput;
 pub use app_menu::{
-    set_menu_checked, set_menu_children, set_menu_enabled, set_menu_label, set_menu_mixed,
-    ShowAboutPanel,
+    set_menu_checked, set_menu_children, set_menu_enabled, set_menu_hidden, set_menu_label,
+    set_menu_mixed, ShowAboutPanel,
 };
 pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
@@ -57,10 +57,10 @@ pub use context_menu::{type_select_match, ContextMenu, ContextMenuState, MenuChe
 pub use controls::{
     overlay_scrollbar, slider_bulge_lerp, uniform_list_scrollbar, Button, ButtonRole, Checkbox,
     CollectionState, DocumentTitleMenu, InputEvent, InputState, KeyboardAction, List, ListRow,
-    PopUpButton, PopupMenuItem, Position, Radio, RadioGroup, Rope, RopeExt, ScrollPosition,
-    SearchField, SegmentedControl, SelectAll, Slider, SliderAxis, SliderBulge, SliderEvent,
-    SliderState, SwitchSize, Table, Tabs, TextField, Toggle, ToggleState, Tree, TreeRow,
-    SLIDER_BULGE_MS, SLIDER_PRESS_MS,
+    NativeMenu, PopUpButton, PopupMenuItem, Position, Radio, RadioGroup, Rope, RopeExt,
+    ScrollPosition, SearchField, SegmentedControl, SelectAll, Slider, SliderAxis, SliderBulge,
+    SliderEvent, SliderState, SwitchSize, Table, Tabs, TextField, TextMenuBuilder, Toggle,
+    ToggleState, Tree, TreeRow, SLIDER_BULGE_MS, SLIDER_PRESS_MS,
 };
 pub use controls::{tooltip_view, Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{

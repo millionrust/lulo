@@ -499,6 +499,52 @@ macro_rules! speech_submenu {
     };
 }
 
+/// Edit ▸ Writing Tools (ADR 0024 feature 2), as macOS 26 shows it with
+/// Apple Intelligence on: Show Writing Tools, Proofread and Rewrite, the
+/// three tones, then Summarise, Create Key Points and Make List. Make Table
+/// and Compose are left out: Notes, Text Editor and Mail's plain fields
+/// have no tables, and Compose writes new text from a prompt, which the
+/// closed task list does not do. Every app uses the shared
+/// `writing_tools::` actions (`rmac-writing-tools`), which also hides the
+/// whole submenu while Lulo Intelligence is off or has no model.
+macro_rules! writing_tools_submenu {
+    ($prefix:literal, separator) => {
+        submenu!(
+            "Writing Tools",
+            concat!($prefix, "::WritingToolsMenu"),
+            [
+                item!(
+                    "Show Writing Tools",
+                    concat!($prefix, "::ShowWritingTools"),
+                    ""
+                ),
+                item!("Proofread", concat!($prefix, "::Proofread"), "", separator),
+                item!("Rewrite", concat!($prefix, "::Rewrite"), ""),
+                item!(
+                    "Make Friendly",
+                    concat!($prefix, "::MakeFriendly"),
+                    "",
+                    separator
+                ),
+                item!(
+                    "Make Professional",
+                    concat!($prefix, "::MakeProfessional"),
+                    ""
+                ),
+                item!("Make Concise", concat!($prefix, "::MakeConcise"), ""),
+                item!("Summarise", concat!($prefix, "::Summarise"), "", separator),
+                item!(
+                    "Create Key Points",
+                    concat!($prefix, "::CreateKeyPoints"),
+                    ""
+                ),
+                item!("Make List", concat!($prefix, "::MakeList"), ""),
+            ],
+            separator
+        )
+    };
+}
+
 /// Edit ▸ Substitutions, Clock's shape: a plain `NSTextField` context
 /// (the alarm-name field) collapses the individual smart toggles under
 /// one "Smart Substitutions" master switch, with no "Show Substitutions"
@@ -718,6 +764,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 ]
             ),
             speech_submenu!("text_editor"),
+            writing_tools_submenu!("writing_tools", separator),
         ],
     },
     MenuSpec {
@@ -1280,6 +1327,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ]
             ),
             speech_submenu!("notes"),
+            writing_tools_submenu!("writing_tools", separator),
         ],
     },
     MenuSpec {
@@ -1996,7 +2044,10 @@ const MAIL_MENUS: &[MenuSpec] = &[
     },
     MenuSpec {
         label: "Edit",
-        items: &[item!("Undo", "mail::Undo", "⌘Z")],
+        items: &[
+            item!("Undo", "mail::Undo", "⌘Z"),
+            writing_tools_submenu!("writing_tools", separator),
+        ],
     },
     MenuSpec {
         label: "View",
@@ -4152,6 +4203,55 @@ mod tests {
                 WINDOW_MENU
             ]
         );
+    }
+
+    #[test]
+    fn notes_text_editor_and_mail_have_edit_writing_tools() {
+        for (app, specs) in [
+            (rmac_apps::identity::NOTES, NOTES_MENUS),
+            (rmac_apps::identity::TEXT_EDITOR, TEXT_EDITOR_MENUS),
+            (rmac_apps::identity::MAIL, MAIL_MENUS),
+        ] {
+            let actions = spec_actions(specs);
+            let menus = definition(app, &actions).unwrap();
+            assert!(validate_menus(&menus).is_ok(), "{app}");
+            let edit = menus.iter().find(|menu| menu.label == "Edit").unwrap();
+            let tools = edit
+                .items
+                .iter()
+                .find(|item| item.label == "Writing Tools")
+                .unwrap_or_else(|| panic!("{app} has no Edit ▸ Writing Tools"));
+            assert_eq!(tools.action, "writing_tools::WritingToolsMenu");
+            assert!(tools.separator_before);
+            assert_eq!(
+                tools
+                    .children
+                    .iter()
+                    .map(|item| (item.label.as_str(), item.action.as_str()))
+                    .collect::<Vec<_>>(),
+                [
+                    ("Show Writing Tools", "writing_tools::ShowWritingTools"),
+                    ("Proofread", "writing_tools::Proofread"),
+                    ("Rewrite", "writing_tools::Rewrite"),
+                    ("Make Friendly", "writing_tools::MakeFriendly"),
+                    ("Make Professional", "writing_tools::MakeProfessional"),
+                    ("Make Concise", "writing_tools::MakeConcise"),
+                    ("Summarise", "writing_tools::Summarise"),
+                    ("Create Key Points", "writing_tools::CreateKeyPoints"),
+                    ("Make List", "writing_tools::MakeList"),
+                ]
+            );
+            // Grouped as on the Mac.
+            assert_eq!(
+                tools
+                    .children
+                    .iter()
+                    .filter(|item| item.separator_before)
+                    .map(|item| item.label.as_str())
+                    .collect::<Vec<_>>(),
+                ["Proofread", "Make Friendly", "Summarise"]
+            );
+        }
     }
 
     #[test]

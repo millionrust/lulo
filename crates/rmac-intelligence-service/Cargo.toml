@@ -19,6 +19,7 @@ path = "src/bin/rmac-intelligence-bench.rs"
 [dependencies]
 async-channel.workspace = true
 async-io.workspace = true
+futures-lite.workspace = true
 futures-util.workspace = true
 rmac-intelligence = { workspace = true, features = ["client"] }
 serde.workspace = true

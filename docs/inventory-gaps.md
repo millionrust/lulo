@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_128 gaps across 8 apps; 242 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_148 gaps across 8 apps; 242 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
@@ -50,6 +50,16 @@ _128 gaps across 8 apps; 242 Mac-only items were allowlisted (see `tests/invento
 | NOT-MENU-004 | missing menu item | Writing Direction | Format ▸ Text ▸ Writing Direction |  |  | missing from Lulo's menu bar |
 | NOT-MENU-005 | missing menu item | Paragraph | Format ▸ Text ▸ Writing Direction ▸ Paragraph |  |  | missing from Lulo's menu bar |
 | NOT-MENU-006 | missing menu item | Selection | Format ▸ Text ▸ Writing Direction ▸ Selection |  |  | missing from Lulo's menu bar |
+| NOT-MENU-008 | Lulo-only (not on the Mac) | Writing Tools | Edit ▸ Writing Tools |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-016 | Lulo-only (not on the Mac) | Create Key Points | Edit ▸ Writing Tools ▸ Create Key Points |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-014 | Lulo-only (not on the Mac) | Make Concise | Edit ▸ Writing Tools ▸ Make Concise |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-012 | Lulo-only (not on the Mac) | Make Friendly | Edit ▸ Writing Tools ▸ Make Friendly |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-017 | Lulo-only (not on the Mac) | Make List | Edit ▸ Writing Tools ▸ Make List |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-013 | Lulo-only (not on the Mac) | Make Professional | Edit ▸ Writing Tools ▸ Make Professional |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-010 | Lulo-only (not on the Mac) | Proofread | Edit ▸ Writing Tools ▸ Proofread |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-011 | Lulo-only (not on the Mac) | Rewrite | Edit ▸ Writing Tools ▸ Rewrite |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-009 | Lulo-only (not on the Mac) | Show Writing Tools | Edit ▸ Writing Tools ▸ Show Writing Tools |  |  | present in Lulo but not found on the Mac |
+| NOT-MENU-015 | Lulo-only (not on the Mac) | Summarise | Edit ▸ Writing Tools ▸ Summarise |  |  | present in Lulo but not found on the Mac |
 | NOT-MENU-007 | Lulo-only (not on the Mac) | New Quick Note | File ▸ New Quick Note |  |  | present in Lulo but not found on the Mac |
 
 ## Preview
@@ -170,6 +180,16 @@ _128 gaps across 8 apps; 242 Mac-only items were allowlisted (see `tests/invento
 | TXT-SETTINGS-007 | missing settings control | Properties | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TXT-SETTINGS-008 | missing settings control | Smart quotes and dashes in rich text documents only | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TXT-SETTINGS-009 | missing settings control | Use the Format menu to choose settings for an open document. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TXT-MENU-012 | Lulo-only (not on the Mac) | Writing Tools | Edit ▸ Writing Tools |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-020 | Lulo-only (not on the Mac) | Create Key Points | Edit ▸ Writing Tools ▸ Create Key Points |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-018 | Lulo-only (not on the Mac) | Make Concise | Edit ▸ Writing Tools ▸ Make Concise |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-016 | Lulo-only (not on the Mac) | Make Friendly | Edit ▸ Writing Tools ▸ Make Friendly |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-021 | Lulo-only (not on the Mac) | Make List | Edit ▸ Writing Tools ▸ Make List |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-017 | Lulo-only (not on the Mac) | Make Professional | Edit ▸ Writing Tools ▸ Make Professional |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-014 | Lulo-only (not on the Mac) | Proofread | Edit ▸ Writing Tools ▸ Proofread |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-015 | Lulo-only (not on the Mac) | Rewrite | Edit ▸ Writing Tools ▸ Rewrite |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-013 | Lulo-only (not on the Mac) | Show Writing Tools | Edit ▸ Writing Tools ▸ Show Writing Tools |  |  | present in Lulo but not found on the Mac |
+| TXT-MENU-019 | Lulo-only (not on the Mac) | Summarise | Edit ▸ Writing Tools ▸ Summarise |  |  | present in Lulo but not found on the Mac |
 
 ## Weather
 

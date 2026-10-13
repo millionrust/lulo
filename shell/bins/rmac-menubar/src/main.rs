@@ -1349,7 +1349,31 @@ mod linux_wayland {
                         .iter()
                         .find(|workspace| workspace.focused)
                         .and_then(|workspace| workspace.active_window);
-                    let Some(target) = live.or(remembered) else {
+                    // niri reports no active window for a workspace whose
+                    // floating layer is not the active one, which is where a
+                    // window sits while the bar holds the on-demand grab (the
+                    // nested niri on CI, where the probe is floating). The
+                    // window the keyboard was last on is then the most
+                    // recently focused one on the focused workspace.
+                    let latest = || {
+                        let workspace = snapshot
+                            .workspaces
+                            .iter()
+                            .find(|workspace| workspace.focused)?
+                            .id;
+                        snapshot
+                            .windows
+                            .iter()
+                            .filter(|window| {
+                                window.workspace == Some(workspace)
+                                    && !rmac_compositor::window_is_parked(&snapshot, window)
+                            })
+                            .max_by_key(|window| {
+                                window.focus_timestamp.map(|t| (t.seconds, t.nanoseconds))
+                            })
+                            .map(|window| window.id)
+                    };
+                    let Some(target) = live.or(remembered).or_else(latest) else {
                         eprintln!("focus return: no window to return to");
                         return;
                     };
@@ -1384,7 +1408,9 @@ mod linux_wayland {
                         .iter()
                         .any(|candidate| candidate.id == target && candidate.focused);
                     if attempt == 0 || settled {
-                        eprintln!("focus return: attempt {attempt}, window {target:?} focused: {settled}");
+                        eprintln!(
+                            "focus return: attempt {attempt}, window {target:?} focused: {settled}"
+                        );
                     }
                     if settled {
                         return;

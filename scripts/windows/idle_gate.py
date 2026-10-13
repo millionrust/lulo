@@ -51,13 +51,13 @@ DEFAULT_EXEMPT = ("rmac-terminal",)
 # its own in a debug build) and drew two frames: 19 and 28 ticks in all in
 # runs 37633070594 and 37657567719, under a 48-tick allowance.
 #
-# The Lulo layer's menu bar shows the time to the minute too, so its
-# window redraws once a minute, and the same one-in-three window catches
-# it: run 37713970007 charged lulo-shell 2.00 ticks of its own for that
-# one update (three frames: the clock and `gpui_windows`' settle).
+# The Lulo layer's menu bar shows the time to the minute too and redraws
+# once a minute, at the minute. `shell_smoke.py` measures lulo-shell from
+# its `settled` trace mark over a window that holds no minute boundary, so
+# the shell gets the apps' one tick, and its wake-ups are gated as well
+# (`--shell-max-wakes`): an idle shell wakes for nothing at all.
 PER_APP_BUDGET_TICKS: dict[str, float] = {
     "rmac-clock": 3.0,
-    "lulo-shell": 2.0,
 }
 
 
@@ -99,6 +99,27 @@ def idle_failures(
                 + (f" (wake-ups: {sources})" if sources else "")
             )
     return failures
+
+
+def shell_wake_failures(results: dict[str, dict], max_wakes: int | None) -> list[str]:
+    """lulo-shell woken more than `max_wakes` times over the idle window
+    (`idle_wakes`: every message, task, timer and frame `gpui_windows`
+    traced there). Only checked when the shell ran."""
+    shell = results.get("lulo-shell")
+    if shell is None or max_wakes is None:
+        return []
+    wakes = shell.get("idle_wakes")
+    if wakes is None:
+        return ["lulo-shell: no idle wake-up reading"]
+    if wakes > max_wakes:
+        sources = ", ".join(
+            f"{entry['count']} x {entry['source']}" for entry in shell.get("idle_wake_sources", [])[:4]
+        )
+        return [
+            f"lulo-shell: {wakes} wake-ups idle, over the budget of {max_wakes}"
+            + (f" ({sources})" if sources else "")
+        ]
+    return []
 
 
 def missing_failures(results: dict[str, dict], expected: list[str]) -> list[str]:
@@ -245,6 +266,12 @@ def main() -> int:
         help="Fail when any app's private bytes at idle are over this many MB.",
     )
     parser.add_argument(
+        "--shell-max-wakes",
+        type=int,
+        default=None,
+        help="Fail when lulo-shell was woken more than this many times over the idle window.",
+    )
+    parser.add_argument(
         "--expect",
         nargs="*",
         default=[],
@@ -278,6 +305,7 @@ def main() -> int:
             f"after Spotlight: {shell.get('after_spotlight_working_set_mb')} MB"
         )
         failures += memory_failures(results, arguments.shell_memory_mb)
+    failures += shell_wake_failures(results, arguments.shell_max_wakes)
     failures += idle_private_failures(results, arguments.shell_idle_private_mb)
     if (
         arguments.shell_after_use_private_mb is not None

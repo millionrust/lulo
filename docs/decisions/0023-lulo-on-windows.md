@@ -17,7 +17,7 @@
   Clock's scheduled tasks and restores the Windows desktop -- is on `op/win-installer`
   (see "Installer" below). Lulo mode (Lulo's own desktop over Explorer's, Mac window
   chrome, and every way out restoring Windows) is on `op/win-lulo-mode` (see "Lulo
-  mode"). The rest of phases 2–5 needs owner approval and the hardware
+  mode"). Lulo's own window corners, shadow and hairline are on `op/win-corners`. The rest of phases 2–5 needs owner approval and the hardware
   and signing items under "What the owner must provide".
 - **Scope:** every crate under `crates/` and `shell/`, the workspace `Cargo.toml`,
   `deny.toml`, `.github/workflows/ci.yml`, `.github/workflows/windows-preview.yml`,
@@ -1515,7 +1515,9 @@ asks Windows 11 for rounded corners. `rmac-ui` sets the 1 px edge (`DWMWA_BORDER
 from Lulo's appearance, the separator drawn 2.5× stronger over the window colour, when each
 window's root view is made and on every theme change; Lulo's appearance can differ from
 Windows', so `gpui_windows` cannot pick it. Shell surfaces get no DWM corner, border or (for
-panels and the desktop) shadow, since they draw their own shapes.
+panels and the desktop) shadow, since they draw their own shapes. Since `op/win-corners` app windows
+draw Lulo's own corners, shadow and hairline instead ("Window chrome: Lulo's own corners and
+shadow" below); DWM's frame stays only without DirectComposition.
 
 **Spotlight** (WIN-OS-44). As on the Mac it opens as the search bar alone, a 640 × 56 pt
 pill, centred with its top at 20 % of the screen's height (the Mac's 190 of 956 pt), and the
@@ -1879,6 +1881,90 @@ menu. All of these pass ("every Lulo layer check passed", job of run 37832355013
   minimized Windows apps with their icons in the Dock (WIN-OS-66), the Lulo artwork on the
   desktop (WIN-OS-67), Control Centre's Display slider (WIN-OS-69). DPI other than 100 % is
   still untried.
+
+## Window chrome: Lulo's own corners and shadow (branch `op/win-corners`)
+
+**The gap** (WIN-OS-73, the owner on 2026-10-13: "the apps in windows dont have the curved
+border like mac"). WIN-OS-42 gave app windows DWM's frame: Windows 11's rounding, DWM's
+shadow and a hairline in Lulo's colour. Windows 11 rounds every window at a fixed 8 px
+(`DWMWA_WINDOW_CORNER_PREFERENCE` only picks round, small round or square), and its shadow
+is much lighter than the Mac's. On Lulo OS niri rounds app windows at Lulo's window radius,
+16 pt for title-bar windows and 27 pt for the unified-toolbar apps (Files, System Settings,
+Calculator, Clock, Notes, Activity Monitor; `rmac_design::Radii`,
+`packaging/rmac-session/shell.kdl`), with the Mac's soft shadow (`Elevation::window_active`,
+blur 42, 16 down, 0.74; `window_inactive`, blur 26, 8 down, 0.46).
+
+**Decision.** `gpui_windows` draws the same frame itself for every window that asks
+(`Window::set_frame_style`, a `WindowFrameStyle` in the vendored GPUI core, ADR 0026), and
+`rmac-ui` asks for each app window from Lulo's tokens when its root view is made and on
+every theme change (`window_frame_windows.rs`, with the radius niri gives that app id;
+a test pins the list to `shell.kdl`). Shell surfaces (tool windows) draw their own shapes
+and are left out, as before. In `shell/compat/gpui_windows/src/rmac_window_frame.rs`:
+
+- **Corners.** The swap chain is already shown through DirectComposition
+  (`WS_EX_NOREDIRECTIONBITMAP`, a premultiplied-alpha composition swap chain). Its visual
+  is clipped to an `IDCompositionRectangleClip` with the four corner radii in device
+  pixels, in soft border mode, so DWM draws the arc anti-aliased while composing. It is set
+  once and again on each resize (`DirectXRenderer::set_corner_radius`); nothing runs per
+  frame and nothing is drawn in the corners. A window region would be aliased (jagged) and
+  is not used.
+- **Shadow and hairline.** A layered tool window (`WS_EX_LAYERED | WS_EX_TRANSPARENT |
+  WS_EX_NOACTIVATE`, class `LuloWindowShadow`) owned by the app window. Owned, it stays just
+  above its window in the z-order, hides when the window is minimised and is destroyed with
+  it; transparent, every click on the shadow goes to whatever is below it, in any process.
+  Its pixels are the Mac shadow (three box blurs approximating the Gaussian of the window's
+  rounded shape, moved down by the offset, as CSS's `box-shadow` and niri draw it) cut out
+  under the window, plus the 1 px hairline along the window's rounded edge, in Lulo's
+  appearance (the separator over the window colour, light rim in dark mode, soft grey in
+  light). It reaches `blur` past the window (42 px on each side, 26 above and 58 below for
+  the key window at 100 %). It is painted with `UpdateLayeredWindow` only when the window's
+  size, radius, scale or key state changes, from a cached nine-slice drawn once per style
+  (about 300 × 300 px, its middle row and column stretched), and only moved otherwise.
+  The key window gets the deeper shadow, as on the Mac.
+- **DWM's frame off.** For these windows the 1 px frame extension that turned DWM's shadow
+  on is removed, Windows 11's rounding is `DWMWCP_DONOTROUND` and DWM's border is
+  `DWMWA_COLOR_NONE`, and DWM's non-client rendering is off (`DWMNCRP_DISABLED`), so the
+  frame does not double up. With only the extension removed, the first CI run showed a light
+  1 px line along each window's top edge, DWM's top frame, which GPUI folds into the client
+  area of its caption-less windows; with no redirection bitmap nothing else paints the
+  frame. `launch_smoke.py` checks that top row beside the corner is clear.
+- **Maximised, full-screen and snapped.** These windows have square corners and no shadow,
+  as tiled windows on Lulo OS: `IsZoomed`, GPUI's full-screen state and `IsWindowArranged`
+  (Snap layouts, Win+arrows, a drag to a screen edge; looked up at run time, since older
+  Windows 10 builds lack it). Each move, resize, show, hide and state change arrives as
+  `WM_WINDOWPOSCHANGED`, which still goes on to `DefWindowProcW` (and so to `WM_SIZE`).
+- **Input and resizing.** The window's own rectangle is still exactly the visible window:
+  the system's invisible resize borders lie just outside the visible edge with the
+  system's cursors, Snap layouts on the maximise button keep working, and placement in the
+  work area and the AppBars are unchanged. Only the clear wedge outside each arc (about 8 px
+  deep at 27 pt) still belongs to the window for clicks.
+- **Without DirectComposition** (`GPUI_DISABLE_DIRECT_COMPOSITION`) the window keeps DWM's
+  frame from WIN-OS-42, with the hairline as DWM's border colour.
+
+**Alternatives.** (1) The Linux layout, a transparent window with the shadow drawn by GPUI
+in a reserved margin and `HTTRANSPARENT` from `WM_NCHITTEST` there: `HTTRANSPARENT` only
+passes a click to windows of the same thread, so the 26–58 px margin would swallow clicks
+meant for other apps' windows; making the whole window `WS_EX_TRANSPARENT` while the pointer
+is in the margin needs the pointer polled, which the idle gate forbids. (2) A window region
+(`SetWindowRgn`) cut to the rounded shape: aliased, the jagged corners the owner would see.
+(3) Keeping DWM's shadow under Lulo's corners: DWM's shadow follows its own 8 px shape and is
+fainter than the Mac's. (4) Drawing the rounded body in GPUI over a transparent clear colour:
+GPUI's content masks are rectangles, so every app's square backgrounds would need rounding
+by hand; the composition clip rounds whatever the window draws.
+
+**Cost.** Nothing at idle: the clip is composed by DWM, the shadow window has no timer and
+gets no messages while nothing changes. Per window it holds one cached nine-slice per key
+state (about 350 KB each at 100 %) and a DIB only for the moment of each repaint; the
+shadow's pixels live in DWM. A resize repaints by copying the nine-slice rows.
+
+**Proof.** `launch_smoke.py` puts a blue backdrop behind Calculator (27 pt) and Text Editor
+(16 pt) before any key and samples the screen: outside each corner's arc the backdrop
+shows, darkened only by the shadow; just inside it the window does; beside the window the
+backdrop's share rises with distance from the edge and is whole past the shadow's margin.
+The captures are `rmac-calculator-frame.png`, `rmac-calculator-corner.png` (six times
+enlarged) and the same for Text Editor in the `windows-app-screens-1` artifact. The Lulo
+layer's own check (`shell_smoke.py`'s window shadow, a maximised Calculator between the bar
+and the Dock) runs unchanged.
 
 ## Phase plan
 

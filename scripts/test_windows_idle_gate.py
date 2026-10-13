@@ -135,13 +135,37 @@ class IdleGateTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("lulo-shell", failures[0])
 
-    def test_the_lulo_bars_minute_clock_fits_its_budget(self) -> None:
-        # Run 37713970007: the bar's once-a-minute clock update.
+    def test_the_lulo_layer_gets_the_apps_one_tick(self) -> None:
+        # Its window holds no minute boundary any more (shell_smoke.py), so
+        # two ticks (dev run 38421350187 read 5.01 of its own) fail.
         results = {"lulo-shell": {"idle_ticks": 2.0, "idle_renderer_ticks": 0.0}}
+        failures = idle_gate.idle_failures(results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("lulo-shell", failures[0])
+        results = {"lulo-shell": {"idle_ticks": 1.0, "idle_renderer_ticks": 0.0}}
         self.assertEqual(
-            idle_gate.idle_failures(results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS),
-            [],
+            idle_gate.idle_failures(results, 1.0, (), idle_gate.PER_APP_BUDGET_TICKS), []
         )
+
+    def test_the_lulo_layers_wake_ups_are_gated(self) -> None:
+        quiet = {"lulo-shell": {"idle_wakes": 0}}
+        self.assertEqual(idle_gate.shell_wake_failures(quiet, 4), [])
+        busy = {
+            "lulo-shell": {
+                "idle_wakes": 123,
+                "idle_wake_sources": [{"count": 57, "source": "frame idle"}],
+            }
+        }
+        failures = idle_gate.shell_wake_failures(busy, 4)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("123 wake-ups", failures[0])
+        self.assertIn("57 x frame idle", failures[0])
+        self.assertEqual(
+            idle_gate.shell_wake_failures({"lulo-shell": {}}, 4),
+            ["lulo-shell: no idle wake-up reading"],
+        )
+        self.assertEqual(idle_gate.shell_wake_failures({}, 4), [])
+        self.assertEqual(idle_gate.shell_wake_failures(busy, None), [])
 
 
 class MissingReadingTests(unittest.TestCase):
@@ -284,6 +308,20 @@ class ShellTraceTests(unittest.TestCase):
             self.assertEqual(tile.group(1), "110")
             self.assertIsNone(log.wait_for(r"^starting", 0.05, after=1))
             self.assertIsNotNone(log.wait_for(r"running$", 0.1, after=2))
+
+
+class ShellIdleWindowTests(unittest.TestCase):
+    def test_the_idle_window_holds_no_minute_boundary(self) -> None:
+        for now in [0.0, 12.3, 37.4, 38.0, 45.0, 59.9, 1_000_000.25]:
+            settle = shell_smoke.clear_of_minute(now, 2.0, 20.0)
+            self.assertGreaterEqual(settle, 2.0)
+            self.assertLess(settle, 62.0)
+            start = (now + settle) % 60.0
+            self.assertGreaterEqual(start, 0.5, now)
+            self.assertLessEqual(start + 20.0, 59.5, now)
+
+    def test_a_window_that_already_fits_starts_after_the_settle(self) -> None:
+        self.assertEqual(shell_smoke.clear_of_minute(120.0 + 10.0, 2.0, 20.0), 2.0)
 
 
 if __name__ == "__main__":

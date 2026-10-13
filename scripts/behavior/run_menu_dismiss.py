@@ -522,8 +522,18 @@ class Run:
                 self.keys.key("escape")
                 closed = self.wait_for(lambda: item() is None, 5)
                 self.check(f"Escape focus: Escape closes the {label}", closed)
-                self.check(f"Escape focus: Escape returns the keyboard from the {label}",
-                           self.wait_for(focused, 10))
+                returned = self.wait_for(focused, 10)
+                self.check(f"Escape focus: Escape returns the keyboard from the {label}", returned)
+                if not returned:
+                    # Evidence for a CI-only failure: what niri thinks is focused.
+                    print(f"focus diagnostic ({label}): windows="
+                          f"{[(w.get('app_id'), w.get('is_focused')) for w in self.niri('windows') or []]} "
+                          f"workspaces={self.niri('workspaces')}", flush=True)
+                    log = self.out / "top-bar.log"
+                    if log.exists():
+                        for line in log.read_text(errors="replace").splitlines():
+                            if "focus" in line.lower():
+                                print(f"top-bar: {line}", flush=True)
         finally:
             probe.terminate()
             try:
@@ -790,7 +800,16 @@ class Run:
                     continue
             return found
 
-        candidates = self.wait_for(lambda: rows() or None, 5) or []
+        # On a loaded runner the layer exists before the launcher's field has
+        # the keyboard, and the first key press is dropped; type again if no
+        # row appeared (a second "e" still matches).
+        candidates = []
+        for _ in range(3):
+            candidates = self.wait_for(lambda: rows() or None, 5) or []
+            if candidates:
+                break
+            print("Spotlight expanded: no result rows yet, typing again", flush=True)
+            self.keys.type_text("e")
         self.check("Spotlight expanded: typing \"e\" shows at least one result row",
                    bool(candidates), f"{len(candidates)} candidates")
         if not candidates:
@@ -1659,9 +1678,17 @@ class Run:
             self.check("Dock focus: probe app is frontmost", frontmost)
             if not frontmost:
                 return
-            tile = self.find_node(("push button", "button"),
-                                  lambda name: name.startswith("Files") and not name.endswith(" menu"))
-            box = self.extents(tile) if tile is not None else None
+            # The Dock publishes its tiles to AT-SPI a moment after the probe
+            # window maps, and a tile can briefly report an empty box while
+            # the Dock re-lays out around the new app; one shot of the walk
+            # raced both on CI. Wait for a tile with real bounds.
+            def files_tile_box():
+                tile = self.find_node(("push button", "button"),
+                                      lambda name: name.startswith("Files") and not name.endswith(" menu"))
+                found = self.extents(tile) if tile is not None else None
+                return found if found and found[2] > 0 and found[3] > 0 else None
+
+            box = self.wait_for(files_tile_box, 20)
             if box is None:
                 self.check("Dock focus: Files tile has bounds", False)
                 return

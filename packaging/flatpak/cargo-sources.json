@@ -5419,19 +5419,6 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/notify/notify-7.0.0.crate",
-        "sha256": "c533b4c39709f9ba5005d8002048266593c1cfaf3c5f0739d5b8ab0c6c504009",
-        "dest": "cargo/vendor/notify-7.0.0"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"c533b4c39709f9ba5005d8002048266593c1cfaf3c5f0739d5b8ab0c6c504009\", \"files\": {}}",
-        "dest": "cargo/vendor/notify-7.0.0",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/notify-types/notify-types-1.0.1.crate",
         "sha256": "585d3cb5e12e01aed9e8a1f70d5c6b5e86fe2a6e48fc8cd0b3e0b8df6f6eb174",
         "dest": "cargo/vendor/notify-types-1.0.1"

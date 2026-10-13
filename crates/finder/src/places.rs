@@ -131,7 +131,7 @@ pub fn favourite_folders(home: &Path) -> Vec<PlaceSpec> {
     #[cfg(target_os = "windows")]
     favourites.extend(
         [
-            ("Pictures", KnownFolder::Pictures, "icons/photo.svg"),
+            ("Pictures", KnownFolder::Pictures, "icons/image.svg"),
             ("Music", KnownFolder::Music, "icons/music.svg"),
             ("Videos", KnownFolder::Videos, "icons/movie.svg"),
             ("OneDrive", KnownFolder::OneDrive, "icons/cloud.svg"),
@@ -217,7 +217,7 @@ pub fn applications_folder() -> Option<PlaceSpec> {
 pub fn media_folders(home: &Path) -> Vec<PlaceSpec> {
     [
         ("Music", "Music", "icons/music.svg"),
-        ("Photos", "Pictures", "icons/photo.svg"),
+        ("Photos", "Pictures", "icons/image.svg"),
         ("Movies", "Movies", "icons/movie.svg"),
     ]
     .into_iter()
@@ -246,6 +246,23 @@ pub fn standard_locations(home: &Path) -> Vec<PlaceSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every sidebar icon this file names is a real asset, on every
+    /// platform's branch (Pictures and Photos named a missing `photo.svg`
+    /// and showed no icon; found by the Windows robot).
+    #[test]
+    fn every_place_icon_exists() {
+        let source = include_str!("places.rs");
+        let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+        let mut checked = 0;
+        for piece in source.split('"') {
+            if piece.starts_with("icons/") && piece.ends_with(".svg") {
+                assert!(assets.join(piece).is_file(), "{piece} is not in {assets:?}");
+                checked += 1;
+            }
+        }
+        assert!(checked >= 8, "{checked}");
+    }
 
     #[test]
     fn favourites_and_locations_follow_files() {

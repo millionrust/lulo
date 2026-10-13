@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use zbus::blocking::{connection::Builder, Connection, Proxy};
 use zbus::message::Header;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Str, Value};
@@ -11,15 +11,15 @@ use super::{
     WifiPersonalMode, WifiSecurity,
 };
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const SERVICE: &str = "org.freedesktop.NetworkManager";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const AGENT_PATH: &str = "/org/freedesktop/NetworkManager/SecretAgent";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const AGENT_MANAGER_PATH: &str = "/org/freedesktop/NetworkManager/AgentManager";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const AGENT_MANAGER_INTERFACE: &str = "org.freedesktop.NetworkManager.AgentManager";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const AGENT_IDENTIFIER: &str = "org.rmac.SystemSettings.Wifi";
 const SECURITY_SETTING: &str = "802-11-wireless-security";
 const ENTERPRISE_SETTING: &str = "802-1x";
@@ -70,7 +70,7 @@ impl OneShotSecretAgent {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     fn with_service_owner(mut self, owner: String) -> Self {
         self.service_owner = owner;
         self
@@ -231,17 +231,17 @@ impl OneShotSecretAgent {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) struct RegisteredSecretAgent {
     connection: Connection,
 }
 
 /// Outgoing calls on this connection (to apps, portals or the bus) give up
 /// after this long, so a peer that never replies cannot hold a call open.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl RegisteredSecretAgent {
     fn register(
         network: WifiNetworkId,
@@ -282,7 +282,7 @@ impl RegisteredSecretAgent {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl Drop for RegisteredSecretAgent {
     fn drop(&mut self) {
         if let Ok(proxy) = agent_manager(&self.connection) {
@@ -291,7 +291,7 @@ impl Drop for RegisteredSecretAgent {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn agent_manager(connection: &Connection) -> zbus::Result<Proxy<'_>> {
     Proxy::new(
         connection,

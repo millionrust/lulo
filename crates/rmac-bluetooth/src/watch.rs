@@ -1,15 +1,15 @@
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
 use crate::{Error, WatchEvent};
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const BLUEZ_SERVICE: &str = "org.bluez";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const WATCH_RECONNECT_DELAY: Duration = Duration::from_secs(1);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const WATCH_QUIET_PERIOD: Duration = Duration::from_millis(75);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
     let mut unavailable_reported = false;
     loop {
@@ -23,7 +23,7 @@ pub(crate) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub(crate) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
     sender
         .send(WatchEvent::Unavailable)
@@ -31,7 +31,7 @@ pub(crate) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
         .map_err(|_| Error::new("watch Bluetooth changes", "the event consumer closed"))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 async fn watch_once(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,
@@ -135,7 +135,7 @@ async fn watch_once(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn read_signal(message: Option<Result<zbus::Message, zbus::Error>>) -> Result<(), Error> {
     match message {
         Some(Ok(_)) => Ok(()),
@@ -147,7 +147,7 @@ fn read_signal(message: Option<Result<zbus::Message, zbus::Error>>) -> Result<()
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn read_bluez_owner(
     message: Option<Result<zbus::Message, zbus::Error>>,
 ) -> Result<Option<bool>, Error> {
@@ -161,12 +161,12 @@ fn read_bluez_owner(
     Ok(bluez_owner_availability(&name, &new_owner))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn bluez_owner_availability(name: &str, new_owner: &str) -> Option<bool> {
     (name == "org.bluez").then_some(!new_owner.is_empty())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 async fn publish_changed(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,
@@ -183,7 +183,7 @@ async fn publish_changed(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 async fn publish_unavailable(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,

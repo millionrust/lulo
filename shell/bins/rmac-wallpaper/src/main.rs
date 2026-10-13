@@ -1,9 +1,6 @@
 #[cfg(all(target_os = "linux", feature = "wayland"))]
-mod linux_wayland;
-
-#[cfg(all(target_os = "linux", feature = "wayland"))]
 fn main() {
-    linux_wayland::run();
+    rmac_shell_wallpaper::run();
 }
 
 #[cfg(not(all(target_os = "linux", feature = "wayland")))]

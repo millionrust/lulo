@@ -177,7 +177,7 @@ impl Error {
         }
     }
 
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(any(target_os = "linux", test))]
     pub(super) fn detail(&self) -> &str {
         &self.detail
     }

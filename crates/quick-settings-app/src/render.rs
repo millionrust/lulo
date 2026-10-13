@@ -201,6 +201,11 @@ impl Render for QuickSettingsView {
             }
         }
 
+        // niri rounds the blur from the surface's own shape on Lulo OS; the
+        // Windows window is cut to it (and again after each resize lands).
+        #[cfg(windows)]
+        rmac_shell_layer::set_corner_radius(window, layout::SURFACE_RADIUS as f32);
+
         let view = self.state.view();
         let mut children: Vec<AnyElement> = Vec::new();
         for (index, (control, message)) in self
@@ -268,7 +273,7 @@ impl Render for QuickSettingsView {
             modules.content_height() as f32
         };
 
-        div()
+        let surface = div()
             .id("control-center")
             .role(Role::Group)
             .aria_label("Control Centre")
@@ -314,7 +319,13 @@ impl Render for QuickSettingsView {
                     .opacity(reveal.map_or(1.0, |(_, amount)| 1.0 - amount))
                     .children(children),
             )
-            .children(detail)
+            .children(detail);
+        // On Windows the blur under the tint is drawn here, not by the
+        // compositor (`rmac_shell_layer::over_backdrop`).
+        #[cfg(windows)]
+        let surface =
+            rmac_shell_layer::over_backdrop(window, cx, layout::SURFACE_RADIUS as f32, surface);
+        surface
     }
 }
 

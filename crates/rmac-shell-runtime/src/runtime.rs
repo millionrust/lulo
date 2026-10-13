@@ -53,7 +53,11 @@ impl ServiceReader for SystemServiceReader {
 }
 
 /// Publish coherent shell snapshots until the receiving side closes.
+#[cfg(not(windows))]
 pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
+    if crate::scene::active() {
+        return watch_scene(sender).await;
+    }
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     let (service_tx, service_rx) = async_channel::bounded(8);
     let (settings_tx, settings_rx) = async_channel::bounded(2);
@@ -72,6 +76,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         settings_rx,
         focus_rx,
         notification_rx,
+        SystemServiceReader,
     );
     let (_, _, _, _, _, _) = futures_util::try_join!(
         compositor,
@@ -88,6 +93,75 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     Ok(())
 }
 
+/// Publish coherent shell snapshots until the receiving side closes. On
+/// Windows the compositor is `rmac-compositor-system`'s Win32 backend and
+/// the status sources are Windows' own (`crate::windows`); Windows has no
+/// Focus authority or Notification Center service for the bar yet, so those
+/// two inputs stay open and quiet.
+#[cfg(windows)]
+pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
+    if crate::scene::active() {
+        return watch_scene(sender).await;
+    }
+    let (compositor_tx, compositor_rx) = async_channel::bounded(64);
+    let (service_tx, service_rx) = async_channel::bounded(8);
+    let (settings_tx, settings_rx) = async_channel::bounded(2);
+    let (_focus_tx, focus_rx) = async_channel::bounded(1);
+    let (_notification_tx, notification_rx) = async_channel::bounded(1);
+
+    let compositor = watch_compositor(compositor_tx);
+    let services = crate::windows::watch(service_tx);
+    let settings = watch_settings(settings_tx);
+    let consumer = consume(
+        sender,
+        compositor_rx,
+        service_rx,
+        settings_rx,
+        focus_rx,
+        notification_rx,
+        crate::windows::WindowsServiceReader,
+    );
+    futures_util::try_join!(compositor, services, settings, consumer)?;
+    Ok(())
+}
+
+/// The shared-view checks' fixed scene (`RMAC_SHELL_SCENE=1`): the real
+/// window list and settings, with the status items' fixed readings
+/// (`crate::scene`), so Lulo OS and Windows draw the same bar.
+async fn watch_scene(sender: Sender<Update>) -> Result<(), Error> {
+    let (compositor_tx, compositor_rx) = async_channel::bounded(64);
+    let (service_tx, service_rx) = async_channel::bounded(8);
+    let (settings_tx, settings_rx) = async_channel::bounded(2);
+    let (_focus_tx, focus_rx) = async_channel::bounded(1);
+    let (_notification_tx, notification_rx) = async_channel::bounded(1);
+    let services = async {
+        let _ = service_tx
+            .send(rmac_shell_status_linux::Event::Refresh(
+                rmac_shell_status_linux::Sources::all(),
+            ))
+            .await;
+        service_tx.closed().await;
+        Ok::<(), Error>(())
+    };
+    let consumer = consume(
+        sender,
+        compositor_rx,
+        service_rx,
+        settings_rx,
+        focus_rx,
+        notification_rx,
+        crate::scene::SceneServiceReader,
+    );
+    futures_util::try_join!(
+        watch_compositor(compositor_tx),
+        services,
+        watch_settings(settings_tx),
+        consumer
+    )?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
 async fn watch_notifications(
     sender: Sender<Result<rmac_notifications::Indicator, String>>,
 ) -> Result<(), Error> {
@@ -96,6 +170,7 @@ async fn watch_notifications(
         .map_err(|error| Error::new("watch Notification Center", error.to_string()))
 }
 
+#[cfg(not(windows))]
 async fn watch_focus(
     sender: Sender<Result<rmac_focus_runtime::Projection, String>>,
 ) -> Result<(), Error> {
@@ -106,7 +181,7 @@ async fn watch_focus(
 
 async fn watch_compositor(sender: Sender<rmac_compositor::Event>) -> Result<(), Error> {
     loop {
-        let watcher = futures_util::FutureExt::fuse(rmac_compositor_niri::watch(sender.clone()));
+        let watcher = futures_util::FutureExt::fuse(rmac_compositor_system::watch(sender.clone()));
         let closed = futures_util::FutureExt::fuse(sender.closed());
         futures_util::pin_mut!(watcher, closed);
         futures_util::select! {
@@ -206,6 +281,7 @@ async fn consume(
     settings: async_channel::Receiver<Result<rmac_shell_settings::ShellSettings, String>>,
     focus: async_channel::Receiver<Result<rmac_focus_runtime::Projection, String>>,
     notifications: async_channel::Receiver<Result<rmac_notifications::Indicator, String>>,
+    reader: impl ServiceReader + Copy,
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
     let mut published = coordinator.snapshot();
@@ -245,7 +321,7 @@ async fn consume(
                 match event {
                     rmac_shell_status_linux::Event::Refresh(sources) => {
                         let batch = blocking::unblock(move || {
-                            read_service_batch(sources, &SystemServiceReader)
+                            read_service_batch(sources, &reader)
                         }).await;
                         coordinator.apply_service_batch(batch);
                     }

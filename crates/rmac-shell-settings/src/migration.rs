@@ -78,6 +78,29 @@ pub(super) fn migrate_v1(legacy: LegacySettings) -> ShellSettings {
 }
 
 pub(super) fn migrate_application_ids(mut settings: ShellSettings) -> ShellSettings {
+    // Lulo on Windows had no Apps before it ran Lulo OS's Apps view (ADR
+    // 0023): a Dock saved with that default gets Apps back where Lulo OS
+    // keeps it, after Files.
+    #[cfg(windows)]
+    {
+        let without_apps = [
+            rmac_apps::identity::FILES,
+            rmac_apps::identity::NOTES,
+            rmac_apps::identity::TEXT_EDITOR,
+            rmac_apps::identity::TERMINAL,
+            rmac_apps::identity::SYSTEM_SETTINGS,
+        ];
+        if settings
+            .pinned_apps
+            .iter()
+            .map(|app| app.0.as_str())
+            .eq(without_apps)
+        {
+            settings
+                .pinned_apps
+                .insert(1, AppId(rmac_apps::identity::APP_DRAWER.into()));
+        }
+    }
     let mut files_origin: Option<bool> = None;
     settings.pinned_apps.retain_mut(|app| {
         let legacy = app.0 == LEGACY_FILES_APP_ID;

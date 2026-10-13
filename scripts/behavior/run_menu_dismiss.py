@@ -77,7 +77,7 @@ import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
 # The top bar's leftmost item (the Lulo mark). Its accessible name is
-# "Lulo menu" (shell/bins/rmac-menubar/src/main.rs `LULO_MENU_LABEL`), so
+# "Lulo menu" (shell/bins/rmac-menubar/src/lib.rs `LULO_MENU_LABEL`), so
 # Orca announces what it opens rather than a bare "menu".
 LULO_MENU = "Lulo menu"
 OUTPUT_W, OUTPUT_H = 1440, 900

@@ -1,6 +1,12 @@
 //! Layer-surface helpers shared by the rmac shell hosts: per-output
 //! reconciliation, compositor geometry projection, and the first-frame marker
 //! used by the nested-Wayland smoke harness.
+//!
+//! Every shell surface opens through [`open_layer_window`]: a
+//! wlr-layer-shell surface on Lulo OS, a Win32 window placed and layered the
+//! same way on Windows ([`windows`]; ADR 0023, "Phase 3 revised: shared
+//! shell views"). The views describe their surfaces once, in [`layer`]'s
+//! vocabulary, for both.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -8,6 +14,34 @@ use std::fs;
 
 use gpui::Window;
 use uuid::Uuid;
+
+pub mod system;
+#[cfg(windows)]
+pub mod windows;
+
+/// The layer-shell vocabulary: GPUI's own on Lulo OS, a mirror of it on
+/// Windows.
+pub mod layer {
+    #[cfg(windows)]
+    pub use crate::windows::layer_types::*;
+    #[cfg(all(target_os = "linux", feature = "wayland"))]
+    pub use gpui::layer_shell::*;
+}
+
+/// Open `build`'s view as the shell surface `layer` describes.
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+pub fn open_layer_window<V: 'static + gpui::Render>(
+    cx: &mut gpui::App,
+    mut options: gpui::WindowOptions,
+    layer: layer::LayerShellOptions,
+    build: impl FnOnce(&mut Window, &mut gpui::App) -> gpui::Entity<V>,
+) -> gpui::Result<gpui::WindowHandle<V>> {
+    options.kind = gpui::WindowKind::LayerShell(layer);
+    cx.open_window(options, build)
+}
+
+#[cfg(windows)]
+pub use windows::open_layer_window;
 
 const READY_FILE_ENV: &str = "RMAC_SMOKE_READY_FILE";
 pub const WAYLAND_OUTPUT_RESTART_EXIT_CODE: i32 = 75;
@@ -66,7 +100,79 @@ pub fn stable_output_uuid(output: &rmac_compositor::OutputId) -> Uuid {
     Uuid::new_v5(&Uuid::NAMESPACE_DNS, output.0.as_bytes())
 }
 
-#[cfg(all(target_os = "linux", feature = "wayland"))]
+/// The surface's blurred material has rounded corners of `radius`: niri
+/// shapes the blur from the surface itself on Lulo OS (nothing to do); on
+/// Windows the window is cut to that shape.
+pub fn set_corner_radius(window: &Window, radius: f32) {
+    #[cfg(windows)]
+    if let Some(hwnd) = windows::surface::hwnd(window) {
+        let scale = window.scale_factor();
+        let size = window.bounds().size;
+        windows::material::shape(
+            hwnd,
+            (size.width.as_f32() * scale).round() as i32,
+            (size.height.as_f32() * scale).round() as i32,
+            (radius * scale).round() as i32,
+        );
+    }
+    #[cfg(not(windows))]
+    let _ = (window, radius);
+}
+
+/// The window background a blurred material asks for: the compositor's
+/// blur on Lulo OS; on Windows a transparent window that draws its blur
+/// itself ([`over_backdrop`]).
+pub fn blurred_background() -> gpui::WindowBackgroundAppearance {
+    if cfg!(windows) {
+        gpui::WindowBackgroundAppearance::Transparent
+    } else {
+        gpui::WindowBackgroundAppearance::Blurred
+    }
+}
+
+/// `surface` (a blurred material's tint and rim, sized to its window) over
+/// what the compositor's blur shows under it on Lulo OS. On Lulo OS that is
+/// niri's own blur and `surface` is drawn as it is; on Windows the blurred
+/// wallpaper under the window is drawn first, cut to `radius`
+/// (`windows::backdrop`).
+pub fn over_backdrop(
+    window: &Window,
+    cx: &gpui::App,
+    radius: f32,
+    surface: impl gpui::IntoElement,
+) -> gpui::AnyElement {
+    #[cfg(windows)]
+    if let Some(backdrop) = windows::backdrop::element(window, cx, radius) {
+        use gpui::{IntoElement as _, ParentElement as _, Styled as _};
+        return gpui::div()
+            .size_full()
+            .relative()
+            .child(backdrop)
+            .child(gpui::div().absolute().inset_0().child(surface))
+            .into_any_element();
+    }
+    let _ = (window, cx, radius);
+    gpui::IntoElement::into_any_element(surface)
+}
+
+/// A GPUI display's stable output id, as [`stable_output_uuid`] gives it for
+/// the compositor's output of the same screen.
+pub fn display_uuid(display: &dyn gpui::PlatformDisplay) -> Option<Uuid> {
+    #[cfg(windows)]
+    {
+        let monitor = ::windows::Win32::Graphics::Gdi::HMONITOR(
+            u64::from(display.id()) as isize as *mut core::ffi::c_void
+        );
+        windows::monitor_device_name(monitor)
+            .map(|name| stable_output_uuid(&rmac_compositor::OutputId(name)))
+    }
+    #[cfg(not(windows))]
+    {
+        display.uuid().ok()
+    }
+}
+
+#[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
 pub mod output_surfaces {
     use std::collections::{BTreeMap, BTreeSet};
     use std::rc::Rc;
@@ -74,6 +180,14 @@ pub mod output_surfaces {
     use gpui::{AnyWindowHandle, App, PlatformDisplay};
     use uuid::Uuid;
 
+    /// GPUI's displays by their stable output id (Windows names monitors
+    /// as `rmac-compositor-system` does).
+    #[cfg(windows)]
+    pub fn newest_displays(cx: &App) -> BTreeMap<Uuid, Rc<dyn PlatformDisplay>> {
+        crate::windows::newest_displays(cx)
+    }
+
+    #[cfg(not(windows))]
     pub fn newest_displays(cx: &App) -> BTreeMap<Uuid, Rc<dyn PlatformDisplay>> {
         let mut displays: BTreeMap<Uuid, Rc<dyn PlatformDisplay>> = BTreeMap::new();
         for display in cx.displays() {
@@ -146,7 +260,7 @@ pub mod output_surfaces {
     ) -> Result<(), String> {
         let (event_tx, event_rx) = async_channel::bounded(64);
         let watcher = async {
-            rmac_compositor_niri::watch(event_tx)
+            rmac_compositor_system::watch(event_tx)
                 .await
                 .map_err(|error| error.to_string())
         };
@@ -180,7 +294,7 @@ pub mod output_surfaces {
     ) -> Result<(), String> {
         let (event_tx, event_rx) = async_channel::bounded(64);
         let watcher = async {
-            rmac_compositor_niri::watch(event_tx)
+            rmac_compositor_system::watch(event_tx)
                 .await
                 .map_err(|error| error.to_string())
         };

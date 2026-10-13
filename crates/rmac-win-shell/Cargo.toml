@@ -27,21 +27,35 @@ rmac-app-menu.workspace = true
 async-channel.workspace = true
 blocking.workspace = true
 gpui.workspace = true
-image.workspace = true
+# Windows apps' icons are kept as PNGs for their desktop entries.
+image = { workspace = true, features = ["png"] }
 raw-window-handle.workspace = true
 rmac-apps.workspace = true
 rmac-ui.workspace = true
 # Lulo mode's desktop (ADR 0023 "Lulo mode"): Lulo OS's desktop model
 # (icon grid, saved places, renaming) and its wallpaper store and renderer.
 rmac-compositor.workspace = true
+rmac-compositor-system.workspace = true
 rmac-desktop.workspace = true
+rmac-shell-layer.workspace = true
+rmac-shell-menubar.workspace = true
+rmac-shell-dock.workspace = true
+rmac-shell-wallpaper.workspace = true
+# Spotlight and Control Centre, the same views Lulo OS runs as their own
+# processes.
+rmac-launcher-app.workspace = true
+rmac-quick-settings-app.workspace = true
+# Apps, the same view Lulo OS runs as its own process.
+rmac-app-drawer.workspace = true
 rmac-shell-settings.workspace = true
+# The shell's live design tokens (light or dark, accent), as each Lulo OS
+# shell process installs them.
+rmac-shell-ui.workspace = true
+# Control Centre's brightness, whose WMI calls run in a helper process.
+rmac-osd.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true
 rmac-wallpaper-system.workspace = true
-# `#[implement]` (the volume callback) names `windows_core` directly; the
-# version GPUI's Windows backend already builds.
-windows-core = "0.61"
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Globalization",

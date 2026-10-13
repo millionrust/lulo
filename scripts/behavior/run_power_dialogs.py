@@ -69,12 +69,12 @@ import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
 # The top bar's leftmost item (the Lulo mark). Its accessible name is
-# "Lulo menu" (shell/bins/rmac-menubar/src/main.rs `LULO_MENU_LABEL`), so
+# "Lulo menu" (shell/bins/rmac-menubar/src/lib.rs `LULO_MENU_LABEL`), so
 # Orca announces what it opens rather than a bare "menu".
 LULO_MENU = "Lulo menu"
 OUTPUT_W, OUTPUT_H = 1440, 900
 
-# The Lulo (system) menu's item order (shell/bins/rmac-menubar/src/main.rs
+# The Lulo (system) menu's item order (shell/bins/rmac-menubar/src/lib.rs
 # `system_menu`): how many Down presses from a freshly-opened menu (nothing
 # highlighted yet) land on each item. If that list ever changes, these need
 # updating along with it — a loud, easy-to-fix failure rather than a silent
@@ -324,7 +324,7 @@ class Run:
 
     def find_open_confirmation_panel(self):
         """The confirmation's own panel (`Role::Menu` in
-        `shell/bins/rmac-menubar/src/main.rs`'s `popup` closure — the same
+        `shell/bins/rmac-menubar/src/lib.rs`'s `popup` closure — the same
         div for an app menu and for a confirmation, so this only means what
         it says while a confirmation is the thing actually open)."""
 

@@ -7,7 +7,7 @@ use crate::{BluetoothService, Device, Error, PairingSession, Snapshot, SystemBlu
 const REMOVE_VERIFY_TIMEOUT: Duration = Duration::from_secs(4);
 const REMOVE_VERIFY_INTERVAL: Duration = Duration::from_millis(100);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl BluetoothService for SystemBluetoothService {
     fn snapshot(&self) -> Result<Snapshot, Error> {
         linux_snapshot()
@@ -63,13 +63,13 @@ impl BluetoothService for SystemBluetoothService {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_snapshot() -> Result<Snapshot, Error> {
     let connection = system_connection()?;
     linux_snapshot_with_connection(&connection)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_snapshot_with_connection(
     connection: &zbus::blocking::Connection,
 ) -> Result<Snapshot, Error> {
@@ -117,7 +117,7 @@ fn linux_snapshot_with_connection(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_pair(device_id: &str, session: &PairingSession) -> Result<Snapshot, Error> {
     let operation = "pair Bluetooth device";
     let result = (|| {
@@ -191,7 +191,7 @@ fn linux_pair(device_id: &str, session: &PairingSession) -> Result<Snapshot, Err
     result
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_remove_device(device_id: &str) -> Result<Snapshot, Error> {
     let connection = system_connection()?;
     let (device, adapter, _) = device_context(&connection, device_id)?;
@@ -219,15 +219,15 @@ fn linux_remove_device(device_id: &str) -> Result<Snapshot, Error> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 type ManagedObjects = zbus::fdo::ManagedObjects;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn system_connection() -> Result<zbus::blocking::Connection, Error> {
     rmac_dbus::system_blocking().map_err(|error| Error::new("connect to BlueZ", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn managed_objects(connection: &zbus::blocking::Connection) -> Result<ManagedObjects, Error> {
     zbus::blocking::Proxy::new(
         connection,
@@ -240,7 +240,7 @@ fn managed_objects(connection: &zbus::blocking::Connection) -> Result<ManagedObj
     .map_err(|error| Error::new("read Bluetooth objects", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn find_interface<'a>(
     objects: &'a ManagedObjects,
     target: &str,
@@ -255,7 +255,7 @@ fn find_interface<'a>(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn adapter_path(connection: &zbus::blocking::Connection) -> Result<String, Error> {
     let objects = managed_objects(connection)?;
     find_interface(&objects, "org.bluez.Adapter1")
@@ -263,7 +263,7 @@ fn adapter_path(connection: &zbus::blocking::Connection) -> Result<String, Error
         .ok_or_else(|| Error::new("find Bluetooth adapter", "no Bluetooth adapter found"))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn device_context(
     connection: &zbus::blocking::Connection,
     device_id: &str,
@@ -329,7 +329,7 @@ fn device_context(
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn set_adapter_property(property: &str, value: bool, operation: &'static str) -> Result<(), Error> {
     let connection = system_connection()?;
     let path = adapter_path(&connection)?;
@@ -339,7 +339,7 @@ fn set_adapter_property(property: &str, value: bool, operation: &'static str) ->
         .map_err(|error| Error::new(operation, error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn call_adapter(method: &str, operation: &'static str) -> Result<(), Error> {
     let connection = system_connection()?;
     let path = adapter_path(&connection)?;
@@ -349,7 +349,7 @@ fn call_adapter(method: &str, operation: &'static str) -> Result<(), Error> {
         .map_err(|error| Error::new(operation, error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn property<T>(
     properties: &std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
     key: &str,
@@ -362,7 +362,7 @@ where
         .and_then(|value| T::try_from(value).ok())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn property_string(
     properties: &std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
     key: &str,

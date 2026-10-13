@@ -197,8 +197,23 @@ pub fn parse_hint(hint: &str) -> Option<(bool, bool, bool, bool, String)> {
     Some((command, control, option, shift, key))
 }
 
+/// Enter Full Screen's hint as the menus record it (Globe+F on the Mac).
+pub const FULL_SCREEN_HINT: &str = "F";
+
 /// The Windows chord a Mac menu hint stands for (see the module docs).
 pub fn hint_chord(hint: &str) -> Option<Chord> {
+    // The Mac's Enter Full Screen key is Globe+F, recorded as a bare "F".
+    // Windows' full-screen key is F11, which every Lulo app answers there
+    // (`rmac_ui`'s window keys); a bare "F" would read as "press F".
+    if hint == FULL_SCREEN_HINT {
+        return Some(Chord {
+            win: false,
+            ctrl: false,
+            alt: false,
+            shift: false,
+            key: "f11".to_owned(),
+        });
+    }
     let (command, control, option, shift, key) = parse_hint(hint)?;
     mac_to_windows(command, control, option, shift, &key)
 }
@@ -261,6 +276,21 @@ mod tests {
         assert_eq!(windows_hint("Space"), "Space");
         assert_eq!(windows_hint("⌃K"), "");
         assert_eq!(windows_hint(""), "");
+    }
+
+    #[test]
+    fn full_screen_reads_as_f11() {
+        assert_eq!(windows_hint(FULL_SCREEN_HINT), "F11");
+        // Only Enter Full Screen uses the bare Globe-key hint.
+        for app_id in crate::MENU_APPS {
+            for menu in crate::static_definition(app_id).unwrap_or_default() {
+                for item in &menu.items {
+                    if item.shortcut == FULL_SCREEN_HINT {
+                        assert_eq!(item.label, "Enter Full Screen", "{app_id}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

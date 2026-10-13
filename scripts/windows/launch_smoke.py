@@ -101,6 +101,7 @@ VK_ESCAPE = 0x1B
 VK_DOWN = 0x28
 VK_RETURN = 0x0D
 VK_SHIFT = 0x10
+VK_F11 = 0x7A
 KEYEVENTF_KEYUP = 0x0002
 
 # How often `launch()` polls for the first visible window: the resolution
@@ -680,6 +681,25 @@ def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | N
         if after != before:
             user32().ShowWindow(hwnd, 9)  # SW_RESTORE
             return f"Zoom resized the fixed-size Calculator window from {before} to {after}"
+    if app != "rmac-calculator":
+        # F11 enters full screen and leaves it again (the robot found a
+        # full-screen window had no way out on Windows: the Mac's Globe+F
+        # has no Windows key, and the window covers the Lulo bar).
+        before = window_rect(hwnd)
+        tap(VK_F11)
+        time.sleep(KEY_SETTLE_SECONDS)
+        full = window_rect(hwnd)
+        tap(VK_F11)
+        time.sleep(KEY_SETTLE_SECONDS)
+        after = window_rect(hwnd)
+        width = user32().GetSystemMetrics(0)
+        height = user32().GetSystemMetrics(1)
+        print(f"{app}: F11: {before} -> {full} -> {after}")
+        if full[2] - full[0] < width or full[3] - full[1] < height:
+            return f"F11 did not make the window full screen ({full})"
+        if after != before:
+            user32().ShowWindow(hwnd, 9)  # SW_RESTORE
+            return f"a second F11 did not bring the window back to {before} ({after})"
     if app == "rmac-terminal":
         # Ctrl+letter keys belong to the shell in Terminal (Ctrl+M is Return).
         return None

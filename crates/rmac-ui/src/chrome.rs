@@ -204,6 +204,12 @@ pub fn minimize_focused_window(cx: &mut App) {
     send_window_action(WindowAction::Minimize, cx);
 }
 
+/// Enter or leave full screen for this process's focused window, the same
+/// path the green button's plain click uses (F11 on Windows).
+pub fn toggle_full_screen_focused_window(cx: &mut App) {
+    send_window_action(WindowAction::ToggleFullscreen, cx);
+}
+
 /// Window ▸ Zoom (⌃⌘Z): toggle this process's focused window between its
 /// user size and the working area, the same path the green button's
 /// ⌥-click and the title bar's double-click (when set to Zoom) already

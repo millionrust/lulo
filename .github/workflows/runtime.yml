@@ -156,7 +156,7 @@ jobs:
       matrix:
         suites:
           - idle-cpu power-dialogs spotlight-intents
-          - desktop-paint window-move 01-files 02-text-editor 09-menu-bar
+          - desktop-paint window-move 01-files 02-text-editor 09-menu-bar voice
           - menu-dismiss 03-settings 04-calculator 06-notes
           - 05-preview 07-terminal 08-shell 10-spotlight writing-tools intelligence-unit
     steps:
@@ -221,6 +221,10 @@ jobs:
               # ADR 0024 phase 2: Edit ▸ Writing Tools off/on, the streaming
               # panel, Replace, Undo and Cancel in Text Editor; Notes' menu.
               writing-tools) /usr/bin/python3 scripts/behavior/run_writing_tools.py --niri "$niri" --bin-dir runtime-bin ;;
+              # ADR 0024 §8: hold ⌥Space → listening pill → transcript in
+              # Spotlight → "Lulo can do this" row → confirm; Escape, an
+              # unsupported request, a tap, and the services' idle exit.
+              voice) /usr/bin/python3 scripts/behavior/run_voice.py --niri "$niri" --bin-dir runtime-bin ;;
               # ADR 0024: the caller check under the real systemd user unit, with
               # Ubuntu's user-namespace AppArmor policy on, as on the laptop.
               intelligence-unit)

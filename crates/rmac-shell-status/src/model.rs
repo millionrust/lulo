@@ -79,6 +79,14 @@ pub struct NotificationIndicator {
     pub has_urgent: bool,
 }
 
+/// An app is recording from a microphone now (BAR-09): the menu bar shows
+/// the Mac's orange privacy dot while this is set.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MicrophoneIndicator {
+    /// The recording apps' names, sorted.
+    pub apps: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     /// Enabled outputs with valid logical geometry, stripped of hardware
@@ -93,6 +101,9 @@ pub struct Snapshot {
     pub show_battery_percentage: bool,
     pub focus: Option<FocusIndicator>,
     pub notifications: Option<NotificationIndicator>,
+    /// Always shown when set, whatever the indicator settings say: like the
+    /// Mac's, the privacy indicator cannot be hidden.
+    pub microphone: Option<MicrophoneIndicator>,
     pub clock: rmac_shell_settings::ClockSettings,
 }
 

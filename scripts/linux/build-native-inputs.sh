@@ -177,8 +177,9 @@ fi
     -p rmac-notification-center-app --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
     -p rmac-clipboard-linux --bin rmac-clipboard-service \
-    -p rmac-intelligence-service --bin rmac-intelligence-service \
+    -p rmac-intelligence-service --bin rmac-intelligence-service --bin rmac-voice-service \
     -p rmac-intelligence --bin rmac-intelligence-fetch \
+    -p rmac-voice --bin rmac-voice-hud \
     -p rmac-file-chooser --bin rmac-file-chooser \
     -p rmac-shortcuts \
       --bin rmac-shortcut-broker \

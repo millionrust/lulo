@@ -1,0 +1,17 @@
+[Unit]
+Description=Lulo talk key (listening indicator)
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+OnFailure=rmac-component-failure@%N.service
+StartLimitIntervalSec=0
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-voice-hud
+
+# ADR 0024 §8. The talk key (⌥Space) starts this unit through the shortcut
+# dispatcher; it shows the listening pill while the key is held, hands the
+# transcript to Spotlight and exits. Nothing runs between presses.
+[Service]
+Type=simple
+ExecStart=%h/.local/libexec/rmac/rmac-voice-hud
+Restart=no
+NoNewPrivileges=yes
+PrivateTmp=yes

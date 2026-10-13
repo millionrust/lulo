@@ -161,6 +161,10 @@ pub struct Snapshot {
     pub outputs: Vec<Device>,
     pub inputs: Vec<Device>,
     pub hardware_devices: Vec<HardwareDevice>,
+    /// Apps recording from a microphone right now (running PipeWire capture
+    /// streams, by application name), for the menu bar's microphone
+    /// indicator (BAR-09). Sorted, without duplicates.
+    pub recording: Vec<String>,
 }
 
 #[derive(Debug)]

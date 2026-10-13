@@ -1,0 +1,38 @@
+[Unit]
+Description=Lulo voice (speech to text on this computer, started on demand)
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-voice-service
+
+# ADR 0024 §8. D-Bus activated by the talk key's first Start on
+# org.rmac.Voice1; the session target never starts it, and it exits 10 s
+# after its last capture, which unloads the model, so between uses it costs
+# nothing. The microphone is open only while the key is held. A crash is not
+# restarted: the next press activates it again.
+[Service]
+Type=dbus
+BusName=org.rmac.Voice1
+ExecStart=%h/.local/libexec/rmac/rmac-voice-service
+Restart=no
+# Memory: the Base voice model's budget (768 MiB; Tiny uses about half).
+# Past MemoryMax the kernel stops this service rather than swapping the
+# desktop.
+MemoryHigh=768M
+MemoryMax=1G
+MemorySwapMax=0
+CPUWeight=50
+IOSchedulingClass=idle
+# No network: Unix sockets only (the session bus, and PipeWire for the
+# microphone). Seccomp filters, which work in user units.
+RestrictAddressFamilies=AF_UNIX
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+UMask=0077
+# No PrivateTmp=, PrivateUsers=, ProtectSystem= or any other mount-namespace
+# option: in a user unit each one moves the service into its own user
+# namespace, and from there its caller check cannot read the talk-key HUD's
+# /proc/<pid>/exe (the 2026-10-08 Lulo Intelligence bug). It writes no files.

@@ -71,6 +71,44 @@ pub const STANDARD: Model = Model {
     memory_budget_mib: 2048,
 };
 
+/// A file pinned by size and SHA-256: a language model, or one file of a
+/// voice model ([`crate::voice`]). It is kept on disk as
+/// `<sha256>.<extension>` in the models folder, so the fetcher and the
+/// checksum verification handle every kind the same way.
+pub trait Pinned {
+    /// Revision-pinned download URL.
+    fn url(&self) -> &str;
+    fn size(&self) -> u64;
+    /// Lower-case hex SHA-256 of the whole file.
+    fn sha256(&self) -> &str;
+    /// The file name extension it keeps on disk.
+    fn extension(&self) -> &str;
+    /// What the licence notice beside the file calls it.
+    fn display_name(&self) -> &str;
+    fn licence(&self) -> &str;
+}
+
+impl Pinned for Model {
+    fn url(&self) -> &str {
+        self.url
+    }
+    fn size(&self) -> u64 {
+        self.size
+    }
+    fn sha256(&self) -> &str {
+        self.sha256
+    }
+    fn extension(&self) -> &str {
+        "gguf"
+    }
+    fn display_name(&self) -> &str {
+        self.display_name
+    }
+    fn licence(&self) -> &str {
+        self.licence
+    }
+}
+
 /// Licences a model may carry (ADR 0024 §11 risk 5).
 pub const ALLOWED_LICENCES: [&str; 4] = ["Apache-2.0", "MIT", "CC0-1.0", "CC-BY-4.0"];
 

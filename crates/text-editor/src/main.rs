@@ -139,6 +139,11 @@ gpui::actions!(
         HighlightBlue,
         // Format ▸ Text ▸ Justify.
         AlignJustify,
+        // Format ▸ Text ▸ Writing Direction ▸ Default / Left to Right /
+        // Right to Left.
+        WritingDirectionDefault,
+        WritingDirectionLeftToRight,
+        WritingDirectionRightToLeft,
         // Format ▸ List…
         ShowLists,
         // Format ▸ Font ▸ Show Fonts (⌘T).

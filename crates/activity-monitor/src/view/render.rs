@@ -23,9 +23,9 @@ use crate::{
     ShowSystemProcesses, ShowWindowedProcesses, ToggleBytesReadColumn, ToggleBytesWrittenColumn,
     ToggleCompressedColumn, ToggleCpuColumn, ToggleCpuTimeColumn, ToggleEnergyColumn,
     ToggleFootprintColumn, ToggleGpuPercentColumn, ToggleGpuTimeColumn, ToggleIdleWakeUpsColumn,
-    ToggleKindColumn, ToggleMemoryColumn, TogglePidColumn, ToggleRealPrivateColumn,
-    ToggleRealSharedColumn, ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn,
-    UseSelectionForFind,
+    ToggleKindColumn, ToggleMemoryColumn, TogglePidColumn, TogglePortsColumn,
+    TogglePreventingSleepColumn, ToggleRealPrivateColumn, ToggleRealSharedColumn,
+    ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -179,6 +179,12 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ToggleGpuTimeColumn, _, cx| {
                 this.toggle_column(ColKey::GpuTime, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TogglePortsColumn, _, cx| {
+                this.toggle_column(ColKey::Ports, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TogglePreventingSleepColumn, _, cx| {
+                this.toggle_column(ColKey::PreventingSleep, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowWindowedProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::WindowedProcesses, cx);

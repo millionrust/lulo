@@ -50,6 +50,10 @@ pub(crate) struct MonitorView {
     persistence_error: Option<SharedString>,
     /// PID whose detail inspector is open (double-click a row).
     inspect_pid: Option<u32>,
+    /// That process's open descriptors (MON-07), read off the UI thread
+    /// when the inspector opens; `None` until they arrive or when the
+    /// process hides them.
+    inspect_files: Option<Vec<crate::proc_extra::OpenFile>>,
     /// View ▸ Show Deltas for Process, ⌥⌘J: the inspector adds rows showing
     /// the change in % CPU and Memory since `delta_baseline` was captured.
     show_deltas: bool,
@@ -108,8 +112,7 @@ impl MonitorView {
             }
             TableEvent::DoubleClickedRow(row_ix) => {
                 let pid = table.read(cx).delegate().rows.get(*row_ix).map(|r| r.pid);
-                this.inspect_pid = pid;
-                cx.notify();
+                this.show_inspector(pid, cx);
             }
             _ => {}
         })
@@ -127,6 +130,7 @@ impl MonitorView {
             cols_menu_open: false,
             persistence_error,
             inspect_pid: None,
+            inspect_files: None,
             show_deltas: false,
             delta_baseline: None,
             dock_icon_mode: crate::dock_icon::DockIconMode::default(),
@@ -367,6 +371,11 @@ impl MonitorView {
                 ColKey::GpuPercent,
             ),
             ("activity_monitor::ToggleGpuTimeColumn", ColKey::GpuTime),
+            ("activity_monitor::TogglePortsColumn", ColKey::Ports),
+            (
+                "activity_monitor::TogglePreventingSleepColumn",
+                ColKey::PreventingSleep,
+            ),
         ] {
             rmac_ui::set_menu_checked(action, visible.contains(&column), cx);
         }
@@ -526,10 +535,33 @@ impl MonitorView {
         self.confirm_kill(cx);
     }
 
+    /// Open (or close, with `None`) the inspector, and read the process's
+    /// open files on a background thread so the card never waits on `/proc`.
+    fn show_inspector(&mut self, pid: Option<u32>, cx: &mut Context<Self>) {
+        self.inspect_pid = pid;
+        self.inspect_files = None;
+        if let Some(pid) = pid {
+            cx.spawn(async move |this, cx| {
+                let files = cx
+                    .background_executor()
+                    .spawn(async move { crate::proc_extra::read_open_files(pid) })
+                    .await;
+                let _ = this.update(cx, |view, cx| {
+                    if view.inspect_pid == Some(pid) {
+                        view.inspect_files = files;
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
+        cx.notify();
+    }
+
     /// Open the inspector for the highlighted process (toolbar ⓘ).
     fn inspect_selected(&mut self, cx: &mut Context<Self>) {
         if let Some(process) = self.selected_proc(cx) {
-            self.inspect_pid = Some(process.pid);
+            self.show_inspector(Some(process.pid), cx);
             self.cols_menu_open = false;
             if self.show_deltas {
                 self.recapture_delta_baseline(process.pid, cx);

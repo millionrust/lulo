@@ -51,12 +51,17 @@ pub(crate) enum ColKey {
     GpuPercent,
     /// Total graphics-engine busy time (MON-MENU-004).
     GpuTime,
+    /// Open descriptors (MON-MENU-002), the Linux counterpart of the Mac's
+    /// Mach port count.
+    Ports,
+    /// Holds a logind sleep or idle inhibitor (MON-MENU-008).
+    PreventingSleep,
 }
 
 impl ColKey {
     /// Canonical order, also the order shown in the chooser. Process Name
     /// leads, matching the Mac (MON-02); PID moves later rather than first.
-    pub(crate) const ALL: [Self; 24] = [
+    pub(crate) const ALL: [Self; 26] = [
         Self::Name,
         Self::Cpu,
         Self::CpuTime,
@@ -81,6 +86,8 @@ impl ColKey {
         Self::IdleWakeUps,
         Self::GpuPercent,
         Self::GpuTime,
+        Self::Ports,
+        Self::PreventingSleep,
     ];
 
     pub(crate) fn id(self) -> &'static str {
@@ -109,6 +116,8 @@ impl ColKey {
             Self::IdleWakeUps => "idle_wakeups",
             Self::GpuPercent => "gpu_percent",
             Self::GpuTime => "gpu_time",
+            Self::Ports => "ports",
+            Self::PreventingSleep => "preventing_sleep",
         }
     }
 
@@ -148,6 +157,8 @@ impl ColKey {
             Self::IdleWakeUps => 120.0,
             Self::GpuPercent => 90.0,
             Self::GpuTime => 100.0,
+            Self::Ports => 90.0,
+            Self::PreventingSleep => 130.0,
         }
     }
 
@@ -173,6 +184,7 @@ impl ColKey {
                 | Self::IdleWakeUps
                 | Self::GpuPercent
                 | Self::GpuTime
+                | Self::Ports
         )
     }
 
@@ -190,6 +202,8 @@ impl ColKey {
                 | Self::IdleWakeUps
                 | Self::GpuPercent
                 | Self::GpuTime
+                | Self::Ports
+                | Self::PreventingSleep
         )
     }
 
@@ -237,6 +251,8 @@ impl From<ColKey> for ProcessColumn {
             ColKey::IdleWakeUps => Self::IdleWakeUps,
             ColKey::GpuPercent => Self::GpuPercent,
             ColKey::GpuTime => Self::GpuTime,
+            ColKey::Ports => Self::Ports,
+            ColKey::PreventingSleep => Self::PreventingSleep,
         }
     }
 }
@@ -268,6 +284,8 @@ impl From<ProcessColumn> for ColKey {
             ProcessColumn::IdleWakeUps => Self::IdleWakeUps,
             ProcessColumn::GpuPercent => Self::GpuPercent,
             ProcessColumn::GpuTime => Self::GpuTime,
+            ProcessColumn::Ports => Self::Ports,
+            ProcessColumn::PreventingSleep => Self::PreventingSleep,
         }
     }
 }
@@ -484,6 +502,22 @@ mod tests {
         // The resident-size column keeps the Mac's other name.
         assert_eq!(ColKey::Mem.title(), "Real Memory");
         assert!(ColKey::Footprint.needs_extra() && !ColKey::Mem.needs_extra());
+    }
+
+    #[test]
+    fn ports_and_preventing_sleep_columns_round_trip_with_mac_titles() {
+        let expected = vec![ColKey::Name, ColKey::Ports, ColKey::PreventingSleep];
+        assert_eq!(parse(&format(&expected)).unwrap(), expected);
+        assert_eq!(ColKey::Ports.title(), "# Ports");
+        assert_eq!(ColKey::PreventingSleep.title(), "Preventing Sleep");
+        // Both are read from /proc and /run, so they are only gathered
+        // while shown; the count sits against the right edge like the
+        // other numbers.
+        assert!(ColKey::Ports.needs_extra() && ColKey::PreventingSleep.needs_extra());
+        assert!(ColKey::Ports.right_aligned() && !ColKey::PreventingSleep.right_aligned());
+        for key in [ColKey::Ports, ColKey::PreventingSleep] {
+            assert_eq!(ColKey::from(ProcessColumn::from(key)), key);
+        }
     }
 
     #[test]

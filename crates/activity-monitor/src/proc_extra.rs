@@ -38,6 +38,12 @@ pub(crate) struct ProcExtra {
     pub(crate) gpu: Option<GpuUsage>,
     /// Busiest-engine utilisation since the previous sample, 0..=100.
     pub(crate) gpu_percent: Option<f32>,
+    /// Open file descriptors: the Linux counterpart of the Mac's "# Ports"
+    /// (MON-MENU-002).
+    pub(crate) ports: Option<u32>,
+    /// Whether the process holds a logind inhibitor that stops the machine
+    /// sleeping or idling (MON-MENU-008).
+    pub(crate) preventing_sleep: Option<bool>,
 }
 
 /// What a process's open DRM clients report in `/proc/<pid>/fdinfo`: busy
@@ -199,6 +205,104 @@ pub(crate) fn read_gpu(pid: u32) -> Option<GpuUsage> {
         }
     }
     (!clients.is_empty()).then(|| merge_clients(clients))
+}
+
+/// How many descriptors a process has open. `None` when `/proc/<pid>/fd`
+/// is unreadable (another user's process, an exited one).
+pub(crate) fn read_ports(pid: u32) -> Option<u32> {
+    let entries = std::fs::read_dir(format!("/proc/{pid}/fd")).ok()?;
+    Some(u32::try_from(entries.flatten().count()).unwrap_or(u32::MAX))
+}
+
+/// The most descriptors the inspector lists for one process.
+pub(crate) const MAX_OPEN_FILES: usize = 200;
+
+/// One descriptor in a process's Open Files list (MON-07).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct OpenFile {
+    /// What the descriptor is: File, Device, Socket, Pipe or Other.
+    pub(crate) kind: &'static str,
+    /// The path, or the kernel's name for a socket, pipe or anonymous
+    /// descriptor.
+    pub(crate) name: String,
+}
+
+/// Describe where one `/proc/<pid>/fd/<n>` link points.
+pub(crate) fn classify_fd_target(target: &str) -> OpenFile {
+    let (kind, name) = if let Some(rest) = target.strip_prefix("anon_inode:") {
+        ("Other", rest.trim_matches(['[', ']']).to_owned())
+    } else if target.starts_with("socket:") {
+        ("Socket", target.to_owned())
+    } else if target.starts_with("pipe:") {
+        ("Pipe", target.to_owned())
+    } else if target.starts_with("/dev/") {
+        ("Device", target.to_owned())
+    } else if target.starts_with('/') {
+        ("File", target.to_owned())
+    } else {
+        ("Other", target.to_owned())
+    };
+    OpenFile { kind, name }
+}
+
+/// A process's open descriptors, up to [`MAX_OPEN_FILES`], in descriptor
+/// order. `None` when `/proc/<pid>/fd` is unreadable (another user's
+/// process, an exited one). Run off the UI thread: it is one `readlink` per
+/// descriptor.
+pub(crate) fn read_open_files(pid: u32) -> Option<Vec<OpenFile>> {
+    let entries = std::fs::read_dir(format!("/proc/{pid}/fd")).ok()?;
+    let mut numbered: Vec<(u32, OpenFile)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let number = entry.file_name().to_str()?.parse::<u32>().ok()?;
+            let target = std::fs::read_link(entry.path()).ok()?;
+            Some((number, classify_fd_target(&target.to_string_lossy())))
+        })
+        .collect();
+    numbered.sort_by_key(|(number, _)| *number);
+    numbered.truncate(MAX_OPEN_FILES);
+    Some(numbered.into_iter().map(|(_, file)| file).collect())
+}
+
+/// The process id behind one logind inhibitor record
+/// (`/run/systemd/inhibit/<id>`), when the lock stops the machine sleeping
+/// or going idle: a `block` mode lock whose `WHAT=` names `sleep` or `idle`.
+/// Delay locks only postpone sleep briefly, so they do not count, as on the
+/// Mac where only held power assertions do.
+pub(crate) fn parse_sleep_inhibitor(text: &str) -> Option<u32> {
+    let mut what = "";
+    let mut mode = "block";
+    let mut pid = None;
+    for line in text.lines() {
+        if let Some(value) = line.strip_prefix("WHAT=") {
+            what = value.trim();
+        } else if let Some(value) = line.strip_prefix("MODE=") {
+            mode = value.trim();
+        } else if let Some(value) = line.strip_prefix("PID=") {
+            pid = value.trim().parse::<u32>().ok();
+        }
+    }
+    let stops_sleep = what.split(':').any(|item| matches!(item, "sleep" | "idle"));
+    if mode == "block" && stops_sleep {
+        pid
+    } else {
+        None
+    }
+}
+
+/// Every process id holding a sleep-blocking logind inhibitor, read once per
+/// refresh. Only regular files are opened: the directory also holds the
+/// `.ref` FIFOs, and opening one for reading would block.
+pub(crate) fn read_sleep_blockers() -> std::collections::HashSet<u32> {
+    let Ok(entries) = std::fs::read_dir("/run/systemd/inhibit") else {
+        return std::collections::HashSet::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
+        .filter_map(|text| parse_sleep_inhibitor(&text))
+        .collect()
 }
 
 fn kb_field(line: &str, name: &str) -> Option<u64> {
@@ -409,6 +513,79 @@ drm-total-cycles-rcs:\t100\ndrm-cycles-bcs:\t5\n";
             None
         );
         assert_eq!(gpu_percent(&before, &after, 0), Some(20.0));
+    }
+
+    #[test]
+    fn only_blocking_sleep_or_idle_locks_count_as_preventing_sleep() {
+        let lock = |what: &str, mode: &str| {
+            format!(
+                "# private\nWHAT={what}\nWHO=app\nWHY=playing\nMODE={mode}\nUID=1000\nPID=4242\n"
+            )
+        };
+        assert_eq!(
+            parse_sleep_inhibitor(&lock("idle:sleep", "block")),
+            Some(4242)
+        );
+        assert_eq!(parse_sleep_inhibitor(&lock("sleep", "block")), Some(4242));
+        assert_eq!(parse_sleep_inhibitor(&lock("idle", "block")), Some(4242));
+        // A delay lock only postpones sleep briefly; shutdown and key locks
+        // do not stop the machine sleeping at all.
+        assert_eq!(parse_sleep_inhibitor(&lock("sleep", "delay")), None);
+        assert_eq!(parse_sleep_inhibitor(&lock("shutdown", "block")), None);
+        assert_eq!(
+            parse_sleep_inhibitor(&lock("handle-power-key", "block")),
+            None
+        );
+        assert_eq!(parse_sleep_inhibitor("WHAT=sleep\nMODE=block\n"), None);
+    }
+
+    #[test]
+    fn descriptor_targets_are_told_apart() {
+        let kinds: Vec<_> = [
+            "/home/u/notes.txt",
+            "/dev/dri/card0",
+            "socket:[1234]",
+            "pipe:[99]",
+            "anon_inode:[eventpoll]",
+            "anon_inode:inotify",
+            "/tmp/gone (deleted)",
+            "weird",
+        ]
+        .iter()
+        .map(|target| classify_fd_target(target))
+        .map(|file| (file.kind, file.name))
+        .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("File", "/home/u/notes.txt".to_owned()),
+                ("Device", "/dev/dri/card0".to_owned()),
+                ("Socket", "socket:[1234]".to_owned()),
+                ("Pipe", "pipe:[99]".to_owned()),
+                ("Other", "eventpoll".to_owned()),
+                ("Other", "inotify".to_owned()),
+                ("File", "/tmp/gone (deleted)".to_owned()),
+                ("Other", "weird".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn this_process_lists_its_own_open_files_in_descriptor_order() {
+        if cfg!(target_os = "linux") {
+            let files = read_open_files(std::process::id()).unwrap();
+            assert!(!files.is_empty() && files.len() <= MAX_OPEN_FILES);
+        }
+        assert_eq!(read_open_files(u32::MAX), None);
+    }
+
+    #[test]
+    fn this_process_has_a_countable_descriptor_table() {
+        let ports = read_ports(std::process::id());
+        if cfg!(target_os = "linux") {
+            assert!(ports.is_some_and(|count| count >= 3));
+        }
+        assert_eq!(read_ports(u32::MAX), None);
     }
 
     #[test]

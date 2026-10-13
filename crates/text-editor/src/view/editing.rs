@@ -642,6 +642,9 @@ impl EditorView {
             "text_editor::AlignCentre",
             "text_editor::AlignJustify",
             "text_editor::AlignRight",
+            "text_editor::WritingDirectionDefault",
+            "text_editor::WritingDirectionLeftToRight",
+            "text_editor::WritingDirectionRightToLeft",
             "text_editor::ShowRuler",
             "text_editor::CopyRuler",
             "text_editor::PasteRuler",
@@ -705,6 +708,22 @@ impl EditorView {
             ("text_editor::AlignRight", rich::Alignment::Right),
         ] {
             rmac_ui::set_menu_checked(action, rich_text && paragraph.alignment == alignment, cx);
+        }
+        for (action, direction) in [
+            (
+                "text_editor::WritingDirectionDefault",
+                rich::WritingDirection::Default,
+            ),
+            (
+                "text_editor::WritingDirectionLeftToRight",
+                rich::WritingDirection::LeftToRight,
+            ),
+            (
+                "text_editor::WritingDirectionRightToLeft",
+                rich::WritingDirection::RightToLeft,
+            ),
+        ] {
+            rmac_ui::set_menu_checked(action, rich_text && paragraph.direction == direction, cx);
         }
         rmac_ui::set_menu_checked("text_editor::ShowRuler", self.show_ruler, cx);
         rmac_ui::set_menu_checked(

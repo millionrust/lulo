@@ -7,9 +7,9 @@ mod save_sheet;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, AccessibleAction, ClickEvent, Context, InteractiveElement as _, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled, Window,
+    div, px, AccessibleAction, ClickEvent, Context, ExternalPaths, InteractiveElement as _,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, Role,
+    SharedString, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::rich;
@@ -34,7 +34,8 @@ use crate::{
     ToggleSmartCopyPaste, ToggleSmartDashes, ToggleSmartLinks, ToggleSmartQuotes,
     ToggleTextReplacement, ToggleUnderline, ToggleWrapToPage, TransformCapitalise,
     TransformLowercase, TransformUppercase, TypefaceBold, TypefaceBoldItalic, TypefaceItalic,
-    TypefaceRegular, UseSelectionForFind, ZoomIn, ZoomOut,
+    TypefaceRegular, UseSelectionForFind, WritingDirectionDefault, WritingDirectionLeftToRight,
+    WritingDirectionRightToLeft, ZoomIn, ZoomOut,
 };
 
 use super::{
@@ -233,6 +234,9 @@ impl Render for EditorView {
             .v_flex()
             .track_focus(&self.focus)
             .key_context(CTX)
+            .on_drop(cx.listener(|this, dropped: &ExternalPaths, window, cx| {
+                this.open_dropped_paths(dropped.paths(), window, cx);
+            }))
             .on_action(cx.listener(|this, _: &NewFile, window, cx| this.new_file(window, cx)))
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| this.open(window, cx)))
             .on_action(cx.listener(|_, _: &ShowSettings, _, cx| {
@@ -516,6 +520,15 @@ impl Render for EditorView {
             }))
             .on_action(cx.listener(|this, _: &AlignRight, _, cx| {
                 this.set_alignment(rich::Alignment::Right, cx)
+            }))
+            .on_action(cx.listener(|this, _: &WritingDirectionDefault, _, cx| {
+                this.set_writing_direction(rich::WritingDirection::Default, cx)
+            }))
+            .on_action(cx.listener(|this, _: &WritingDirectionLeftToRight, _, cx| {
+                this.set_writing_direction(rich::WritingDirection::LeftToRight, cx)
+            }))
+            .on_action(cx.listener(|this, _: &WritingDirectionRightToLeft, _, cx| {
+                this.set_writing_direction(rich::WritingDirection::RightToLeft, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowRuler, _, cx| this.toggle_show_ruler(cx)))
             .on_action(cx.listener(|this, _: &CopyRuler, _, cx| this.copy_ruler(cx)))

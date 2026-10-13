@@ -86,7 +86,7 @@ impl EditorView {
                     if !this.editing_blocked() {
                         rmac_ui::text_assist::on_text_changed(
                             field,
-                            this.text_assist,
+                            this.plain_text_assist(),
                             Some(this.spell_checker.as_ref()
                                 as &dyn rmac_ui::text_assist::SpellChecker),
                             window,
@@ -402,6 +402,8 @@ impl EditorView {
                 smart_copy_paste: settings.smart_copy_paste_default,
                 smart_links: settings.smart_links_default,
             },
+            spelling_rich_text_only: settings.spelling_rich_text_only,
+            smart_quotes_rich_text_only: settings.smart_quotes_rich_text_only,
             spell_checker: rmac_spelling::shared(),
             data_detectors: settings.data_detectors_default,
             writing_tools: cx.new(rmac_writing_tools::WritingTools::new),

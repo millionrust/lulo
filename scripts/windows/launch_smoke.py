@@ -923,6 +923,7 @@ def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | N
         height = user32().GetSystemMetrics(1)
         print(f"{app}: F11: {before} -> {full} -> {after}")
         if full[2] - full[0] < width or full[3] - full[1] < height:
+            diagnose_keys(app, process, hwnd, "F11")
             return f"F11 did not make the window full screen ({full})"
         if after != before:
             user32().ShowWindow(hwnd, 9)  # SW_RESTORE
@@ -945,6 +946,42 @@ def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | N
     return None
 
 
+def describe_window(hwnd: int) -> str:
+    if not hwnd:
+        return "none"
+    owner = wintypes.DWORD()
+    user32().GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+    name = ctypes.create_unicode_buffer(64)
+    user32().GetClassNameW(hwnd, name, 64)
+    length = user32().GetWindowTextLengthW(hwnd)
+    title = ctypes.create_unicode_buffer(length + 1)
+    user32().GetWindowTextW(hwnd, title, length + 1)
+    return f"{hwnd:#x} pid {owner.value} class {name.value!r} title {title.value!r}"
+
+
+def diagnose_keys(app: str, process: subprocess.Popen, hwnd: int, what: str) -> None:
+    """Where keys went when `what` had no effect: the foreground window,
+    the modifiers Windows holds down, and every window of the process."""
+    held = [
+        name
+        for name, code in (("Ctrl", VK_CONTROL), ("Alt", VK_MENU), ("Shift", VK_SHIFT), ("Win", 0x5B))
+        if user32().GetAsyncKeyState(code) & 0x8000
+    ]
+    foreground = user32().GetForegroundWindow()
+    print(f"{app}: {what}: foreground {describe_window(foreground)}; window {hwnd:#x}; held {held}")
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def collect(window, _lparam):
+        owner = wintypes.DWORD()
+        user32().GetWindowThreadProcessId(window, ctypes.byref(owner))
+        if owner.value == process.pid:
+            visible = bool(user32().IsWindowVisible(window))
+            print(f"{app}: {what}:   {describe_window(window)} visible={visible}")
+        return True
+
+    user32().EnumWindows(collect, 0)
+
+
 def focus_content(hwnd: int) -> None:
     """Click the window's lower content area, as a user would before typing,
     so keys reach the view and not whatever last held focus."""
@@ -961,6 +998,7 @@ def check_open_panel(app: str, process: subprocess.Popen, hwnd: int) -> str | No
     if not bring_forward(hwnd):
         return "could not bring the window forward to test Ctrl+O"
     focus_content(hwnd)
+    diagnose_keys(app, process, hwnd, "before Ctrl+O")
     before = {window for window, _ in visible_windows(process.pid)}
     chord(VK_CONTROL, "o")
     dialog = None
@@ -975,6 +1013,9 @@ def check_open_panel(app: str, process: subprocess.Popen, hwnd: int) -> str | No
                     dialog = window
     print(f"{app}: Ctrl+O: open dialog {'shown' if dialog else 'not shown'}")
     if dialog is None:
+        diagnose_keys(app, process, hwnd, "Ctrl+O")
+        time.sleep(20.0)
+        diagnose_keys(app, process, hwnd, "Ctrl+O 20 s later")
         return "Ctrl+O showed no Open dialog"
     user32().SetForegroundWindow(dialog)
     time.sleep(0.3)

@@ -19,6 +19,7 @@ use std::time::Instant;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::{Session, SessionInputValue};
 use ort::value::{DynValue, Tensor};
+use rmac_intelligence::voice::audio;
 use rmac_intelligence::voice::tokens::{self, Vocabulary};
 use rmac_intelligence::voice::VoicePaths;
 
@@ -180,6 +181,8 @@ fn best_token(logits: &DynValue) -> Result<i32, VoiceEngineError> {
 impl Transcriber for Moonshine {
     fn transcribe(&mut self, samples: &[f32]) -> Result<(String, Steps), VoiceEngineError> {
         let mut steps = Steps::default();
+        // The pause before the first word and after the last, cut to 0.1 s.
+        let samples = audio::trim_silence(samples, 1_600);
         if samples.len() < 1_600 {
             // Under 0.1 s: nothing was said.
             return Ok((String::new(), steps));

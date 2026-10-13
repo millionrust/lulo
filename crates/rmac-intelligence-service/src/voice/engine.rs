@@ -48,26 +48,34 @@ pub fn fixture_requested() -> bool {
 }
 
 /// The fixture: it hears whatever `RMAC_VOICE_FIXTURE_TEXT` says (or, when
-/// that is unset, the text in the capture file's `.txt` sidecar), provided
-/// the audio is not silent. It still costs a little time per second of
-/// audio, so the HUD's "working" state is visible in behaviour runs.
+/// that is unset, the text in the capture file's `.txt` sidecar, read at
+/// every capture so a scenario can change it between presses), provided the
+/// audio is not silent. It still costs a little time per second of audio,
+/// so the HUD's "working" state is visible in behaviour runs.
 pub struct FixtureTranscriber {
-    pub text: String,
+    pub text: Option<String>,
+    pub sidecar: Option<std::path::PathBuf>,
 }
 
 impl FixtureTranscriber {
     pub fn from_environment(capture_file: Option<&std::path::Path>) -> Self {
-        let text = std::env::var("RMAC_VOICE_FIXTURE_TEXT")
-            .ok()
+        Self {
+            text: std::env::var("RMAC_VOICE_FIXTURE_TEXT").ok(),
+            sidecar: capture_file.map(|path| path.with_extension("txt")),
+        }
+    }
+
+    fn heard_text(&self) -> String {
+        self.text
+            .clone()
             .or_else(|| {
-                capture_file
-                    .map(|path| path.with_extension("txt"))
+                self.sidecar
+                    .as_ref()
                     .and_then(|path| std::fs::read_to_string(path).ok())
             })
-            .unwrap_or_default();
-        Self {
-            text: text.trim().to_owned(),
-        }
+            .unwrap_or_default()
+            .trim()
+            .to_owned()
     }
 }
 
@@ -79,7 +87,7 @@ impl Transcriber for FixtureTranscriber {
             (samples.len() as u64 / 16).min(150) / 10,
         ));
         let text = if heard {
-            self.text.clone()
+            self.heard_text()
         } else {
             String::new()
         };
@@ -153,7 +161,8 @@ mod tests {
     #[test]
     fn the_fixture_hears_its_text_only_over_sound() {
         let mut fixture = FixtureTranscriber {
-            text: "turn on dark mode".into(),
+            text: Some("turn on dark mode".into()),
+            sidecar: None,
         };
         let (text, steps) = fixture.transcribe(&[0.2f32; 16_000]).unwrap();
         assert_eq!(text, "turn on dark mode");

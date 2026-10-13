@@ -164,6 +164,26 @@ pub fn rms(samples: &[f32]) -> f32 {
     (samples.iter().map(|sample| sample * sample).sum::<f32>() / samples.len() as f32).sqrt()
 }
 
+/// The part of `samples` with speech in it, plus `margin` samples of the
+/// quiet on each side: hold-to-talk records the pause before the first
+/// word and after the last, and Moonshine (trained on speech segments a
+/// voice-activity detector cut) often ends at once when a clip starts with
+/// half a second of silence. A step is speech when it is louder than both
+/// 0.01 RMS and four times the quietest step. Nothing loud: all of it.
+pub fn trim_silence(samples: &[f32], margin: usize) -> &[f32] {
+    let steps: Vec<f32> = samples.chunks(STEP_SAMPLES).map(rms).collect();
+    let floor = steps.iter().copied().fold(f32::INFINITY, f32::min);
+    let threshold = (floor * 4.0).max(0.01);
+    let first = steps.iter().position(|level| *level > threshold);
+    let last = steps.iter().rposition(|level| *level > threshold);
+    let (Some(first), Some(last)) = (first, last) else {
+        return samples;
+    };
+    let start = (first * STEP_SAMPLES).saturating_sub(margin);
+    let end = ((last + 1) * STEP_SAMPLES + margin).min(samples.len());
+    &samples[start..end]
+}
+
 /// The HUD's meter, 0 to 1: loudness from -55 dBFS (silence) to -10 dBFS
 /// (a raised voice close to the microphone), as the Mac's level meter
 /// moves with speech rather than with peaks.
@@ -282,6 +302,25 @@ mod tests {
         assert!((15_999..=16_000).contains(&resampled.len()));
         assert!(resampled.iter().all(|sample| (sample - 0.5).abs() < 1e-5));
         assert_eq!(read_wav(b"not a wav file at all"), Err(WavError::NotWav));
+    }
+
+    #[test]
+    fn silence_around_speech_is_trimmed_to_a_margin() {
+        let quiet = vec![0.001f32; STEP_SAMPLES * 10];
+        let speech = tone(0.5, 0.2);
+        let clip: Vec<f32> = quiet
+            .iter()
+            .chain(&speech)
+            .chain(&quiet)
+            .copied()
+            .collect();
+        let trimmed = trim_silence(&clip, 1_600);
+        assert_eq!(trimmed.len(), speech.len() + 3_200);
+        assert!(trimmed[1_600..1_600 + 800].iter().any(|sample| sample.abs() > 0.1));
+        // All quiet, or all loud: nothing to cut.
+        assert_eq!(trim_silence(&quiet, 1_600).len(), quiet.len());
+        assert_eq!(trim_silence(&speech, 1_600).len(), speech.len());
+        assert!(trim_silence(&[], 1_600).is_empty());
     }
 
     #[test]

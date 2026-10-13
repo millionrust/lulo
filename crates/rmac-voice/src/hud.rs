@@ -25,10 +25,10 @@ use gpui::{
     WindowBounds, WindowKind, WindowOptions,
 };
 use rmac_intelligence::voice::client::{self, Control, Event, VoiceError};
-use rmac_intelligence::voice::handoff;
+use rmac_intelligence::voice::{handoff, Availability};
 use rmac_shortcuts::ShortcutId;
 
-use crate::model::{message_for, KeyChange, Meter, Mode, BARS, NOTHING_HEARD};
+use crate::model::{message_for, KeyChange, Meter, Mode, NOTHING_HEARD};
 
 const SHORTCUT: &str = "voice";
 /// The window: room for the widest message, and the pill's shadow.
@@ -326,13 +326,36 @@ async fn show_message(
     finish(window, cx);
 }
 
+/// Whether Talk to Lulo is on and its model downloaded. The behaviour
+/// scenario's fixture engine (`RMAC_VOICE_ENGINE=fixture`) needs no model.
+fn available() -> Result<(), VoiceError> {
+    if std::env::var("RMAC_VOICE_ENGINE").is_ok_and(|engine| engine == "fixture") {
+        let config = rmac_intelligence::config::Config::load();
+        return if config.enabled && config.voice {
+            Ok(())
+        } else {
+            Err(VoiceError::Off)
+        };
+    }
+    match rmac_intelligence::voice::current_availability() {
+        Availability::Ready(_) => Ok(()),
+        Availability::NotDownloaded(_) => Err(VoiceError::NotDownloaded),
+        Availability::Off | Availability::VoiceOff | Availability::NotOffered(_) => {
+            Err(VoiceError::Off)
+        }
+    }
+}
+
 /// One press: listen, then hand the transcript to Spotlight.
 fn begin(presses: async_channel::Receiver<()>, cx: &mut App) {
     rmac_ui::trace_mark("voice_pressed");
     let (controls, control_rx) = async_channel::bounded(4);
     let (events_tx, events) = async_channel::bounded::<Event>(64);
-    // The microphone first: everything else overlaps with it starting.
+    // The microphone first: everything else overlaps with it starting. The
+    // settings are checked here, so a press with Talk to Lulo off never
+    // even starts the voice service.
     let capture = cx.background_executor().spawn(async move {
+        blocking::unblock(available).await?;
         client::listen(false, control_rx, move |event| {
             let _ = events_tx.try_send(event);
         })

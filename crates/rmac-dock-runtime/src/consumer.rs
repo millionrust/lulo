@@ -197,14 +197,14 @@ pub(super) fn parking_work(event: &rmac_compositor::Event) -> Option<ParkingWork
     match event {
         rmac_compositor::Event::WindowRemoved { id } => Some(ParkingWork::Forget(*id)),
         rmac_compositor::Event::Snapshot { .. } => Some(ParkingWork::Prune),
-        event => rmac_compositor_niri::minimize_request(event).map(ParkingWork::Minimize),
+        event => rmac_compositor_system::minimize_request(event).map(ParkingWork::Minimize),
     }
 }
 
 pub(super) async fn run_parking_work(work: ParkingWork, snapshot: rmac_compositor::Snapshot) {
     match work {
         ParkingWork::Minimize(window) => {
-            if let Err(error) = rmac_compositor_niri::minimize_window_in(snapshot, window).await {
+            if let Err(error) = rmac_compositor_system::minimize_window_in(snapshot, window).await {
                 eprintln!("could not minimize window {}: {error}", window.0);
             }
         }

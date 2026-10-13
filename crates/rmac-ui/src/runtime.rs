@@ -32,6 +32,9 @@ fn apply_window_text_scale(window: &mut Window, scale: rmac_appearance::TextScal
 /// Initialize the shared component, theme, and accessibility runtimes for a
 /// long-lived shell process that creates windows on demand.
 pub fn init_application(cx: &mut App) {
+    // Windows: Lulo's Inter, before any text is laid out.
+    #[cfg(windows)]
+    crate::fonts_windows::install(cx);
     seed_initial_theme();
     warn_if_ui_font_missing(cx);
     gpui_component::init(cx);

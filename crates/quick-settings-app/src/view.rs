@@ -227,6 +227,20 @@ impl QuickSettingsView {
         window.on_next_frame(move |window, cx| window.focus(&first_control, cx));
         // The outside catcher handles pointer dismissal. Compositor focus can
         // move back to an open menu-bar menu while this panel remains visible.
+        // Windows has no catcher: a press elsewhere takes the foreground away,
+        // which closes the panel.
+        #[cfg(windows)]
+        {
+            let mut was_active = false;
+            cx.observe_window_activation(window, move |this, window, cx| {
+                if window.is_window_active() {
+                    was_active = true;
+                } else if was_active {
+                    this.dismiss(window, cx);
+                }
+            })
+            .detach();
+        }
         cx.on_release(move |_, cx| {
             crate::clear_active_popover(token, cx);
         })
@@ -1025,7 +1039,7 @@ impl QuickSettingsView {
                 let action = rmac_compositor::Action::FocusWindow {
                     window: previous_window,
                 };
-                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                     eprintln!("could not return focus from Control Centre: {error:?}");
                 }
             })
@@ -1083,6 +1097,32 @@ mod tests {
                 .progress(1_000 + rmac_ui::SLIDER_PRESS_MS),
             1.0
         );
+    }
+
+    /// CC-18: the only rows that depend on the machine are Display (a
+    /// backlight, read before the surface opens) and error banners, which
+    /// only an operation or a stopped watcher adds. Now Playing is always
+    /// drawn, and Wi-Fi, Bluetooth, Focus and Low Power are tiles inside
+    /// fixed rows, so a missing adapter or battery never changes the height.
+    #[test]
+    fn the_opening_height_is_the_height_every_later_state_draws() {
+        let with_backlight = initial_surface_height(true);
+        let without_backlight = initial_surface_height(false);
+        // Five rows of 64 pt and four 12 pt gaps, then the 12 pt padding.
+        assert_eq!(with_backlight, 5.0 * 64.0 + 4.0 * 12.0 + 24.0);
+        assert_eq!(without_backlight, 4.0 * 64.0 + 3.0 * 12.0 + 24.0);
+        assert_eq!(with_backlight - without_backlight, 64.0 + 12.0);
+        for display in [true, false] {
+            let later = Modules {
+                now_playing: true,
+                display,
+                banners: 0,
+            };
+            assert_eq!(
+                initial_surface_height(display),
+                later.surface_height() as f32
+            );
+        }
     }
 
     #[test]

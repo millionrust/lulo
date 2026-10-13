@@ -744,6 +744,16 @@ impl Render for LauncherView {
         rmac_ui::trace_mark("launcher_render");
         self.scale_factor = window.scale_factor();
         let snapshot = self.coordinator.snapshot();
+        // The Windows CI checks read what Spotlight found
+        // (`scripts/windows/shell_smoke.py`).
+        #[cfg(windows)]
+        rmac_shell_layer::windows::trace::trace_changed("spotlight rows", || {
+            format!(
+                "spotlight {:?}: {} results",
+                self.query.read(cx).value().to_string(),
+                snapshot.rows.len()
+            )
+        });
         let phase_message: SharedString = visible_phase_label(&snapshot).into();
         let activating = snapshot.phase == Phase::Activating;
         let application_groups = ApplicationGroup::ORDER

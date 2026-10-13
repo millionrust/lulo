@@ -8,7 +8,7 @@
 //! 1024×1024 artwork (some with an `feDropShadow` filter), so every one of
 //! them decodes as a 2048×2048 canvas even at a 16pt menu glyph: about
 //! 1.4–1.75s on the reference laptop under load, independent of which SVG.
-//! `shell/bins/rmac-wallpaper/src/linux_wayland/desktop.rs`
+//! `shell/bins/rmac-wallpaper/src/surface/desktop.rs`
 //! (`ICON_SVG_SCALE`, `warm_desktop_icons`) proved the fix for the
 //! desktop's own folder/document glyphs: rasterize once, directly, at the
 //! real display size, and reuse the bitmap. This generalizes that to any

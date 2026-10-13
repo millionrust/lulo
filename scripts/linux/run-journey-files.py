@@ -27,7 +27,7 @@ docs/journey-suite.md for the summary):
     entry, and the icon-size slider -- expose no AT-SPI accessible name at
     all (confirmed live and by `grep -rn "aria_label\\|\\.role(\\|
     on_a11y_action" crates/finder/src`, which returns nothing, versus
-    shell/bins/rmac-dock/src/main.rs, which uses that exact API for its own
+    shell/bins/rmac-dock/src/lib.rs, which uses that exact API for its own
     tiles). Neither the search field nor any file/folder row can be found or
     identified over AT-SPI. This blocks "find a file" and any row-level
     selection entirely -- see the `find_file` step below.

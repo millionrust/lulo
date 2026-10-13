@@ -65,6 +65,13 @@ impl Model {
                 continue;
             }
             let application = applications.get(&canonical).copied();
+            // Lulo on Windows ships its apps in stages (ADR 0023): a default
+            // pin whose app is not installed yet is left out rather than
+            // drawn as a broken tile, unless it is running.
+            #[cfg(windows)]
+            if application.is_none() && !windows.contains_key(&canonical) {
+                continue;
+            }
             let grouped = windows.remove(&canonical).unwrap_or_default();
             items.push(build_item(&pinned_id.0, application, true, grouped));
         }
@@ -641,7 +648,15 @@ pub(super) fn minimized_items(
                 window: window.id,
                 app_id: window.app_id.clone(),
                 title: window.title.clone(),
-                icon: application.and_then(|application| application.icon.clone()),
+                // A Windows app without a desktop entry: its program's icon.
+                icon: application
+                    .and_then(|application| application.icon.clone())
+                    .or_else(|| {
+                        window
+                            .app_id
+                            .as_deref()
+                            .and_then(rmac_apps::windows_apps::icon_for)
+                    }),
                 thumbnail: rmac_compositor::ParkingStore::current_thumbnail(window.id),
             }
         })
@@ -720,10 +735,15 @@ pub(super) fn build_item(
         id: application
             .map(|application| application.id.clone())
             .unwrap_or_else(|| source_id.to_owned()),
+        // An app without a desktop entry: the name the platform gave it
+        // (a Windows app's own description), else one made from its id.
         name: application
             .map(|application| application.name.clone())
+            .or_else(|| rmac_apps::windows_apps::display_name_for(source_id))
             .unwrap_or_else(|| fallback_name(source_id)),
-        icon: application.and_then(|application| application.icon.clone()),
+        icon: application
+            .and_then(|application| application.icon.clone())
+            .or_else(|| rmac_apps::windows_apps::icon_for(source_id)),
         pinned,
         running,
         active: windows.iter().any(|window| window.focused),

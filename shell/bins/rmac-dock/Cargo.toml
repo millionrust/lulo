@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+# The Dock view is a library shared by Lulo OS's `dock` binary and the
+# Windows shell (`rmac-win-shell`); ADR 0023, "Phase 3 revised: shared shell
+# views".
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "dock"
 path = "src/main.rs"
@@ -27,13 +33,11 @@ rmac-apps.workspace = true
 rmac-app-launch.workspace = true
 rmac-app-menu.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
+rmac-compositor-system.workspace = true
 rmac-desktop.workspace = true
 rmac-dock.workspace = true
 rmac-dock-runtime.workspace = true
 rmac-dock-system.workspace = true
-rmac-osd.workspace = true
-rmac-login-items-linux.workspace = true
 rmac-locale.workspace = true
 rmac-places.workspace = true
 rmac-places-system.workspace = true
@@ -49,4 +53,11 @@ rmac-wallpaper-image.workspace = true
 rmac-wallpaper-runtime.workspace = true
 trash.workspace = true
 uuid.workspace = true
+
+# Lulo OS only: niri, XDG autostart, the session bus (LauncherEntry badges,
+# notices) and the Dock's own sockets.
+[target.'cfg(target_os = "linux")'.dependencies]
+rmac-compositor-niri.workspace = true
+rmac-login-items-linux.workspace = true
+rmac-osd.workspace = true
 zbus.workspace = true

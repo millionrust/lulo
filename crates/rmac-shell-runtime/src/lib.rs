@@ -3,6 +3,9 @@
 mod coordinator;
 mod model;
 mod runtime;
+pub mod scene;
+#[cfg(windows)]
+mod windows;
 
 pub use coordinator::Coordinator;
 pub use model::*;

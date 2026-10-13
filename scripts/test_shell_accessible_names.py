@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-MENUBAR = REPO / "shell/bins/rmac-menubar/src/main.rs"
+MENUBAR = REPO / "shell/bins/rmac-menubar/src/lib.rs"
 RUNNERS = (
     "scripts/behavior/run_power_dialogs.py",
     "scripts/behavior/run_menu_dismiss.py",

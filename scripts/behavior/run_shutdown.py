@@ -11,7 +11,7 @@ The owner's complaint was "can't shut down, restart": clicking through to Shut
 Down or Restart never actually powers the machine off. Opening the
 confirmation dialog was live-tested before (docs/parity.md SESSION-01..04),
 but nobody had exercised the far end — whether the menu bar's `quit_all_then`
-(shell/bins/rmac-menubar/src/main.rs) really asks every window to close, waits
+(shell/bins/rmac-menubar/src/lib.rs) really asks every window to close, waits
 for a parked (minimised) one exactly like a visible one, and then hands off to
 `systemctl`. This runs that whole path for real, with a fake `systemctl` on
 PATH that only records what it was asked to do, so nothing is powered off.
@@ -65,7 +65,7 @@ import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
 # The top bar's leftmost item (the Lulo mark). Its accessible name is
-# "Lulo menu" (shell/bins/rmac-menubar/src/main.rs `LULO_MENU_LABEL`), so
+# "Lulo menu" (shell/bins/rmac-menubar/src/lib.rs `LULO_MENU_LABEL`), so
 # Orca announces what it opens rather than a bare "menu".
 LULO_MENU = "Lulo menu"
 GTK_APP_ID = "org.example.ShutdownTest"

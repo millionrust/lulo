@@ -12,6 +12,7 @@ mod platform;
 mod superseded;
 #[cfg(test)]
 mod tests;
+pub mod windows_apps;
 
 pub use catalog::*;
 use icons::*;

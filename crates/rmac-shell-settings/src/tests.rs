@@ -18,11 +18,36 @@ fn fresh_profile_has_a_deliberate_first_party_dock() {
             rmac_apps::identity::TEXT_EDITOR,
             rmac_apps::identity::TERMINAL,
             rmac_apps::identity::SYSTEM_SETTINGS,
+            rmac_apps::identity::WEATHER,
+            rmac_apps::identity::CALCULATOR,
+            rmac_apps::identity::MAIL,
         ]
         .into_iter()
         .map(|identity| AppId(identity.into()))
         .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn an_untouched_previous_default_dock_gains_weather_calculator_and_mail() {
+    let mut settings = ShellSettings::default();
+    settings.pinned_apps = crate::model::PREVIOUS_DEFAULT_PINNED_APPS
+        .into_iter()
+        .map(|identity| AppId(identity.into()))
+        .collect();
+    let migrated = crate::migration::migrate_application_ids(settings);
+    assert_eq!(migrated.pinned_apps, ShellSettings::default().pinned_apps);
+}
+
+#[test]
+fn a_customised_dock_is_left_alone() {
+    let mut settings = ShellSettings::default();
+    settings.pinned_apps = vec![
+        AppId(rmac_apps::identity::FILES.into()),
+        AppId(rmac_apps::identity::TERMINAL.into()),
+    ];
+    let migrated = crate::migration::migrate_application_ids(settings.clone());
+    assert_eq!(migrated.pinned_apps, settings.pinned_apps);
 }
 
 fn test_store(label: &str) -> (PathBuf, ShellSettingsStore) {
@@ -609,5 +634,25 @@ fn double_click_title_bar_defaults_to_zoom_like_macos() {
     assert_eq!(
         DoubleClickTitleBarAction::ALL.map(DoubleClickTitleBarAction::title),
         ["Zoom", "Minimize", "Fill", "Do Nothing"]
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn a_windows_dock_saved_before_apps_ran_on_windows_gets_apps_back() {
+    let old = [
+        rmac_apps::identity::FILES,
+        rmac_apps::identity::NOTES,
+        rmac_apps::identity::TEXT_EDITOR,
+        rmac_apps::identity::TERMINAL,
+        rmac_apps::identity::SYSTEM_SETTINGS,
+    ];
+    let settings = ShellSettings {
+        pinned_apps: old.into_iter().map(|id| AppId(id.into())).collect(),
+        ..ShellSettings::default()
+    };
+    assert_eq!(
+        migrate_application_ids(settings).pinned_apps,
+        ShellSettings::default().pinned_apps
     );
 }

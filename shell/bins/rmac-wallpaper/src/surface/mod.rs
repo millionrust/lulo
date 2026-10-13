@@ -1,0 +1,1351 @@
+//! The wallpaper layer and, on it, the macOS 26 desktop: Desktop items on
+//! Finder's icon grid, Stacks, the desktop menu, desktop widgets and the
+//! Edit Widgets gallery. Numbers come from design-lab/desktop.html.
+
+mod desktop;
+mod gallery;
+#[cfg(target_os = "linux")]
+mod lock_picture;
+mod menu;
+#[cfg(target_os = "linux")]
+mod reveal;
+
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
+use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::Write as _;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use futures_util::FutureExt as _;
+#[cfg(target_os = "linux")]
+use gpui::QuitMode;
+use gpui::{
+    div, img, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, svg, AnyElement,
+    AnyWindowHandle, App, AssetSource, Bounds, Context, DisplayId, Entity, ExternalPaths,
+    FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, PlatformDisplay, Point, RenderImage, Role, SharedString, Size, Task,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
+};
+#[cfg(target_os = "linux")]
+use gpui_platform::application;
+use rmac_desktop::settings::{Arrangement, DesktopSettings, GalleryTarget};
+use rmac_desktop::widgets::{WidgetKind, WidgetLocation, WidgetSize};
+use rmac_desktop_widgets::WidgetData;
+use rmac_shell_layer::layer::*;
+use rmac_shell_ui::tokens;
+use uuid::Uuid;
+
+const READY_FILE_ENV: &str = "RMAC_WALLPAPER_READY_FILE";
+const RENDER_COUNT_DIR_ENV: &str = "RMAC_WALLPAPER_RENDER_COUNT_DIR";
+/// How often the Weather widget's forecast is refreshed.
+const WEATHER_REFRESH: Duration = Duration::from_secs(15 * 60);
+/// How long to wait before restarting `upcoming::watch` after it returns
+/// (no EDS, no enabled calendar, or a source added/removed/toggled).
+#[cfg(target_os = "linux")]
+const CALENDAR_RETRY_DELAY: Duration = Duration::from_secs(30);
+static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
+
+fn bin_word() -> &'static str {
+    static WORD: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    WORD.get_or_init(|| rmac_locale::FileVocabulary::from_environment().bin())
+}
+
+/// Menu glyphs (shell/assets/menu), the desktop's folder and document
+/// artwork (assets/icons) and the widget glyphs.
+macro_rules! menu_icons {
+    ($($name:literal),* $(,)?) => {
+        const MENU_ICON_NAMES: &[&str] = &[$(concat!("menu/", $name, ".svg")),*];
+
+        fn menu_icon_bytes(path: &str) -> Option<&'static [u8]> {
+            $(
+                if path == concat!("menu/", $name, ".svg") {
+                    return Some(include_bytes!(concat!(
+                        "../../../../assets/menu/",
+                        $name,
+                        ".svg"
+                    )));
+                }
+            )*
+            None
+        }
+    };
+}
+
+menu_icons!(
+    "checkmark",
+    "chevron-right",
+    "duplicate",
+    "gear",
+    "info",
+    "new-folder",
+    "open",
+    "rename",
+    "sort",
+    "stacks",
+    "trash",
+);
+
+pub(crate) fn menu_icon_path(name: &str) -> SharedString {
+    SharedString::from(format!("menu/{name}.svg"))
+}
+
+pub(crate) const FOLDER_ICON: &str = "desktop/folder.svg";
+pub(crate) const DOCUMENT_ICON: &str = "desktop/document.svg";
+
+struct WallpaperAssets;
+
+/// The desktop's own artwork, for a process that serves several shell
+/// surfaces' assets at once (`lulo-shell` on Windows).
+pub fn asset(path: &str) -> Option<Cow<'static, [u8]>> {
+    WallpaperAssets.load(path).ok().flatten()
+}
+
+/// Every path [`asset`] answers.
+pub fn asset_names() -> impl Iterator<Item = &'static str> {
+    MENU_ICON_NAMES
+        .iter()
+        .chain([FOLDER_ICON, DOCUMENT_ICON].iter())
+        .copied()
+}
+
+impl AssetSource for WallpaperAssets {
+    fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+        if let Some(bytes) = menu_icon_bytes(path) {
+            return Ok(Some(Cow::Borrowed(bytes)));
+        }
+        if let Some(bytes) = rmac_desktop_widgets::asset(path) {
+            return Ok(Some(Cow::Borrowed(bytes)));
+        }
+        let bytes: Option<&'static [u8]> = match path {
+            FOLDER_ICON => Some(include_bytes!("../../../../../assets/icons/folder.svg")),
+            DOCUMENT_ICON => Some(include_bytes!("../../../../../assets/icons/document.svg")),
+            _ => None,
+        };
+        Ok(bytes.map(Cow::Borrowed))
+    }
+
+    fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
+        Ok(MENU_ICON_NAMES
+            .iter()
+            .chain([FOLDER_ICON, DOCUMENT_ICON].iter())
+            .filter(|asset| asset.starts_with(path))
+            .map(|asset| SharedString::from(*asset))
+            .collect())
+    }
+}
+
+#[derive(Clone)]
+struct PreparedSurface {
+    image: Arc<RenderImage>,
+    layout: rmac_wallpaper::Layout,
+    /// Windows shows the picture in a layered window under the desktop
+    /// (`rmac_shell_layer::windows::wallpaper_layer`, WIN-OS-53): the view
+    /// draws only the icons, and keeps no pixels.
+    layered: bool,
+}
+
+enum PreparedUpdate {
+    Render(BTreeMap<Uuid, PreparedSurface>),
+    Health(rmac_wallpaper_runtime::HealthSnapshot),
+    Desktop {
+        snapshot: Option<rmac_desktop::Snapshot>,
+        error: Option<SharedString>,
+    },
+    Battery(Option<rmac_desktop_widgets::Battery>, bool),
+    Weather(Result<rmac_weather::widget::WidgetWeather, rmac_weather::widget::Unavailable>),
+    // Evolution Data Server's events (Lulo OS).
+    #[cfg_attr(windows, allow(dead_code))]
+    Calendar(Vec<rmac_calendar_agent::upcoming::UpcomingEvent>),
+    Gallery(GalleryTarget),
+}
+
+pub(crate) struct WallpaperStatus {
+    surfaces: BTreeMap<Uuid, PreparedSurface>,
+    health: rmac_wallpaper_runtime::HealthSnapshot,
+    compositor: rmac_compositor::State,
+    pub(crate) desktop: Option<rmac_desktop::Snapshot>,
+    pub(crate) desktop_error: Option<SharedString>,
+    desktop_requests: async_channel::Sender<rmac_desktop::SortOrder>,
+    pub(crate) settings: DesktopSettings,
+    saves: async_channel::Sender<DesktopSettings>,
+    pub(crate) widgets: WidgetData,
+    weather_wanted: Arc<AtomicBool>,
+    weather_kick: async_channel::Sender<()>,
+    /// The open Edit Widgets gallery.
+    pub(crate) gallery: Option<AnyWindowHandle>,
+    /// The display the most recent desktop interaction happened on.
+    pub(crate) last_display: Option<DisplayId>,
+    /// The Clock widget's second hand; runs only while a Clock is placed.
+    clock_ticker: Option<Task<()>>,
+}
+
+pub(crate) struct StatusChannels {
+    receiver: async_channel::Receiver<PreparedUpdate>,
+    desktop_requests: async_channel::Sender<rmac_desktop::SortOrder>,
+    saves: async_channel::Sender<DesktopSettings>,
+    weather_wanted: Arc<AtomicBool>,
+    weather_kick: async_channel::Sender<()>,
+}
+
+impl WallpaperStatus {
+    fn new(settings: DesktopSettings, channels: StatusChannels, cx: &mut Context<Self>) -> Self {
+        let receiver = channels.receiver;
+        cx.spawn(async move |this, cx| {
+            while let Ok(update) = receiver.recv().await {
+                if this
+                    .update(cx, |this, cx| {
+                        match update {
+                            PreparedUpdate::Render(surfaces) => {
+                                #[cfg(windows)]
+                                let surfaces = layer_surfaces(surfaces);
+                                this.surfaces = surfaces;
+                                // The Dock's and the menus' materials show
+                                // the new wallpaper's blur on Windows.
+                                #[cfg(windows)]
+                                cx.defer(|cx| cx.refresh_windows());
+                            }
+                            PreparedUpdate::Health(health) => this.health = health,
+                            PreparedUpdate::Desktop { snapshot, error } => {
+                                this.desktop = snapshot;
+                                this.desktop_error = error;
+                            }
+                            PreparedUpdate::Battery(battery, none) => {
+                                // UPower announces a new UpdateTime every
+                                // 30 s; only a visible change redraws.
+                                if this.widgets.battery == battery
+                                    && this.widgets.no_battery == none
+                                {
+                                    return;
+                                }
+                                this.widgets.battery = battery;
+                                this.widgets.no_battery = none;
+                            }
+                            PreparedUpdate::Weather(weather) => {
+                                this.widgets.weather = Some(weather);
+                            }
+                            PreparedUpdate::Calendar(events) => {
+                                if this.widgets.calendar == events {
+                                    return;
+                                }
+                                this.widgets.calendar = events;
+                            }
+                            PreparedUpdate::Gallery(target) => {
+                                // Opened after this update, since the
+                                // gallery reads the status as it opens.
+                                let display = this.last_display;
+                                let status = cx.entity();
+                                cx.defer(move |cx| gallery::open(status, target, display, cx));
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+        let mut status = Self {
+            surfaces: BTreeMap::new(),
+            health: rmac_wallpaper_runtime::HealthSnapshot::default(),
+            compositor: rmac_compositor::State::default(),
+            desktop: None,
+            desktop_error: None,
+            desktop_requests: channels.desktop_requests,
+            settings,
+            saves: channels.saves,
+            widgets: WidgetData::default(),
+            weather_wanted: channels.weather_wanted,
+            weather_kick: channels.weather_kick,
+            gallery: None,
+            last_display: None,
+            clock_ticker: None,
+        };
+        status
+            .weather_wanted
+            .store(status.has_widget(WidgetKind::Weather), Ordering::Relaxed);
+        status.sync_clock_ticker(cx);
+        status
+    }
+
+    /// Starts the Clock widget's once-a-second redraw when a Clock is on
+    /// the desktop and stops it when the last one is removed, so a desktop
+    /// without a Clock never wakes on its own.
+    fn sync_clock_ticker(&mut self, cx: &mut Context<Self>) {
+        if !self.has_widget(WidgetKind::Clock) {
+            self.clock_ticker = None;
+            return;
+        }
+        if self.clock_ticker.is_some() {
+            return;
+        }
+        self.clock_ticker = Some(cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(Duration::from_secs(1)).await;
+            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                break;
+            }
+        }));
+    }
+
+    pub(crate) fn has_widget(&self, kind: WidgetKind) -> bool {
+        self.settings
+            .widgets
+            .iter()
+            .any(|widget| widget.kind == kind)
+    }
+
+    /// Changes the saved desktop state, rescans in the new order when Sort
+    /// By changed, and saves in the background (newest state wins).
+    pub(crate) fn update_settings(
+        &mut self,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut DesktopSettings),
+    ) {
+        let before = self.settings.arrangement.sort_order();
+        let had_weather = self.has_widget(WidgetKind::Weather);
+        change(&mut self.settings);
+        self.settings = std::mem::take(&mut self.settings).normalized();
+        let after = self.settings.arrangement.sort_order();
+        if before != after {
+            let _ = self.desktop_requests.try_send(after);
+        }
+        let has_weather = self.has_widget(WidgetKind::Weather);
+        self.weather_wanted.store(has_weather, Ordering::Relaxed);
+        if has_weather && !had_weather {
+            let _ = self.weather_kick.try_send(());
+        }
+        self.sync_clock_ticker(cx);
+        let _ = self.saves.try_send(self.settings.clone());
+        cx.notify();
+    }
+
+    pub(crate) fn add_widget(
+        &mut self,
+        kind: WidgetKind,
+        location: WidgetLocation,
+        cx: &mut Context<Self>,
+    ) {
+        self.update_settings(cx, |settings| {
+            let _ = settings.add_widget(kind, WidgetSize::Small, location);
+        });
+    }
+
+    fn app_drawer_window(&self) -> Option<rmac_compositor::WindowId> {
+        self.compositor
+            .snapshot()
+            .windows
+            .into_iter()
+            .find(|window| window.app_id.as_deref() == Some(rmac_apps::identity::APP_DRAWER))
+            .map(|window| window.id)
+    }
+}
+
+pub(crate) struct Wallpaper {
+    display_id: u64,
+    pub(crate) display: DisplayId,
+    display_uuid: Uuid,
+    render_count: u64,
+    pub(crate) status: Entity<WallpaperStatus>,
+    pub(crate) focus: FocusHandle,
+    pub(crate) desk: desktop::DeskState,
+    pub(crate) action_error: Option<SharedString>,
+}
+
+impl Wallpaper {
+    fn new(
+        display_id: DisplayId,
+        display_uuid: Uuid,
+        status: Entity<WallpaperStatus>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&status, |_, _, cx| cx.notify()).detach();
+        desktop::warm_desktop_icons(cx);
+        Self {
+            display_id: u64::from(display_id),
+            display: display_id,
+            display_uuid,
+            render_count: 0,
+            status,
+            focus: cx.focus_handle(),
+            desk: desktop::DeskState::default(),
+            action_error: None,
+        }
+    }
+
+    pub(crate) fn dismiss_app_drawer(&self, cx: &mut App) {
+        let Some(window) = self.status.read(cx).app_drawer_window() else {
+            return;
+        };
+        let Ok(previous) =
+            NEXT_ACTIVATION.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+        else {
+            return;
+        };
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_compositor_system::execute(rmac_compositor::ActionRequest {
+                    id: rmac_compositor::ActivationId(previous + 1),
+                    action: rmac_compositor::Action::CloseWindow { window },
+                })
+                .await;
+            })
+            .detach();
+    }
+
+    /// Records this display as the one in use (for the gallery).
+    pub(crate) fn note_display(&self, cx: &mut App) {
+        let display = self.display;
+        self.status.update(cx, |status, _| {
+            status.last_display = Some(display);
+        });
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ItemAction {
+    Open,
+}
+
+pub(crate) fn spawn_item_action(path: PathBuf, action: ItemAction, cx: &mut App) {
+    cx.background_executor()
+        .spawn(async move {
+            // Lulo OS opens folders in Files (its default for directories);
+            // Windows would open them in Explorer.
+            #[cfg(windows)]
+            if matches!(action, ItemAction::Open) && path.is_dir() {
+                let files = rmac_shell_layer::system::program("/usr/bin/rmac-files");
+                let opened = blocking::unblock(move || {
+                    std::process::Command::new(files)
+                        .arg(&path)
+                        .spawn()
+                        .map(|_| ())
+                })
+                .await;
+                if let Err(error) = opened {
+                    eprintln!("Files could not open a Desktop folder: {error}");
+                }
+                return;
+            }
+            let result = match action {
+                ItemAction::Open => rmac_app_launch::open_item(path).await,
+            };
+            if result.is_err() {
+                eprintln!("a Desktop item action could not be completed");
+            }
+        })
+        .detach();
+}
+
+pub(crate) fn spawn_settings(pane: &'static str, cx: &mut App) {
+    cx.background_executor()
+        .spawn(async move {
+            let result = blocking::unblock(move || {
+                std::process::Command::new(rmac_shell_layer::system::program(
+                    "/usr/bin/rmac-system-settings",
+                ))
+                .args(["--pane", pane])
+                .spawn()
+                .map(|_| ())
+            })
+            .await;
+            if result.is_err() {
+                eprintln!("System Settings could not be opened");
+            }
+        })
+        .detach();
+}
+
+/// Quick Look (DESK-01), spawned out-of-process from a standalone host
+/// binary (crates/rmac-quick-look/src/bin/standalone.rs). This process is
+/// resident on every session, including low-end PCs, so it never links
+/// rmac-quick-look directly — that would pull in gpui-component and
+/// everything that comes with it for one desktop-menu action.
+pub(crate) fn spawn_quick_look(paths: Vec<PathBuf>, cx: &mut App) {
+    cx.background_executor()
+        .spawn(async move {
+            let result = blocking::unblock(move || {
+                std::process::Command::new(rmac_shell_layer::system::program(
+                    "/usr/bin/rmac-quick-look",
+                ))
+                .args(paths)
+                .spawn()
+                .map(|_| ())
+            })
+            .await;
+            if result.is_err() {
+                eprintln!("Quick Look could not be opened");
+            }
+        })
+        .detach();
+}
+
+impl Render for Wallpaper {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_count = self.render_count.saturating_add(1);
+        record_render_count(window, self.display_id, self.render_count);
+        let palette = rmac_wallpaper::DEFAULT_BUILT_IN.metadata().palette;
+        let surface = self
+            .status
+            .read(cx)
+            .surfaces
+            .get(&self.display_uuid)
+            .cloned();
+        let mut root = div()
+            .id(format!("wallpaper-{}", self.display_id))
+            // The whole desktop's default focus target (background plus
+            // every icon) is a group, not an image — confirmed on the Mac
+            // (macOS 26.2, 2026-09-29,
+            // `tests/behavior/desktop/new-folder-named.json`): once a new
+            // folder's name is committed and focus returns to the desktop,
+            // AX reports role `AXGroup` named "desktop", not an image.
+            .role(Role::Group)
+            .aria_label("desktop")
+            .relative()
+            .size_full()
+            .track_focus(&self.focus)
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.key_down(event, window, cx) {
+                    cx.stop_propagation();
+                }
+            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.background_mouse_down(event, window, cx);
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.background_context_menu(event, window, cx);
+                }),
+            )
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                this.pointer_moved(event, window, cx);
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                    this.pointer_released(event, window, cx);
+                }),
+            )
+            .drag_over::<ExternalPaths>(|style, _, _, _| style)
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                this.drop_external_files(paths.paths().to_vec(), window, cx);
+            }))
+            .overflow_hidden();
+        // On Windows the picture may be in the layer under this window: the
+        // view then draws only the icons over it.
+        let layered = surface.as_ref().is_some_and(|surface| surface.layered);
+        if !layered {
+            root = root
+                .bg(linear_gradient(
+                    145.0,
+                    linear_color_stop(rgba((palette[0] << 8) | 0xff), 0.0),
+                    linear_color_stop(rgba((palette[1] << 8) | 0xff), 1.0),
+                )
+                .color_space(gpui::ColorSpace::Oklab))
+                .child(
+                    div().absolute().inset_0().bg(linear_gradient(
+                        35.0,
+                        linear_color_stop(rgba((palette[2] << 8) | 0xc8), 0.0),
+                        linear_color_stop(rgba(palette[2] << 8), 0.72),
+                    )
+                    .color_space(gpui::ColorSpace::Oklab)),
+                )
+                .child(
+                    div().absolute().inset_0().bg(linear_gradient(
+                        315.0,
+                        linear_color_stop(rgba(palette[3] << 8), 0.28),
+                        linear_color_stop(rgba((palette[3] << 8) | 0xb8), 1.0),
+                    )
+                    .color_space(gpui::ColorSpace::Oklab)),
+                );
+        }
+        if let Some(surface) = surface.filter(|surface| !surface.layered) {
+            root = root
+                .child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .bg(rgba(tokens::surface_window())),
+                )
+                .children(render_surface(surface));
+        }
+        root = root.children(self.render_desktop(window, cx));
+        let desktop_error = self.status.read(cx).desktop_error.clone();
+        if let Some(message) = self.action_error.clone().or(desktop_error) {
+            root = root.child(
+                div()
+                    .absolute()
+                    .left(px(24.0))
+                    .bottom(px(84.0))
+                    .max_w(px(360.0))
+                    .px_3()
+                    .py_2()
+                    .rounded(px(tokens::menu_radius()))
+                    .bg(rgba(tokens::regular_dark_tint()))
+                    .border_1()
+                    .border_color(rgba(tokens::separator()))
+                    .shadow_lg()
+                    .text_sm()
+                    .text_color(rgba(tokens::primary_text()))
+                    .child(message),
+            );
+        }
+        root
+    }
+}
+
+/// Hand each picture that fills its screen to the wallpaper layer under the
+/// desktop window; the view then holds a one-pixel stand-in, and the layer
+/// (Windows' own copy) shows the picture.
+#[cfg(windows)]
+fn layer_surfaces(surfaces: BTreeMap<Uuid, PreparedSurface>) -> BTreeMap<Uuid, PreparedSurface> {
+    surfaces
+        .into_iter()
+        .map(|(output, mut surface)| {
+            // `prepare_surface` laid the picture out on the screen.
+            if !surface.layout.tiled
+                && rmac_shell_layer::windows::wallpaper_layer::show_picture(
+                    output,
+                    surface.image.clone(),
+                )
+            {
+                surface.layered = true;
+                if let Some(blank) = image::RgbaImage::from_raw(1, 1, vec![0; 4]) {
+                    surface.image = Arc::new(RenderImage::new(vec![image::Frame::new(blank)]));
+                }
+            }
+            (output, surface)
+        })
+        .collect()
+}
+
+fn render_surface(surface: PreparedSurface) -> Vec<AnyElement> {
+    let destination = surface.layout.destination;
+    if !surface.layout.tiled {
+        return vec![img(surface.image)
+            .absolute()
+            .left(px(destination.x as f32))
+            .top(px(destination.y as f32))
+            .w(px(destination.width as f32))
+            .h(px(destination.height as f32))
+            .object_fit(gpui::ObjectFit::Fill)
+            .into_any_element()];
+    }
+
+    let width = destination.width as f32;
+    let height = destination.height as f32;
+    if !width.is_finite() || !height.is_finite() || width < 1.0 || height < 1.0 {
+        return Vec::new();
+    }
+    let mut x = destination.x as f32;
+    let mut y = destination.y as f32;
+    while x > 0.0 {
+        x -= width;
+    }
+    while y > 0.0 {
+        y -= height;
+    }
+    let viewport_width = (destination.width + destination.x * 2.0).max(1.0) as f32;
+    let viewport_height = (destination.height + destination.y * 2.0).max(1.0) as f32;
+    let columns = ((viewport_width - x) / width).ceil().max(1.0) as usize;
+    let rows = ((viewport_height - y) / height).ceil().max(1.0) as usize;
+    if columns.saturating_mul(rows) > 4_096 {
+        return vec![img(surface.image)
+            .absolute()
+            .inset_0()
+            .size_full()
+            .object_fit(gpui::ObjectFit::Fill)
+            .into_any_element()];
+    }
+    let mut tiles = Vec::with_capacity(columns.saturating_mul(rows));
+    for row in 0..rows {
+        for column in 0..columns {
+            tiles.push(
+                img(surface.image.clone())
+                    .absolute()
+                    .left(px(x + column as f32 * width))
+                    .top(px(y + row as f32 * height))
+                    .w(px(width))
+                    .h(px(height))
+                    .object_fit(gpui::ObjectFit::Fill)
+                    .into_any_element(),
+            );
+        }
+    }
+    tiles
+}
+
+fn prepare_surface(
+    surface: rmac_wallpaper_image::RasterSurface,
+) -> Option<(Uuid, PreparedSurface)> {
+    let expected = u64::from(surface.image.width)
+        .checked_mul(u64::from(surface.image.height))?
+        .checked_mul(4)?;
+    if expected != surface.image.rgba.len() as u64 {
+        return None;
+    }
+    let mut bgra = Vec::with_capacity(surface.image.rgba.len());
+    let mut pixels = surface.image.rgba.chunks_exact(4);
+    for pixel in &mut pixels {
+        bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+    }
+    if !pixels.remainder().is_empty() {
+        return None;
+    }
+    let uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, surface.output.0.as_bytes());
+    #[cfg(not(windows))]
+    let (width, height, layout) = (surface.image.width, surface.image.height, surface.layout);
+    // Windows lays the picture out on the screen once, here: the wallpaper
+    // layer shows it as it is, and the blurred materials sample it by
+    // screen position (`rmac_shell_layer::windows::{wallpaper_layer,
+    // backdrop}`). The decoded artwork (1920 × 1080 for a 1366 × 768
+    // screen) is not kept.
+    #[cfg(windows)]
+    let (width, height, bgra, layout) = match screen_aligned(&surface, bgra) {
+        Ok(aligned) => aligned,
+        Err(bgra) => (
+            surface.image.width,
+            surface.image.height,
+            bgra,
+            surface.layout,
+        ),
+    };
+    #[cfg(windows)]
+    rmac_shell_layer::windows::backdrop::set_wallpaper(uuid, width, height, &bgra);
+    let buffer = image::RgbaImage::from_raw(width, height, bgra)?;
+    let image = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
+    Some((
+        uuid,
+        PreparedSurface {
+            image,
+            layout,
+            layered: false,
+        },
+    ))
+}
+
+/// `surface`'s picture (`bgra`) laid out on its screen: the screen's
+/// physical size, the picture scaled to its layout's destination and placed
+/// there, and a layout that draws it over the whole screen. A tiled
+/// layout, or an invalid size, keeps the picture as it is (`Err`).
+#[cfg(windows)]
+#[allow(clippy::type_complexity)]
+fn screen_aligned(
+    surface: &rmac_wallpaper_image::RasterSurface,
+    bgra: Vec<u8>,
+) -> Result<(u32, u32, Vec<u8>, rmac_wallpaper::Layout), Vec<u8>> {
+    let scale = surface.scale;
+    let screen_width = (surface.logical_size.width * scale).round();
+    let screen_height = (surface.logical_size.height * scale).round();
+    let destination = surface.layout.destination;
+    if surface.layout.tiled
+        || !(1.0..=16_384.0).contains(&screen_width)
+        || !(1.0..=16_384.0).contains(&screen_height)
+    {
+        return Err(bgra);
+    }
+    let (screen_width, screen_height) = (screen_width as u32, screen_height as u32);
+    let x = (destination.x * scale).round() as i64;
+    let y = (destination.y * scale).round() as i64;
+    let width = ((destination.width * scale).round().max(1.0) as u32).min(32_768);
+    let height = ((destination.height * scale).round().max(1.0) as u32).min(32_768);
+    let Some(source) = image::RgbaImage::from_raw(surface.image.width, surface.image.height, bgra)
+    else {
+        return Err(Vec::new());
+    };
+    let scaled = if source.dimensions() == (width, height) {
+        source
+    } else {
+        image::imageops::resize(
+            &source,
+            width,
+            height,
+            image::imageops::FilterType::Triangle,
+        )
+    };
+    let mut out = vec![0u8; screen_width as usize * screen_height as usize * 4];
+    let left = x.max(0) as u32;
+    let skip = (-x).max(0) as u32;
+    let copy = width
+        .saturating_sub(skip)
+        .min(screen_width.saturating_sub(left)) as usize;
+    for row in 0..screen_height {
+        let source_row = row as i64 - y;
+        if source_row < 0 || source_row >= i64::from(height) || copy == 0 {
+            continue;
+        }
+        let from = (source_row as usize * width as usize + skip as usize) * 4;
+        let to = (row as usize * screen_width as usize + left as usize) * 4;
+        out[to..to + copy * 4].copy_from_slice(&scaled.as_raw()[from..from + copy * 4]);
+    }
+    let layout = rmac_wallpaper::Layout {
+        destination: rmac_wallpaper::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: surface.logical_size.width,
+            height: surface.logical_size.height,
+        },
+        tiled: false,
+    };
+    Ok((screen_width, screen_height, out, layout))
+}
+
+fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
+    let (runtime_tx, runtime_rx) = async_channel::bounded(2);
+    let (prepared_tx, prepared_rx) = async_channel::bounded(8);
+    let (desktop_requests, desktop_request_rx) = async_channel::bounded(2);
+    let (saves_tx, saves_rx) = async_channel::unbounded::<DesktopSettings>();
+    let (weather_kick, weather_kick_rx) = async_channel::bounded(1);
+    let weather_wanted = Arc::new(AtomicBool::new(false));
+    // A small file, read before the first frame so icons never jump.
+    let settings = rmac_desktop::settings::load().unwrap_or_else(|error| {
+        eprintln!("the desktop settings could not be read: {error}");
+        DesktopSettings::default()
+    });
+    let initial_sort = settings.arrangement.sort_order();
+    cx.background_executor()
+        .spawn(async move {
+            if let Err(error) = rmac_wallpaper_runtime::watch(runtime_tx).await {
+                eprintln!("wallpaper runtime stopped: {error}");
+            }
+        })
+        .detach();
+    let wallpaper_prepared_tx = prepared_tx.clone();
+    cx.background_executor()
+        .spawn(async move {
+            while let Ok(update) = runtime_rx.recv().await {
+                let prepared = match update {
+                    rmac_wallpaper_runtime::Update::Render {
+                        rasterized, health, ..
+                    } => {
+                        #[cfg(windows)]
+                        rmac_shell_layer::windows::trace::trace(|| {
+                            let surfaces = rasterized
+                                .surfaces
+                                .iter()
+                                .map(|surface| {
+                                    format!(
+                                        "{:?}{} {}x{}",
+                                        surface.source,
+                                        if surface.fallback { " (fallback)" } else { "" },
+                                        surface.image.width,
+                                        surface.image.height
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!(
+                                "wallpaper rendered {surfaces}; issues {:?}",
+                                rasterized.issues
+                            )
+                        });
+                        let (surfaces, colors) = blocking::unblock(move || {
+                            let mut prepared = BTreeMap::new();
+                            let mut outputs = BTreeMap::new();
+                            for surface in rasterized.surfaces {
+                                if let Some(summary) =
+                                    rmac_wallpaper_image::summarize_color(&surface.image)
+                                {
+                                    outputs.insert(
+                                        surface.output.0.clone(),
+                                        rmac_theme::WallpaperColor {
+                                            dominant: summary.dominant,
+                                            luminance: summary.luminance,
+                                        },
+                                    );
+                                }
+                                // LOCK-01: keep the lock screen's blurred
+                                // wallpaper cache current. Multi-monitor: the
+                                // last surface prepared here wins, since the
+                                // lock screen shows one picture regardless
+                                // of output (S).
+                                #[cfg(target_os = "linux")]
+                                lock_picture::write_background(&surface.image);
+                                if let Some((output, surface)) = prepare_surface(surface) {
+                                    prepared.insert(output, surface);
+                                }
+                            }
+                            (prepared, rmac_theme::WallpaperColors { outputs })
+                        })
+                        .await;
+                        match rmac_theme::WallpaperColorStore::from_environment()
+                            .and_then(|store| store.publish(&colors))
+                        {
+                            Ok(_) => {}
+                            Err(error) => {
+                                eprintln!("wallpaper colour publication failed: {error}")
+                            }
+                        }
+                        let _ = wallpaper_prepared_tx
+                            .send(PreparedUpdate::Health(health))
+                            .await;
+                        PreparedUpdate::Render(surfaces)
+                    }
+                    rmac_wallpaper_runtime::Update::Health(health) => {
+                        PreparedUpdate::Health(health)
+                    }
+                };
+                if wallpaper_prepared_tx.send(prepared).await.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    cx.background_executor()
+        .spawn(watch_desktop(
+            prepared_tx.clone(),
+            desktop_request_rx,
+            initial_sort,
+        ))
+        .detach();
+    cx.background_executor()
+        .spawn(save_settings(saves_rx))
+        .detach();
+    cx.background_executor()
+        .spawn(watch_battery(prepared_tx.clone()))
+        .detach();
+    // Evolution Data Server's calendars (Lulo OS).
+    #[cfg(target_os = "linux")]
+    cx.background_executor()
+        .spawn(watch_calendar(prepared_tx.clone()))
+        .detach();
+    cx.background_executor()
+        .spawn(refresh_weather(
+            prepared_tx.clone(),
+            weather_wanted.clone(),
+            weather_kick_rx,
+        ))
+        .detach();
+    cx.background_executor()
+        .spawn(watch_gallery_requests(prepared_tx))
+        .detach();
+    let channels = StatusChannels {
+        receiver: prepared_rx,
+        desktop_requests,
+        saves: saves_tx,
+        weather_wanted,
+        weather_kick,
+    };
+    let status = cx.new(|cx| WallpaperStatus::new(settings, channels, cx));
+    let (compositor_tx, compositor_rx) = async_channel::bounded(64);
+    cx.background_executor()
+        .spawn(async move {
+            if let Err(error) = rmac_compositor_system::watch(compositor_tx).await {
+                eprintln!("wallpaper compositor watcher stopped: {error}");
+            }
+        })
+        .detach();
+    let compositor_status = status.clone();
+    cx.spawn(async move |cx| {
+        while let Ok(event) = compositor_rx.recv().await {
+            compositor_status.update(cx, |status, _| {
+                status.compositor.apply(event);
+            });
+        }
+    })
+    .detach();
+    status
+}
+
+/// Writes the newest desktop settings, skipping states a later change
+/// already replaced.
+async fn save_settings(saves: async_channel::Receiver<DesktopSettings>) {
+    while let Ok(mut settings) = saves.recv().await {
+        while let Ok(newer) = saves.try_recv() {
+            settings = newer;
+        }
+        if blocking::unblock(move || rmac_desktop::settings::save(&settings))
+            .await
+            .is_err()
+        {
+            eprintln!("the desktop settings could not be saved");
+        }
+    }
+}
+
+async fn watch_battery(updates: async_channel::Sender<PreparedUpdate>) {
+    let publish = |updates: async_channel::Sender<PreparedUpdate>| async move {
+        let (battery, none) = blocking::unblock(rmac_desktop_widgets::read_battery).await;
+        updates
+            .send(PreparedUpdate::Battery(battery, none))
+            .await
+            .is_ok()
+    };
+    if !publish(updates.clone()).await {
+        return;
+    }
+    let (events_tx, events_rx) = async_channel::bounded(4);
+    let watcher = async move {
+        if let Err(error) = rmac_power::watch(events_tx).await {
+            eprintln!("the battery watcher stopped: {error}");
+        }
+    };
+    let forward = async move {
+        while let Ok(event) = events_rx.recv().await {
+            if event == rmac_power::WatchEvent::Changed && !publish(updates.clone()).await {
+                break;
+            }
+        }
+    };
+    futures_util::join!(watcher, forward);
+}
+
+/// Up Next for the desktop's Medium Calendar widget (CAL-8): blocking,
+/// event-driven EDS views, no timer. `rmac_calendar_agent::upcoming::watch`
+/// returns if EDS or a calendar source list changes, so this loops to
+/// restart it -- the same shape systemd's `Restart=always` gives the
+/// reminders agent for the same reason (`upcoming::watch`'s own doc
+/// comment).
+#[cfg(target_os = "linux")]
+async fn watch_calendar(updates: async_channel::Sender<PreparedUpdate>) {
+    const CALENDAR_EVENT_LIMIT: usize = 3;
+    loop {
+        let inner = updates.clone();
+        blocking::unblock(move || {
+            rmac_calendar_agent::upcoming::watch(CALENDAR_EVENT_LIMIT, move |events| {
+                inner
+                    .send_blocking(PreparedUpdate::Calendar(events))
+                    .is_ok()
+            });
+        })
+        .await;
+        if updates
+            .send(PreparedUpdate::Calendar(Vec::new()))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        async_io::Timer::after(CALENDAR_RETRY_DELAY).await;
+    }
+}
+
+async fn refresh_weather(
+    updates: async_channel::Sender<PreparedUpdate>,
+    wanted: Arc<AtomicBool>,
+    kick: async_channel::Receiver<()>,
+) {
+    loop {
+        if wanted.load(Ordering::Relaxed) {
+            let weather = blocking::unblock(|| rmac_desktop_widgets::read_weather(true)).await;
+            if updates
+                .send(PreparedUpdate::Weather(weather))
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+        let timer = async_io::Timer::after(WEATHER_REFRESH).fuse();
+        let kicked = kick.recv().fuse();
+        futures_util::pin_mut!(timer, kicked);
+        futures_util::select! {
+            _ = timer => {}
+            kicked = kicked => if kicked.is_err() {
+                break;
+            },
+        }
+    }
+}
+
+async fn watch_gallery_requests(updates: async_channel::Sender<PreparedUpdate>) {
+    let Ok(directory) = blocking::unblock(rmac_desktop::settings::prepare_runtime_directory).await
+    else {
+        eprintln!("widget gallery requests are unavailable");
+        return;
+    };
+    let (events_tx, events_rx) = async_channel::bounded(1);
+    let watcher = blocking::unblock(move || {
+        rmac_desktop::watch_file(&directory, "desktop-widget-gallery", move || {
+            let _ = events_tx.try_send(());
+        })
+    })
+    .await;
+    let Ok(_watcher) = watcher else {
+        eprintln!("widget gallery requests are unavailable");
+        return;
+    };
+    loop {
+        if let Some(target) = blocking::unblock(rmac_desktop::settings::take_gallery_request).await
+        {
+            if updates.send(PreparedUpdate::Gallery(target)).await.is_err() {
+                break;
+            }
+        }
+        if events_rx.recv().await.is_err() {
+            break;
+        }
+    }
+}
+
+async fn watch_desktop(
+    updates: async_channel::Sender<PreparedUpdate>,
+    requests: async_channel::Receiver<rmac_desktop::SortOrder>,
+    initial_sort: rmac_desktop::SortOrder,
+) {
+    let directory = match blocking::unblock(rmac_desktop::directory_from_environment).await {
+        Ok(directory) => directory,
+        Err(_) => {
+            let _ = updates
+                .send(PreparedUpdate::Desktop {
+                    snapshot: None,
+                    error: Some("The Desktop directory is unavailable".into()),
+                })
+                .await;
+            return;
+        }
+    };
+    let (events_tx, events_rx) = async_channel::bounded(1);
+    let watched_directory = directory.clone();
+    let watcher = blocking::unblock(move || {
+        rmac_desktop::watch(&watched_directory, move || {
+            let _ = events_tx.try_send(());
+        })
+    })
+    .await;
+    let Ok(_watcher) = watcher else {
+        let _ = updates
+            .send(PreparedUpdate::Desktop {
+                snapshot: None,
+                error: Some("Live Desktop updates are unavailable".into()),
+            })
+            .await;
+        return;
+    };
+    let mut sort = initial_sort;
+    publish_desktop(&updates, directory.clone(), sort).await;
+    loop {
+        let event = events_rx.recv().fuse();
+        let request = requests.recv().fuse();
+        futures_util::pin_mut!(event, request);
+        futures_util::select! {
+            event = event => {
+                if event.is_err() {
+                    break;
+                }
+                async_io::Timer::after(Duration::from_millis(75)).await;
+                while events_rx.try_recv().is_ok() {}
+            }
+            request = request => match request {
+                Ok(next) => sort = next,
+                Err(_) => break,
+            }
+        }
+        publish_desktop(&updates, directory.clone(), sort).await;
+    }
+}
+
+async fn publish_desktop(
+    updates: &async_channel::Sender<PreparedUpdate>,
+    directory: PathBuf,
+    sort: rmac_desktop::SortOrder,
+) {
+    let result = blocking::unblock(move || rmac_desktop::scan(&directory, sort)).await;
+    let (snapshot, error) = match result {
+        Ok(snapshot) => (Some(snapshot), None),
+        Err(_) => (None, Some("The Desktop directory could not be read".into())),
+    };
+    let _ = updates
+        .send(PreparedUpdate::Desktop { snapshot, error })
+        .await;
+}
+
+fn record_configured_surface(window: &Window, display_id: u64) {
+    let Some(path) = env::var_os(READY_FILE_ENV).map(PathBuf::from) else {
+        return;
+    };
+    let scale = window.scale_factor();
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .unwrap_or_else(|error| panic!("open wallpaper evidence {path:?}: {error}"));
+    writeln!(file, "display={display_id} scale={scale}")
+        .unwrap_or_else(|error| panic!("write wallpaper evidence {path:?}: {error}"));
+}
+
+fn record_render_count(window: &Window, display_id: u64, render_count: u64) {
+    let Some(directory) = env::var_os(RENDER_COUNT_DIR_ENV).map(PathBuf::from) else {
+        return;
+    };
+    window.on_next_frame(move |_, _| {
+        fs::create_dir_all(&directory).unwrap_or_else(|error| {
+            panic!("create wallpaper render evidence {directory:?}: {error}")
+        });
+        let path = directory.join(format!("{display_id}.count"));
+        fs::write(&path, format!("{render_count}\n"))
+            .unwrap_or_else(|error| panic!("write wallpaper render count {path:?}: {error}"));
+    });
+}
+
+fn open_wallpaper(
+    display: Rc<dyn PlatformDisplay>,
+    status: Entity<WallpaperStatus>,
+    cx: &mut App,
+) -> AnyWindowHandle {
+    let display_id = display.id();
+    let display_uuid =
+        rmac_shell_layer::display_uuid(display.as_ref()).expect("wallpaper display UUID");
+    let size = display.bounds().size;
+    let handle = rmac_shell_layer::open_layer_window(
+        cx,
+        WindowOptions {
+            titlebar: None,
+            focus: false,
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: Size::new(size.width, size.height),
+            })),
+            display_id: Some(display_id),
+            app_id: Some("dev.rmac.Wallpaper".to_owned()),
+            // Windows shows the picture in a layer under this window
+            // (`layer_surfaces`), which must let it show through.
+            window_background: if cfg!(windows) {
+                WindowBackgroundAppearance::Transparent
+            } else {
+                WindowBackgroundAppearance::Opaque
+            },
+            ..Default::default()
+        },
+        LayerShellOptions {
+            namespace: format!("rmac-wallpaper-{}", u64::from(display_id)),
+            layer: Layer::Background,
+            anchor: Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
+            // The background takes keyboard focus when clicked, so
+            // the desktop's selection shortcuts and menus work.
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            // The protocol's -1 zone extends behind bars without
+            // changing the application work area.
+            exclusive_zone: Some(px(-1.0)),
+            ..Default::default()
+        },
+        move |_, cx| cx.new(|cx| Wallpaper::new(display_id, display_uuid, status, cx)),
+    )
+    .expect("open wallpaper layer surface");
+    cx.spawn(async move |cx| {
+        cx.background_executor()
+            .timer(Duration::from_millis(250))
+            .await;
+        let _ = handle.update(cx, |_, window, _| {
+            record_configured_surface(window, u64::from(display_id));
+        });
+    })
+    .detach();
+    handle.into()
+}
+
+/// Lulo OS's `wallpaper`: its own process, with its own assets.
+#[cfg(target_os = "linux")]
+pub fn run() {
+    let app = application()
+        .with_assets(WallpaperAssets)
+        .with_quit_mode(QuitMode::Explicit);
+    app.run(|cx: &mut App| {
+        rmac_shell_ui::tokens::install_appearance_watch(cx);
+        // LOCK-01: refresh the lock screen's account-picture cache once per
+        // session start (see lock_picture.rs for why this is not live).
+        cx.background_executor()
+            .spawn(async move {
+                blocking::unblock(lock_picture::write_avatar_once).await;
+            })
+            .detach();
+        start(cx);
+    });
+}
+
+/// Open the desktop on every display and keep it there, in an app that is
+/// already running: Lulo OS's own `wallpaper` process ([`run`]), or the
+/// Windows shell, which runs every surface in one process and serves
+/// [`asset`] itself.
+pub fn start(cx: &mut App) {
+    {
+        let status = start_status(cx);
+        let (output_tx, output_rx) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) =
+                    rmac_shell_layer::output_surfaces::watch_enabled(output_tx).await
+                {
+                    eprintln!("wallpaper output watcher unavailable: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            let mut tracker = rmac_shell_layer::output_surfaces::Tracker::default();
+            let mut removed_outputs = BTreeSet::new();
+            match output_rx.recv().await {
+                Ok(mut desired) => 'updates: loop {
+                    let complete = cx.update(|cx| {
+                        tracker.reconcile(Some(&desired), cx, |display, cx| {
+                            open_wallpaper(display, status.clone(), cx)
+                        });
+                        tracker.len() == desired.len()
+                    });
+                    if complete {
+                        let Ok(next) = output_rx.recv().await else {
+                            break;
+                        };
+                        restart_for_reappeared_output(&desired, &next, &mut removed_outputs);
+                        desired = next;
+                        continue;
+                    }
+                    let update = output_rx.recv().fuse();
+                    let retry = cx
+                        .background_executor()
+                        .timer(Duration::from_millis(50))
+                        .fuse();
+                    futures_util::pin_mut!(update, retry);
+                    futures_util::select! {
+                        next = update => match next {
+                            Ok(next) => {
+                                restart_for_reappeared_output(
+                                    &desired,
+                                    &next,
+                                    &mut removed_outputs,
+                                );
+                                desired = next;
+                            },
+                            Err(_) => break 'updates,
+                        },
+                        _ = retry => {}
+                    }
+                },
+                Err(_) => loop {
+                    cx.update(|cx| {
+                        tracker.reconcile(None, cx, |display, cx| {
+                            open_wallpaper(display, status.clone(), cx)
+                        })
+                    });
+                    cx.background_executor()
+                        .timer(Duration::from_millis(500))
+                        .await;
+                },
+            }
+        })
+        .detach();
+    }
+}
+
+/// A Wayland output that disappeared and came back needs a fresh registry,
+/// so `wallpaper` restarts; Windows keeps its displays.
+fn restart_for_reappeared_output(
+    previous: &BTreeSet<Uuid>,
+    current: &BTreeSet<Uuid>,
+    removed: &mut BTreeSet<Uuid>,
+) {
+    if cfg!(target_os = "linux") && rmac_shell_layer::output_reappeared(previous, current, removed)
+    {
+        std::process::exit(rmac_shell_layer::WAYLAND_OUTPUT_RESTART_EXIT_CODE);
+    }
+}

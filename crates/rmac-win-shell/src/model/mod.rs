@@ -1,9 +1,7 @@
-//! What the Lulo layer's surfaces show, built from plain data so it is
-//! tested on every platform.
+//! Plain data the Lulo layer builds on, tested on every platform: the
+//! Lulo apps by executable, Spotlight's hotkey and its fallbacks, and the
+//! Windows app catalogue's entries.
 
 pub mod apps;
-pub mod clock;
-pub mod dock;
 pub mod hotkey;
-pub mod menus;
 pub mod search;

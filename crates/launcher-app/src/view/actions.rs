@@ -95,7 +95,7 @@ pub(crate) fn load_system_state() -> SystemState {
 /// The app whose window had focus before Spotlight opened, if it exports
 /// a menu (first-party rmac apps).
 pub(crate) async fn load_frontmost() -> Option<Frontmost> {
-    let snapshot = rmac_compositor_niri::snapshot().await.ok()?;
+    let snapshot = rmac_compositor_system::snapshot().await.ok()?;
     let focused = snapshot.focus.window;
     let window = snapshot
         .windows

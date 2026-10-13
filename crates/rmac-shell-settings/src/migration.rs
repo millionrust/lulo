@@ -78,6 +78,43 @@ pub(super) fn migrate_v1(legacy: LegacySettings) -> ShellSettings {
 }
 
 pub(super) fn migrate_application_ids(mut settings: ShellSettings) -> ShellSettings {
+    // Lulo on Windows had no Apps before it ran Lulo OS's Apps view (ADR
+    // 0023): a Dock saved with that default gets Apps back where Lulo OS
+    // keeps it, after Files.
+    #[cfg(windows)]
+    {
+        let without_apps = [
+            rmac_apps::identity::FILES,
+            rmac_apps::identity::NOTES,
+            rmac_apps::identity::TEXT_EDITOR,
+            rmac_apps::identity::TERMINAL,
+            rmac_apps::identity::SYSTEM_SETTINGS,
+        ];
+        if settings
+            .pinned_apps
+            .iter()
+            .map(|app| app.0.as_str())
+            .eq(without_apps)
+        {
+            settings
+                .pinned_apps
+                .insert(1, AppId(rmac_apps::identity::APP_DRAWER.into()));
+        }
+    }
+    // An untouched earlier default Dock gains Weather, Calculator and Mail,
+    // the apps pinned since (owner, 2026-10-13). A Dock the user changed
+    // keeps exactly what they chose.
+    if settings
+        .pinned_apps
+        .iter()
+        .map(|app| app.0.as_str())
+        .eq(super::model::PREVIOUS_DEFAULT_PINNED_APPS)
+    {
+        settings.pinned_apps = super::model::DEFAULT_PINNED_APPS
+            .into_iter()
+            .map(|identity| AppId(identity.into()))
+            .collect();
+    }
     let mut files_origin: Option<bool> = None;
     settings.pinned_apps.retain_mut(|app| {
         let legacy = app.0 == LEGACY_FILES_APP_ID;

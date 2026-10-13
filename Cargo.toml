@@ -80,6 +80,7 @@ rmac-clipboard-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-clipboar
 rmac-clock = { version = "=0.9.0-beta.1", path = "crates/clock" }
 rmac-compositor = { version = "=0.9.0-beta.1", path = "crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.9.0-beta.1", path = "crates/rmac-compositor-niri" }
+rmac-compositor-system = { version = "=0.9.0-beta.1", path = "crates/rmac-compositor-system" }
 rmac-editor = { version = "=0.9.0-beta.1", path = "crates/rmac-editor" }
 rmac-finder = { version = "=0.9.0-beta.1", path = "crates/finder" }
 rmac-focus = { version = "=0.9.0-beta.1", path = "crates/rmac-focus" }
@@ -114,6 +115,8 @@ rmac-input = { version = "=0.9.0-beta.1", path = "crates/rmac-input" }
 rmac-intelligence = { version = "=0.9.0-beta.1", path = "crates/rmac-intelligence", default-features = false }
 rmac-keyboard = { version = "=0.9.0-beta.1", path = "crates/rmac-keyboard" }
 rmac-launcher = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher" }
+rmac-launcher-app = { version = "=0.9.0-beta.1", path = "crates/launcher-app" }
+rmac-app-drawer = { version = "=0.9.0-beta.1", path = "crates/app-drawer" }
 rmac-launcher-providers = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-providers" }
 rmac-launcher-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-runtime" }
 rmac-launcher-system = { version = "=0.9.0-beta.1", path = "crates/rmac-launcher-system" }
@@ -134,6 +137,7 @@ rmac-power = { version = "=0.9.0-beta.1", path = "crates/rmac-power" }
 rmac-privacy = { version = "=0.9.0-beta.1", path = "crates/rmac-privacy" }
 rmac-privacy-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-privacy-linux" }
 rmac-quick-settings = { version = "=0.9.0-beta.1", path = "crates/rmac-quick-settings" }
+rmac-quick-settings-app = { version = "=0.9.0-beta.1", path = "crates/quick-settings-app" }
 rmac-quick-settings-system = { version = "=0.9.0-beta.1", path = "crates/rmac-quick-settings-system" }
 rmac-quick-look = { version = "=0.9.0-beta.1", path = "crates/rmac-quick-look" }
 rmac-portal = { version = "=0.9.0-beta.1", path = "crates/rmac-portal" }
@@ -148,6 +152,14 @@ rmac-screen-reader = { version = "=0.9.0-beta.1", path = "crates/rmac-screen-rea
 rmac-search = { version = "=0.9.0-beta.1", path = "crates/rmac-search" }
 rmac-session = { version = "=0.9.0-beta.1", path = "crates/rmac-session" }
 rmac-shell-settings = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-settings" }
+# The shell's views, shared by Lulo OS (the `shell/` workspace's binaries)
+# and Windows (`rmac-win-shell`); ADR 0023, "Phase 3 revised: shared shell
+# views".
+rmac-shell-dock = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-dock" }
+rmac-shell-layer = { version = "=0.9.0-beta.1", path = "shell/crates/rmac-shell-layer" }
+rmac-shell-menubar = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-menubar" }
+rmac-shell-ui = { version = "=0.9.0-beta.1", path = "shell/crates/rmac-shell-ui" }
+rmac-shell-wallpaper = { version = "=0.9.0-beta.1", path = "shell/bins/rmac-wallpaper" }
 rmac-shell-activation-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-activation-runtime" }
 rmac-shell-invocation = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-invocation" }
 rmac-shell-invocation-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-invocation-runtime" }

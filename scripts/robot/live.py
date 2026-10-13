@@ -349,20 +349,24 @@ def dock_recents(home: Path) -> list[str]:
         return []
 
 
-def recents_launch_order(original: list[str], current: list[str]) -> list[str]:
+def recents_launch_order(original: list[str], current: list[str], fillers: list[str] = ()) -> list[str]:
     """Apps to launch, one at a time, to turn the Dock's recent-apps list
     back into `original` (rmac_dock::recents::advance: a launched app joins
     at the end unless already listed, and the oldest is dropped past
-    three). Replays `original` until the simulated list matches; empty if
-    no replay can (then the robot reports it instead)."""
+    three). First tries replaying `original`; if that cannot get there
+    (an original app still listed in the wrong place is never moved), it
+    pushes everything out with `fillers` (apps not in `original`) first.
+    Empty if neither works (then the robot reports it instead)."""
 
     if original == current:
         return []
-    state = list(current)
-    order: list[str] = []
-    for app in original * 3:
-        state = simulate_recent_launch(state, app)
-        order.append(app)
+    spare = [app for app in fillers if app not in original and app not in current]
+    for prefix in ([], spare[:3]):
+        state = list(current)
+        order: list[str] = []
+        for app in [*prefix, *original]:
+            state = simulate_recent_launch(state, app)
+            order.append(app)
         if state == original:
             return order
     return []

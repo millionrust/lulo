@@ -99,6 +99,9 @@ COMPOSITOR_BINDS = {
     "ctrl-f3": ["/usr/libexec/rmac/rmac-dock", "focus"],
     "ctrl-up": ["/usr/libexec/rmac/rmac-mission-control", "mission-control"],
 }
+# Apps the robot may launch with no arguments to push the Dock's recent-apps
+# section back into shape (quick to open, no personal data, no Open panel).
+RECENTS_FILLERS = ("System Monitor", "Clock", "Calculator", "Weather", "Terminal")
 # Items whose effect is invisible by design (the clipboard).
 INVISIBLE_ITEMS = {"Copy", "Copy Path", "Copy Link"}
 
@@ -277,7 +280,8 @@ class Robot:
         current = live.dock_recents(self.home)
         if current == self.recents_start:
             return
-        order = live.recents_launch_order(self.recents_start, current)
+        fillers = [APPS[name]["app_id"] + ".desktop" for name in RECENTS_FILLERS]
+        order = live.recents_launch_order(self.recents_start, current, fillers)
         if not order or live.owner_input_count() != self.owner_count or self.input is None:
             self.finding("medium", "shell", "state", "Dock recent apps changed and were not restored",
                          f"{self.recents_start} -> {current}")
@@ -560,6 +564,15 @@ class Robot:
         if changed > 0.0008 and not toggled:
             self.focus(window)
             self.key("escape", 0.3)
+        # Keep the scratch document's text for the items that follow: a
+        # Select All left in place would be replaced by the next insert.
+        if item["label"] == "Select All":
+            self.focus(window)
+            self.key("right", 0.2)
+        # Tabs the robot opened (Terminal's New Tab ▸ profile) close again.
+        if "New Tab" in item["path"][:-1] or item["label"] == "New Tab":
+            self.focus(window)
+            self.key("cmd-w", 0.5)
 
     def inspect_new_window(self, name: str, label: str, extra: dict) -> None:
         time.sleep(0.4)
@@ -687,16 +700,26 @@ class Robot:
         if pid and Path(f"/proc/{pid}").exists():
             self.focus(window)
             chord = "cmd-w" if name == "Files" else "cmd-q"
-            self.key(chord, 0.6)
-            end = time.monotonic() + 6
+            self.key(chord, 0.1)
+            started = time.monotonic()
+            end = started + 12
             while time.monotonic() < end and Path(f"/proc/{pid}").exists():
                 if name == "Files" and not self.app_windows(plan["app_id"]):
                     break
-                time.sleep(0.2)
+                time.sleep(0.05)
+            quit_s = time.monotonic() - started
+            if name != "Files" and not Path(f"/proc/{pid}").exists():
+                self.timings[f"{name} quit"] = round(quit_s, 3)
+                if quit_s > 2.0:
+                    self.finding("medium", name, "slow-quit", f"⌘Q took {quit_s:.1f} s to exit", "budget 2 s")
             if Path(f"/proc/{pid}").exists() and name != "Files":
                 path, _ = self.shot(f"{name}-quit-stuck")
-                self.finding("high", name, "quit-hung", "⌘Q did not quit within 6 s", "", path)
-                self.key("escape", 0.4)
+                gone = not self.app_windows(plan["app_id"])
+                detail = ("its windows closed but the process kept running" if gone
+                          else "windows are still open (a prompt?)")
+                self.finding("high", name, "quit-hung", "⌘Q did not exit within 12 s", detail, path)
+                if not gone:
+                    self.key("escape", 0.4)
             if Path(f"/proc/{pid}").exists():
                 os.kill(pid, signal.SIGTERM)
                 time.sleep(1.0)
@@ -800,12 +823,14 @@ def main(argv: list[str]) -> int:
         robot.log("robot error:\n" + traceback.format_exc())
         status = 4
     finally:
-        if robot.input is not None:
-            try:
-                robot.input.close()
-            except Exception:  # noqa: BLE001
-                pass
-        robot.finish()
+        try:
+            robot.finish()
+        finally:
+            if robot.input is not None:
+                try:
+                    robot.input.close()
+                except Exception:  # noqa: BLE001
+                    pass
         robot.log(f"{len(robot.findings)} findings; report {robot.out / 'report.json'}")
     return status
 

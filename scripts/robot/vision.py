@@ -34,17 +34,23 @@ def clamp_box(box: Box, size: tuple[int, int]) -> Optional[Box]:
     return (left, top, right, bottom)
 
 
-def blank_window(image, box: Box) -> list[dict]:
-    """A window drawn as one flat colour (blank) or nearly black."""
+def blank_window(image, box: Box, title_bar: int = 44, margin: int = 6) -> list[dict]:
+    """A window body drawn as one flat colour (blank) or nearly black.
+
+    The body is everything under the title bar (`title_bar` image pixels,
+    35 pt at 1.25x: the traffic lights' row), inset by `margin` for the rounded corners.
+    It must be the *whole* body: a document with two lines at the top is
+    not blank, even though most of its body is background.
+    """
 
     box = clamp_box(box, image.size)
     if box is None:
         return []
     crop = _luma(image.crop(box))
-    # Ignore the outer 10% so the title bar's traffic lights or a rounded
-    # corner's shadow don't hide an empty body.
     w, h = crop.size
-    inner = crop.crop((w // 10, h // 5, w - w // 10, h - h // 10))
+    if w <= 2 * margin or h <= title_bar + margin:
+        return []
+    inner = crop.crop((margin, title_bar, w - margin, h - margin))
     stat = ImageStat.Stat(inner)
     mean, stddev = stat.mean[0], stat.stddev[0]
     problems = []

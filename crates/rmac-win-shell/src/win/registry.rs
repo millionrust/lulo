@@ -1,6 +1,7 @@
 //! The Lulo layer's few per-user settings under `HKCU\Software\Lulo\Shell`,
-//! and its opt-in sign-in entry under the user's `Run` key. Lulo never
-//! writes anywhere else in the registry.
+//! whether Lulo mode is on under `HKCU\Software\Lulo\Session`, and its
+//! opt-in sign-in entry under the user's `Run` key. Lulo never writes
+//! anywhere else in the registry.
 
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::ERROR_SUCCESS;
@@ -11,6 +12,12 @@ use windows::Win32::System::Registry::{
 };
 
 pub const SHELL_KEY: &str = r"Software\Lulo\Shell";
+/// Whether Lulo mode is on, kept apart from `SHELL_KEY`: the installer
+/// removes that key with the old product during an upgrade, and this must
+/// outlive the upgrade it decides about (see `session.rs`, `--after-install`).
+const SESSION_KEY: &str = r"Software\Lulo\Session";
+const LULO_MODE: &str = "LuloMode";
+const LAST_STARTED: &str = "LastStarted";
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "Lulo";
 
@@ -64,7 +71,43 @@ fn with_key<T>(path: &str, f: impl FnOnce(HKEY) -> T) -> Option<T> {
 }
 
 pub fn set_dword(name: &str, value: u32) -> bool {
-    with_key(SHELL_KEY, |key| {
+    set_user_dword(SHELL_KEY, name, value)
+}
+
+/// Whether the user last left Lulo mode on (`Some(true)`), turned it off
+/// themselves (`Some(false)`), or never ran Lulo here (`None`).
+pub fn lulo_mode() -> Option<bool> {
+    get_user_dword(SESSION_KEY, LULO_MODE).map(|value| value != 0)
+}
+
+/// Record that Lulo mode is on or off. Only the user's own switches turn
+/// it off (Turn Off Lulo, Restore Windows Desktop); `lulo-session --stop`
+/// from a script or the installer leaves it as it was.
+pub fn set_lulo_mode(on: bool) -> bool {
+    set_user_dword(SESSION_KEY, LULO_MODE, u32::from(on))
+}
+
+/// Record when the session last started (Unix seconds), for the upgrade
+/// check (`scripts/windows/upgrade_smoke.py`) and for diagnosis.
+pub fn record_session_start() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let _ = set_user_dword(
+        SESSION_KEY,
+        LAST_STARTED,
+        u32::try_from(now).unwrap_or(u32::MAX),
+    );
+}
+
+/// Forget Lulo mode (uninstall).
+pub fn forget_lulo_mode() {
+    delete_value_in(SESSION_KEY, LULO_MODE);
+    delete_value_in(SESSION_KEY, LAST_STARTED);
+}
+
+fn set_user_dword(path: &str, name: &str, value: u32) -> bool {
+    with_key(path, |key| {
         // SAFETY: four bytes of DWORD data.
         let status = unsafe {
             RegSetValueExW(

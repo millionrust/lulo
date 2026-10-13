@@ -86,9 +86,38 @@
       Execute="immediate"
       Return="ignore" />
 
+    <!-- An upgrade replaces lulo-session.exe and lulo-shell.exe, so a
+         running Lulo layer is asked to stop first and given up to twenty
+         seconds to go, before InstallValidate looks for files in use.
+         its stop switch (which every Lulo version understands) leaves the user's
+         Lulo mode as it was, so StartLulo below brings it back. Through
+         PowerShell so the wait holds whichever version is installed. -->
+    <CustomAction
+      Id="StopLuloForUpgrade"
+      Directory="INSTALLFOLDER"
+      ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command &quot;$s = Join-Path $env:LOCALAPPDATA 'Programs\Lulo\lulo-session.exe'; if (Test-Path $s) { &amp; $s --stop }; Wait-Process -Name lulo-shell,lulo-session -Timeout 20 -ErrorAction SilentlyContinue&quot;"
+      Execute="immediate"
+      Return="ignore" />
+
+    <!-- Once the install or upgrade is done, bring Lulo back for the user
+         who installed it (immediate custom actions of a per-user package
+         run as that user, in their session): after a fresh install, and
+         after an upgrade unless they had turned Lulo off themselves
+         (its after-install switch, crates/rmac-win-shell/src/win/
+         session.rs). asyncNoWait: msiexec does not wait for it, and the
+         session starts the layer in a detached process of its own. -->
+    <CustomAction
+      Id="StartLulo"
+      Directory="INSTALLFOLDER"
+      ExeCommand="&quot;[#File_lulo_session]&quot; --after-install"
+      Execute="immediate"
+      Return="asyncNoWait" />
+
     <InstallExecuteSequence>
       <Custom Action="RemoveClockScheduledTasks" After="InstallInitialize" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RestoreWindowsDesktop" After="InstallInitialize" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="StopLuloForUpgrade" Before="InstallValidate" Condition="WIX_UPGRADE_DETECTED AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="StartLulo" After="InstallFinalize" Condition="NOT REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
     <StandardDirectory Id="LocalAppDataFolder">
@@ -116,14 +145,16 @@
          it) does not apply to either: HKCU\Software\Lulo\Shell (its few
          per-user settings, e.g. which monitor the Dock sits on) and the
          "Lulo" value under the user's own Run key (its opt-in sign-in
-         toggle — this installer never sets it; it only clears it if the
-         user, or the Lulo menu's own switch, already did). A dummy
-         KeyPath value gives the component one (required) and is itself
-         removed on uninstall the ordinary way. -->
+         toggle — this installer never sets it). The Run value is cleared
+         on uninstall by RestoreWindowsDesktop (the session's uninstall switch),
+         not here: a <RemoveRegistryValue> runs at *install* time, so it
+         turned the user's Start Lulo at Sign-In off on every upgrade.
+         The uninstall switch also forgets HKCU\Software\Lulo\Session (Lulo mode).
+         A dummy KeyPath value gives the component one (required) and is
+         itself removed on uninstall the ordinary way. -->
     <Component Id="Comp_LuloShellRegistryCleanup" Directory="INSTALLFOLDER" Guid="*">
       <RegistryValue Root="HKCU" Key="Software\Lulo\Installer" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
       <RemoveRegistryKey Root="HKCU" Key="Software\Lulo\Shell" Action="removeOnUninstall" />
-      <RemoveRegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Lulo" />
     </Component>
   </Package>
 </Wix>

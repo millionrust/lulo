@@ -684,6 +684,21 @@ Linux or macOS dependency graph -- the same seam ADR 0025 uses for `gpui_windows
 
 ### What the installer does
 
+- **Brings Lulo back after an install or upgrade** (branch `op/win-upgrade-restart`). An
+  upgrade used to leave Lulo stopped. Now the MSI stops a running Lulo before
+  InstallValidate (`lulo-session --stop`, then a 20 s wait for both processes), and after
+  InstallFinalize runs `lulo-session --after-install` as the installing user, without
+  waiting (immediate custom action, `asyncNoWait`; the session starts the layer in a
+  detached process). It starts Lulo after a fresh install, and after an upgrade unless the
+  user had turned Lulo off: `HKCU\Software\Lulo\Session\LuloMode` is set by every session
+  start and cleared only by Turn Off Lulo or Restore Windows Desktop, never by a scripted
+  `--stop`. It sits outside `Software\Lulo\Shell`, which the old product's removal deletes
+  during an upgrade. The `<RemoveRegistryValue>` for the Run key's "Lulo" value is gone: it
+  ran at install time, so every upgrade turned Start Lulo at Sign-In off; uninstall still
+  clears it through `--uninstall`. `upgrade_smoke.py` (CI) checks start / no start / start
+  across three installs; `installer_smoke.py` (windows-preview.yml) checks `lulo-session`
+  and `lulo-shell` are running after a real install. Still open: `Software\Lulo\Shell` (the
+  Dock's monitor and similar settings) is lost on every upgrade, for the same reason.
 - **Installs every Lulo Windows app** (Calculator, Notes, Text Editor, Preview, Clock,
   Weather, Terminal, and now Files and the Lulo layer -- `lulo-session.exe` and
   `lulo-shell.exe`, ADR 0023 phase 3, merged from `op/win-shell`) to

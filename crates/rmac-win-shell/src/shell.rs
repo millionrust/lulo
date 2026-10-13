@@ -221,7 +221,11 @@ fn add_menu_rows() {
         }
         trace(|| format!("files for folders {}", if on { "on" } else { "off" }));
     });
-    requests::register(TURN_OFF_ACTION, quit);
+    requests::register(TURN_OFF_ACTION, |cx| {
+        // The user's own choice: an upgrade must not turn Lulo back on.
+        let _ = registry::set_lulo_mode(false);
+        quit(cx);
+    });
 }
 
 /// Spotlight's hotkey (and its fallbacks), and the one-time word on which

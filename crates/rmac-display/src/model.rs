@@ -25,6 +25,7 @@ impl Mode {
         }
     }
 
+    #[cfg(any(not(any(target_os = "macos", windows)), test))]
     pub(super) fn niri_argument(self) -> String {
         format!(
             "{}x{}@{:.3}",
@@ -67,6 +68,7 @@ impl Transform {
         !matches!(self, Self::Other(_))
     }
 
+    #[cfg(any(not(any(target_os = "macos", windows)), test))]
     pub(super) fn niri_argument(&self) -> Option<&'static str> {
         match self {
             Self::Normal => Some("normal"),

@@ -21,6 +21,22 @@ libc.workspace = true
 rmac-dbus.workspace = true
 zbus.workspace = true
 
+# The Lock Screen policy on Windows (`lock_windows.rs`): the screen saver's
+# secure timeout, the power scheme's sleep timeout and LockWorkStation.
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Power",
+    "Win32_System_Registry",
+    "Win32_System_Shutdown",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [[bin]]
 name = "rmac-shortcut-broker"
 path = "src/bin/broker.rs"

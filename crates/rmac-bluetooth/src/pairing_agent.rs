@@ -64,7 +64,7 @@ impl PairingPinCode {
         Ok(Self(value))
     }
 
-    fn into_string(mut self) -> String {
+    pub(crate) fn into_string(mut self) -> String {
         std::mem::take(&mut self.0)
     }
 }
@@ -131,13 +131,13 @@ impl fmt::Display for PairingInputError {
 impl std::error::Error for PairingInputError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ExpectedResponse {
+pub(crate) enum ExpectedResponse {
     Confirmation,
     PinCode,
     Passkey,
 }
 
-enum PairingResponse {
+pub(crate) enum PairingResponse {
     Accept,
     PinCode(PairingPinCode),
     Passkey(PairingPasskey),
@@ -249,7 +249,7 @@ impl PairingSession {
         true
     }
 
-    fn request(
+    pub(crate) fn request(
         &self,
         expected: ExpectedResponse,
         kind: PairingPromptKind,
@@ -339,7 +339,7 @@ impl PairingSession {
         }
     }
 
-    fn display(&self, event: PairingEvent) -> Result<(), RequestFailure> {
+    pub(crate) fn display(&self, event: PairingEvent) -> Result<(), RequestFailure> {
         let state = self
             .inner
             .state
@@ -387,7 +387,7 @@ impl PairingSession {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RequestFailure {
+pub(crate) enum RequestFailure {
     Canceled,
     Rejected,
     TimedOut,

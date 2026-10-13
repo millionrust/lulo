@@ -65,7 +65,7 @@ impl WifiNetworkId {
         self.security
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", windows, test))]
     pub(crate) fn matches_profile(&self, profile: &Self) -> bool {
         self.ssid == profile.ssid
             && match (self.security, profile.security) {
@@ -150,7 +150,7 @@ impl WifiPassword {
         })
     }
 
-    #[cfg(any(target_os = "linux", test, feature = "test-support"))]
+    #[cfg(any(target_os = "linux", windows, test, feature = "test-support"))]
     pub(crate) fn expose<R>(&self, use_password: impl FnOnce(&str) -> R) -> R {
         // Construction accepts only a valid String, so this can fail only if
         // memory was corrupted. Never substitute a partial or lossy password.

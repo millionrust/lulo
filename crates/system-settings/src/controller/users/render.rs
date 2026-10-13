@@ -4,6 +4,12 @@ const LIST_PICTURE: f32 = 32.0;
 const SHEET_PICTURE: f32 = 64.0;
 const FACE_TILE: f32 = 56.0;
 
+/// Lulo OS manages its accounts through AccountsService. On Windows the
+/// pane shows the signed-in account only: adding, removing and editing
+/// accounts (and automatic login) belong to Windows' own Settings and an
+/// administrator there, so none of those controls is offered.
+const MANAGE_ACCOUNTS: bool = cfg!(not(windows));
+
 fn user_subtitle(user: &User, current_uid: u64) -> Option<SharedString> {
     let mut parts: Vec<&str> = Vec::new();
     if let Some(badge) = user.account_type.badge() {
@@ -42,14 +48,18 @@ impl Settings {
                     user.display_name().to_owned(),
                     subtitle.map(subtitle_text),
                 );
-                row = row.child(info_button(
-                    SharedString::from(format!("user-info-{}", user.uid)),
-                    "User details",
-                    move |window, cx| {
-                        let path = path.clone();
-                        open.update(cx, |settings, cx| settings.open_user_info(path, window, cx))
-                    },
-                ));
+                if MANAGE_ACCOUNTS {
+                    row = row.child(info_button(
+                        SharedString::from(format!("user-info-{}", user.uid)),
+                        "User details",
+                        move |window, cx| {
+                            let path = path.clone();
+                            open.update(cx, |settings, cx| {
+                                settings.open_user_info(path, window, cx)
+                            })
+                        },
+                    ));
+                }
                 rows.push(
                     row.id(SharedString::from(format!("user-row-{}", user.uid)))
                         .role(Role::Group)
@@ -61,6 +71,12 @@ impl Settings {
                 );
             }
             cards.push(card(rows));
+        }
+        if !MANAGE_ACCOUNTS {
+            if let (Some(error), false) = (&state.error, state.list.is_empty()) {
+                cards.push(note_card(error.clone()));
+            }
+            return self.pane(cards);
         }
         let add = view.clone();
         cards.push(footer_buttons(vec![push_button("users-add", "Add User…")

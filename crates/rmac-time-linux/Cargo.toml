@@ -16,3 +16,19 @@ futures-util.workspace = true
 rmac-dbus.workspace = true
 rustix = { workspace = true, features = ["time"] }
 zbus.workspace = true
+
+# The Win32 time-zone, clock, privilege, registry and service APIs, and a
+# hidden window for the clock-change broadcasts (`win.rs`).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Services",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_Time",
+    "Win32_UI_WindowsAndMessaging",
+] }

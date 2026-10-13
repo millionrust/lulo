@@ -23,6 +23,17 @@ libloading.workspace = true
 rmac-dbus.workspace = true
 zbus.workspace = true
 
+# The Windows backend (`win.rs`): the native WLAN API for Wi-Fi and the IP
+# Helper API for interfaces, addresses and change notifications.
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_WiFi",
+    "Win32_Networking_WinSock",
+] }
+
 [dev-dependencies]
 rmac-dbus.workspace = true
 zbus.workspace = true

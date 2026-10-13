@@ -22,6 +22,23 @@ impl Settings {
             return;
         }
         let action = wifi_join_action(&network);
+        // Windows joins 802.1X networks through its own sign-in prompt,
+        // which apps cannot drive: hand the network to Windows' network
+        // list, where that prompt lives.
+        #[cfg(windows)]
+        if action == WifiJoinAction::EnterpriseSetup {
+            cx.background_executor()
+                .spawn(blocking::unblock(|| {
+                    if let Err(error) = std::process::Command::new("explorer.exe")
+                        .arg("ms-availablenetworks:")
+                        .spawn()
+                    {
+                        eprintln!("could not open Windows' network list: {error}");
+                    }
+                }))
+                .detach();
+            return;
+        }
         if action == WifiJoinAction::EnterpriseSetup {
             let identity = cx.new(|cx| {
                 InputState::new(window, cx)

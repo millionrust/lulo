@@ -9,12 +9,25 @@ pub(super) async fn send(
     sender.send(event).await.map_err(|_| Error::ConsumerClosed)
 }
 
+#[cfg(unix)]
 pub(super) type IpcStream = BufReader<Async<UnixStream>>;
 
+#[cfg(unix)]
 pub(super) fn connect(path: &Path) -> Result<IpcStream, Error> {
     let stream = UnixStream::connect(path)?;
     stream.set_nonblocking(true)?;
     Ok(BufReader::new(Async::new(stream)?))
+}
+
+/// niri runs only on Linux; elsewhere (System Settings on Windows) there
+/// is no compositor socket to reach, and every request reports that.
+#[cfg(not(unix))]
+pub(super) type IpcStream = BufReader<Async<std::net::TcpStream>>;
+
+#[cfg(not(unix))]
+pub(super) fn connect(path: &Path) -> Result<IpcStream, Error> {
+    let _ = path;
+    Err(io::Error::new(io::ErrorKind::Unsupported, "niri runs only on Linux").into())
 }
 
 pub(super) async fn request_once(path: &Path, request: &Request) -> Result<Response, Error> {

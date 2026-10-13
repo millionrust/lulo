@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fmt;
 use std::io;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

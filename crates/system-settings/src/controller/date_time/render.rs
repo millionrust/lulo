@@ -79,7 +79,13 @@ impl Settings {
         let automatic = switch_row(
             "automatic-time",
             "Set time and date automatically",
-            (!snapshot.can_ntp).then(|| "No compatible network time service is installed".into()),
+            (!snapshot.can_ntp).then(|| {
+                if cfg!(windows) {
+                    "Only an administrator can change this on Windows".into()
+                } else {
+                    "No compatible network time service is installed".into()
+                }
+            }),
             snapshot.ntp_enabled,
             !self.time_busy && snapshot.can_ntp,
             move |enabled, _, cx| {

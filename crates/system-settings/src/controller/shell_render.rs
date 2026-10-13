@@ -17,6 +17,27 @@ impl Render for Settings {
         ] {
             rmac_ui::set_menu_enabled(action, self.pane_available(pane), cx);
         }
+        // View lists only the panes this platform offers: a pane it leaves
+        // out (`navigation::platform_supports`) has no menu row either.
+        for (action, pane) in [
+            ("system_settings::ShowAccessibility", "Accessibility"),
+            ("system_settings::ShowFocus", "Focus"),
+            ("system_settings::ShowInternetAccounts", "Internet Accounts"),
+            ("system_settings::ShowLanguageRegion", "Language & Region"),
+            ("system_settings::ShowLoginItems", "Login Items"),
+            ("system_settings::ShowLoginPassword", "Login Password"),
+            ("system_settings::ShowNetwork", "Network"),
+            ("system_settings::ShowNotifications", "Notifications"),
+            (
+                "system_settings::ShowPrintersScanners",
+                "Printers & Scanners",
+            ),
+            ("system_settings::ShowPrivacySecurity", "Privacy & Security"),
+            ("system_settings::ShowSharing", "Sharing"),
+            ("system_settings::ShowSoftwareUpdate", "Software Update"),
+        ] {
+            rmac_ui::set_menu_hidden(action, !crate::navigation::platform_supports(pane), cx);
+        }
         if !self.focused_once {
             self.focused_once = true;
             // The Mac's own System Settings opens with keyboard focus

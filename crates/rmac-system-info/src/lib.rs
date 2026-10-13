@@ -7,6 +7,8 @@ mod api;
 mod facts;
 mod host;
 mod watch;
+#[cfg(windows)]
+mod win;
 
 pub use api::*;
 #[cfg(target_os = "linux")]

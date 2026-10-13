@@ -25,3 +25,19 @@ futures-util.workspace = true
 notify.workspace = true
 rustix.workspace = true
 serde_json.workspace = true
+
+# Core Audio on Windows (win.rs): endpoints, volume and the change
+# notifications. `#[implement]`/`#[interface]` name `windows_core` directly.
+[target.'cfg(windows)'.dependencies]
+windows-core.workspace = true
+windows = { workspace = true, features = [
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Registry",
+    "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
+] }

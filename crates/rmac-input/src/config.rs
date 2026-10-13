@@ -307,6 +307,7 @@ pub(super) fn snapshot_from_authority(authority: Authority, available: bool) -> 
         devices,
         device_detail,
         device_overrides: DeviceOverrideCapability::Unsupported,
+        supported: Supported::default(),
     }
 }
 

@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn system_restore_snapshot(
     expected: &Snapshot,
     owned_current: &Snapshot,
@@ -84,7 +84,7 @@ pub(super) fn system_restore_snapshot(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn validate_restore_authority(
     expected: &Snapshot,
     current: &Snapshot,
@@ -112,66 +112,7 @@ pub(super) fn validate_restore_authority(
     Ok(())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
-pub(super) fn same_enabled_output_identities(expected: &Snapshot, current: &Snapshot) -> bool {
-    let expected = expected
-        .outputs
-        .iter()
-        .filter(|output| output.logical.is_some() && output.current_mode().is_some())
-        .collect::<Vec<_>>();
-    let current = current
-        .outputs
-        .iter()
-        .filter(|output| output.logical.is_some() && output.current_mode().is_some())
-        .collect::<Vec<_>>();
-    expected.len() == current.len()
-        && expected.iter().all(|expected| {
-            current.iter().any(|current| {
-                current.id == expected.id
-                    && current.connector == expected.connector
-                    && current.serial == expected.serial
-                    && current.name == expected.name
-            })
-        })
-}
-
-#[cfg(any(not(target_os = "macos"), test))]
-pub(super) fn same_complete_layout(expected: &Snapshot, current: &Snapshot) -> bool {
-    if !same_enabled_output_identities(expected, current) {
-        return false;
-    }
-    let expected_primary = expected
-        .outputs
-        .iter()
-        .find(|output| output.primary && output.logical.is_some())
-        .map(|output| output.id.as_str());
-    let current_primary = current
-        .outputs
-        .iter()
-        .find(|output| output.primary && output.logical.is_some())
-        .map(|output| output.id.as_str());
-    if expected_primary != current_primary {
-        return false;
-    }
-    let Some(primary) = expected_primary.or_else(|| {
-        expected
-            .outputs
-            .iter()
-            .find(|output| output.logical.is_some())
-            .map(|output| output.id.as_str())
-    }) else {
-        return false;
-    };
-    match (
-        current_layout(expected, primary),
-        current_layout(current, primary),
-    ) {
-        (Ok(expected), Ok(current)) => expected == current,
-        _ => false,
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn verify_snapshot_restore(
     expected: &Snapshot,
     layout: &Layout,
@@ -195,7 +136,7 @@ pub(super) fn verify_snapshot_restore(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     let output = command("niri", &["msg", "--json", "outputs"], "read niri displays")?;
     let mut outputs = parse_niri_outputs(&output)?;
@@ -231,7 +172,7 @@ pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 #[derive(Debug)]
 pub(super) struct PersistenceAuthority {
     main_path: PathBuf,
@@ -243,7 +184,7 @@ pub(super) struct PersistenceAuthority {
     detail: Option<String>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn system_persist_layout(layout: &Layout) -> Result<Snapshot, Error> {
     let fresh = system_snapshot()?;
     if !fresh.can_persist {
@@ -322,7 +263,7 @@ pub(super) fn system_persist_layout(layout: &Layout) -> Result<Snapshot, Error> 
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn restore_managed(path: &Path, previous: Option<&[u8]>) -> Result<(), String> {
     match previous {
         Some(previous) => {
@@ -336,7 +277,7 @@ pub(super) fn restore_managed(path: &Path, previous: Option<&[u8]>) -> Result<()
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn rollback_layout_transaction(
     authority: &PersistenceAuthority,
     restore_main: bool,
@@ -359,7 +300,7 @@ pub(super) fn rollback_layout_transaction(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn persistence_authority() -> Result<PersistenceAuthority, Error> {
     let main_path = niri_config_path()?.ok_or_else(|| {
         Error::new(
@@ -436,7 +377,7 @@ pub(super) fn persistence_authority() -> Result<PersistenceAuthority, Error> {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn read_bounded_config(path: &Path, operation: &'static str) -> Result<String, Error> {
     use std::io::Read as _;
 
@@ -467,7 +408,7 @@ pub(super) fn read_bounded_config(path: &Path, operation: &'static str) -> Resul
         .map_err(|_| Error::new(operation, "the configuration is not valid UTF-8"))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn niri_config_path() -> Result<Option<PathBuf>, Error> {
     if let Some(value) = std::env::var_os("NIRI_CONFIG").filter(|value| !value.is_empty()) {
         let path = PathBuf::from(value);
@@ -489,7 +430,7 @@ pub(super) fn niri_config_path() -> Result<Option<PathBuf>, Error> {
     Ok(path.is_file().then_some(path))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn reject_symlink(path: &Path, operation: &'static str) -> Result<(), Error> {
     let metadata = std::fs::symlink_metadata(path)
         .map_err(|error| Error::new(operation, error.to_string()))?;
@@ -505,7 +446,7 @@ pub(super) fn reject_symlink(path: &Path, operation: &'static str) -> Result<(),
     Ok(())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 pub(super) fn parse_managed_document(source: &str) -> Result<KdlDocument, Error> {
     let body = source.strip_prefix(MANAGED_HEADER).ok_or_else(|| {
         Error::new(
@@ -540,7 +481,7 @@ pub(super) fn parse_managed_document(source: &str) -> Result<KdlDocument, Error>
     Ok(document)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 pub(super) fn output_node_id(node: &KdlNode) -> Result<&str, Error> {
     let id = node.get(0).and_then(KdlValue::as_string).ok_or_else(|| {
         Error::new(
@@ -558,7 +499,7 @@ pub(super) fn output_node_id(node: &KdlNode) -> Result<&str, Error> {
     Ok(id)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 pub(super) fn parse_managed_primary(source: &str) -> Result<Option<String>, Error> {
     let document = parse_managed_document(source)?;
     let primaries = document
@@ -579,7 +520,7 @@ pub(super) fn parse_managed_primary(source: &str) -> Result<Option<String>, Erro
     Ok(primaries.first().map(|id| (*id).to_owned()))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 pub(super) fn update_managed_source(
     existing: Option<&str>,
     layout: &Layout,
@@ -624,7 +565,7 @@ pub(super) fn update_managed_source(
     Ok(format!("{MANAGED_HEADER}\n{document}"))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 pub(super) fn configuration_node(output: &OutputConfiguration, primary: bool) -> KdlNode {
     let mut node = KdlNode::new("output");
     node.push(output.id.clone());
@@ -654,116 +595,17 @@ pub(super) fn configuration_node(output: &OutputConfiguration, primary: bool) ->
     node
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
-pub(super) fn validate_layout(layout: &Layout, snapshot: &Snapshot) -> Result<(), Error> {
-    let enabled = snapshot
-        .outputs
-        .iter()
-        .filter(|output| output.logical.is_some() && output.current_mode().is_some())
-        .collect::<Vec<_>>();
-    if layout.outputs.is_empty()
-        || layout.outputs.len() > MAX_OUTPUTS
-        || layout.outputs.len() != enabled.len()
-    {
-        return Err(Error::new(
-            "validate the display layout",
-            "the layout must contain every enabled display exactly once",
-        ));
-    }
-    let mut identities = HashSet::new();
-    for configured in &layout.outputs {
-        validate_output_id(&configured.id)?;
-        if configured.id.len() > MAX_OUTPUT_ID_BYTES || !identities.insert(&configured.id) {
-            return Err(Error::new(
-                "validate the display layout",
-                "display identities must be bounded and unique",
-            ));
-        }
-        if !configured.scale.is_finite()
-            || !(0.5..=4.0).contains(&configured.scale)
-            || !configured.transform.is_configurable()
-            || configured.logical_width == 0
-            || configured.logical_height == 0
-            || configured.x.unsigned_abs() > MAX_LAYOUT_COORDINATE as u32
-            || configured.y.unsigned_abs() > MAX_LAYOUT_COORDINATE as u32
-        {
-            return Err(Error::new(
-                "validate the display layout",
-                "display scale, transform, size, or position is outside the safe range",
-            ));
-        }
-        let current = enabled
-            .iter()
-            .find(|output| output.id == configured.id)
-            .ok_or_else(|| {
-                Error::new(
-                    "validate the display layout",
-                    "a configured display is no longer enabled",
-                )
-            })?;
-        if !current.modes.contains(&configured.mode) {
-            return Err(Error::new(
-                "validate the display layout",
-                "a configured mode is no longer advertised by its display",
-            ));
-        }
-        let logical = current.logical.as_ref().expect("enabled output checked");
-        if current.current_mode() != Some(configured.mode)
-            || (logical.scale - configured.scale).abs() > 0.001
-            || logical.transform != configured.transform
-            || logical.x != configured.x
-            || logical.y != configured.y
-            || logical.width != configured.logical_width
-            || logical.height != configured.logical_height
-        {
-            return Err(Error::new(
-                "validate the display layout",
-                "the compositor state changed before the layout could be saved",
-            ));
-        }
-    }
-    if !identities.contains(&layout.primary) {
-        return Err(Error::new(
-            "validate the display layout",
-            "the main display must be one of the enabled displays",
-        ));
-    }
-    for (index, left) in layout.outputs.iter().enumerate() {
-        for right in layout.outputs.iter().skip(index + 1) {
-            if rectangles_overlap(left, right) {
-                return Err(Error::new(
-                    "validate the display layout",
-                    "display rectangles must not overlap",
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-#[cfg(any(not(target_os = "macos"), test))]
-pub(super) fn rectangles_overlap(left: &OutputConfiguration, right: &OutputConfiguration) -> bool {
-    let left_x2 = i64::from(left.x) + i64::from(left.logical_width);
-    let left_y2 = i64::from(left.y) + i64::from(left.logical_height);
-    let right_x2 = i64::from(right.x) + i64::from(right.logical_width);
-    let right_y2 = i64::from(right.y) + i64::from(right.logical_height);
-    i64::from(left.x) < right_x2
-        && i64::from(right.x) < left_x2
-        && i64::from(left.y) < right_y2
-        && i64::from(right.y) < left_y2
-}
-
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn layout_matches_snapshot(layout: &Layout, snapshot: &Snapshot) -> bool {
     current_layout(snapshot, &layout.primary).is_ok_and(|current| current == *layout)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn live_main_with_managed_include(source: &str) -> String {
     format!("include \"{MANAGED_CONFIG_NAME}\"\n{source}")
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn validate_config_transaction(
     authority: &PersistenceAuthority,
     managed_source: &str,
@@ -842,7 +684,7 @@ pub(super) fn validate_config_transaction(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn run_niri_output(
     output: &str,
     arguments: &[&str],
@@ -854,7 +696,34 @@ pub(super) fn run_niri_output(
     Ok(())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(super) fn system_apply_output(
+    output: &str,
+    change: OutputChange<'_>,
+    operation: &'static str,
+) -> Result<(), Error> {
+    match change {
+        OutputChange::Mode(mode) => {
+            run_niri_output(output, &["mode", &mode.niri_argument()], operation)
+        }
+        OutputChange::Scale(scale) => {
+            run_niri_output(output, &["scale", &format!("{scale:.2}")], operation)
+        }
+        OutputChange::Transform(transform) => {
+            let transform = transform
+                .niri_argument()
+                .ok_or_else(|| Error::new(operation, "unsupported transform"))?;
+            run_niri_output(output, &["transform", transform], operation)
+        }
+        OutputChange::Position { x, y } => run_niri_output(
+            output,
+            &["position", "set", &x.to_string(), &y.to_string()],
+            operation,
+        ),
+    }
+}
+
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 #[derive(Deserialize)]
 pub(super) struct NiriOutput {
     name: String,
@@ -874,7 +743,7 @@ pub(super) struct NiriOutput {
     logical: Option<NiriLogicalOutput>,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 #[derive(Deserialize)]
 pub(super) struct NiriMode {
     width: u16,
@@ -884,7 +753,7 @@ pub(super) struct NiriMode {
     is_preferred: bool,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 #[derive(Deserialize)]
 pub(super) struct NiriLogicalOutput {
     x: i32,
@@ -895,7 +764,7 @@ pub(super) struct NiriLogicalOutput {
     transform: String,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 pub(super) fn parse_niri_outputs(json: &str) -> Result<Vec<Output>, Error> {
     let raw = serde_json::from_str::<HashMap<String, NiriOutput>>(json)
         .map_err(|error| Error::new("parse niri displays", error.to_string()))?;
@@ -945,7 +814,7 @@ pub(super) fn parse_niri_outputs(json: &str) -> Result<Vec<Output>, Error> {
     Ok(outputs)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 pub(super) fn parse_transform(transform: &str) -> Transform {
     match transform {
         "Normal" | "normal" => Transform::Normal,

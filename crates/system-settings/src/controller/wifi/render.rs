@@ -275,9 +275,11 @@ impl Settings {
                     .collect()
             };
             cards.push(card(rows));
-            cards.push(footnote(
-                "New WPA Personal and SAE networks ask for their password. Enterprise setup supports certificate-verified PEAP with MSCHAPv2; other EAP methods and legacy security are not supported.",
-            ));
+            cards.push(footnote(if cfg!(windows) {
+                "New WPA Personal and SAE networks ask for their password. Enterprise networks open Windows' network list, which asks for their sign-in."
+            } else {
+                "New WPA Personal and SAE networks ask for their password. Enterprise setup supports certificate-verified PEAP with MSCHAPv2; other EAP methods and legacy security are not supported."
+            }));
         }
 
         self.pane(cards)

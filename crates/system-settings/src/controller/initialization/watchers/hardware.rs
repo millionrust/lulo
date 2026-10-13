@@ -20,7 +20,7 @@ impl Settings {
         })
         .detach();
 
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         {
             let (hardware_events, hardware_rx) = async_channel::bounded(1);
             cx.background_executor()
@@ -32,6 +32,11 @@ impl Settings {
                     let hardware = blocking::unblock(crate::hardware::current).await;
                     if this
                         .update(cx, |this: &mut Settings, cx| {
+                            // Windows has no compositor event stream: a
+                            // display plugged in, removed or rearranged
+                            // arrives here (WM_DISPLAYCHANGE / devices).
+                            #[cfg(windows)]
+                            this.request_display_stream_refresh(cx);
                             this.apply_hardware(hardware, cx)
                         })
                         .is_err()

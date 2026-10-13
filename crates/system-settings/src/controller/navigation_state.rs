@@ -27,7 +27,8 @@ fn enter_content_focus(content_focus: &FocusHandle, window: &mut Window, cx: &mu
 
 impl Settings {
     pub(super) fn pane_available(&self, name: &str) -> bool {
-        !self.hardware_ready || self.hardware.allows_pane(name)
+        crate::navigation::platform_supports(name)
+            && (!self.hardware_ready || self.hardware.allows_pane(name))
     }
 
     pub(super) fn apply_hardware(&mut self, hardware: Capabilities, cx: &mut Context<Self>) {
@@ -53,6 +54,9 @@ impl Settings {
             }
         }
         self.cancel_storage_scan_if_hidden();
+        if !was_ready {
+            self.trace_panes();
+        }
         if redirected || self.available_panes() != available_before {
             // The sidebar's rows (and the menu's Show items) changed.
             cx.notify();
@@ -70,6 +74,26 @@ impl Settings {
                 cx,
             );
         }
+    }
+
+    /// With `LULO_SETTINGS_TRACE` set, print the panes the sidebar lists
+    /// once the hardware scan is in, as `id=Name` pairs: the Windows
+    /// launch check (scripts/windows/settings_smoke.py) opens each of them.
+    fn trace_panes(&self) {
+        if std::env::var_os("LULO_SETTINGS_TRACE").is_none() {
+            return;
+        }
+        let panes = self
+            .sections
+            .iter()
+            .flatten()
+            .filter(|category| self.pane_available(category.name.as_ref()))
+            .filter_map(|category| {
+                crate::navigation::pane_id_for_category_name(category.name.as_ref())
+                    .map(|id| format!("{id}={}", category.name))
+            })
+            .collect::<Vec<_>>();
+        println!("settings: panes {}", panes.join(";"));
     }
 
     /// Which categories the sidebar lists, in order.

@@ -35,6 +35,13 @@ impl Settings {
         .detach();
 
         let (dock_compositor_events, dock_compositor_event_rx) = async_channel::bounded(64);
+        // niri is Lulo OS's compositor; Windows has none to watch (its
+        // display changes arrive through the hardware watch instead), and
+        // retrying a socket that can never exist would wake Settings every
+        // second.
+        #[cfg(windows)]
+        drop(dock_compositor_events);
+        #[cfg(not(windows))]
         cx.background_executor()
             .spawn(async move {
                 loop {

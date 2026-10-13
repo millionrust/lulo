@@ -10,6 +10,8 @@ mod macos;
 mod pairing_agent;
 mod service;
 mod watch;
+#[cfg(windows)]
+mod win;
 
 pub use pairing_agent::{
     PairingEvent, PairingInputError, PairingPasskey, PairingPinCode, PairingPrompt,

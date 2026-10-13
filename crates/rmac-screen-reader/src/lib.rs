@@ -11,7 +11,26 @@
 //! surprise the owner the way it can on stock GNOME.
 
 mod api;
+#[cfg(unix)]
 mod orca;
+/// Orca is a Linux screen reader; Windows builds of Settings (which hide
+/// the screen-reader controls there) see it as never running.
+#[cfg(not(unix))]
+mod orca {
+    use crate::api::Error;
+
+    pub fn is_orca_running() -> bool {
+        false
+    }
+
+    pub(crate) fn start_orca() -> Result<(), Error> {
+        Err(Error::new("start Orca", "Orca runs only on Linux"))
+    }
+
+    pub(crate) fn stop_orca() -> Result<(), Error> {
+        Ok(())
+    }
+}
 mod process;
 mod watch;
 

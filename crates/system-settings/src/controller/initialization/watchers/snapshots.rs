@@ -217,9 +217,13 @@ impl Settings {
         .detach();
 
         let (gtk_text_updates, gtk_text_update_rx) = async_channel::bounded(2);
-        std::thread::spawn(move || {
-            let _ = rmac_gtk_settings::watch(gtk_text_updates);
-        });
+        // GTK's text scale is Lulo OS's; Windows has no GTK session to
+        // watch, and the watcher's retries would wake Settings for nothing.
+        if cfg!(not(windows)) {
+            std::thread::spawn(move || {
+                let _ = rmac_gtk_settings::watch(gtk_text_updates);
+            });
+        }
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             while let Ok(event) = gtk_text_update_rx.recv().await {
                 if this
@@ -268,9 +272,13 @@ impl Settings {
 
         let (screen_reader_toggle_updates, screen_reader_toggle_update_rx) =
             async_channel::bounded(2);
-        std::thread::spawn(move || {
-            let _ = rmac_screen_reader::watch(screen_reader_toggle_updates);
-        });
+        // Orca is Lulo OS's screen reader (Accessibility is not offered on
+        // Windows); no watcher there.
+        if crate::navigation::platform_supports("Accessibility") {
+            std::thread::spawn(move || {
+                let _ = rmac_screen_reader::watch(screen_reader_toggle_updates);
+            });
+        }
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             while let Ok(event) = screen_reader_toggle_update_rx.recv().await {
                 if this

@@ -1,7 +1,11 @@
+#[cfg(not(windows))]
 use crate::facts::*;
 use crate::{Error, ErrorKind, Snapshot};
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+pub(crate) use crate::win::{system_set_static_hostname, system_snapshot};
+
+#[cfg(target_os = "linux")]
 const MAX_FACT_FILE_BYTES: u64 = 1024 * 1024;
 
 pub(crate) fn normalize_static_hostname(hostname: &str) -> Result<String, Error> {
@@ -54,7 +58,7 @@ pub(crate) fn verify_static_hostname(
     Ok(snapshot)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn system_snapshot() -> Snapshot {
     let host = linux_hostname();
     let operating_system = read_os_release("PRETTY_NAME").unwrap_or_else(|| "Linux".into());
@@ -87,7 +91,7 @@ pub(crate) fn system_snapshot() -> Snapshot {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn system_snapshot() -> Snapshot {
     let hostname = command("scutil", &["--get", "ComputerName"])
         .or_else(|| command("hostname", &[]))
@@ -119,7 +123,7 @@ pub(crate) fn system_snapshot() -> Snapshot {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 struct HostnameSnapshot {
     current: String,
     static_name: Option<String>,
@@ -130,7 +134,7 @@ struct HostnameSnapshot {
     kernel_release: Option<String>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_hostname() -> HostnameSnapshot {
     let fallback = read_trimmed("/proc/sys/kernel/hostname").unwrap_or_else(|| "Linux".into());
     let unavailable = |reason: &str| HostnameSnapshot {
@@ -162,7 +166,7 @@ fn linux_hostname() -> HostnameSnapshot {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn system_set_static_hostname(hostname: &str) -> Result<(), Error> {
     let connection = rmac_dbus::system_blocking().map_err(|_| {
         Error::new(
@@ -183,7 +187,7 @@ pub(crate) fn system_set_static_hostname(hostname: &str) -> Result<(), Error> {
         .map_err(hostname_mutation_error)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn system_set_static_hostname(_hostname: &str) -> Result<(), Error> {
     Err(Error::new(
         ErrorKind::Unavailable,
@@ -192,7 +196,7 @@ pub(crate) fn system_set_static_hostname(_hostname: &str) -> Result<(), Error> {
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn hostname_proxy(
     connection: &zbus::blocking::Connection,
 ) -> Result<zbus::blocking::Proxy<'_>, zbus::Error> {
@@ -204,7 +208,7 @@ fn hostname_proxy(
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn hostname_mutation_error(error: zbus::Error) -> Error {
     let detail = error.to_string();
     let lowercase = detail.to_ascii_lowercase();
@@ -224,7 +228,7 @@ fn hostname_mutation_error(error: zbus::Error) -> Error {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn optional_property<T>(proxy: &zbus::blocking::Proxy<'_>, name: &str) -> Option<T>
 where
     T: TryFrom<zbus::zvariant::OwnedValue>,
@@ -233,7 +237,7 @@ where
     proxy.get_property::<T>(name).ok()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn optional_string_property(proxy: &zbus::blocking::Proxy<'_>, name: &str) -> Option<String> {
     optional_property::<String>(proxy, name).and_then(safe_fact)
 }

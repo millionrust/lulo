@@ -1,8 +1,8 @@
 //! Cross-platform Wi-Fi state and radio control.
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", windows, test))]
 use std::collections::HashMap;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
@@ -13,7 +13,7 @@ pub mod contract;
 pub mod fake;
 #[cfg(any(target_os = "linux", test))]
 mod linux;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 mod macos;
 mod model;
 mod network_editor;
@@ -24,10 +24,12 @@ mod vpn_delete;
 mod vpn_editor;
 mod vpn_import;
 mod vpn_secrets;
+#[cfg(windows)]
+mod win;
 
 #[cfg(any(target_os = "linux", test))]
 use linux::*;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 use macos::*;
 pub use model::*;
 pub use network_editor::{
@@ -42,6 +44,8 @@ pub use vpn_import::{
     VpnImportPreviewId,
 };
 pub use vpn_secrets::{VpnSecretClearPreview, VpnSecretClearPreviewId};
+#[cfg(windows)]
+use win::*;
 
 pub trait WifiService {
     fn snapshot(&self) -> Result<WifiSnapshot, Error>;
@@ -171,9 +175,14 @@ fn system_network_snapshot() -> Result<NetworkSnapshot, Error> {
     linux_network_snapshot()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn system_network_snapshot() -> Result<NetworkSnapshot, Error> {
     macos_network_snapshot()
+}
+
+#[cfg(windows)]
+fn system_network_snapshot() -> Result<NetworkSnapshot, Error> {
+    win_network_snapshot()
 }
 
 #[cfg(target_os = "linux")]
@@ -181,9 +190,14 @@ fn system_vpn_snapshot() -> Result<VpnSnapshot, Error> {
     linux_vpn_snapshot()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn system_vpn_snapshot() -> Result<VpnSnapshot, Error> {
     macos_vpn_snapshot()
+}
+
+#[cfg(windows)]
+fn system_vpn_snapshot() -> Result<VpnSnapshot, Error> {
+    Ok(win_vpn_snapshot())
 }
 
 #[cfg(target_os = "linux")]
@@ -195,7 +209,7 @@ fn system_set_vpn_enabled(
     linux_set_vpn_enabled(id, enabled, cancellation)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn system_set_vpn_enabled(
     id: &VpnProfileId,
     enabled: bool,
@@ -207,7 +221,19 @@ fn system_set_vpn_enabled(
     macos_set_vpn_enabled(id, enabled)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+fn system_set_vpn_enabled(
+    id: &VpnProfileId,
+    enabled: bool,
+    cancellation: &VpnCancellation,
+) -> Result<VpnSnapshot, Error> {
+    if enabled && cancellation.is_cancelled() {
+        return Err(Error::cancelled("connect VPN"));
+    }
+    win_set_vpn_enabled(id, enabled)
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 async fn system_watch_wifi(sender: async_channel::Sender<WifiWatchEvent>) -> Result<(), Error> {
     sender
         .send(WifiWatchEvent::Unavailable)

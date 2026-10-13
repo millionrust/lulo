@@ -600,6 +600,13 @@ jobs:
             ${{ matrix.launch }} --results windows-results.json \
             target/debug ${{ matrix.apps }}
 
+      # System Settings (WIN-SET): every pane its sidebar lists on the runner
+      # opens with content, and the red traffic light, Ctrl+W, Ctrl+Q and
+      # Alt+F4 each close the window and end the process.
+      - name: System Settings panes and close
+        if: ${{ !cancelled() && contains(matrix.apps, 'rmac-system-settings') }}
+        run: python scripts/windows/settings_smoke.py target/debug --screenshots windows-screens/settings
+
       # Blocking: no app but Terminal, and neither Lulo layer process, may
       # use more than one 15.6 ms tick of CPU over 20 s with no input (ADR
       # 0025's parked frame loop; ADR 0023 phase 3); the part's own budgets

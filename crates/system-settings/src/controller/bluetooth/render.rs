@@ -32,7 +32,13 @@ impl Settings {
             .child(text_block("Bluetooth".into(), Some(description)))
             .child(power)
             .into_any_element()];
-        if self.bluetooth_on && self.bluetooth_available && !self.bluetooth_loading {
+        // Windows lets only its own Bluetooth settings make the PC
+        // discoverable; apps have no call for it.
+        if self.bluetooth_on
+            && self.bluetooth_available
+            && !self.bluetooth_loading
+            && cfg!(not(windows))
+        {
             let discoverable_view = view.clone();
             let discoverable = Toggle::new("bluetooth-discoverable")
                 .checked(self.bt_discoverable)

@@ -109,56 +109,64 @@ impl Settings {
                                 .child(output_name),
                         ),
                 )
-                .child(
-                    div()
-                        .h(px(style::SEPARATOR))
-                        .bg(sep())
-                        .mx(px(style::ROW_PADDING)),
-                )
-                .child(slider_row(
-                    "Alert volume",
-                    &self.alert_volume,
-                    format!("{alert}%").into(),
-                ))
-                .child(
-                    div()
-                        .h(px(style::SEPARATOR))
-                        .bg(sep())
-                        .mx(px(style::ROW_PADDING)),
-                )
-                .child(
-                    row_base()
-                        .child(text_block(
-                            "Play user interface sound effects".into(),
-                            Some("Trash, screenshots, devices, and system actions".into()),
+                // Lulo OS plays its own cue files at the alert volume. On
+                // Windows the alert, error and notification sounds are
+                // Windows' own, at Windows' volume, and the interface,
+                // volume-feedback and startup cues have no Windows sound,
+                // so only the alert choice is offered there.
+                .when(cfg!(not(windows)), |group| {
+                    group
+                        .child(
+                            div()
+                                .h(px(style::SEPARATOR))
+                                .bg(sep())
+                                .mx(px(style::ROW_PADDING)),
+                        )
+                        .child(slider_row(
+                            "Alert volume",
+                            &self.alert_volume,
+                            format!("{alert}%").into(),
                         ))
-                        .child(interface_effects),
-                )
-                .child(
-                    div()
-                        .h(px(style::SEPARATOR))
-                        .bg(sep())
-                        .mx(px(style::ROW_PADDING)),
-                )
-                .child(
-                    row_base()
-                        .child(text_block(
-                            "Play feedback when volume is changed".into(),
-                            None,
-                        ))
-                        .child(volume_feedback),
-                )
-                .child(
-                    div()
-                        .h(px(style::SEPARATOR))
-                        .bg(sep())
-                        .mx(px(style::ROW_PADDING)),
-                )
-                .child(
-                    row_base()
-                        .child(text_block("Play sound on startup".into(), None))
-                        .child(login_sound),
-                ),
+                        .child(
+                            div()
+                                .h(px(style::SEPARATOR))
+                                .bg(sep())
+                                .mx(px(style::ROW_PADDING)),
+                        )
+                        .child(
+                            row_base()
+                                .child(text_block(
+                                    "Play user interface sound effects".into(),
+                                    Some("Trash, screenshots, devices, and system actions".into()),
+                                ))
+                                .child(interface_effects),
+                        )
+                        .child(
+                            div()
+                                .h(px(style::SEPARATOR))
+                                .bg(sep())
+                                .mx(px(style::ROW_PADDING)),
+                        )
+                        .child(
+                            row_base()
+                                .child(text_block(
+                                    "Play feedback when volume is changed".into(),
+                                    None,
+                                ))
+                                .child(volume_feedback),
+                        )
+                        .child(
+                            div()
+                                .h(px(style::SEPARATOR))
+                                .bg(sep())
+                                .mx(px(style::ROW_PADDING)),
+                        )
+                        .child(
+                            row_base()
+                                .child(text_block("Play sound on startup".into(), None))
+                                .child(login_sound),
+                        )
+                }),
         );
         if let Some(detail) = &self.sound_policy_error {
             cards.push(note_card(detail.clone()));

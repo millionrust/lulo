@@ -844,11 +844,23 @@ impl PlatformWindow for WindowsWindow {
                     SetFocus(Some(hwnd)).ok();
                 }
 
+                // rmac: a window that is already in front needs no help.
+                // The simulated Alt below reached it as a real Alt tap,
+                // which opens Lulo's in-window menu strip: every `--pane`
+                // hand-off to a running System Settings left its Settings
+                // menu open.
+                if unsafe { GetForegroundWindow() } == hwnd {
+                    return;
+                }
+
                 // premium ragebait by windows, this is needed because the window
                 // must have received an input event to be able to set itself to foreground
                 // so let's just simulate user input as that seems to be the most reliable way
                 // some more info: https://gist.github.com/Aetopia/1581b40f00cc0cadc93a0e8ccb65dc8c
                 // bonus: this bug also doesn't manifest if you have vs attached to the process
+                // rmac: marked (`ACTIVATION_ALT_MARK`), so the GPUI window
+                // that still has the focus when it arrives drops it rather
+                // than treat it as the user's Alt.
                 let inputs = [
                     INPUT {
                         r#type: INPUT_KEYBOARD,
@@ -856,6 +868,7 @@ impl PlatformWindow for WindowsWindow {
                             ki: KEYBDINPUT {
                                 wVk: VK_MENU,
                                 dwFlags: KEYBD_EVENT_FLAGS(0),
+                                dwExtraInfo: crate::platform::ACTIVATION_ALT_MARK,
                                 ..Default::default()
                             },
                         },
@@ -866,6 +879,7 @@ impl PlatformWindow for WindowsWindow {
                             ki: KEYBDINPUT {
                                 wVk: VK_MENU,
                                 dwFlags: KEYEVENTF_KEYUP,
+                                dwExtraInfo: crate::platform::ACTIVATION_ALT_MARK,
                                 ..Default::default()
                             },
                         },

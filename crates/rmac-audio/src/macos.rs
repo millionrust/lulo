@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
     sender
         .send(WatchEvent::Unavailable)
@@ -10,7 +10,7 @@ pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
         .map_err(|_| Error::new("watch audio changes", "the event consumer closed"))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     let profiler = command(
         "system_profiler",
@@ -70,7 +70,7 @@ pub(super) fn system_default_device(kind: DeviceKind) -> Result<DefaultDevice, E
     })
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) fn system_set_volume(kind: DeviceKind, volume: u8) -> Result<(), Error> {
     let script = match kind {
         DeviceKind::Output => format!("set volume output volume {volume}"),
@@ -80,7 +80,7 @@ pub(super) fn system_set_volume(kind: DeviceKind, volume: u8) -> Result<(), Erro
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) fn system_set_muted(kind: DeviceKind, muted: bool) -> Result<(), Error> {
     if kind == DeviceKind::Input {
         return Err(Error::new(
@@ -93,7 +93,7 @@ pub(super) fn system_set_muted(kind: DeviceKind, muted: bool) -> Result<(), Erro
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) fn system_set_default_device(_: DeviceKind, _: &Device) -> Result<Snapshot, Error> {
     Err(Error::new(
         "change default audio device",
@@ -101,7 +101,7 @@ pub(super) fn system_set_default_device(_: DeviceKind, _: &Device) -> Result<Sna
     ))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) fn system_set_profile(_: &HardwareDevice, _: &Profile) -> Result<Snapshot, Error> {
     Err(Error::new(
         "change audio profile",
@@ -109,7 +109,7 @@ pub(super) fn system_set_profile(_: &HardwareDevice, _: &Profile) -> Result<Snap
     ))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) fn system_set_route(_: DeviceKind, _: &Device, _: &Route) -> Result<Snapshot, Error> {
     Err(Error::new(
         "change audio route",
@@ -117,7 +117,7 @@ pub(super) fn system_set_route(_: DeviceKind, _: &Device, _: &Route) -> Result<S
     ))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) fn system_set_balance(_: &Device, _: i8) -> Result<Snapshot, Error> {
     Err(Error::new(
         "change output balance",
@@ -125,7 +125,7 @@ pub(super) fn system_set_balance(_: &Device, _: i8) -> Result<Snapshot, Error> {
     ))
 }
 
-#[cfg(any(not(target_os = "linux"), test))]
+#[cfg(any(not(any(target_os = "linux", windows)), test))]
 pub(super) fn parse_macos_audio_devices(output: &str) -> (Vec<Device>, Vec<Device>) {
     let mut outputs = Vec::new();
     let mut inputs = Vec::new();
@@ -215,7 +215,7 @@ pub(super) fn parse_macos_audio_devices(output: &str) -> (Vec<Device>, Vec<Devic
     (outputs, inputs)
 }
 
-#[cfg(any(not(target_os = "linux"), test))]
+#[cfg(any(not(any(target_os = "linux", windows)), test))]
 pub(super) fn parse_macos_volume_settings(output: &str) -> Option<(Level, Level)> {
     let field = |name: &str| {
         output.split(',').find_map(|part| {

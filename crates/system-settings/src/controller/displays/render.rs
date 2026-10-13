@@ -79,7 +79,7 @@ impl Settings {
             .iter()
             .filter(|output| output.logical.is_some())
             .count();
-        if enabled_outputs > 1 && !self.display.mirror_supported {
+        if enabled_outputs > 1 && !self.display.mirror_supported && cfg!(not(windows)) {
             cards.push(footnote(
                 "niri does not provide native display mirroring. Displays remain extended; wl-mirror can mirror content without pretending it is a compositor layout mode.",
             ));
@@ -107,9 +107,11 @@ impl Settings {
         cards.push(footer);
         if self.display.can_configure {
             if self.display.can_persist {
-                cards.push(footnote(
-                    "Resolution, scale, rotation and arrangement changes stay temporary until you choose Keep Changes; Lulo OS then saves the complete live layout to its niri include.",
-                ));
+                cards.push(footnote(if cfg!(windows) {
+                    "Resolution, rotation and arrangement changes stay temporary until you choose Keep Changes; Windows then keeps them."
+                } else {
+                    "Resolution, scale, rotation and arrangement changes stay temporary until you choose Keep Changes; Lulo OS then saves the complete live layout to its niri include."
+                }));
             } else if let Some(detail) = &self.display.persistence_detail {
                 cards.push(note_card(detail.clone()));
             }

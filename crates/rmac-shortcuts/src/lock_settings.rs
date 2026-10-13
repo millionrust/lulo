@@ -376,6 +376,11 @@ pub async fn serve(_policy_path: &std::path::Path) -> Result<(), Error> {
     Err(Error::Connect)
 }
 
+// Windows keeps the policy in its own screen saver and power settings
+// rather than a session service.
+#[cfg(windows)]
+pub use crate::lock_windows::{set_lock_after, set_suspend_after, settings};
+
 #[cfg(target_os = "linux")]
 pub fn settings() -> Result<Snapshot, Error> {
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
@@ -383,7 +388,7 @@ pub fn settings() -> Result<Snapshot, Error> {
     snapshot(proxy.settings().map_err(|_| Error::Call)?)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn settings() -> Result<Snapshot, Error> {
     Err(Error::Connect)
 }
@@ -410,12 +415,12 @@ pub fn set_suspend_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
     )
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn set_suspend_after(_seconds: Option<u32>) -> Result<Snapshot, Error> {
     Err(Error::Connect)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn set_lock_after(_seconds: Option<u32>) -> Result<Snapshot, Error> {
     Err(Error::Connect)
 }
@@ -484,7 +489,11 @@ pub async fn watch(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error
             }
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        crate::lock_windows::watch(sender).await
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         sender
             .send(Err(Error::Connect.to_string()))

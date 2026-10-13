@@ -754,11 +754,19 @@ pub(super) fn system_update(edit: &NetworkEdit) -> Result<NetworkSnapshot, Error
     linux_update(edit)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) fn system_update(_edit: &NetworkEdit) -> Result<NetworkSnapshot, Error> {
     Err(Error::new(
         "update network connection",
         "the macOS development adapter is read-only",
+    ))
+}
+
+#[cfg(windows)]
+pub(super) fn system_update(_edit: &NetworkEdit) -> Result<NetworkSnapshot, Error> {
+    Err(Error::new(
+        "update network connection",
+        "connection editing is not available on Windows",
     ))
 }
 

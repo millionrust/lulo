@@ -1,4 +1,8 @@
+#[cfg(any(not(windows), test))]
 use rmac_time::{Error, ErrorKind};
+
+#[cfg(windows)]
+pub use crate::win::watch;
 
 #[cfg(target_os = "linux")]
 const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
@@ -75,7 +79,7 @@ pub async fn wait_until_realtime(deadline: std::time::SystemTime) -> Result<(), 
         .map_err(|_| Error::new(ErrorKind::Unavailable, "the realtime deadline failed"))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub async fn watch(sender: async_channel::Sender<rmac_time::WatchEvent>) -> Result<(), Error> {
     sender
         .send(rmac_time::WatchEvent::Unavailable)

@@ -18,6 +18,7 @@ impl AccelProfile {
         }
     }
 
+    #[cfg(not(windows))]
     pub(super) fn id(self) -> &'static str {
         match self {
             Self::Adaptive => "adaptive",
@@ -159,6 +160,7 @@ impl SecondaryClick {
         }
     }
 
+    #[cfg(not(windows))]
     pub(super) fn id(self) -> &'static str {
         match self {
             Self::TwoFingerClickOrTap => "clickfinger",
@@ -166,6 +168,7 @@ impl SecondaryClick {
         }
     }
 
+    #[cfg(not(windows))]
     pub(super) fn from_id(value: &str) -> Option<Self> {
         match value {
             "clickfinger" => Some(Self::TwoFingerClickOrTap),
@@ -208,7 +211,18 @@ pub struct InputSettings {
     pub trackpoint: PointerSettings,
     pub trackpoint_scroll_with_middle_button: bool,
     pub touch: TouchSettings,
+    /// Maximum milliseconds between the two clicks of a double-click, for
+    /// every pointing device. `None` where the platform has no such setting
+    /// (niri); see [`Supported::double_click_time`].
+    pub double_click_ms: Option<u32>,
+    /// Lines one mouse-wheel notch scrolls; [`WHEEL_SCROLL_PAGE`] scrolls a
+    /// whole screen. `None` where the platform has no such setting (niri);
+    /// see [`Supported::wheel_scroll_lines`].
+    pub wheel_scroll_lines: Option<u32>,
 }
+
+/// [`InputSettings::wheel_scroll_lines`] value meaning "one screen at a time".
+pub const WHEEL_SCROLL_PAGE: u32 = u32::MAX;
 
 impl Default for InputSettings {
     fn default() -> Self {
@@ -220,6 +234,80 @@ impl Default for InputSettings {
             trackpoint: PointerSettings::default(),
             trackpoint_scroll_with_middle_button: false,
             touch: TouchSettings::default_enabled(),
+            double_click_ms: None,
+            wheel_scroll_lines: None,
+        }
+    }
+}
+
+/// Which [`InputSettings`] fields this platform can change. Settings hides a
+/// control whose flag is false, and `save` rejects a change to such a field.
+///
+/// The default is niri's set: every field except the two Windows-only
+/// pointer settings, so Linux behaviour does not depend on these flags.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Supported {
+    /// `keyboard.repeat_delay_ms` and `keyboard.repeat_rate`.
+    pub keyboard_repeat: bool,
+    pub keyboard_numlock: bool,
+    pub mouse_enabled: bool,
+    pub mouse_natural_scroll: bool,
+    pub mouse_accel_speed: bool,
+    pub mouse_accel_profile: bool,
+    pub mouse_left_handed: bool,
+    pub mouse_middle_emulation: bool,
+    pub mouse_scroll_with_middle_button: bool,
+    /// The touchpad section applies at all: false on Windows when no
+    /// Precision Touchpad is present. Each touchpad field also has its own
+    /// flag below.
+    pub touchpad: bool,
+    pub touchpad_enabled: bool,
+    pub touchpad_natural_scroll: bool,
+    pub touchpad_accel_speed: bool,
+    pub touchpad_accel_profile: bool,
+    pub touchpad_left_handed: bool,
+    pub touchpad_middle_emulation: bool,
+    pub touchpad_tap_to_click: bool,
+    pub touchpad_disable_while_typing: bool,
+    pub touchpad_drag_lock: bool,
+    pub touchpad_secondary_click: bool,
+    /// Every `trackpoint` field and `trackpoint_scroll_with_middle_button`.
+    pub trackpoint: bool,
+    /// Every `touch` field.
+    pub touch: bool,
+    /// [`InputSettings::double_click_ms`].
+    pub double_click_time: bool,
+    /// [`InputSettings::wheel_scroll_lines`].
+    pub wheel_scroll_lines: bool,
+}
+
+impl Default for Supported {
+    fn default() -> Self {
+        Self {
+            keyboard_repeat: true,
+            keyboard_numlock: true,
+            mouse_enabled: true,
+            mouse_natural_scroll: true,
+            mouse_accel_speed: true,
+            mouse_accel_profile: true,
+            mouse_left_handed: true,
+            mouse_middle_emulation: true,
+            mouse_scroll_with_middle_button: true,
+            touchpad: true,
+            touchpad_enabled: true,
+            touchpad_natural_scroll: true,
+            touchpad_accel_speed: true,
+            touchpad_accel_profile: true,
+            touchpad_left_handed: true,
+            touchpad_middle_emulation: true,
+            touchpad_tap_to_click: true,
+            touchpad_disable_while_typing: true,
+            touchpad_drag_lock: true,
+            touchpad_secondary_click: true,
+            trackpoint: true,
+            touch: true,
+            double_click_time: false,
+            wheel_scroll_lines: false,
         }
     }
 }
@@ -236,6 +324,7 @@ pub struct Snapshot {
     pub devices: Vec<InputDevice>,
     pub device_detail: Option<String>,
     pub device_overrides: DeviceOverrideCapability,
+    pub supported: Supported,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

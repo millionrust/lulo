@@ -32,7 +32,7 @@ rmac-sound.workspace = true
 # Windows' own status sources (`windows.rs`): WLAN, power and Core Audio.
 [target.'cfg(windows)'.dependencies]
 # `#[implement]` (the volume callback) names `windows_core` directly.
-windows-core = "0.61"
+windows-core.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Media_Audio",

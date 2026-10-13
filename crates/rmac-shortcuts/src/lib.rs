@@ -17,6 +17,8 @@ mod dispatch;
 mod fallback;
 pub mod lock;
 pub mod lock_settings;
+#[cfg(windows)]
+mod lock_windows;
 mod model;
 mod portal;
 pub mod power_key;

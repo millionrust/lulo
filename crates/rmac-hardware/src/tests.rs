@@ -19,6 +19,7 @@ impl Tree {
         Self(path)
     }
 
+    #[cfg(unix)]
     fn write(&self, relative: &str, contents: &str) -> &Self {
         let path = self.0.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();

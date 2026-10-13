@@ -36,6 +36,9 @@ struct Blurred {
     output: Uuid,
     /// BGRA, as GPUI draws images, a quarter of the screen's size.
     pixels: image::RgbaImage,
+    /// Reduce Transparency (a low-spec PC): the material is this solid
+    /// colour (BGR), drawn as a plain fill rather than an image.
+    solid: Option<[u8; 3]>,
 }
 
 static WALLPAPERS: RwLock<Vec<Arc<Blurred>>> = RwLock::new(Vec::new());
@@ -45,7 +48,8 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 /// `height` physical pixels. Called off the UI thread; the views pick the
 /// new copy up on their next frame.
 pub fn set_wallpaper(output: Uuid, width: u32, height: u32, bgra: &[u8]) {
-    let pixels = if reduce_transparency() {
+    let reduce = reduce_transparency();
+    let pixels = if reduce {
         flat(width, height, bgra)
     } else {
         blur(width, height, bgra)
@@ -53,7 +57,15 @@ pub fn set_wallpaper(output: Uuid, width: u32, height: u32, bgra: &[u8]) {
     let Some(pixels) = pixels else {
         return;
     };
-    let blurred = Arc::new(Blurred { output, pixels });
+    let solid = reduce.then(|| {
+        let [b, g, r, _] = pixels.get_pixel(0, 0).0;
+        [b, g, r]
+    });
+    let blurred = Arc::new(Blurred {
+        output,
+        pixels,
+        solid,
+    });
     if let Ok(mut wallpapers) = WALLPAPERS.write() {
         wallpapers.retain(|wallpaper| wallpaper.output != output);
         wallpapers.push(blurred);
@@ -193,6 +205,18 @@ pub fn element(window: &Window, cx: &App, radius: f32) -> Option<AnyElement> {
         .iter()
         .find(|wallpaper| wallpaper.output == output)?
         .clone();
+    if let Some([b, g, r]) = wallpaper.solid {
+        let colour = (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b);
+        return Some(
+            gpui::div()
+                .absolute()
+                .inset_0()
+                .size_full()
+                .rounded(px(radius))
+                .bg(gpui::rgb(colour))
+                .into_any_element(),
+        );
+    }
     let generation = GENERATION.load(Ordering::Acquire);
     let scale = window.scale_factor();
     let screen = display.bounds();

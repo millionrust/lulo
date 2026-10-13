@@ -210,7 +210,9 @@ impl HardwareProfile {
         for gpu in &self.gpus {
             parts.push(format!(
                 "{} GPU {}{}",
-                if gpu.integrated {
+                if gpu.vendor == GpuVendor::Virtual {
+                    "virtual"
+                } else if gpu.integrated {
                     "integrated"
                 } else {
                     "discrete"

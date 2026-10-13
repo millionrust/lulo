@@ -1193,8 +1193,12 @@ def check_shell(
                 opened.append("notepad.exe")
             elif log.wait_for(r"^layer rmac-launcher closed", 0.5, after=before) is None:
                 # Nothing to open (the runner's Apps folder may have no
-                # Notepad): close Spotlight as the user would.
+                # Notepad): close Spotlight as the user would. As on the
+                # Mac, the first Escape clears the query and the second
+                # closes Spotlight.
                 tap(VK_ESCAPE)
+                if log.wait_for(r"^layer rmac-launcher closed", 1.0, after=before) is None:
+                    tap(VK_ESCAPE)
         if log.wait_for(r"^layer rmac-launcher closed", 5.0, after=before) is None:
             failures.append("Spotlight did not close")
         catalog = log.last(r"^catalog: (\d+) apps")

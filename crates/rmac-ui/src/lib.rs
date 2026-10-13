@@ -30,6 +30,7 @@ pub mod shortcuts;
 mod speech;
 mod svg_icon;
 pub mod text_assist;
+pub mod text_complete;
 mod text_keys;
 mod text_transform;
 pub mod theme;
@@ -47,7 +48,8 @@ pub use chrome::{
     body_bg, cycle_through_windows, double_click_title_bar_action, fill_focused_window,
     minimize_focused_window, page, quit_application, title_bar, title_bar_content,
     title_bar_drag_region, toolbar, toolbar_group, toolbar_title, traffic_lights,
-    traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin, TrafficLights,
+    traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin, windowed_process_ids,
+    TrafficLights,
 };
 pub use components::{
     alert, alert_cancel_default, alert_with_icon, dialog, dialog_button, Dialog, DialogButtonKind,

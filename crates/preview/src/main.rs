@@ -86,6 +86,7 @@ gpui::actions!(
         Crop,
         Redact,
         InsertBlankPage,
+        InsertPageFromFile,
         BrowseSavedVersions,
         AnnotateHighlight,
         AnnotateUnderline,

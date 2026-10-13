@@ -676,6 +676,10 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 "⌥⇧⌘V"
             ),
             item!("Delete", "input::Delete", ""),
+            // TXT-MENU-001: completes the word before the caret from the
+            // document's own words and the system word list; press again for
+            // the next match (`rmac_ui::text_complete`).
+            item!("Complete", "text_editor::Complete", "⌥⎋"),
             item!("Select All", "input::SelectAll", "⌘A"),
             submenu!(
                 "Insert",
@@ -1912,6 +1916,13 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 "activity_monitor::ShowInactiveProcesses",
                 ""
             ),
+            // MON-MENU-023: processes that own a window, from the
+            // compositor's window list.
+            item!(
+                "Windowed Processes",
+                "activity_monitor::ShowWindowedProcesses",
+                ""
+            ),
             item!(
                 "Selected Processes",
                 "activity_monitor::ShowSelectedProcesses",
@@ -2335,13 +2346,16 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             // macOS Preview's own Crop applies to any selection shape.
             item!("Invert Selection", "preview::InvertSelection", "⇧⌘I"),
             // PRV-MENU-005/007: Blank Page splices an empty, same-size page
-            // after the current one (`markup::insert_blank_page`). Page
-            // from File… needs cross-document object import and is left
-            // out rather than faked.
+            // after the current one (`markup::insert_blank_page`); Page from
+            // File… splices in every page of a chosen PDF or image
+            // (`markup::insert_pages_from`).
             submenu!(
                 "Insert",
                 "preview::InsertMenu",
-                [item!("Blank Page", "preview::InsertBlankPage", "")]
+                [
+                    item!("Blank Page", "preview::InsertBlankPage", ""),
+                    item!("Page from File…", "preview::InsertPageFromFile", ""),
+                ]
             ),
             item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(

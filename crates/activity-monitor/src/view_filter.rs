@@ -2,10 +2,10 @@
 //! Processes / System Processes / Other Users' Processes / Active
 //! Processes" choice, whose window subtitle follows the current choice.
 //!
-//! "Windowed Processes" (a process with an on-screen window) is left out:
-//! it needs the compositor's own window list correlated by pid, which this
-//! crate has no access to yet, and an honest gap beats a filter that always
-//! shows nothing (or everything) under that label.
+//! "Windowed Processes" (a process that owns a window) correlates the
+//! compositor's window list with process ids (`rmac_ui::windowed_process_ids`);
+//! the view fetches that list while the filter is on, and the table passes
+//! each row's answer in as `has_window`.
 
 /// Ubuntu's `/etc/login.defs` `UID_MIN` default: uids at or below this are
 /// system/service accounts rather than a human login. A heuristic, not a
@@ -25,11 +25,13 @@ pub(crate) enum ViewFilter {
     OtherUsersProcesses,
     ActiveProcesses,
     InactiveProcesses,
+    /// MON-MENU-023: only processes that own a window.
+    WindowedProcesses,
     SelectedProcesses,
 }
 
 impl ViewFilter {
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::All,
         Self::AllHierarchical,
         Self::MyProcesses,
@@ -37,6 +39,7 @@ impl ViewFilter {
         Self::OtherUsersProcesses,
         Self::ActiveProcesses,
         Self::InactiveProcesses,
+        Self::WindowedProcesses,
         Self::SelectedProcesses,
     ];
 
@@ -50,6 +53,7 @@ impl ViewFilter {
             Self::OtherUsersProcesses => "Other Users' Processes",
             Self::ActiveProcesses => "Active Processes",
             Self::InactiveProcesses => "Inactive Processes",
+            Self::WindowedProcesses => "Windowed Processes",
             Self::SelectedProcesses => "Selected Processes",
         }
     }
@@ -74,7 +78,8 @@ impl ViewFilter {
             Self::InactiveProcesses => {
                 matches!(status, "Idle" | "Stopped" | "Zombie" | "Dead" | "Tracing")
             }
-            Self::SelectedProcesses => false,
+            // Decided by the caller from the compositor's window list.
+            Self::WindowedProcesses | Self::SelectedProcesses => false,
         }
     }
 
@@ -85,9 +90,13 @@ impl ViewFilter {
         status: &str,
         current_uid: Option<u32>,
         selected_pid: Option<u32>,
+        has_window: bool,
     ) -> bool {
         if self == Self::SelectedProcesses {
             return selected_pid == Some(pid);
+        }
+        if self == Self::WindowedProcesses {
+            return has_window;
         }
         self.matches(uid, status, current_uid)
     }
@@ -171,9 +180,17 @@ mod tests {
     #[test]
     fn selected_processes_only_shows_the_selected_pid() {
         let filter = ViewFilter::SelectedProcesses;
-        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), Some(42)));
-        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), Some(42)));
-        assert!(!filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None));
+        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), Some(42), false));
+        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), Some(42), false));
+        assert!(!filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, false));
+    }
+
+    #[test]
+    fn windowed_processes_follow_the_compositor_window_list() {
+        let filter = ViewFilter::WindowedProcesses;
+        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, true));
+        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), None, false));
+        assert!(!filter.matches(Some(1000), "Sleeping", Some(1000)));
     }
 
     /// `ProcessStatus`'s `Display` impl is what rows actually store

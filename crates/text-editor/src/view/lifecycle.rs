@@ -172,6 +172,7 @@ impl EditorView {
                 KeyBinding::new(rmac_ui::shortcuts::NEW.keystroke, NewFile, Some(CTX)),
                 KeyBinding::new(rmac_ui::shortcuts::OPEN.keystroke, OpenFile, Some(CTX)),
                 KeyBinding::new("cmd-,", ShowSettings, Some(CTX)),
+                KeyBinding::new("alt-escape", Complete, Some(CTX)),
                 KeyBinding::new(rmac_ui::shortcuts::SAVE.keystroke, SaveFile, Some(CTX)),
                 KeyBinding::new(rmac_ui::shortcuts::SAVE_AS.keystroke, SaveFileAs, Some(CTX)),
                 KeyBinding::new(
@@ -401,6 +402,7 @@ impl EditorView {
             },
             spell_checker: rmac_spelling::shared(),
             data_detectors: settings.data_detectors_default,
+            completion: None,
             input,
             rich,
             // An untitled rich window starts clean on its empty document.

@@ -218,6 +218,7 @@ impl MonitorView {
     /// Refresh the table snapshot and recompute the summary aggregates.
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.sampler.refresh(&self.table, cx);
+        self.fetch_windowed_pids(cx);
         if self.dock_icon_mode != crate::dock_icon::DockIconMode::Application {
             crate::dock_icon::publish(
                 self.dock_icon_mode,
@@ -304,6 +305,10 @@ impl MonitorView {
             (
                 "activity_monitor::ShowInactiveProcesses",
                 ViewFilter::InactiveProcesses,
+            ),
+            (
+                "activity_monitor::ShowWindowedProcesses",
+                ViewFilter::WindowedProcesses,
             ),
             (
                 "activity_monitor::ShowSelectedProcesses",
@@ -580,7 +585,32 @@ impl MonitorView {
             resync_selection(state, cx);
             state.refresh(cx);
         });
+        self.fetch_windowed_pids(cx);
         cx.notify();
+    }
+
+    /// While View ▸ Windowed Processes is on, ask the compositor which
+    /// processes own a window and show only those. Runs with the sampling
+    /// tick, never while another filter is chosen.
+    fn fetch_windowed_pids(&mut self, cx: &mut Context<Self>) {
+        if self.view_filter(cx) != ViewFilter::WindowedProcesses {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let pids = rmac_ui::windowed_process_ids().await;
+            let _ = this.update(cx, |view, cx| {
+                let Some(pids) = pids else { return };
+                view.table.update(cx, |state, cx| {
+                    state
+                        .delegate_mut()
+                        .set_windowed_pids(pids.into_iter().collect());
+                    resync_selection(state, cx);
+                    state.refresh(cx);
+                });
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {

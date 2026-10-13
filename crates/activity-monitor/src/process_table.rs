@@ -305,6 +305,9 @@ pub(crate) struct ProcessTableDelegate {
     /// pid, so Idle Wake Ups can be a per-interval delta. Only filled while
     /// that column is visible.
     previous_switches: std::collections::HashMap<u32, u64>,
+    /// Process ids that own a window, from the compositor, for View ▸
+    /// Windowed Processes. Only fetched while that filter is on.
+    windowed_pids: std::collections::HashSet<u32>,
 }
 
 /// A placeholder snapshot for before the first refresh, or if a projection
@@ -355,6 +358,7 @@ impl ProcessTableDelegate {
             view_filter: ViewFilter::All,
             current_uid: None,
             previous_switches: std::collections::HashMap::new(),
+            windowed_pids: std::collections::HashSet::new(),
         };
         delegate.refresh();
         delegate
@@ -442,6 +446,13 @@ impl ProcessTableDelegate {
         self.tab_columns[Self::tab_index(self.current_tab)] = self.visible.clone();
         self.fill_extras();
         true
+    }
+
+    /// The compositor's current window owners, for View ▸ Windowed
+    /// Processes; reapplies the view.
+    pub(crate) fn set_windowed_pids(&mut self, pids: std::collections::HashSet<u32>) {
+        self.windowed_pids = pids;
+        self.apply_view();
     }
 
     /// Change the View menu's process filter (MON-03) and reapply it.
@@ -604,6 +615,7 @@ impl ProcessTableDelegate {
         let view_filter = self.view_filter;
         let current_uid = self.current_uid;
         let selected_pid = self.selected_pid;
+        let windowed_pids = &self.windowed_pids;
         Self::sort_rows(&mut self.all_rows, self.sort_key, self.sort_asc);
         self.rows = self
             .all_rows
@@ -619,6 +631,7 @@ impl ProcessTableDelegate {
                         row.status.as_ref(),
                         current_uid,
                         selected_pid,
+                        windowed_pids.contains(&row.pid),
                     )
             })
             .take(300)

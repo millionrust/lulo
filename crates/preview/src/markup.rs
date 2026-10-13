@@ -376,6 +376,158 @@ pub fn insert_blank_page(source: &Path, destination: &Path, after: usize) -> Res
     Ok(())
 }
 
+/// A PDF document that shows `path`, a PDF or an image, for Edit ▸ Insert ▸
+/// Page from File… (PRV-MENU-005): a PDF is loaded as it is, an image
+/// becomes a one-page PDF at its pixel size. An encrypted PDF is refused.
+pub fn document_for_insertion(path: &Path) -> Result<Document, String> {
+    use image::ImageDecoder as _;
+    let mut head = [0u8; 8];
+    {
+        use std::io::Read as _;
+        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        let _ = file.read(&mut head).map_err(|e| e.to_string())?;
+    }
+    if head.starts_with(b"%PDF") {
+        let document = Document::load(path).map_err(|e| e.to_string())?;
+        if document.is_encrypted() {
+            return Err("That PDF is password-protected.".to_owned());
+        }
+        return Ok(document);
+    }
+    let mut decoder = image::ImageReader::open(path)
+        .map_err(|e| e.to_string())?
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .into_decoder()
+        .map_err(|e| e.to_string())?;
+    let orientation = decoder.orientation().ok();
+    let mut decoded = image::DynamicImage::from_decoder(decoder).map_err(|e| e.to_string())?;
+    if let Some(orientation) = orientation {
+        decoded.apply_orientation(orientation);
+    }
+    let rgb = decoded.to_rgb8();
+    let (width, height) = rgb.dimensions();
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 90)
+        .encode_image(&rgb)
+        .map_err(|e| e.to_string())?;
+    Document::load_mem(&crate::pdfwriter::wrap_jpeg(&jpeg, width, height))
+        .map_err(|e| e.to_string())
+}
+
+/// Edit ▸ Insert ▸ Page from File… (PRV-MENU-005): writes `destination` as
+/// `source` with every page of `incoming` spliced in after page index
+/// `after` (clamped to the last page), in order. Each inserted page keeps
+/// the size, rotation and resources it had in its own file (inherited
+/// page attributes are copied onto the page itself), and every ancestor
+/// `Pages` node's `/Count` grows. Returns how many pages were inserted.
+pub fn insert_pages_from(
+    source: &Path,
+    mut incoming: Document,
+    destination: &Path,
+    after: usize,
+) -> Result<usize, String> {
+    let mut doc = Document::load(source).map_err(|e| e.to_string())?;
+    let pages: Vec<_> = doc.get_pages().into_values().collect();
+    let anchor = *pages
+        .get(after.min(pages.len().saturating_sub(1)))
+        .ok_or("PDF has no pages")?;
+    let parent = doc
+        .get_dictionary(anchor)
+        .map_err(|e| e.to_string())?
+        .get(b"Parent")
+        .map_err(|e| e.to_string())?
+        .as_reference()
+        .map_err(|e| e.to_string())?;
+
+    let incoming_pages: Vec<_> = incoming.get_pages().into_values().collect();
+    if incoming_pages.is_empty() {
+        return Err("That file has no pages.".to_owned());
+    }
+    // Page attributes a page may inherit from its `Pages` ancestors.
+    const INHERITED: [&[u8]; 4] = [b"Resources", b"MediaBox", b"CropBox", b"Rotate"];
+    for &page in &incoming_pages {
+        let mut inherited: Vec<(&[u8], Object)> = Vec::new();
+        let mut ancestor = incoming
+            .get_dictionary(page)
+            .ok()
+            .and_then(|dictionary| dictionary.get(b"Parent").ok())
+            .and_then(|parent| parent.as_reference().ok());
+        for _ in 0..32 {
+            let Some(id) = ancestor else { break };
+            let Ok(node) = incoming.get_dictionary(id) else {
+                break;
+            };
+            for key in INHERITED {
+                if let Ok(value) = node.get(key) {
+                    if !inherited.iter().any(|(name, _)| *name == key) {
+                        inherited.push((key, value.clone()));
+                    }
+                }
+            }
+            ancestor = node
+                .get(b"Parent")
+                .ok()
+                .and_then(|parent| parent.as_reference().ok());
+        }
+        let dictionary = incoming
+            .get_dictionary_mut(page)
+            .map_err(|e| e.to_string())?;
+        for (key, value) in inherited {
+            if !dictionary.has(key) {
+                dictionary.set(key, value);
+            }
+        }
+    }
+
+    // Bring the incoming objects over under fresh numbers.
+    incoming.renumber_objects_with(doc.max_id + 1);
+    let incoming_pages: Vec<_> = incoming.get_pages().into_values().collect();
+    doc.max_id = incoming.max_id;
+    doc.objects.extend(std::mem::take(&mut incoming.objects));
+    for &page in &incoming_pages {
+        doc.get_dictionary_mut(page)
+            .map_err(|e| e.to_string())?
+            .set("Parent", parent);
+    }
+    {
+        let kids = doc
+            .get_dictionary_mut(parent)
+            .map_err(|e| e.to_string())?
+            .get_mut(b"Kids")
+            .map_err(|e| e.to_string())?
+            .as_array_mut()
+            .map_err(|e| e.to_string())?;
+        let position = kids
+            .iter()
+            .position(|kid| kid.as_reference().ok() == Some(anchor))
+            .ok_or("page is not listed in its parent")?;
+        for (offset, &page) in incoming_pages.iter().enumerate() {
+            kids.insert(position + 1 + offset, Object::Reference(page));
+        }
+    }
+    let added = incoming_pages.len() as i64;
+    let mut node = Some(parent);
+    for _ in 0..32 {
+        let Some(id) = node else { break };
+        let dictionary = doc.get_dictionary_mut(id).map_err(|e| e.to_string())?;
+        let count = dictionary
+            .get(b"Count")
+            .ok()
+            .and_then(|count| count.as_i64().ok())
+            .unwrap_or(0);
+        dictionary.set("Count", count + added);
+        node = dictionary
+            .get(b"Parent")
+            .ok()
+            .and_then(|parent| parent.as_reference().ok());
+    }
+    // The other file's own catalogue and page tree are now unreferenced.
+    doc.prune_objects();
+    doc.save(destination).map_err(|e| e.to_string())?;
+    Ok(incoming_pages.len())
+}
+
 /// Writes real PDF annotations, preserving page contents and pre-existing annotations.
 /// Caller performs file I/O on a blocking worker and atomically replaces the source.
 pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Result<(), String> {
@@ -991,6 +1143,68 @@ mod tests {
             .map(|v| v.as_i64().unwrap())
             .collect();
         assert_eq!(media, vec![0, 0, 300, 400]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn pages_from_another_file_are_spliced_in_order_with_their_own_size() {
+        let base = std::env::temp_dir().join(format!("rmac-page-from-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let source = base.join("source.pdf");
+        let other = base.join("other.pdf");
+        let saved = base.join("saved.pdf");
+        let (first, second) = two_page_pdf(&source);
+        two_page_pdf(&other);
+        let incoming = document_for_insertion(&other).unwrap();
+        let added = insert_pages_from(&source, incoming, &saved, 0).unwrap();
+        assert_eq!(added, 2);
+        let after = Document::load(&saved).unwrap();
+        let ids: Vec<_> = after.get_pages().into_values().collect();
+        assert_eq!(ids.len(), 4);
+        assert_eq!(ids[0], first);
+        assert_eq!(ids[3], second);
+        let width = |id| {
+            after
+                .get_dictionary(id)
+                .unwrap()
+                .get(b"MediaBox")
+                .unwrap()
+                .as_array()
+                .unwrap()[2]
+                .as_i64()
+                .unwrap()
+        };
+        assert_eq!([width(ids[1]), width(ids[2])], [300, 612]);
+        let root = after.catalog().unwrap();
+        let pages = after
+            .get_dictionary(root.get(b"Pages").unwrap().as_reference().unwrap())
+            .unwrap();
+        assert_eq!(pages.get(b"Count").unwrap().as_i64().unwrap(), 4);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn an_image_becomes_a_page_at_its_pixel_size() {
+        let base = std::env::temp_dir().join(format!("rmac-image-page-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let picture = base.join("picture.png");
+        image::RgbImage::from_pixel(40, 20, image::Rgb([200, 30, 30]))
+            .save(&picture)
+            .unwrap();
+        let document = document_for_insertion(&picture).unwrap();
+        let ids: Vec<_> = document.get_pages().into_values().collect();
+        assert_eq!(ids.len(), 1);
+        let media = document
+            .get_dictionary(ids[0])
+            .unwrap()
+            .get(b"MediaBox")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_float().unwrap() as i64)
+            .collect::<Vec<_>>();
+        assert_eq!(media, [0, 0, 40, 20]);
         let _ = std::fs::remove_dir_all(&base);
     }
 

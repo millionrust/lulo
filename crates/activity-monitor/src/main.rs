@@ -46,6 +46,7 @@ gpui::actions!(
         ShowOtherUsersProcesses,
         ShowActiveProcesses,
         ShowInactiveProcesses,
+        ShowWindowedProcesses,
         ShowSelectedProcesses,
         ShowMainWindow,
         EnterFullScreen,

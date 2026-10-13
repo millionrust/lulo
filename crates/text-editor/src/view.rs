@@ -331,6 +331,8 @@ struct EditorView {
     /// Edit ▸ Substitutions ▸ Data Detectors: checked, persisted for this
     /// session, with no live effect wired yet (see docs/parity.md TE-07).
     data_detectors: bool,
+    /// Edit ▸ Complete (⌥⎋): the run of presses on the word being typed.
+    completion: Option<rmac_ui::text_complete::CompletionCycle>,
 }
 
 #[cfg(test)]

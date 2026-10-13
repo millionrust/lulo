@@ -35,17 +35,18 @@ use crate::{
     BrowseSavedVersions, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, ContactSheet,
     ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, Duplicate, EnterFullScreen,
     EnterPassword, ExportAs, ExportAsPdf, Find, FindNext, FindPrevious, FlipHorizontal,
-    FlipVertical, Forward, GoToPage, HideSidebar, InsertBlankPage, InvertSelection,
-    JumpToSelection, ManageSignatures, MoveToFolder, MoveToTrash, NextDocument, NextItem, PageDown,
-    PageUp, PreviousDocument, PreviousItem, PrintDocument, RectangularSelection, Redact,
-    RedoMarkup, RemoveBackground, RenameDocument, RevertMarkup, RotateLeft, RotateRight, SaveAs,
-    SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks, ShowHighlightsAndNotes, ShowImageBackground,
-    ShowInspector, ShowMagnifier, ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents,
-    ShowThumbnails, SinglePage, Slideshow, StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen,
-    TakeScreenshotSelection, TakeScreenshotWindow, ToggleCheckGrammarWithSpelling,
-    ToggleCheckSpellingWhileTyping, ToggleCorrectSpellingAutomatically, ToggleMarkup,
-    ToggleToolbar, TwoPages, UndoMarkup, UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn,
-    ZoomAllOut, ZoomAllToFit, ZoomIn, ZoomOut, ZoomToFit, ZoomToSelection,
+    FlipVertical, Forward, GoToPage, HideSidebar, InsertBlankPage, InsertPageFromFile,
+    InvertSelection, JumpToSelection, ManageSignatures, MoveToFolder, MoveToTrash, NextDocument,
+    NextItem, PageDown, PageUp, PreviousDocument, PreviousItem, PrintDocument,
+    RectangularSelection, Redact, RedoMarkup, RemoveBackground, RenameDocument, RevertMarkup,
+    RotateLeft, RotateRight, SaveAs, SaveMarkup, SelectAll, ShowAllTabs, ShowBookmarks,
+    ShowHighlightsAndNotes, ShowImageBackground, ShowInspector, ShowMagnifier,
+    ShowSpellingAndGrammar, ShowTabBar, ShowTableOfContents, ShowThumbnails, SinglePage, Slideshow,
+    StartSpeaking, StopSpeaking, TakeScreenshotEntireScreen, TakeScreenshotSelection,
+    TakeScreenshotWindow, ToggleCheckGrammarWithSpelling, ToggleCheckSpellingWhileTyping,
+    ToggleCorrectSpellingAutomatically, ToggleMarkup, ToggleToolbar, TwoPages, UndoMarkup,
+    UseDarkAppearanceForPdf, UseSelectionForFind, ZoomAllIn, ZoomAllOut, ZoomAllToFit, ZoomIn,
+    ZoomOut, ZoomToFit, ZoomToSelection,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -94,6 +95,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::FlipVertical",
         "preview::RemoveBackground",
         "preview::InsertBlankPage",
+        "preview::InsertPageFromFile",
         "preview::RectangularSelection",
         "preview::AutomaticSelection",
         "preview::InvertSelection",
@@ -3513,13 +3515,63 @@ impl PreviewView {
         .detach();
     }
 
-    /// Edit ▸ Insert ▸ Blank Page (PRV-MENU-007): writes the PDF back to its
-    /// own path with an empty, same-size page after the current one, then
-    /// reloads it. A version is recorded first (`versions::record`), so
-    /// Browse Saved Versions can still recover the old bytes; the write is
-    /// temp-file-then-rename, off the UI thread. Refused while markup is
-    /// unsaved, since annotation page indexes would shift.
+    /// Edit ▸ Insert ▸ Blank Page (PRV-MENU-007): an empty, same-size page
+    /// after the current one.
     fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
+        self.edit_pdf_pages(
+            "insert a blank page",
+            |source, temporary, after| markup::insert_blank_page(source, temporary, after),
+            cx,
+        );
+    }
+
+    /// Edit ▸ Insert ▸ Page from File… (PRV-MENU-005): choose a PDF or an
+    /// image and splice its pages in after the current one.
+    fn insert_page_from_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.markup_save_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        if slot.kind() != Some(Kind::Pdf) || !slot.markup.items.is_empty() {
+            return;
+        }
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Insert".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(mut files))) = receiver.await else {
+                return;
+            };
+            let Some(other) = files.pop() else { return };
+            let _ = this.update(cx, |this, cx| {
+                this.edit_pdf_pages(
+                    "insert pages from another file",
+                    move |source, temporary, after| {
+                        let incoming = markup::document_for_insertion(&other)?;
+                        markup::insert_pages_from(source, incoming, temporary, after).map(|_| ())
+                    },
+                    cx,
+                );
+            });
+        })
+        .detach();
+    }
+
+    /// Rewrite the selected PDF with `edit` (which writes the new file to
+    /// the temporary path it is given) and reload it. A version is recorded
+    /// first (`versions::record`), so Browse Saved Versions can still recover
+    /// the old bytes; the write is temp-file-then-rename, off the UI thread.
+    /// Refused while markup is unsaved, since annotation page indexes would
+    /// shift.
+    fn edit_pdf_pages(
+        &mut self,
+        what: &'static str,
+        edit: impl FnOnce(&Path, &Path, usize) -> Result<(), String> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
         if self.markup_save_busy {
             return;
         }
@@ -3534,13 +3586,13 @@ impl PreviewView {
         cx.spawn(async move |this, cx| {
             let write_source = source.clone();
             let written = blocking::unblock(move || -> Result<(), String> {
-                let _ = versions::record(&write_source);
                 let temporary = write_source
                     .with_extension(format!("lulo-inserting-{}.pdf", std::process::id()));
-                if let Err(error) = markup::insert_blank_page(&write_source, &temporary, after) {
+                if let Err(error) = edit(&write_source, &temporary, after) {
                     let _ = std::fs::remove_file(&temporary);
                     return Err(error);
                 }
+                let _ = versions::record(&write_source);
                 std::fs::rename(&temporary, &write_source).map_err(|e| e.to_string())
             })
             .await;
@@ -3550,7 +3602,7 @@ impl PreviewView {
                     Some(blocking::unblock(move || render::load(&reload_source)).await)
                 }
                 Err(error) => {
-                    eprintln!("rmac-preview: could not insert a blank page: {error}");
+                    eprintln!("rmac-preview: could not {what}: {error}");
                     None
                 }
             };
@@ -7524,12 +7576,14 @@ impl Render for PreviewView {
             rmac_ui::set_menu_enabled("preview::GoToPage", pdf, cx);
             // Page indexes in unsaved markup would shift under an insert,
             // so it waits for Save or Revert.
-            rmac_ui::set_menu_enabled(
-                "preview::InsertBlankPage",
-                pdf && !self.markup_save_busy
-                    && self.slot().is_some_and(|slot| slot.markup.items.is_empty()),
-                cx,
-            );
+            for action in ["preview::InsertBlankPage", "preview::InsertPageFromFile"] {
+                rmac_ui::set_menu_enabled(
+                    action,
+                    pdf && !self.markup_save_busy
+                        && self.slot().is_some_and(|slot| slot.markup.items.is_empty()),
+                    cx,
+                );
+            }
             for action in [
                 "preview::AnnotateHighlight",
                 "preview::AnnotateUnderline",
@@ -7874,6 +7928,9 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &FlipVertical, _, cx| this.flip_vertical(cx)))
             .on_action(cx.listener(|this, _: &InsertBlankPage, _, cx| {
                 this.insert_blank_page(cx);
+            }))
+            .on_action(cx.listener(|this, _: &InsertPageFromFile, window, cx| {
+                this.insert_page_from_file(window, cx);
             }))
             .on_action(cx.listener(|this, _: &RemoveBackground, _, cx| {
                 this.remove_background(cx);

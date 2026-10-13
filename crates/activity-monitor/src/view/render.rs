@@ -19,11 +19,12 @@ use crate::{
     SetDockIconApplication, SetDockIconCpuUsage, ShowActiveProcesses, ShowAllProcesses,
     ShowAllProcessesHierarchically, ShowCpuHistoryWindow, ShowCpuUsageWindow, ShowDeltasForProcess,
     ShowGpuHistoryWindow, ShowInactiveProcesses, ShowMainWindow, ShowMyProcesses,
-    ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ToggleBytesReadColumn,
-    ToggleBytesWrittenColumn, ToggleCompressedColumn, ToggleCpuColumn, ToggleCpuTimeColumn,
-    ToggleEnergyColumn, ToggleFootprintColumn, ToggleIdleWakeUpsColumn, ToggleKindColumn,
-    ToggleMemoryColumn, TogglePidColumn, ToggleRealPrivateColumn, ToggleRealSharedColumn,
-    ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn, UseSelectionForFind,
+    ShowOtherUsersProcesses, ShowSelectedProcesses, ShowSystemProcesses, ShowWindowedProcesses,
+    ToggleBytesReadColumn, ToggleBytesWrittenColumn, ToggleCompressedColumn, ToggleCpuColumn,
+    ToggleCpuTimeColumn, ToggleEnergyColumn, ToggleFootprintColumn, ToggleIdleWakeUpsColumn,
+    ToggleKindColumn, ToggleMemoryColumn, TogglePidColumn, ToggleRealPrivateColumn,
+    ToggleRealSharedColumn, ToggleSandboxColumn, ToggleThreadsColumn, ToggleUserColumn,
+    UseSelectionForFind,
 };
 
 use super::MonitorView;
@@ -165,6 +166,9 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|this, _: &ShowInactiveProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::InactiveProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowWindowedProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::WindowedProcesses, cx);
             }))
             .on_action(cx.listener(|this, _: &ShowSelectedProcesses, _, cx| {
                 this.set_view_filter(ViewFilter::SelectedProcesses, cx);

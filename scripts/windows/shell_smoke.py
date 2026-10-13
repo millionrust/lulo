@@ -722,7 +722,14 @@ class Log:
         return self.path.read_text(encoding="utf-8", errors="replace")
 
     def lines(self, prefix: str = "lulo-shell: ") -> list[str]:
-        return [line[len(prefix) :] for line in self.text().splitlines() if line.startswith(prefix)]
+        # The shell, its apps and helpers share the log, so another
+        # process's write can land in front of a trace line on the same
+        # physical line; the trace line still starts at its prefix.
+        return [
+            line[line.index(prefix) + len(prefix) :]
+            for line in self.text().splitlines()
+            if prefix in line
+        ]
 
     def wait_for(self, pattern: str, timeout: float = STEP_TIMEOUT_SECONDS, after: int = 0):
         """The first shell trace line from index `after` on that matches

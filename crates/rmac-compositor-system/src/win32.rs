@@ -1344,7 +1344,7 @@ mod tests {
     use super::{event_kind, relevant, EventKind};
     use windows::Win32::UI::WindowsAndMessaging::{
         EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
-        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND,
+        EVENT_SYSTEM_MOVESIZEEND,
     };
 
     #[test]

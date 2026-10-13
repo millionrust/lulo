@@ -11,6 +11,7 @@ pub mod launch;
 pub mod memory;
 pub mod registry;
 pub mod session;
+pub mod settle;
 pub mod shell_icons;
 pub mod taskbar;
 pub mod wallpaper;

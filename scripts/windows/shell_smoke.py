@@ -746,6 +746,24 @@ class Log:
         return None
 
 
+#: Settling after lulo-shell's `settled` mark before the idle window: its
+#: last frames park within a few vblanks.
+SHELL_IDLE_SETTLE_SECONDS = 2.0
+#: The idle window's length (launch_smoke.py's IDLE_WINDOW_SECONDS).
+IDLE_WINDOW_SECONDS = 20.0
+
+
+def clear_of_minute(now: float, settle: float, window: float, margin: float = 0.5) -> float:
+    """How long to settle from `now` (seconds since the epoch) so that a
+    `window`-second measurement after it holds no minute boundary, where
+    the bar's clock redraws: at least `settle`, or until just after the
+    next minute."""
+    start = (now + settle) % 60.0
+    if start < margin or start + window + margin > 60.0:
+        return settle + (60.0 - start + margin) % 60.0
+    return settle
+
+
 def wait_until(predicate, timeout: float = STEP_TIMEOUT_SECONDS, interval: float = 0.05):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -954,12 +972,21 @@ def check_shell(
         if files_tile is None:
             failures.append("the Dock has no Files tile")
 
-        # 2. Idle, before any input, once start-up's own work is done:
-        # Windows' Apps folder read into desktop entries by its helper
-        # process (slow on the runner), which the catalogue watchers follow.
+        # 2. Idle, before any input, from the moment lulo-shell says its
+        # start-up work is done (`settled`: Windows' Apps folder read into
+        # desktop entries by its helper process, slow on the runner; the
+        # icon helpers ended; the start-up memory trims), not after a fixed
+        # delay. The bar's clock redraws once a minute, at the minute, so
+        # the window is placed to hold no minute boundary.
         apps = log.wait_for(r"^windows apps: \d+ entries", 90.0)
         print(f"shell: {apps.group(0) if apps else 'windows apps: not read within 90 s'}")
-        time.sleep(3.0)
+        settled_at = time.monotonic()
+        settled = log.wait_for(r"^settled$", 90.0)
+        if settled is None:
+            failures.append("lulo-shell never traced `settled`: some start-up work did not end")
+        else:
+            print(f"shell: settled {time.monotonic() - settled_at:.1f} s after the Apps folder was read")
+        idle_settle = clear_of_minute(time.time(), SHELL_IDLE_SETTLE_SECONDS, IDLE_WINDOW_SECONDS)
         phases = startup_phases(log.text())
         for name, pid in (("lulo-shell", shell_pid), ("lulo-session", session.pid)):
             measurement: dict = {"launch_ms": round(launch_ms), "startup": phases if name == "lulo-shell" else []}
@@ -968,7 +995,7 @@ def check_shell(
             measurements[name] = measurement
         # The session is measured over the same window as the shell.
         session_before = process_cpu_time_100ns(session.pid)
-        idle_shell = measure_idle_cpu(shell_pid, log=log_path)
+        idle_shell = measure_idle_cpu(shell_pid, settle=idle_settle, log=log_path)
         session_after = process_cpu_time_100ns(session.pid)
         idle_session = None
         if session_before is not None and session_after is not None:
@@ -998,9 +1025,14 @@ def check_shell(
             for count, source in wakes:
                 print(f"shell: {name}:   {count:5d} x {source}")
             if name == "lulo-shell" and total:
-                # Every wake-up in order, to name what woke an idle shell.
-                for line in [line for line in trace.splitlines() if line.startswith(wake_prefix)][:150]:
-                    print(f"shell: lulo-shell idle: {line[len(wake_prefix):]}")
+                # Every wake-up in order, and what the shell itself traced
+                # meanwhile (window events and whose they were, helpers), to
+                # name what woke an idle shell.
+                for line in trace.splitlines()[:300]:
+                    if line.startswith(wake_prefix):
+                        print(f"shell: lulo-shell idle: {line[len(wake_prefix):]}")
+                    elif not line.startswith("gpui_windows cpu: "):
+                        print(f"shell: lulo-shell idle trace: {line}")
             for thread, thread_ticks in threads[:6]:
                 print(f"shell: {name}:   thread {thread} used {thread_ticks:.2f} ticks")
 

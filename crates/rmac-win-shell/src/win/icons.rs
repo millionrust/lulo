@@ -82,6 +82,9 @@ struct Helper {
     child: Child,
     input: Option<ChildStdin>,
     output: BufReader<ChildStdout>,
+    /// The layer is not settled while a helper runs; this ends with the
+    /// helper, after `close` has waited for its process.
+    _busy: super::settle::Busy,
 }
 
 impl Helper {
@@ -102,6 +105,7 @@ impl Helper {
             child,
             input: Some(input),
             output,
+            _busy: super::settle::busy(),
         })
     }
 

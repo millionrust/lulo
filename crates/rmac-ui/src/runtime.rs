@@ -718,7 +718,38 @@ fn start_theme_runtime(cx: &mut App) {
     .detach();
 
     // The wallpaper renderer publishes a bounded per-output colour snapshot.
-    // Re-resolve opaque app surfaces whenever that authority changes.
+    // Re-resolve opaque app surfaces whenever that authority changes. On
+    // Windows the Lulo layer's desktop publishes it, and a parked
+    // `ReadDirectoryChangesW` thread follows it rather than `notify`, as
+    // for the theme file above.
+    #[cfg(windows)]
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        let (changed, changes) = async_channel::bounded(1);
+        let watching = cx
+            .background_executor()
+            .spawn(async move {
+                let store = rmac_theme::WallpaperColorStore::from_environment()
+                    .map_err(|error| error.to_string())?;
+                crate::file_watch_windows::watch_file(store.path(), changed)
+                    .map_err(|error| error.to_string())
+            })
+            .await;
+        if watching.is_err() {
+            return;
+        }
+        while changes.recv().await.is_ok() {
+            let result = cx
+                .background_executor()
+                .spawn(async { load_resolved_tokens().await })
+                .await;
+            if let Ok(tokens) = result {
+                apply_resolved_tokens(tokens, cx);
+            }
+        }
+    })
+    .detach();
+
+    #[cfg(not(windows))]
     cx.spawn(async move |cx: &mut gpui::AsyncApp| {
         let watcher = cx
             .background_executor()

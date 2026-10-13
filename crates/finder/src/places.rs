@@ -131,7 +131,7 @@ pub fn favourite_folders(home: &Path) -> Vec<PlaceSpec> {
     #[cfg(target_os = "windows")]
     favourites.extend(
         [
-            ("Pictures", KnownFolder::Pictures, "icons/photo.svg"),
+            ("Pictures", KnownFolder::Pictures, "icons/image.svg"),
             ("Music", KnownFolder::Music, "icons/music.svg"),
             ("Videos", KnownFolder::Videos, "icons/movie.svg"),
             ("OneDrive", KnownFolder::OneDrive, "icons/cloud.svg"),
@@ -217,7 +217,7 @@ pub fn applications_folder() -> Option<PlaceSpec> {
 pub fn media_folders(home: &Path) -> Vec<PlaceSpec> {
     [
         ("Music", "Music", "icons/music.svg"),
-        ("Photos", "Pictures", "icons/photo.svg"),
+        ("Photos", "Pictures", "icons/image.svg"),
         ("Movies", "Movies", "icons/movie.svg"),
     ]
     .into_iter()
@@ -246,6 +246,23 @@ pub fn standard_locations(home: &Path) -> Vec<PlaceSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every sidebar icon this module names ships in `assets/` (Pictures on
+    /// Windows and Photos on Lulo OS named a `photo.svg` that never existed,
+    /// and drew no icon).
+    #[test]
+    fn every_place_icon_exists() {
+        let source = include_str!("places.rs");
+        let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+        let mut checked = 0;
+        for piece in source.split('"').filter(|piece| {
+            piece.starts_with("icons/") && piece.ends_with(".svg") && !piece.contains(' ')
+        }) {
+            assert!(assets.join(piece).is_file(), "{piece} is missing");
+            checked += 1;
+        }
+        assert!(checked > 5);
+    }
 
     #[test]
     fn favourites_and_locations_follow_files() {

@@ -153,6 +153,16 @@ impl Render for SettingsView {
                 window.remove_window();
             }))
             .on_action(cx.listener(|_, _: &ShowSettings, window, _| window.activate_window()))
+            // ⌘W (`CloseWindow` in this key context) and Esc close Settings;
+            // neither did before the 2026-10-13 live robot run.
+            .on_action(cx.listener(|_, _: &crate::CloseWindow, window, _| {
+                window.remove_window();
+            }))
+            .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, _| {
+                if event.keystroke.key == "escape" {
+                    window.remove_window();
+                }
+            }))
             .size_full()
             .v_flex()
             .bg(rmac_ui::mac::window())

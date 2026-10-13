@@ -247,6 +247,11 @@ codegen-units = 16
 incremental = true
 strip = false
 
+[patch.crates-io]
+# notify's Windows watcher woke every 100 ms (ADR 0023, "Idle from the
+# settled mark"); shell/compat/notify is 7.0.0 with that fixed.
+notify = { path = "shell/compat/notify" }
+
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "shell/compat/ztracing" }
 gpui = { path = "shell/compat/gpui" }

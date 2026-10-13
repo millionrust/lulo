@@ -531,10 +531,13 @@ jobs:
             # reading after the first use (closed panels give their Direct3D
             # memory back each time), and within 60 MB at idle too
             # (WIN-OS-53: the owner's Radeon laptop reads 55.8 MB at idle
-            # and 59.0 MB after use, ADR 0023).
+            # and 59.0 MB after use, ADR 0023). Idle, from its `settled`
+            # mark and over a window without a minute boundary, lulo-shell
+            # wakes at most 4 times (ADR 0023 "Idle from the settled mark").
             gate: >-
               --shell-memory-mb 60 --shell-idle-private-mb 60
               --shell-after-use-private-mb 60 --shell-after-use-growth-mb 4
+              --shell-max-wakes 4
             expect: lulo-shell lulo-session
             installer: true
     defaults:

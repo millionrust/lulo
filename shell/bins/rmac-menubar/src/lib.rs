@@ -322,73 +322,95 @@ mod bar {
             receiver: async_channel::Receiver<rmac_shell_runtime::Update>,
             cx: &mut Context<Self>,
         ) -> Self {
-            cx.spawn(async move |this, cx| loop {
-                let show_seconds = this
-                    .read_with(cx, |this, _| this.update.snapshot.status.clock.show_seconds)
-                    .unwrap_or(false);
-                let epoch_millis = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis();
-                let update = receiver.recv().fuse();
-                let tick = cx
-                    .background_executor()
-                    .timer(delay_until_next_clock_tick(epoch_millis, show_seconds))
-                    .fuse();
-                futures_util::pin_mut!(update, tick);
-                futures_util::select! {
-                    update = update => {
-                        let Ok(update) = update else { break };
-                        let visible = update.visible;
-                        if this.update(cx, |this, cx| {
-                            let focused_app = update.snapshot.status.focused.app_id.clone();
-                            // The compositor projection can momentarily report no
-                            // focused window during unrelated events; keep the
-                            // last known app's menus rather than clearing them.
-                            // The Open/Save panel is a real, separate window
-                            // with its own app id, but on the Mac it is a
-                            // sheet or panel of the app that opened it, never
-                            // a frontmost application in its own right — so
-                            // it taking niri's focus must not switch (and
-                            // clear) the menu bar away from that app either
-                            // (OTHER-04, docs/parity.md).
-                            if let Some(app_id) = focused_app
-                                .filter(|app_id| Some(app_id) != this.menu_app_id.as_ref())
-                                .filter(|app_id| !rmac_apps::identity::is_transient_panel(app_id))
-                            {
-                                this.menu_app_id = Some(app_id.clone());
-                                this.menus = static_fallback_menus(&app_id);
-                                this.menus_live = false;
-                                this.menu_generation = this.menu_generation.saturating_add(1);
-                                if rmac_app_menu::bus_name(&app_id).is_some() {
-                                    request_app_menus(app_id, this.menu_generation, cx);
-                                }
-                            } else if this.menu_app_id.is_none() {
-                                this.show_desktop_menus(cx);
-                            }
-                            this.update = update;
-                            // One process serves every display, so each
-                            // low-battery level is announced exactly once.
-                            if let Some(battery) = this.update.snapshot.status.battery {
-                                if let Some(level) = this
-                                    .low_battery
-                                    .observe(battery.percentage, battery.on_battery)
-                                {
-                                    let (summary, body) =
-                                        menu_model::low_battery_copy(level, battery.percentage);
-                                    post_system_notice(summary, body, cx);
-                                }
-                            }
-                            if visible {
-                                cx.notify();
-                            }
-                        }).is_err() {
-                            break;
-                        }
+            // One timer for the clock's next minute (or second), kept across
+            // status updates: a timer made per update and dropped still fires
+            // on Windows' thread pool, so a burst of updates woke the idle
+            // shell once per update at the next minute.
+            type ClockTick = std::pin::Pin<Box<futures_util::future::Fuse<gpui::Task<()>>>>;
+            cx.spawn(async move |this, cx| {
+                let mut clock: Option<(bool, ClockTick)> = None;
+                loop {
+                    let show_seconds = this
+                        .read_with(cx, |this, _| this.update.snapshot.status.clock.show_seconds)
+                        .unwrap_or(false);
+                    if clock
+                        .as_ref()
+                        .is_none_or(|(seconds, _)| *seconds != show_seconds)
+                    {
+                        let epoch_millis = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis();
+                        let timer = cx
+                            .background_executor()
+                            .timer(delay_until_next_clock_tick(epoch_millis, show_seconds))
+                            .fuse();
+                        clock = Some((show_seconds, Box::pin(timer)));
                     }
-                    _ = tick => {
-                        if this.update(cx, |_, cx| cx.notify()).is_err() {
-                            break;
+                    let Some((_, timer)) = clock.as_mut() else {
+                        break;
+                    };
+                    // `select!` polls a mutable binding.
+                    let mut tick = timer;
+                    let update = receiver.recv().fuse();
+                    futures_util::pin_mut!(update);
+                    futures_util::select! {
+                        update = update => {
+                            let Ok(update) = update else { break };
+                            let visible = update.visible;
+                            if this.update(cx, |this, cx| {
+                                let focused_app = update.snapshot.status.focused.app_id.clone();
+                                // The compositor projection can momentarily report no
+                                // focused window during unrelated events; keep the
+                                // last known app's menus rather than clearing them.
+                                // The Open/Save panel is a real, separate window
+                                // with its own app id, but on the Mac it is a
+                                // sheet or panel of the app that opened it, never
+                                // a frontmost application in its own right — so
+                                // it taking niri's focus must not switch (and
+                                // clear) the menu bar away from that app either
+                                // (OTHER-04, docs/parity.md).
+                                if let Some(app_id) = focused_app
+                                    .filter(|app_id| Some(app_id) != this.menu_app_id.as_ref())
+                                    .filter(|app_id| {
+                                        !rmac_apps::identity::is_transient_panel(app_id)
+                                    })
+                                {
+                                    this.menu_app_id = Some(app_id.clone());
+                                    this.menus = static_fallback_menus(&app_id);
+                                    this.menus_live = false;
+                                    this.menu_generation = this.menu_generation.saturating_add(1);
+                                    if rmac_app_menu::bus_name(&app_id).is_some() {
+                                        request_app_menus(app_id, this.menu_generation, cx);
+                                    }
+                                } else if this.menu_app_id.is_none() {
+                                    this.show_desktop_menus(cx);
+                                }
+                                this.update = update;
+                                // One process serves every display, so each
+                                // low-battery level is announced exactly once.
+                                if let Some(battery) = this.update.snapshot.status.battery {
+                                    if let Some(level) = this
+                                        .low_battery
+                                        .observe(battery.percentage, battery.on_battery)
+                                    {
+                                        let (summary, body) =
+                                            menu_model::low_battery_copy(level, battery.percentage);
+                                        post_system_notice(summary, body, cx);
+                                    }
+                                }
+                                if visible {
+                                    cx.notify();
+                                }
+                            }).is_err() {
+                                break;
+                            }
+                        }
+                        _ = tick => {
+                            clock = None;
+                            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                                break;
+                            }
                         }
                     }
                 }
@@ -1393,8 +1415,12 @@ mod bar {
                 // this behaviour suite) waits for Escape to give a window
                 // back its keyboard.
                 for attempt in 0..30 {
-                    let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
-                        return;
+                    let snapshot = match rmac_compositor_system::snapshot().await {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            eprintln!("could not read the compositor to return focus: {error:?}");
+                            return;
+                        }
                     };
                     // The window niri's layout still has active under the
                     // bar's on-demand layer focus, queried fresh right now,
@@ -1415,7 +1441,29 @@ mod bar {
                         .iter()
                         .find(|workspace| workspace.focused)
                         .and_then(|workspace| workspace.active_window);
-                    let Some(target) = live.or(remembered) else {
+                    // niri reports no active window for a workspace whose
+                    // floating layer is not the active one, which is where a
+                    // window sits while the bar holds the on-demand grab (the
+                    // nested niri on CI, where the probe is floating), and
+                    // can report no workspace as focused at that moment
+                    // either. The window the keyboard was last on is then
+                    // the most recently focused one that is not parked.
+                    let latest = || {
+                        snapshot
+                            .windows
+                            .iter()
+                            .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
+                            .max_by_key(|window| {
+                                window.focus_timestamp.map(|t| (t.seconds, t.nanoseconds))
+                            })
+                            .map(|window| window.id)
+                    };
+                    let Some(target) = live.or(remembered).or_else(latest) else {
+                        eprintln!(
+                            "focus return: no window to return to ({} windows, {} workspaces)",
+                            snapshot.windows.len(),
+                            snapshot.workspaces.len()
+                        );
                         return;
                     };
                     // A click gave the bar niri's on-demand layer focus,
@@ -1441,13 +1489,23 @@ mod bar {
                     let Ok(check) = rmac_compositor_system::snapshot().await else {
                         return;
                     };
+                    // The workspace's active window never changes while the
+                    // bar holds the on-demand grab, so it cannot confirm
+                    // anything; ask whether the window itself has the keyboard.
                     let settled = check
-                        .workspaces
+                        .windows
                         .iter()
-                        .find(|workspace| workspace.focused)
-                        .and_then(|workspace| workspace.active_window);
-                    if settled == Some(target) {
+                        .any(|candidate| candidate.id == target && candidate.focused);
+                    if attempt == 0 || settled {
+                        eprintln!(
+                            "focus return: attempt {attempt}, window {target:?} focused: {settled}"
+                        );
+                    }
+                    if settled {
                         return;
+                    }
+                    if attempt == 29 {
+                        eprintln!("focus was not returned to window {target:?} after 30 attempts");
                     }
                     if attempt < 29 {
                         cx.background_executor()
@@ -5937,6 +5995,20 @@ mod bar {
     /// origin workspace is recorded so Show All can bring it back.
     fn dispatch_app_menu_action(app_id: String, action: String, cx: &mut App) {
         cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+            // Quit asks a Lulo app to quit itself, the way its own ⌘Q does:
+            // its windows close through their unsaved-changes guards and
+            // then the process exits. Closing the windows from here left
+            // apps that run without windows (Text Editor, Preview, Terminal)
+            // resident after Quit (live robot, 2026-10-13). An app that
+            // predates the quit action refuses it, and gets the close.
+            if action == "app::quit"
+                && rmac_app_menu::bus_name(&app_id).is_some()
+                && rmac_app_menu::activate(&app_id, rmac_app_menu::QUIT_ACTION)
+                    .await
+                    .is_ok()
+            {
+                return;
+            }
             let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
                 eprintln!("could not read windows to {action}");
                 return;

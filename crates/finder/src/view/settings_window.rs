@@ -45,6 +45,10 @@ pub(super) fn show(cx: &mut App) {
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| SettingsView::new(window, cx));
+        // Focus inside the window so ⌘W and Esc reach it (neither closed
+        // it before the 2026-10-13 live robot run).
+        let focus = view.read(cx).focus.clone();
+        window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
     });
     match opened {
@@ -631,6 +635,15 @@ impl Render for SettingsView {
         };
         div()
             .track_focus(&self.focus)
+            .key_context(crate::view::PANEL_CONTEXT)
+            .on_action(
+                cx.listener(|_, _: &crate::view::CloseTab, window, _| window.remove_window()),
+            )
+            .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, _| {
+                if event.keystroke.key == "escape" {
+                    window.remove_window();
+                }
+            }))
             .size_full()
             .v_flex()
             .bg(rmac_ui::mac::window())

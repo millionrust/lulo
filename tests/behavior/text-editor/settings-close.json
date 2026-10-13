@@ -1,0 +1,18 @@
+{
+  "title": "Text Editor: ⌘W closes the Settings window and leaves the document open",
+  "app": "text-editor",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"key": "cmd-,", "settle": 1.2},
+    {"observe": "settings_open", "facts": ["windows"]},
+    {"key": "cmd-w", "settle": 1.2},
+    {"observe": "settings_closed", "facts": ["windows"]}
+  ],
+  "omit": [
+    "settings_open.windows.front",
+    "settings_open.windows.titles",
+    "settings_closed.windows.front",
+    "settings_closed.windows.titles"
+  ]
+}

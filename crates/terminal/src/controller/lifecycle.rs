@@ -251,6 +251,11 @@ impl TerminalView {
                     CloseTab,
                     Some("Terminal"),
                 ),
+                KeyBinding::new(
+                    rmac_ui::shortcuts::CLOSE.keystroke,
+                    CloseWindow,
+                    Some(crate::settings_window::KEY_CONTEXT),
+                ),
                 KeyBinding::new("alt-cmd-w", CloseAll, Some("Terminal")),
                 KeyBinding::new(
                     rmac_ui::shortcuts::NEXT_TAB.keystroke,

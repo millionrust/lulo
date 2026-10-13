@@ -74,6 +74,8 @@ pub struct WindowsWindowState {
     pub drew_frame: Cell<bool>,
     /// rmac: parks the frame loop while the window draws nothing.
     pub(crate) frame_loop: crate::rmac_frame_loop::FrameLoop,
+    /// rmac: the Mac corners, shadow and hairline (`rmac_window_frame.rs`).
+    pub(crate) mac_frame: crate::rmac_window_frame::MacFrame,
 
     pub click_state: ClickState,
     pub current_cursor: Cell<Option<HCURSOR>>,
@@ -178,6 +180,7 @@ impl WindowsWindowState {
             force_render_after_recovery: Cell::new(false),
             drew_frame: Cell::new(false),
             frame_loop: crate::rmac_frame_loop::FrameLoop::new(hwnd),
+            mac_frame: Default::default(),
             click_state,
             current_cursor: Cell::new(current_cursor),
             cursor_visible,
@@ -253,6 +256,18 @@ impl WindowsWindowState {
 }
 
 impl WindowsWindowInner {
+    /// rmac: keep the Mac frame's corners and shadow in step with the
+    /// window (a no-op for a window without one).
+    pub(crate) fn update_mac_frame(&self) {
+        let flat = self.state.is_maximized() || self.state.is_fullscreen();
+        self.state.mac_frame.update(
+            self.hwnd,
+            &self.state.renderer,
+            self.state.scale_factor.get(),
+            flat,
+        );
+    }
+
     fn new(context: &mut WindowCreateContext, hwnd: HWND, cs: &CREATESTRUCTW) -> Result<Rc<Self>> {
         let state = WindowsWindowState::new(
             hwnd,
@@ -661,6 +676,18 @@ impl PlatformWindow for WindowsWindow {
 
     fn scale_factor(&self) -> f32 {
         self.state.scale_factor.get()
+    }
+
+    // rmac: the Mac window frame (rmac_window_frame.rs).
+    fn set_frame_style(&self, style: WindowFrameStyle) {
+        let flat = self.state.is_maximized() || self.state.is_fullscreen();
+        self.state.mac_frame.set_style(
+            self.0.hwnd,
+            style,
+            &self.state.renderer,
+            self.state.scale_factor.get(),
+            flat,
+        );
     }
 
     // rmac: shell surfaces' input regions (rmac_input_region.rs).
@@ -1432,7 +1459,7 @@ pub(crate) fn window_from_hwnd(hwnd: HWND) -> Option<Rc<WindowsWindowInner>> {
     }
 }
 
-fn get_module_handle() -> HMODULE {
+pub(crate) fn get_module_handle() -> HMODULE {
     unsafe {
         let mut h_module = std::mem::zeroed();
         GetModuleHandleExW(
@@ -1719,6 +1746,11 @@ fn set_window_composition_attribute(hwnd: HWND, color: Option<Color>, state: u32
 /// and Windows 11 rounds the corners. The 1 px hairline's colour follows
 /// Lulo's appearance and is set by `rmac-ui`, which knows it; Windows 10
 /// refuses the two Windows 11 attributes and keeps square corners.
+///
+/// A window `rmac-ui` gives a Mac frame (`set_frame_style`) trades this for
+/// Lulo's own corners, shadow and hairline (`rmac_window_frame.rs`), which
+/// turns DWM's frame back off; this one stays only without
+/// DirectComposition.
 fn configure_mac_window_frame(hwnd: HWND) {
     let margins = MARGINS {
         cxLeftWidth: 0,

@@ -124,6 +124,8 @@ class Robot:
         self.timings: dict[str, float] = {}
         self.started_wall = now_iso()
         self.started = time.monotonic()
+        self.started_epoch = time.time()
+        self.windows_start: set[int] = set()
         self.deadline = self.started + args.max_seconds
         self.input: Optional[live.Input] = None
         self.shot_index = 0
@@ -180,6 +182,7 @@ class Robot:
         count = live.owner_input_count()
         if count != self.owner_count:
             raise live.RobotAbort("the owner touched the keyboard, touchpad or screen")
+        self.dismiss_crash_reporter()
         for name, pid in self.shell_pids.items():
             if pid is not None and not Path(f"/proc/{pid}").exists():
                 self.finding("critical", "shell", "crash", f"{name} exited or restarted", f"pid {pid} is gone")
@@ -189,6 +192,37 @@ class Robot:
             if restarts > self.health.get(unit, restarts):
                 self.finding("critical", "shell", "crash", f"{unit} restarted", f"restarts {self.health.get(unit)} -> {restarts}")
                 raise live.RobotAbort(f"{unit} restarted")
+
+    def dismiss_crash_reporter(self) -> None:
+        """Ubuntu's crash reporter (apport) pops up when a Lulo app aborts.
+        Record it and close its window, which sends nothing."""
+
+        for window in self.niri.windows():
+            if window.get("app_id") == "apport-gtk" and window["id"] not in self.windows_start:
+                path, _ = self.shot(f"{self.current_app}-crash-reporter")
+                self.finding("critical", self.current_app, "crash", "Ubuntu's crash reporter appeared",
+                             f"apport window {window.get('title')!r}", path)
+                self.niri.action("close-window", "--id", str(window["id"]))
+                time.sleep(0.5)
+
+    def collect_crash_reports(self) -> None:
+        """Move Lulo crash reports written during the run (by the robot's
+        own apps) into the run directory, so the owner gets no
+        "problem detected" prompt for them."""
+
+        for path in sorted(Path("/var/crash").glob("*rmac*.crash")):
+            try:
+                if path.stat().st_mtime < self.started_epoch or path.stat().st_uid != os.getuid():
+                    continue
+                target = self.out / path.name
+                target.write_bytes(path.read_bytes())
+                path.unlink()
+            except OSError:
+                continue
+            signal_name = next((line.split(":", 1)[1].strip() for line in target.read_text(errors="replace").splitlines()
+                                if line.startswith("SignalName:")), "?")
+            app = next((name for name, plan in APPS.items() if plan["bin"] in path.name), "journal")
+            self.finding("critical", app, "crash", f"crash report {path.name} ({signal_name})", str(target))
 
     def over_time(self) -> bool:
         return time.monotonic() > self.deadline
@@ -269,6 +303,8 @@ class Robot:
         if bus_end > self.bus_start + 3:
             self.finding("high", "shell", "dbus-growth", "D-Bus connections grew over the run",
                          f"{self.bus_start} -> {bus_end}")
+        self.dismiss_crash_reporter()
+        self.collect_crash_reports()
         self.scan_journal()
         self.write_report()
 

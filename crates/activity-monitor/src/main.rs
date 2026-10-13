@@ -39,6 +39,7 @@ gpui::actions!(
         Close,
         CloseAll,
         ShowAllProcesses,
+        ShowAllProcessesHierarchically,
         ShowMyProcesses,
         ShowSystemProcesses,
         ShowOtherUsersProcesses,

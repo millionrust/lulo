@@ -15,6 +15,11 @@ const SYSTEM_UID_MAX: u32 = 999;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewFilter {
     All,
+    /// MON-MENU-022: the same rows as `All`, but ordered as a parent/child
+    /// tree (`process_table::hierarchical_order`) instead of sorted by the
+    /// current column — its own exclusive choice, like the Mac's, not a
+    /// modifier layered on the other filters below.
+    AllHierarchical,
     MyProcesses,
     SystemProcesses,
     OtherUsersProcesses,
@@ -24,8 +29,9 @@ pub(crate) enum ViewFilter {
 }
 
 impl ViewFilter {
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::All,
+        Self::AllHierarchical,
         Self::MyProcesses,
         Self::SystemProcesses,
         Self::OtherUsersProcesses,
@@ -38,6 +44,7 @@ impl ViewFilter {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::All => "All Processes",
+            Self::AllHierarchical => "All Processes, Hierarchically",
             Self::MyProcesses => "My Processes",
             Self::SystemProcesses => "System Processes",
             Self::OtherUsersProcesses => "Other Users' Processes",
@@ -52,7 +59,7 @@ impl ViewFilter {
     /// Mac's notion of "me" for "My Processes" / "Other Users' Processes".
     pub(crate) fn matches(self, uid: Option<u32>, status: &str, current_uid: Option<u32>) -> bool {
         match self {
-            Self::All => true,
+            Self::All | Self::AllHierarchical => true,
             Self::MyProcesses => current_uid.is_some() && uid == current_uid,
             Self::SystemProcesses => uid.is_some_and(|uid| uid <= SYSTEM_UID_MAX),
             Self::OtherUsersProcesses => {
@@ -95,6 +102,14 @@ mod tests {
     fn all_matches_everything() {
         assert!(ViewFilter::All.matches(None, "Sleeping", None));
         assert!(ViewFilter::All.matches(Some(0), "Zombie", Some(1000)));
+    }
+
+    #[test]
+    fn all_hierarchically_matches_everything_too() {
+        // MON-MENU-022: the same row set as `All` — only the order differs,
+        // which `matches`/`matches_row` never decide.
+        assert!(ViewFilter::AllHierarchical.matches(None, "Sleeping", None));
+        assert!(ViewFilter::AllHierarchical.matches(Some(0), "Zombie", Some(1000)));
     }
 
     #[test]

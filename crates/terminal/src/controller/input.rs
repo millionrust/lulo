@@ -129,8 +129,22 @@ impl TerminalView {
 
     /// Copy the current selection — or, after Edit ▸ Find ▸ Select
     /// All/Select All in Selection, every selected match — to the system
-    /// clipboard.
+    /// clipboard, styled per Edit ▸ Copy Special ▸ Style for "Copy"
+    /// Command (TRM-MENU-001..015): "Plain Text" keeps today's plain
+    /// copy; the default and every named profile render a full styled
+    /// (HTML/RTF, backgrounds included) copy through that profile's own
+    /// colours, independent of what the window is actually displaying.
     pub(super) fn copy(&mut self, cx: &mut Context<Self>) {
+        match profiles::copy_style() {
+            profiles::CopyStyle::PlainText => self.copy_plain_text(cx),
+            profiles::CopyStyle::Default => self.copy_styled(active(), cx),
+            profiles::CopyStyle::Profile(index) => self.copy_styled(*profiles::resolved(index), cx),
+        }
+    }
+
+    /// Edit ▸ Copy Special ▸ Copy Plain Text (⌥⇧⌘C): always plain,
+    /// regardless of the Style for "Copy" Command setting above.
+    pub(super) fn copy_plain_text(&mut self, cx: &mut Context<Self>) {
         if let Some(text) = self.any_selection_text() {
             if !text.is_empty() {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -140,46 +154,78 @@ impl TerminalView {
 
     /// Edit ▸ Copy Special ▸ Copy Without Background Colour (⌃⇧⌘C,
     /// TRM-MENU-001): a styled copy of the current drag-selection, kept
-    /// distinct from Copy Plain Text above it (both used to call the same
-    /// plain `copy`) — RTF and HTML carry the selection's real foreground
-    /// ANSI colours (bold/italic/underline too) without each cell's
-    /// background fill, so a block of `grep --color` output pastes into
-    /// TextEdit, Mail or Notes as coloured text on the page's own
-    /// background rather than a block of highlighted colour. Falls back
-    /// to a plain copy when the selection is Find's multi-match kind,
-    /// which has no per-cell styling to re-render.
+    /// distinct from Copy Plain Text above it — RTF and HTML carry the
+    /// selection's real foreground ANSI colours (bold/italic/underline
+    /// too) without each cell's background fill, so a block of `grep
+    /// --color` output pastes into TextEdit, Mail or Notes as coloured
+    /// text on the page's own background rather than a block of
+    /// highlighted colour. Always uses the window's own live profile,
+    /// independent of the Style for "Copy" Command setting.
     pub(super) fn copy_without_background_colour(&mut self, cx: &mut Context<Self>) {
-        if !self.tabs[self.active].ui.selected_matches.is_empty() {
-            self.copy(cx);
-            return;
-        }
-        let Some(selection) = self.tabs[self.active].ui.selection else {
+        let Some(runs) = self.styled_selection_runs(active(), cx) else {
             return;
         };
-        if selection.is_empty() {
-            return;
-        }
-        let Ok(term) = self.tabs[self.active].term.lock() else {
-            return;
-        };
-        let profile = active();
-        let runs =
-            crate::copy_special::styled_runs(&selection, &term, self.rows, self.cols, &profile);
-        drop(term);
-        if runs.is_empty() {
-            return;
-        }
         let plain: String = runs.iter().map(|run| run.text.as_str()).collect();
         // RTF has no background support here at all (`to_rtf`'s own doc
         // comment), so only HTML needs its background cleared to the
         // page's own colour rather than each cell's.
-        let html = crate::copy_special::to_html_without_background(&runs, profile.bg);
+        let html = crate::copy_special::to_html_without_background(&runs, active().bg);
         let rtf = crate::copy_special::to_rtf(&runs);
         let metadata = rmac_editor::rich::clipboard::encode_formats(&[
             (rmac_editor::rich::clipboard::RTF_MIME, rtf.as_str()),
             (rmac_editor::rich::clipboard::HTML_MIME, html.as_str()),
         ]);
         cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(plain, metadata));
+    }
+
+    /// A full styled copy (foreground, background, weight/slant/underline)
+    /// of the current selection, rendered through `profile`'s colours
+    /// regardless of what the window is actually displaying — the body of
+    /// both the default Copy (via Style for "Copy" Command) and every
+    /// named profile in that same submenu. Falls back to a plain copy for
+    /// Find's multi-match selection kind, which has no per-cell styling to
+    /// re-render.
+    fn copy_styled(&mut self, profile: profiles::Profile, cx: &mut Context<Self>) {
+        let Some(runs) = self.styled_selection_runs(profile, cx) else {
+            return;
+        };
+        let plain: String = runs.iter().map(|run| run.text.as_str()).collect();
+        let html = crate::copy_special::to_html_with_background(&runs, profile.bg);
+        let rtf = crate::copy_special::to_rtf_with_background(&runs);
+        let metadata = rmac_editor::rich::clipboard::encode_formats(&[
+            (rmac_editor::rich::clipboard::RTF_MIME, rtf.as_str()),
+            (rmac_editor::rich::clipboard::HTML_MIME, html.as_str()),
+        ]);
+        cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(plain, metadata));
+    }
+
+    /// The current drag-selection's styled runs resolved through
+    /// `profile`, or `None` when there is nothing to copy — Find's
+    /// multi-match selection falls back to a plain copy (it has no
+    /// per-cell styling to re-render) and reports `None` here too, since
+    /// the caller has already finished by the time it returns.
+    fn styled_selection_runs(
+        &mut self,
+        profile: profiles::Profile,
+        cx: &mut Context<Self>,
+    ) -> Option<Vec<crate::copy_special::StyledRun>> {
+        if !self.tabs[self.active].ui.selected_matches.is_empty() {
+            self.copy_plain_text(cx);
+            return None;
+        }
+        let selection = self.tabs[self.active].ui.selection?;
+        if selection.is_empty() {
+            return None;
+        }
+        let term = self.tabs[self.active].term.lock().ok()?;
+        let runs =
+            crate::copy_special::styled_runs(&selection, &term, self.rows, self.cols, &profile);
+        drop(term);
+        if runs.is_empty() {
+            None
+        } else {
+            Some(runs)
+        }
     }
 
     /// Paste clipboard text using the active program's exact bracketed-paste

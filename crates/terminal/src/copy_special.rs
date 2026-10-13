@@ -229,6 +229,37 @@ pub(crate) fn to_html_without_background(runs: &[StyledRun], background: u32) ->
     html
 }
 
+/// Edit ▸ Copy Special ▸ Style for "Copy" Command: the same HTML fragment
+/// as [`to_html_without_background`], but each `<span>` also carries its
+/// own per-cell background — the whole point of choosing a specific
+/// profile for the "Copy" command is that the paste looks exactly like
+/// that profile's terminal, backgrounds included.
+pub(crate) fn to_html_with_background(runs: &[StyledRun], page_background: u32) -> String {
+    let mut html = format!(
+        "<pre style=\"background-color:{};margin:0;font-family:monospace;\">",
+        hex(split(page_background))
+    );
+    for run in runs {
+        let mut style = format!("color:{};background-color:{}", hex(run.fg), hex(run.bg));
+        if run.bold {
+            style.push_str(";font-weight:bold");
+        }
+        if run.italic {
+            style.push_str(";font-style:italic");
+        }
+        if run.underline {
+            style.push_str(";text-decoration:underline");
+        }
+        html.push_str("<span style=\"");
+        html.push_str(&style);
+        html.push_str("\">");
+        html.push_str(&escape_html(&run.text));
+        html.push_str("</span>");
+    }
+    html.push_str("</pre>");
+    html
+}
+
 fn escape_html(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -253,6 +284,21 @@ fn hex((r, g, b): (u8, u8, u8)) -> String {
 /// arbitrary background is left to the HTML flavour alongside this one —
 /// every consumer offered both picks whichever it understands best.
 pub(crate) fn to_rtf(runs: &[StyledRun]) -> String {
+    to_rtf_inner(runs, false)
+}
+
+/// Edit ▸ Copy Special ▸ Style for "Copy" Command (TRM-MENU-001..015): the
+/// same document as [`to_rtf`], but each run also carries its own
+/// background through `\cbN` (the same per-character-background control
+/// `rmac_editor::rich::rtf` already writes for a highlighted run), so a
+/// paste reproduces the chosen profile's colours in full — not just the
+/// foreground `to_rtf`/`to_html_without_background` keep for a plain
+/// "without background" copy.
+pub(crate) fn to_rtf_with_background(runs: &[StyledRun]) -> String {
+    to_rtf_inner(runs, true)
+}
+
+fn to_rtf_inner(runs: &[StyledRun], with_background: bool) -> String {
     let mut palette: Vec<(u8, u8, u8)> = Vec::new();
     let mut index_of = |colour: (u8, u8, u8)| -> usize {
         if let Some(index) = palette.iter().position(|existing| *existing == colour) {
@@ -266,6 +312,10 @@ pub(crate) fn to_rtf(runs: &[StyledRun]) -> String {
     for run in runs {
         let index = index_of(run.fg);
         body.push_str(&format!("\\cf{index} "));
+        if with_background {
+            let bg_index = index_of(run.bg);
+            body.push_str(&format!("\\cb{bg_index} "));
+        }
         if run.bold {
             body.push_str("\\b ");
         }
@@ -393,6 +443,35 @@ mod tests {
     fn rtf_escapes_backslashes_and_braces() {
         let rtf = to_rtf(&[run("a{b}\\c", 0xffffff)]);
         assert!(rtf.contains("a\\{b\\}\\\\c"));
+    }
+
+    #[test]
+    fn html_with_background_keeps_each_runs_own_background_colour() {
+        // Style for "Copy" Command (TRM-MENU-001..015): choosing a named
+        // profile reproduces its colours in full, backgrounds included —
+        // the opposite of "Without Background Colour" above.
+        let mut coloured = run("hi", 0xff0000);
+        coloured.bg = (255, 255, 0);
+        let html = to_html_with_background(&[coloured], 0x000000);
+        assert!(html.contains("background-color:#ffff00"));
+        assert!(html.contains("color:#ff0000"));
+    }
+
+    #[test]
+    fn rtf_with_background_carries_a_cb_control_per_run() {
+        let mut coloured = run("hi", 0xff0000);
+        coloured.bg = (0, 255, 0);
+        let rtf = to_rtf_with_background(&[coloured]);
+        assert!(rtf.contains("\\cb2 "));
+        assert!(rtf.contains("\\red0\\green255\\blue0;"));
+    }
+
+    #[test]
+    fn plain_rtf_never_carries_a_cb_control() {
+        let mut coloured = run("hi", 0xff0000);
+        coloured.bg = (0, 255, 0);
+        let rtf = to_rtf(&[coloured]);
+        assert!(!rtf.contains("\\cb"));
     }
 
     /// End-to-end proof for TRM-MENU-001: a real `Term` fed an SGR red

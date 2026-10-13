@@ -304,6 +304,78 @@ fn appearance(annotation: &Annotation, size: (f32, f32)) -> Vec<u8> {
     s.into_bytes()
 }
 
+/// Edit > Insert > Blank Page (PRV-MENU-007): writes `destination` as
+/// `source` with one empty page, the same size as the page it follows,
+/// spliced in directly after page index `after` (clamped to the last
+/// page). Every ancestor `Pages` node's `/Count` is bumped, so nested page
+/// trees stay valid. Caller does the file I/O on a blocking worker.
+pub fn insert_blank_page(source: &Path, destination: &Path, after: usize) -> Result<(), String> {
+    let mut doc = Document::load(source).map_err(|e| e.to_string())?;
+    let pages: Vec<_> = doc.get_pages().into_values().collect();
+    let anchor = *pages
+        .get(after.min(pages.len().saturating_sub(1)))
+        .ok_or("PDF has no pages")?;
+    let mut ancestor = anchor;
+    let mut media = None;
+    for _ in 0..32 {
+        let node = doc.get_dictionary(ancestor).map_err(|e| e.to_string())?;
+        if let Ok(value) = node.get(b"MediaBox") {
+            media = Some(value.clone());
+            break;
+        }
+        ancestor = node
+            .get(b"Parent")
+            .map_err(|e| e.to_string())?
+            .as_reference()
+            .map_err(|e| e.to_string())?;
+    }
+    let media = media.ok_or("PDF page has no MediaBox")?;
+    let parent = doc
+        .get_dictionary(anchor)
+        .map_err(|e| e.to_string())?
+        .get(b"Parent")
+        .map_err(|e| e.to_string())?
+        .as_reference()
+        .map_err(|e| e.to_string())?;
+    let blank = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => parent,
+        "MediaBox" => media,
+        "Resources" => Object::Dictionary(lopdf::Dictionary::new()),
+    });
+    {
+        let kids = doc
+            .get_dictionary_mut(parent)
+            .map_err(|e| e.to_string())?
+            .get_mut(b"Kids")
+            .map_err(|e| e.to_string())?
+            .as_array_mut()
+            .map_err(|e| e.to_string())?;
+        let position = kids
+            .iter()
+            .position(|kid| kid.as_reference().ok() == Some(anchor))
+            .ok_or("page is not listed in its parent")?;
+        kids.insert(position + 1, Object::Reference(blank));
+    }
+    let mut node = Some(parent);
+    for _ in 0..32 {
+        let Some(id) = node else { break };
+        let dictionary = doc.get_dictionary_mut(id).map_err(|e| e.to_string())?;
+        let count = dictionary
+            .get(b"Count")
+            .ok()
+            .and_then(|count| count.as_i64().ok())
+            .unwrap_or(0);
+        dictionary.set("Count", count + 1);
+        node = dictionary
+            .get(b"Parent")
+            .ok()
+            .and_then(|parent| parent.as_reference().ok());
+    }
+    doc.save(destination).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Writes real PDF annotations, preserving page contents and pre-existing annotations.
 /// Caller performs file I/O on a blocking worker and atomically replaces the source.
 pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Result<(), String> {
@@ -877,5 +949,66 @@ mod tests {
         let mask_text = String::from_utf8(mask).unwrap();
         assert!(mask_text.contains(" rg "));
         assert!(mask_text.contains(" f "));
+    }
+
+    fn two_page_pdf(path: &Path) -> (lopdf::ObjectId, lopdf::ObjectId) {
+        let mut doc = Document::with_version("1.4");
+        let pages = doc.new_object_id();
+        let first = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages, "MediaBox" => vec![0.into(), 0.into(), 300.into(), 400.into()] });
+        let second = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()] });
+        doc.objects.insert(
+            pages,
+            Object::Dictionary(
+                dictionary! { "Type" => "Pages", "Kids" => vec![first.into(), second.into()], "Count" => 2 },
+            ),
+        );
+        let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        doc.trailer.set("Root", root);
+        doc.save(path).unwrap();
+        (first, second)
+    }
+
+    #[test]
+    fn insert_blank_page_splices_a_same_size_page_after_the_current_one() {
+        let base = std::env::temp_dir().join(format!("rmac-blank-page-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let source = base.join("source.pdf");
+        let saved = base.join("saved.pdf");
+        let (first, second) = two_page_pdf(&source);
+        insert_blank_page(&source, &saved, 0).unwrap();
+        let after = Document::load(&saved).unwrap();
+        let ids: Vec<_> = after.get_pages().into_values().collect();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids[0], first);
+        assert_eq!(ids[2], second);
+        let blank = after.get_dictionary(ids[1]).unwrap();
+        let media: Vec<i64> = blank
+            .get(b"MediaBox")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        assert_eq!(media, vec![0, 0, 300, 400]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn insert_blank_page_after_an_out_of_range_index_appends_at_the_end() {
+        let base = std::env::temp_dir().join(format!("rmac-blank-end-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let source = base.join("source.pdf");
+        let saved = base.join("saved.pdf");
+        let (_, second) = two_page_pdf(&source);
+        insert_blank_page(&source, &saved, 99).unwrap();
+        let ids: Vec<_> = Document::load(&saved)
+            .unwrap()
+            .get_pages()
+            .into_values()
+            .collect();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids[1], second);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

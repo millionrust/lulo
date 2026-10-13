@@ -12,6 +12,18 @@ fn drag_transfer_kind(
     }
 }
 
+/// `entry`'s value for one of `settings::PREVIEW_INFO_FIELDS`, or an em
+/// dash for an item with no tag.
+fn preview_info_value(entry: &Entry, field: &str) -> SharedString {
+    match field {
+        "Created" => entry.created.clone(),
+        "Modified" => entry.modified.clone(),
+        "Last Opened" => entry.last_opened.clone(),
+        "Tags" => entry.tag.clone().unwrap_or_else(|| SharedString::from("—")),
+        _ => SharedString::from(""),
+    }
+}
+
 impl FinderView {
     /// Column-view preview (design-lab/finder.html): the preview fills the
     /// top of the column, then the name, "kind – size" and an Information
@@ -39,7 +51,14 @@ impl FinderView {
             })
             .unwrap_or_else(|| item_artwork(false, &entry.name, COLUMN_PREVIEW_ARTWORK));
         let summary = SharedString::from(format!("{} – {}", entry.kind, entry.size));
-        let information = [("Modified", entry.modified.clone())];
+        // View ▸ Show Preview Options (FIL-MENU-006): which fields show
+        // here, rather than always just "Modified".
+        let selected_fields = settings::current().preview_info_fields;
+        let information: Vec<(&'static str, SharedString)> = settings::PREVIEW_INFO_FIELDS
+            .into_iter()
+            .filter(|field| selected_fields.iter().any(|selected| selected == field))
+            .map(|field| (field, preview_info_value(entry, field)))
+            .collect();
 
         div()
             .id("column-preview")

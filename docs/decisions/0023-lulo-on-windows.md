@@ -1044,6 +1044,93 @@ need the Lulo shell's renderer on Windows; Settings has no compact
 (single-column) layout and no Search results beyond the six panes' own
 names and terms.
 
+## Phase 2f as built (branch `op/win-apps-3`)
+
+Branch `op/win-apps-3` brought the remaining apps Ubuntu ships to Windows:
+System Monitor, Mail, Calendar, Player and Archive Utility. All five build,
+pass Clippy (`-D warnings`) and their unit tests on Windows, are in
+`packaging/windows/apps.json` (Start Menu shortcut, exe icon, AUMID), the
+preview zip and the installer, and are opened by `launch_smoke.py` and the
+idle gate (the new "apps 3" launch part). The owner's Windows laptop (SSH,
+serial builds in `E:\lulo`) and CI were the only places to verify.
+
+- **System Monitor** (`crates/activity-monitor`, `rmac-system-monitor.exe`).
+  Processes, CPU, memory and network come from `sysinfo`'s Windows backend; the
+  figures it lacks come from three small calls in `windows_host.rs`: the
+  user/system/idle split from `GetSystemTimes`, the thread count and file
+  cache from `GetPerformanceInfo`, and the Disk tab's reads, writes and bytes
+  from `IOCTL_DISK_PERFORMANCE` on each fixed volume (no administrator
+  needed). A process's CPU time is `GetProcessTimes`; its owner is a SID
+  mapped to a numeric key (service accounts below the filter's system limit,
+  everyone else above it) so My, System and Other Users' Processes work.
+  Quit Process posts `WM_CLOSE` to the process's windows and Force Quit is
+  `TerminateProcess`, both through a handle opened before the confirmation, so
+  a recycled PID can never be hit (the pidfd's guarantee). Windowed Processes
+  uses `EnumWindows`. The `/proc`-only columns (Memory footprint, Real Private
+  and Shared, Compressed, Kind, Sandbox, Idle Wake Ups, GPU, Ports, Preventing
+  Sleep), View ▸ GPU Processes, Sample Process, Send Signal, Dock Icon, GPU
+  History and Print are hidden on Windows rather than shown empty. Memory
+  pressure is not shown (Windows has no pressure-stall figure). The window
+  refreshes on a timer only while it is the active window, so "idle" for the
+  gate is taken with it minimised (`launch_smoke.py` also prints what watching
+  it costs, `active_ticks`).
+- **Mail** (`crates/mail`, `rmac-mail-*`, `rmac-accounts-linux`). GNOME Online
+  Accounts is replaced by Lulo's own account store (`winstore.rs`): non-secret
+  details in `%APPDATA%\Lulo\Config\lulo\accounts.json`, every password and
+  token in the Windows Credential Manager (`wincred.rs`; a secret is split into
+  2000-byte credentials because a Microsoft access token outgrows the 2560-byte
+  limit). It implements the same `GoaApi` the Linux adapter does, and refreshes
+  an OAuth access token with the stored refresh token. IMAP and SMTP accounts
+  (iCloud, Yahoo and any server autoconfig finds or the person types in), Gmail
+  and Outlook.com (browser sign-in) and Microsoft Graph sync through the
+  unchanged runtime; new messages arrive as toasts (`rmac-win-toast`). Mail's
+  Settings ▸ Accounts adds and removes accounts (the empty state's Add
+  Account opens it): address and name, autoconfig or MX discovery
+  (`DnsQuery_W`), the password checked against the IMAP server before it is
+  kept. The browser sign-in registers the provider's redirect scheme for the
+  current user (HKCU, no administrator), and the redirect starts
+  `rmac-mail.exe <url>`, which hands it to the running Mail over its
+  single-instance pipe (the same path now carries `mailto:` links). Attachments
+  open with the default app (`ShellExecuteW`, from phase 2d) and Attach File and
+  Player's and Preview's Open use a real `IFileOpenDialog`
+  (`rmac-portal/src/windows_dialog.rs`). Found by running it: `write_blob`
+  fsynced a directory with `File::open`, which Windows refuses, so no message
+  could ever be queued to the Outbox.
+- **Calendar** (`crates/calendar`, `rmac-calendar-store`, `calendar-agent`).
+  EDS is Linux-only. Windows keeps its events in plain iCalendar files, one
+  per calendar (`rmac-calendar-store::local`, under the data folder), with a
+  default "Calendar" on "On My Computer"; the sidebar, editor, undo and
+  invitation code run unchanged on it. Settings ▸ Accounts says "Accounts
+  aren't available on Windows yet." Reminders: `rmac-calendar-agent.exe`
+  (no window, no resident process) shows a toast and plays the alert sound for
+  every reminder due, remembers what it has shown, and leaves one Task
+  Scheduler task (`LuloCalendarReminder`, built from XML because `schtasks /sd`
+  follows the regional date format) for the next one. Calendar re-arms it
+  after each load and edit. Verified on the laptop with a store holding a due
+  and a future alarm: the due one was marked shown and the task was set for the
+  future one's minute.
+- **Archive Utility** (`rmac-archive`). The engine was Linux-only; a small
+  `platform` module now holds what differs: files open with `create_new` (which
+  refuses any existing name), the no-replace rename is `MoveFileExW` without
+  the replace flag, free space is `GetDiskFreeSpaceExW`. Entries Windows treats
+  specially (`C:`, `file:stream`, `CON`, `NUL.txt`, a trailing dot or space)
+  are refused, and link entries are left out (making a link needs a privilege).
+  Like the Mac's it has no window, so the launch script expands a fixture zip
+  with it and checks the result instead of waiting for a window. Finder's
+  Compress and Expand now work too (WIN-OS-20).
+- **Player** (`crates/player`). Opens with the real Open dialog and plays when
+  `libmpv-2.dll` sits beside `rmac-player.exe`; without it the window says so.
+  The DLL is not bundled yet (it is LGPL and needs a pinned download); there is
+  no MPRIS equivalent, so no media keys.
+- **The Dock.** The Windows Dock lives in `rmac-win-shell`, which this branch
+  does not touch. Mail ships in the installer, so the Dock's pin for it appears
+  once it is installed.
+- **Proof.** Laptop (debug, `E:\lulo`): every app's idle CPU 0.00 ticks over
+  20 s (System Monitor minimised), memory at idle 58-92 MB private, launch
+  355-1150 ms to a visible window. The 17 account-store tests (Credential
+  Manager) pass in an interactive session; over SSH Windows gives no
+  credential store, so they skip themselves there.
+
 ## Phase 3 design: the Lulo layer
 
 > Revised: the surfaces are now Lulo OS's own views, not Windows-only rebuilds of them

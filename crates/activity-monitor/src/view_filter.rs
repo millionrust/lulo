@@ -12,6 +12,16 @@
 /// measurement — there is no portable "is this a system account" API.
 const SYSTEM_UID_MAX: u32 = 999;
 
+/// What the table knows about a row beyond its own columns, for the filters
+/// that depend on other data.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct RowSignals {
+    /// The compositor lists a window owned by this process.
+    pub(crate) has_window: bool,
+    /// The process holds a graphics (DRM) client.
+    pub(crate) uses_gpu: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ViewFilter {
     All,
@@ -94,17 +104,16 @@ impl ViewFilter {
         status: &str,
         current_uid: Option<u32>,
         selected_pid: Option<u32>,
-        has_window: bool,
-        uses_gpu: bool,
+        signals: RowSignals,
     ) -> bool {
         if self == Self::SelectedProcesses {
             return selected_pid == Some(pid);
         }
         if self == Self::WindowedProcesses {
-            return has_window;
+            return signals.has_window;
         }
         if self == Self::GpuProcesses {
-            return uses_gpu;
+            return signals.uses_gpu;
         }
         self.matches(uid, status, current_uid)
     }
@@ -194,8 +203,7 @@ mod tests {
             "Sleeping",
             Some(1000),
             Some(42),
-            false,
-            false
+            RowSignals::default()
         ));
         assert!(!filter.matches_row(
             43,
@@ -203,25 +211,68 @@ mod tests {
             "Sleeping",
             Some(1000),
             Some(42),
-            false,
-            false
+            RowSignals::default()
         ));
-        assert!(!filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, false, false));
+        assert!(!filter.matches_row(
+            42,
+            Some(1000),
+            "Sleeping",
+            Some(1000),
+            None,
+            RowSignals::default()
+        ));
     }
 
     #[test]
     fn windowed_processes_follow_the_compositor_window_list() {
         let filter = ViewFilter::WindowedProcesses;
-        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, true, false));
-        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), None, false, false));
+        assert!(filter.matches_row(
+            42,
+            Some(1000),
+            "Sleeping",
+            Some(1000),
+            None,
+            RowSignals {
+                has_window: true,
+                uses_gpu: false
+            }
+        ));
+        assert!(!filter.matches_row(
+            43,
+            Some(1000),
+            "Sleeping",
+            Some(1000),
+            None,
+            RowSignals::default()
+        ));
         assert!(!filter.matches(Some(1000), "Sleeping", Some(1000)));
     }
 
     #[test]
     fn gpu_processes_are_the_ones_holding_a_graphics_client() {
         let filter = ViewFilter::GpuProcesses;
-        assert!(filter.matches_row(42, Some(1000), "Sleeping", Some(1000), None, false, true));
-        assert!(!filter.matches_row(43, Some(1000), "Sleeping", Some(1000), None, true, false));
+        assert!(filter.matches_row(
+            42,
+            Some(1000),
+            "Sleeping",
+            Some(1000),
+            None,
+            RowSignals {
+                has_window: false,
+                uses_gpu: true
+            }
+        ));
+        assert!(!filter.matches_row(
+            43,
+            Some(1000),
+            "Sleeping",
+            Some(1000),
+            None,
+            RowSignals {
+                has_window: true,
+                uses_gpu: false
+            }
+        ));
     }
 
     /// `ProcessStatus`'s `Display` impl is what rows actually store

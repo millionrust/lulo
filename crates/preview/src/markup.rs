@@ -380,7 +380,7 @@ pub fn insert_blank_page(source: &Path, destination: &Path, after: usize) -> Res
 /// Page from File… (PRV-MENU-005): a PDF is loaded as it is, an image
 /// becomes a one-page PDF at its pixel size. An encrypted PDF is refused.
 pub fn document_for_insertion(path: &Path) -> Result<Document, String> {
-    use image::ImageDecoder as _;
+    use image::{ImageDecoder as _, ImageEncoder as _};
     let mut head = [0u8; 8];
     {
         use std::io::Read as _;
@@ -409,7 +409,7 @@ pub fn document_for_insertion(path: &Path) -> Result<Document, String> {
     let (width, height) = rgb.dimensions();
     let mut jpeg = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 90)
-        .encode_image(&rgb)
+        .write_image(rgb.as_raw(), width, height, image::ExtendedColorType::Rgb8)
         .map_err(|e| e.to_string())?;
     Document::load_mem(&crate::pdfwriter::wrap_jpeg(&jpeg, width, height))
         .map_err(|e| e.to_string())

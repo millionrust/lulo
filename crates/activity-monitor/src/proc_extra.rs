@@ -179,7 +179,6 @@ pub(crate) fn gpu_percent(
 
 /// Read a process's DRM clients. Looks only at descriptors that point at a
 /// `/dev/dri` node, so the cost is one `readlink` per open descriptor.
-#[cfg(target_os = "linux")]
 pub(crate) fn read_gpu(pid: u32) -> Option<GpuUsage> {
     let descriptors = std::fs::read_dir(format!("/proc/{pid}/fd")).ok()?;
     let mut clients = Vec::new();
@@ -200,11 +199,6 @@ pub(crate) fn read_gpu(pid: u32) -> Option<GpuUsage> {
         }
     }
     (!clients.is_empty()).then(|| merge_clients(clients))
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn read_gpu(_pid: u32) -> Option<GpuUsage> {
-    None
 }
 
 fn kb_field(line: &str, name: &str) -> Option<u64> {
@@ -287,18 +281,11 @@ pub(crate) fn wakeup_delta(previous: Option<u64>, current: u64) -> Option<u64> {
     previous.and_then(|previous| current.checked_sub(previous))
 }
 
-#[cfg(target_os = "linux")]
 pub(crate) fn read_rollup(pid: u32) -> Option<SmapsRollup> {
     parse_smaps_rollup(&std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).ok()?)
 }
 
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn read_rollup(_pid: u32) -> Option<SmapsRollup> {
-    None
-}
-
 /// `(voluntary context switches, sandboxed)` from one read of the status file.
-#[cfg(target_os = "linux")]
 pub(crate) fn read_status(pid: u32) -> (Option<u64>, Option<bool>) {
     match std::fs::read_to_string(format!("/proc/{pid}/status")) {
         Ok(text) => (parse_voluntary_switches(&text), parse_sandboxed(&text)),
@@ -306,12 +293,6 @@ pub(crate) fn read_status(pid: u32) -> (Option<u64>, Option<bool>) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn read_status(_pid: u32) -> (Option<u64>, Option<bool>) {
-    (None, None)
-}
-
-#[cfg(target_os = "linux")]
 pub(crate) fn read_kind(pid: u32) -> Option<&'static str> {
     use std::io::Read as _;
     let mut header = [0u8; 20];
@@ -320,11 +301,6 @@ pub(crate) fn read_kind(pid: u32) -> Option<&'static str> {
         .read_exact(&mut header)
         .ok()?;
     elf_kind(&header)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn read_kind(_pid: u32) -> Option<&'static str> {
-    None
 }
 
 #[cfg(test)]

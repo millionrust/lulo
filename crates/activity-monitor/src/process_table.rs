@@ -20,7 +20,7 @@ use sysinfo::{
 use crate::columns::{self, ColKey};
 use crate::metrics::{format_duration, format_mem, Tab};
 use crate::proc_extra::{self, ProcExtra};
-use crate::view_filter::ViewFilter;
+use crate::view_filter::{RowSignals, ViewFilter};
 use crate::{ForceQuitProcess, QuitProcess};
 
 /// True for a Linux thread-group leader — a real process, in the sense the
@@ -673,8 +673,10 @@ impl ProcessTableDelegate {
                         row.status.as_ref(),
                         current_uid,
                         selected_pid,
-                        windowed_pids.contains(&row.pid),
-                        row.extra.gpu.is_some(),
+                        RowSignals {
+                            has_window: windowed_pids.contains(&row.pid),
+                            uses_gpu: row.extra.gpu.is_some(),
+                        },
                     )
             })
             .take(300)
@@ -1157,6 +1159,7 @@ mod tests {
         selection_projection, thread_group_size, ColKey, ProcRow, ProcessTableDelegate,
     };
     use crate::metrics::{format_duration, format_mem};
+    use crate::proc_extra::ProcExtra;
     use rmac_ui::ColumnSort;
     use sysinfo::ThreadKind;
 

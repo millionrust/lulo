@@ -9,6 +9,7 @@
 //! password prompts can be answered, and finding the folder the mount
 //! appeared in.
 
+#[cfg(any(windows, test))]
 use std::path::PathBuf;
 use std::sync::atomic::AtomicI32;
 
@@ -75,7 +76,6 @@ pub(crate) fn parse_address(text: &str) -> Result<String, AddressError> {
 }
 
 /// The scheme and host of a URI from [`parse_address`].
-#[cfg(any(target_os = "linux", test))]
 pub(crate) fn scheme_and_host(uri: &str) -> Option<(&str, &str)> {
     let (scheme, rest) = uri.split_once("://")?;
     let authority = rest.split('/').next()?;
@@ -85,7 +85,6 @@ pub(crate) fn scheme_and_host(uri: &str) -> Option<(&str, &str)> {
 }
 
 /// The share name in an `smb://server/share/...` URI.
-#[cfg(any(target_os = "linux", test))]
 fn first_path_segment(uri: &str) -> Option<&str> {
     let (_, rest) = uri.split_once("://")?;
     let path = rest.split_once('/')?.1;
@@ -104,7 +103,6 @@ pub(crate) fn unc_path(uri: &str) -> Option<PathBuf> {
 /// Which entry of `$XDG_RUNTIME_DIR/gvfs` is the mount just made. GVFS names
 /// them `smb-share:server=NAS,share=media`, `sftp:host=example.com,user=me`,
 /// `dav:host=...,ssl=false` and so on.
-#[cfg(any(target_os = "linux", test))]
 pub(crate) fn pick_mount_dir(entries: &[String], uri: &str) -> Option<String> {
     let (scheme, host) = scheme_and_host(uri)?;
     let prefix = match scheme {
@@ -192,6 +190,7 @@ pub(crate) fn last_line_start(transcript: &str) -> usize {
 }
 
 /// How the user wants to sign in.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Credentials {
     pub(crate) guest: bool,
@@ -333,11 +332,9 @@ pub(crate) fn mount(
     let mut answered_upto = 0usize;
     let mut answered: Vec<Prompt> = Vec::new();
     let mut outcome = None;
-    loop {
-        // End of output (EIO once the child closes the terminal) or an error.
-        let Ok(read @ 1..) = master.read(&mut buffer) else {
-            break;
-        };
+    // Reads until end of output (EIO once the child closes the terminal) or
+    // an error.
+    while let Ok(read @ 1..) = master.read(&mut buffer) {
         transcript.push_str(&String::from_utf8_lossy(&buffer[..read]));
         let Some(prompt) = classify_prompt(&transcript) else {
             continue;

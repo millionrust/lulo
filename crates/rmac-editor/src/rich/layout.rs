@@ -24,7 +24,7 @@ use gpui::{
     TextRun, UnderlineStyle, Window,
 };
 
-use super::model::{Alignment, CharStyle, Ligatures, Paragraph, Rgb};
+use super::model::{line_start_share, Alignment, CharStyle, Ligatures, Paragraph, Rgb};
 
 /// TextEdit's default tab stops: every 28 points.
 const TAB_INTERVAL: f32 = 28.0;
@@ -540,6 +540,7 @@ pub(crate) fn layout_paragraph(
         hyphen: false,
     });
 
+    let rtl = style.direction.is_rtl(text);
     let mut lines = Vec::with_capacity(breaks.len());
     let mut top = px(0.0);
     let last_break = breaks.len() - 1;
@@ -556,11 +557,7 @@ pub(crate) fn layout_paragraph(
             && !text[line.content_end..line.end]
                 .chars()
                 .any(is_forced_break);
-        let offset = match style.alignment {
-            Alignment::Left | Alignment::Justified => px(0.0),
-            Alignment::Center => free / 2.0,
-            Alignment::Right => free,
-        };
+        let offset = free * line_start_share(style.alignment, rtl, justify);
         let mut gaps = Vec::new();
         if justify {
             let mut previous_space = false;

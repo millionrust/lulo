@@ -189,6 +189,27 @@ def _speech_submenu(prefix: str) -> MenuItem:
     )
 
 
+def _writing_tools_submenu(prefix: str) -> MenuItem:
+    """Mirrors `writing_tools_submenu!` in `crates/rmac-app-menu/src/lib.rs`."""
+    return MenuItem(
+        "Writing Tools",
+        f"{prefix}::WritingToolsMenu",
+        "",
+        False,
+        [
+            MenuItem("Show Writing Tools", f"{prefix}::ShowWritingTools", "", False, []),
+            MenuItem("Proofread", f"{prefix}::Proofread", "", True, []),
+            MenuItem("Rewrite", f"{prefix}::Rewrite", "", False, []),
+            MenuItem("Make Friendly", f"{prefix}::MakeFriendly", "", True, []),
+            MenuItem("Make Professional", f"{prefix}::MakeProfessional", "", False, []),
+            MenuItem("Make Concise", f"{prefix}::MakeConcise", "", False, []),
+            MenuItem("Summarise", f"{prefix}::Summarise", "", True, []),
+            MenuItem("Create Key Points", f"{prefix}::CreateKeyPoints", "", False, []),
+            MenuItem("Make List", f"{prefix}::MakeList", "", False, []),
+        ],
+    )
+
+
 def _substitutions_submenu_with_master_toggle(prefix: str) -> MenuItem:
     """Mirrors `substitutions_submenu_with_master_toggle!`."""
     return MenuItem(
@@ -255,6 +276,7 @@ _SHARED_SUBMENU_BUILDERS = {
     "spelling_and_grammar_submenu": _spelling_and_grammar_submenu,
     "transformations_submenu": _transformations_submenu,
     "speech_submenu": _speech_submenu,
+    "writing_tools_submenu": _writing_tools_submenu,
     "substitutions_submenu_with_master_toggle": _substitutions_submenu_with_master_toggle,
     "substitutions_submenu_with_lists_and_tags": _substitutions_submenu_with_lists_and_tags,
     "substitutions_submenu_with_data_detectors": _substitutions_submenu_with_data_detectors,

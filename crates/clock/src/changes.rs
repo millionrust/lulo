@@ -15,6 +15,12 @@ pub enum Change {
     SetCities(Vec<String>),
     AddCity(String),
     RemoveCity(String),
+    /// Drag a World Clock city onto another: it takes that city's place and
+    /// the cities between shift by one.
+    MoveCity {
+        name: String,
+        onto: String,
+    },
     /// Add or replace an alarm by id.
     SaveAlarm(Alarm),
     RemoveAlarm(u64),
@@ -58,6 +64,16 @@ impl Change {
             Self::RemoveCity(name) => {
                 if let Some(cities) = state.cities.as_mut() {
                     cities.retain(|city| city != name);
+                }
+            }
+            Self::MoveCity { name, onto } => {
+                if let Some(cities) = state.cities.as_mut() {
+                    let from = cities.iter().position(|city| city == name);
+                    let to = cities.iter().position(|city| city == onto);
+                    if let (Some(from), Some(to)) = (from, to) {
+                        let city = cities.remove(from);
+                        cities.insert(to, city);
+                    }
                 }
             }
             Self::SaveAlarm(alarm) => {
@@ -142,6 +158,39 @@ mod tests {
         );
         Change::RemoveCity("Tokyo".into()).apply(&mut state);
         assert_eq!(state.cities.as_deref(), Some(&["Paris".into()][..]));
+    }
+
+    #[test]
+    fn a_dragged_city_takes_the_place_of_the_one_it_lands_on() {
+        let mut state = State::default();
+        for city in ["London", "Paris", "Tokyo", "Sydney"] {
+            Change::AddCity(city.into()).apply(&mut state);
+        }
+        let order = |state: &State| state.cities.clone().unwrap_or_default();
+        let move_city = |state: &mut State, name: &str, onto: &str| {
+            Change::MoveCity {
+                name: name.into(),
+                onto: onto.into(),
+            }
+            .apply(state);
+        };
+        // Forward: Paris lands where Tokyo is, Tokyo shifts up.
+        move_city(&mut state, "Paris", "Tokyo");
+        assert_eq!(order(&state), ["London", "Tokyo", "Paris", "Sydney"]);
+        // Backward: Sydney lands where London is.
+        move_city(&mut state, "Sydney", "London");
+        assert_eq!(order(&state), ["Sydney", "London", "Tokyo", "Paris"]);
+        // Onto itself, or with an unknown city, changes nothing.
+        move_city(&mut state, "Tokyo", "Tokyo");
+        move_city(&mut state, "Oslo", "London");
+        move_city(&mut state, "London", "Oslo");
+        assert_eq!(order(&state), ["Sydney", "London", "Tokyo", "Paris"]);
+        // A reorder is not a schedule change.
+        assert!(!Change::MoveCity {
+            name: "a".into(),
+            onto: "b".into()
+        }
+        .affects_schedule());
     }
 
     #[test]

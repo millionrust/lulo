@@ -145,6 +145,7 @@ impl FinderView {
                             }
                             match outcome {
                                 Ok(Some(outcome)) => {
+                                    this.record_redo(&outcome);
                                     this.operation_notice =
                                         Some(format!("{} completed", outcome.label).into());
                                     this.operation_error = None;

@@ -63,6 +63,14 @@ pub(crate) struct Settings {
     pub(crate) smart_links_default: bool,
     pub(crate) data_detectors_default: bool,
     pub(crate) text_replacement_default: bool,
+    /// "Check and correct spelling in rich text documents only"
+    /// (TXT-SETTINGS-001): a plain text window then starts and stays
+    /// without spell checking, grammar checking and automatic correction.
+    pub(crate) spelling_rich_text_only: bool,
+    /// "Smart quotes and dashes in rich text documents only"
+    /// (TXT-SETTINGS-003): a plain text window then types straight quotes
+    /// and hyphens.
+    pub(crate) smart_quotes_rich_text_only: bool,
     /// Settings ▸ New Document ▸ Properties (TXT-SETTINGS-001/003/006):
     /// the Author/Organisation/Copyright a freshly created rich document's
     /// Document Properties sheet (`view/format_extras.rs`, TE-10) starts
@@ -99,6 +107,9 @@ impl Default for Settings {
             smart_links_default: true,
             data_detectors_default: true,
             text_replacement_default: true,
+            // Off keeps every document type behaving as it always has.
+            spelling_rich_text_only: false,
+            smart_quotes_rich_text_only: false,
             author_default: String::new(),
             organisation_default: String::new(),
             copyright_default: String::new(),
@@ -173,6 +184,10 @@ fn parse(contents: &str) -> Settings {
             "smart_links_default" => settings.smart_links_default = value == "true",
             "data_detectors_default" => settings.data_detectors_default = value == "true",
             "text_replacement_default" => settings.text_replacement_default = value == "true",
+            "spelling_rich_text_only" => settings.spelling_rich_text_only = value == "true",
+            "smart_quotes_rich_text_only" => {
+                settings.smart_quotes_rich_text_only = value == "true";
+            }
             "author_default" => settings.author_default = value.to_string(),
             "organisation_default" => settings.organisation_default = value.to_string(),
             "copyright_default" => settings.copyright_default = value.to_string(),
@@ -201,7 +216,7 @@ fn serialize(settings: &Settings) -> String {
         RichTextFont::JetBrainsMono => "jetbrains-mono",
     };
     format!(
-        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\ncheck_spelling_while_typing_default={}\ncheck_grammar_with_spelling_default={}\ncorrect_spelling_automatically_default={}\nsmart_copy_paste_default={}\nsmart_quotes_default={}\nsmart_dashes_default={}\nsmart_links_default={}\ndata_detectors_default={}\ntext_replacement_default={}\nauthor_default={}\norganisation_default={}\ncopyright_default={}\n",
+        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\ncheck_spelling_while_typing_default={}\ncheck_grammar_with_spelling_default={}\ncorrect_spelling_automatically_default={}\nsmart_copy_paste_default={}\nsmart_quotes_default={}\nsmart_dashes_default={}\nsmart_links_default={}\ndata_detectors_default={}\ntext_replacement_default={}\nspelling_rich_text_only={}\nsmart_quotes_rich_text_only={}\nauthor_default={}\norganisation_default={}\ncopyright_default={}\n",
         settings.width_chars,
         settings.height_lines,
         settings.font_size,
@@ -218,6 +233,8 @@ fn serialize(settings: &Settings) -> String {
         settings.smart_links_default,
         settings.data_detectors_default,
         settings.text_replacement_default,
+        settings.spelling_rich_text_only,
+        settings.smart_quotes_rich_text_only,
         one_line(&settings.author_default),
         one_line(&settings.organisation_default),
         one_line(&settings.copyright_default),
@@ -320,6 +337,8 @@ mod tests {
             smart_links_default: false,
             data_detectors_default: false,
             text_replacement_default: false,
+            spelling_rich_text_only: true,
+            smart_quotes_rich_text_only: true,
             author_default: "A. Writer".to_string(),
             organisation_default: "Acme".to_string(),
             copyright_default: "\u{a9} 2026 Acme".to_string(),
@@ -349,6 +368,10 @@ mod tests {
         assert!(settings.smart_links_default);
         assert!(settings.data_detectors_default);
         assert!(settings.text_replacement_default);
+        // TXT-SETTINGS-001/003: the scoping checkboxes start off, so a plain
+        // text window is not changed by an install that never touched them.
+        assert!(!settings.spelling_rich_text_only);
+        assert!(!settings.smart_quotes_rich_text_only);
     }
 
     #[test]

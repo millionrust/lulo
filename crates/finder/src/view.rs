@@ -13,6 +13,7 @@ mod chrome_presentation;
 mod clean_up_controller;
 mod clipboard_window;
 mod conflict_controller;
+mod connect_server_controller;
 mod content_presentation;
 mod customise_toolbar;
 mod dialog_presentation;
@@ -38,6 +39,7 @@ mod preview_options;
 mod progress_window;
 mod quick_look_controller;
 mod recovery_controller;
+mod redo_controller;
 mod rename_controller;
 mod responsive_layout;
 mod search_helpers;
@@ -101,7 +103,7 @@ use crate::watchers::{
 };
 #[cfg(target_os = "linux")]
 use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
-use crate::{directory_state, file_ops, operation_journal, undo_journal};
+use crate::{directory_state, file_ops, operation_journal, redo, undo_journal};
 use filesystem_helpers::*;
 use finder_behaviour::*;
 use finder_style::*;
@@ -146,6 +148,7 @@ actions!(
         CutItems,
         PasteItems,
         UndoOperation,
+        RedoOperation,
         SelectAll,
         GoBack,
         GoForward,
@@ -218,6 +221,7 @@ actions!(
         GoComputer,
         NewWindow,
         GoToFolder,
+        ConnectToServer,
         EmptyTrash,
         EmptyTrashImmediately,
         Find,
@@ -493,6 +497,7 @@ struct FinderView {
     inspector_window: Option<gpui::WindowHandle<Root>>,
     /// Go ▸ Go to Folder…, while its sheet is open.
     go_to: Option<go_to_folder_controller::GoToSheet>,
+    connect: Option<connect_server_controller::ConnectSheet>,
     /// An item Go to Folder named, selected once its folder loads.
     pending_select: Option<PathBuf>,
     /// Destinations of one multi-item operation, selected together on reload.
@@ -512,6 +517,7 @@ struct FinderView {
     operation_journal: Option<Arc<operation_journal::Journal>>,
     journal_loading: bool,
     undo_available: Option<undo_journal::UndoAvailability>,
+    redo: redo::RedoStack,
     undo_operation: Option<ActiveUndo>,
     pending_operations: usize,
     recovery_reviews: Vec<operation_journal::RecoveryReview>,

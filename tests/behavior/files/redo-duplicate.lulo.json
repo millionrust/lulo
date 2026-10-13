@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "files/redo-duplicate",
+  "platform": "Lulo",
+  "observations": {
+    "undone": {"files": {"entries": ["report.txt"]}},
+    "redone": {"files": {"entries": ["report copy.txt", "report.txt"]}},
+    "undone-again": {"files": {"entries": ["report.txt"]}}
+  }
+}

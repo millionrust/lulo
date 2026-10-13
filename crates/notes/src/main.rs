@@ -280,6 +280,8 @@ struct NotesView {
     title: Entity<InputState>,
     tags: Entity<InputState>,
     body: Entity<InputState>,
+    /// Edit ▸ Writing Tools and its panel (ADR 0024 feature 2).
+    writing_tools: Entity<rmac_writing_tools::WritingTools>,
     focus: FocusHandle,
     /// The note list's scroll position, which picks the rows it builds.
     note_list_scroll: gpui::ScrollHandle,
@@ -465,6 +467,7 @@ impl NotesView {
             title: inputs.title,
             tags: inputs.tags,
             body: inputs.body,
+            writing_tools: cx.new(rmac_writing_tools::WritingTools::new),
             focus: inputs.focus,
             note_list_scroll: gpui::ScrollHandle::new(),
             applying_snapshot: false,
@@ -587,6 +590,15 @@ impl NotesView {
             cx,
         );
         rmac_ui::set_menu_enabled("notes::StopSpeaking", false, cx);
+        // Lulo Intelligence may have been turned on (or its model
+        // downloaded) in System Settings meanwhile: Writing Tools look again
+        // whenever the window becomes active. Nothing polls.
+        cx.observe_window_activation(window, |_, window, cx| {
+            if window.is_window_active() {
+                rmac_writing_tools::refresh(cx);
+            }
+        })
+        .detach();
 
         view.start_workers(window, cx);
 
@@ -708,6 +720,7 @@ fn main() {
         720.0,
         NotesView::new,
         |cx: &mut gpui::App| {
+            rmac_writing_tools::init(cx);
             cx.on_action(|_: &ShowSettings, cx| {
                 if cx.windows().is_empty() {
                     rmac_ui::open_another_window(Vec::new(), cx);

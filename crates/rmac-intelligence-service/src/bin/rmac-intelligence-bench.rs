@@ -7,6 +7,14 @@
 //!                                 [--no-guard]   # the model alone, without guard::check
 //! rmac-intelligence-bench latency --model M.gguf [--runs N] [--threads N] [--state-cache DIR|none]
 //! rmac-intelligence-bench service [--runs N] [QUERY ...]   # through the real service
+//!
+//! # Writing Tools (ADR 0024 "Phase 2 (Writing Tools) results")
+//! rmac-intelligence-bench writing-eval --model M.gguf [--tier tiny|standard] [--tasks proofread,summarise,…]
+//!                                      [--passages N] [--verbose]   # the 30-passage set
+//! rmac-intelligence-bench write-latency --model M.gguf [--tier …] [--task rewrite] [--runs N]
+//!                                       # the 150-word rewrite: first token, tok/s
+//! rmac-intelligence-bench write-service [--task rewrite] [--runs N]   # through the real service
+//! rmac-intelligence-bench writing-rescore LOG [--verbose]   # score a writing-eval log again
 //! ```
 
 #[cfg(target_os = "linux")]
@@ -17,9 +25,13 @@ mod bench {
     use rmac_intelligence::eval::{self, Score};
     use rmac_intelligence::manifest::Tier;
     use rmac_intelligence::prompt::PromptStyle;
-    use rmac_intelligence_service::engine::Engine as _;
+    use rmac_intelligence::{writing, writing_eval, Task};
+    use rmac_intelligence_service::engine::{Engine as _, WriteOutcome, WriteRequest};
     use rmac_intelligence_service::llama::{LlamaEngine, Options};
 
+    const PASSAGES: &str = include_str!("../../../../tests/intelligence/writing-passages.jsonl");
+    /// The 150-word passage the speed numbers use.
+    const TIMING_PASSAGE: &str = "p30-rewrite-150";
     const DEV: &str = include_str!("../../../../tests/intelligence/intents-dev.jsonl");
     const HELD_OUT: &str = include_str!("../../../../tests/intelligence/intents-heldout.jsonl");
     const BRIEF: [&str; 4] = [
@@ -42,6 +54,9 @@ mod bench {
         rest: Vec<String>,
         verbose: bool,
         guard: bool,
+        tasks: Vec<rmac_intelligence::Task>,
+        passages: usize,
+        skip: usize,
     }
 
     fn arguments() -> Arguments {
@@ -59,6 +74,9 @@ mod bench {
             rest: Vec::new(),
             verbose: false,
             guard: true,
+            tasks: rmac_intelligence::Task::WRITING.to_vec(),
+            passages: 30,
+            skip: 0,
         };
         while let Some(argument) = iter.next() {
             let mut value = || iter.next().unwrap_or_default();
@@ -78,6 +96,15 @@ mod bench {
                 }
                 "--verbose" => parsed.verbose = true,
                 "--no-guard" => parsed.guard = false,
+                "--tasks" | "--task" => {
+                    parsed.tasks = value()
+                        .split(',')
+                        .filter_map(rmac_intelligence::Task::parse)
+                        .filter(|task| task.is_writing())
+                        .collect()
+                }
+                "--passages" => parsed.passages = value().parse().unwrap_or(30),
+                "--skip" => parsed.skip = value().parse().unwrap_or(0),
                 _ => parsed.rest.push(argument),
             }
         }
@@ -329,12 +356,317 @@ mod bench {
         );
     }
 
+    fn passages() -> Vec<writing_eval::Passage> {
+        writing_eval::parse_passages(PASSAGES).expect("the passage set parses")
+    }
+
+    fn write_once(
+        engine: &mut LlamaEngine,
+        task: Task,
+        text: &str,
+        attempt: u32,
+    ) -> Result<WriteOutcome, rmac_intelligence_service::engine::EngineError> {
+        let cleaned = writing::clean_input(text);
+        let request = WriteRequest {
+            task,
+            text: &cleaned,
+            attempt,
+            received: Instant::now(),
+        };
+        engine.write(&request, &mut |_| {}, &|| false)
+    }
+
+    /// The 30-passage Writing Tools evaluation, every task or `--tasks`.
+    fn writing_evaluation(arguments: &Arguments) {
+        let (mut engine, load_ms) = load(arguments);
+        let passages = passages();
+        let start = arguments.skip.min(passages.len());
+        let passages = &passages[start..(start + arguments.passages).min(passages.len())];
+        let mut summary = Vec::new();
+        for task in &arguments.tasks {
+            let task = *task;
+            let mut first = Vec::new();
+            let mut rates = Vec::new();
+            let mut passed = 0usize;
+            let mut capped = 0usize;
+            let (mut injected, mut fixed, mut unwanted, mut exact) = (0u32, 0u32, 0u32, 0usize);
+            let mut words = Vec::new();
+            for passage in passages {
+                let (input, errors) = if task == Task::Proofread {
+                    writing_eval::inject_errors(passage, 4)
+                } else {
+                    (passage.text.clone(), Vec::new())
+                };
+                let outcome = match write_once(&mut engine, task, &input, 0) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        println!("ERROR {} {} {error}", task.as_str(), passage.id);
+                        continue;
+                    }
+                };
+                first.push(outcome.timing.first_token_ms);
+                rates.push(outcome.timing.decode_tok_s);
+                capped += usize::from(outcome.capped);
+                words.push(f64::from(writing::word_count(&outcome.text)));
+                let verdict = if task == Task::Proofread {
+                    let score =
+                        writing_eval::score_proofread(&passage.text, &errors, &outcome.text);
+                    injected += score.injected;
+                    fixed += score.fixed;
+                    unwanted += score.unwanted_changes;
+                    exact += usize::from(score.exact);
+                    // A passage passes when at least three of its four
+                    // errors are fixed and at most one right word changed.
+                    let pass = score.fixed + 1 >= score.injected && score.unwanted_changes <= 1;
+                    passed += usize::from(pass);
+                    serde_json::json!({
+                        "pass": pass, "fixed": score.fixed, "injected": score.injected,
+                        "unwanted": score.unwanted_changes, "exact": score.exact,
+                        "errors": errors.iter().map(|error| format!("{} -> {}", error.right, error.wrong)).collect::<Vec<_>>(),
+                    })
+                } else {
+                    let check = writing_eval::check(task, passage, &outcome.text);
+                    passed += usize::from(check.pass);
+                    serde_json::json!({
+                        "pass": check.pass, "words": check.words, "ratio": (check.ratio * 100.0).round() / 100.0,
+                        "terms": (check.terms * 100.0).round() / 100.0, "numbers_kept": check.numbers_kept,
+                        "bullets": check.bullets, "reason": check.reason,
+                    })
+                };
+                println!(
+                    "SAMPLE {}",
+                    serde_json::json!({
+                        "task": task.as_str(), "id": passage.id, "input": input,
+                        "answer": outcome.text, "raw": outcome.raw, "capped": outcome.capped,
+                        "verdict": verdict,
+                        "first_token_ms": outcome.timing.first_token_ms.round(),
+                        "input_tokens": outcome.timing.input_tokens,
+                        "output_tokens": outcome.timing.output_tokens,
+                        "decode_tok_s": (outcome.timing.decode_tok_s * 10.0).round() / 10.0,
+                    })
+                );
+            }
+            let mut line = serde_json::json!({
+                "task": task.as_str(),
+                "tier": arguments.tier.as_str(),
+                "passages": passages.len(),
+                "passed": passed,
+                "capped": capped,
+                "first_token_ms_p50": percentile(&first, 0.5).round(),
+                "first_token_ms_p90": percentile(&first, 0.9).round(),
+                "decode_tok_s_p50": (percentile(&rates, 0.5) * 10.0).round() / 10.0,
+                "answer_words_p50": percentile(&words, 0.5),
+                "answer_words_max": percentile(&words, 1.0),
+            });
+            if task == Task::Proofread {
+                line["errors_injected"] = injected.into();
+                line["errors_fixed"] = fixed.into();
+                line["unwanted_changes"] = unwanted.into();
+                line["exact"] = exact.into();
+            }
+            println!("RESULT {line}");
+            summary.push(line);
+        }
+        println!(
+            "RESULT {}",
+            serde_json::json!({"load_ms": load_ms.round(), "peak_rss_mib": peak_rss_mib().round()})
+        );
+    }
+
+    /// Score the answers a `writing-eval` run logged (its `SAMPLE` lines)
+    /// with the current checks, no model needed, split into the five
+    /// passages the prompts were tuned on (p01–p05) and the 25 held out.
+    fn writing_rescore(arguments: &Arguments) {
+        let log = arguments.rest.first().cloned().unwrap_or_else(|| {
+            eprintln!("usage: rmac-intelligence-bench writing-rescore LOG");
+            std::process::exit(2);
+        });
+        let text = std::fs::read_to_string(&log).expect("the log reads");
+        let passages = passages();
+        // task -> split -> (passed, total, invented answers, fixed, injected, unwanted)
+        let mut totals: std::collections::BTreeMap<(String, &str), [u32; 6]> = Default::default();
+        for line in text.lines() {
+            let Some(json) = line.strip_prefix("SAMPLE ") else {
+                continue;
+            };
+            let Ok(sample) = serde_json::from_str::<serde_json::Value>(json) else {
+                continue;
+            };
+            let task_name = sample["task"].as_str().unwrap_or_default().to_owned();
+            let Some(task) = Task::parse(&task_name) else {
+                continue;
+            };
+            let id = sample["id"].as_str().unwrap_or_default();
+            let answer = sample["answer"].as_str().unwrap_or_default();
+            let Some(passage) = passages.iter().find(|passage| passage.id == id) else {
+                continue;
+            };
+            let split = if id < "p06" { "dev" } else { "heldout" };
+            let entry = totals.entry((task_name, split)).or_default();
+            entry[1] += 1;
+            let invented = writing_eval::invented_numbers(&passage.text, answer);
+            if !invented.is_empty() {
+                entry[2] += 1;
+            }
+            let pass = if task == Task::Proofread {
+                let (_, errors) = writing_eval::inject_errors(passage, 4);
+                let score = writing_eval::score_proofread(&passage.text, &errors, answer);
+                entry[3] += score.fixed;
+                entry[4] += score.injected;
+                entry[5] += score.unwanted_changes;
+                score.fixed + 1 >= score.injected
+                    && score.unwanted_changes <= 1
+                    && invented.is_empty()
+            } else {
+                let check = writing_eval::check(task, passage, answer);
+                if arguments.verbose && !check.pass {
+                    println!(
+                        "FAIL {} {id}: {} {:?}",
+                        task.as_str(),
+                        check.reason,
+                        check.invented
+                    );
+                }
+                check.pass
+            };
+            entry[0] += u32::from(pass);
+        }
+        for ((task, split), [passed, total, invented, fixed, injected, unwanted]) in totals {
+            println!(
+                "RESULT {}",
+                serde_json::json!({
+                    "task": task, "split": split, "passed": passed, "passages": total,
+                    "answers_with_invented_numbers": invented,
+                    "errors_fixed": fixed, "errors_injected": injected, "unwanted_changes": unwanted,
+                })
+            );
+        }
+    }
+
+    /// The 150-word rewrite, in process: first token and decode rate.
+    fn write_latency(arguments: &Arguments) {
+        let (mut engine, load_ms) = load(arguments);
+        let passage = passages()
+            .into_iter()
+            .find(|passage| passage.id == TIMING_PASSAGE)
+            .expect("the timing passage");
+        for task in &arguments.tasks {
+            let mut first = Vec::new();
+            let mut rates = Vec::new();
+            let mut totals = Vec::new();
+            let mut prefill = Vec::new();
+            for run in 0..arguments.runs.max(1) {
+                let outcome = write_once(&mut engine, *task, &passage.text, run as u32)
+                    .expect("the timing passage is answered");
+                let timing = &outcome.timing;
+                println!(
+                    "{} run {run}: first token {:.0} ms (prefix {:.0} ms{}, {} input tokens in {:.0} ms), {} output tokens at {:.1} tok/s, total {:.0} ms",
+                    task.as_str(),
+                    timing.first_token_ms,
+                    timing.prefix_ms,
+                    if timing.prefix_evaluated { " evaluated" } else { "" },
+                    timing.input_tokens,
+                    timing.prefill_ms,
+                    timing.output_tokens,
+                    timing.decode_tok_s,
+                    timing.total_ms
+                );
+                if arguments.verbose {
+                    println!("{}", outcome.text);
+                }
+                // The first run may evaluate the prefix: report it apart.
+                if run > 0 || !timing.prefix_evaluated {
+                    first.push(timing.first_token_ms);
+                    rates.push(timing.decode_tok_s);
+                    totals.push(timing.total_ms);
+                    prefill.push(
+                        f64::from(timing.input_tokens) * 1000.0 / timing.prefill_ms.max(1e-3),
+                    );
+                }
+            }
+            println!(
+                "RESULT {}",
+                serde_json::json!({
+                    "task": task.as_str(),
+                    "tier": arguments.tier.as_str(),
+                    "load_ms": load_ms.round(),
+                    "words": writing::word_count(&passage.text),
+                    "runs": first.len(),
+                    "first_token_ms_p50": percentile(&first, 0.5).round(),
+                    "first_token_ms_max": percentile(&first, 1.0).round(),
+                    "prefill_tok_s_p50": percentile(&prefill, 0.5).round(),
+                    "decode_tok_s_p50": (percentile(&rates, 0.5) * 10.0).round() / 10.0,
+                    "total_ms_p50": percentile(&totals, 0.5).round(),
+                    "peak_rss_mib": peak_rss_mib().round(),
+                })
+            );
+        }
+    }
+
+    /// The 150-word rewrite through the real service, as Notes asks: the
+    /// time to the first streamed delta on the client's clock.
+    fn write_through_service(arguments: &Arguments) {
+        let passage = passages()
+            .into_iter()
+            .find(|passage| passage.id == TIMING_PASSAGE)
+            .expect("the timing passage");
+        let task = arguments.tasks.first().copied().unwrap_or(Task::Rewrite);
+        let mut first = Vec::new();
+        for run in 0..arguments.runs.max(1) {
+            let started = Instant::now();
+            let mut first_delta = None;
+            let mut deltas = 0usize;
+            let (_cancel, cancelled) = async_channel::bounded::<()>(1);
+            let result = futures_lite::future::block_on(rmac_intelligence::client::write(
+                task,
+                &passage.text,
+                run as u32,
+                cancelled,
+                |_| {
+                    deltas += 1;
+                    first_delta.get_or_insert_with(|| started.elapsed().as_secs_f64() * 1000.0);
+                },
+            ));
+            match result {
+                Ok(done) => {
+                    let first_ms = first_delta.unwrap_or_default();
+                    println!(
+                        "{run:>3} {}: first delta {first_ms:.0} ms (service {:.0} ms{}), {deltas} deltas, {} tokens at {:.1} tok/s, client total {:.0} ms",
+                        task.as_str(),
+                        done.timing.first_token_ms,
+                        if done.timing.cold { ", cold" } else { "" },
+                        done.timing.output_tokens,
+                        done.timing.decode_tok_s,
+                        started.elapsed().as_secs_f64() * 1000.0
+                    );
+                    if run > 0 {
+                        first.push(first_ms);
+                    }
+                }
+                Err(error) => println!("{run:>3} error: {error}"),
+            }
+        }
+        println!(
+            "RESULT {}",
+            serde_json::json!({
+                "task": task.as_str(),
+                "warm_first_delta_ms_p50": percentile(&first, 0.5).round(),
+                "warm_first_delta_ms_max": percentile(&first, 1.0).round(),
+                "samples": first.len(),
+            })
+        );
+    }
+
     pub fn main() {
         let arguments = arguments();
         match arguments.command.as_str() {
             "eval" => evaluate(&arguments),
             "latency" => latency(&arguments),
             "service" => through_service(&arguments),
+            "writing-eval" => writing_evaluation(&arguments),
+            "writing-rescore" => writing_rescore(&arguments),
+            "write-latency" => write_latency(&arguments),
+            "write-service" => write_through_service(&arguments),
             _ => {
                 eprintln!("usage: rmac-intelligence-bench eval|latency|service --model M.gguf …");
                 std::process::exit(2);

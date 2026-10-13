@@ -11,7 +11,11 @@
 //! them names a different file, so a stale state is never restored, and
 //! the service deletes the older files once the new one is written.
 //!
-//! This module only names and finds the file, so System Settings can tell
+//! Each Writing Tools task (`crate::writing`) has its own prefix and so its
+//! own state file beside the intent one, named the same way from its own
+//! prompt.
+//!
+//! This module only names and finds the files, so System Settings can tell
 //! cheaply (one `stat`) whether the model is ready or still needs its
 //! one-time warm-up, without loading anything.
 
@@ -21,10 +25,12 @@ use sha2::{Digest, Sha256};
 
 use crate::manifest::Model;
 use crate::prompt::{self, PromptStyle};
+use crate::{writing, Task};
 
-/// The context the service creates: the prefix plus the longest request and
-/// answer, with room to spare.
-pub const CONTEXT_TOKENS: u32 = 1536;
+/// The context the service creates: the longest prefix plus the longest
+/// request and answer (a Writing Tools rewrite of 640 tokens, answered in
+/// up to 900), with room to spare.
+pub const CONTEXT_TOKENS: u32 = 2048;
 
 /// The llama.cpp binding the service is built with. A unit test holds it
 /// equal to `Cargo.lock`, so a dependency bump cannot keep an old state.
@@ -46,6 +52,33 @@ pub fn file(directory: &Path, model: &Model, style: PromptStyle) -> PathBuf {
     directory.join(format!("{PREFIX}{}{SUFFIX}", &digest[..24]))
 }
 
+/// The state file for one Writing Tools task's prefix.
+pub fn writing_file(directory: &Path, model: &Model, task: Task) -> Option<PathBuf> {
+    let spec = writing::spec(task)?;
+    let mut hasher = Sha256::new();
+    hasher.update(model.sha256.as_bytes());
+    hasher.update(b"writing");
+    hasher.update(writing::WRITING_PROMPT_VERSION.to_le_bytes());
+    hasher.update(task.as_str().as_bytes());
+    hasher.update(spec.prefix().as_bytes());
+    hasher.update(CONTEXT_TOKENS.to_le_bytes());
+    hasher.update(ENGINE_VERSION.as_bytes());
+    let digest = crate::verify::hex(&hasher.finalize());
+    Some(directory.join(format!("{PREFIX}{}{SUFFIX}", &digest[..24])))
+}
+
+/// Every state file the current prompts use for `model`: the intent
+/// prefix in `style`, then each writing task's.
+pub fn current_files(directory: &Path, model: &Model, style: PromptStyle) -> Vec<PathBuf> {
+    std::iter::once(file(directory, model, style))
+        .chain(
+            Task::WRITING
+                .iter()
+                .filter_map(|task| writing_file(directory, model, *task)),
+        )
+        .collect()
+}
+
 /// The state file the service would read for `model` with the default
 /// prompt, in the user's cache directory.
 pub fn current(model: &Model) -> Option<PathBuf> {
@@ -58,9 +91,10 @@ pub fn is_ready(model: &Model) -> bool {
     current(model).is_some_and(|path| path.is_file())
 }
 
-/// Delete every saved prefix state in `directory` except `keep` (an update
-/// changed the prompt or the model, so the old ones can never be used).
-pub fn remove_others(directory: &Path, keep: &Path) {
+/// Delete every saved prefix state in `directory` except those in `keep`
+/// (an update changed a prompt or the model, so the old ones can never be
+/// used).
+pub fn remove_others(directory: &Path, keep: &[PathBuf]) {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return;
     };
@@ -68,7 +102,7 @@ pub fn remove_others(directory: &Path, keep: &Path) {
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if path != keep && name.starts_with(PREFIX) && name.contains(SUFFIX) {
+        if !keep.contains(&path) && name.starts_with(PREFIX) && name.contains(SUFFIX) {
             let _ = std::fs::remove_file(&path);
         }
     }
@@ -90,6 +124,20 @@ mod tests {
         assert_eq!(tiny, file(directory, Tier::Tiny.model(), PromptStyle::List));
         let name = tiny.file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.starts_with(PREFIX) && name.ends_with(SUFFIX), "{name}");
+    }
+
+    #[test]
+    fn every_writing_task_has_its_own_state_file() {
+        let directory = Path::new("/cache");
+        let files = current_files(directory, Tier::Tiny.model(), PromptStyle::Compact);
+        assert_eq!(files.len(), 1 + Task::WRITING.len());
+        let unique: std::collections::BTreeSet<_> = files.iter().collect();
+        assert_eq!(unique.len(), files.len());
+        assert!(writing_file(directory, Tier::Tiny.model(), Task::Intent).is_none());
+        assert_ne!(
+            writing_file(directory, Tier::Tiny.model(), Task::Rewrite),
+            writing_file(directory, Tier::Standard.model(), Task::Rewrite)
+        );
     }
 
     #[test]
@@ -120,8 +168,11 @@ mod tests {
         for path in [&keep, &old, &partial, &other] {
             std::fs::write(path, b"x").unwrap();
         }
-        remove_others(&directory, &keep);
+        let writing = writing_file(&directory, Tier::Tiny.model(), Task::Proofread).unwrap();
+        std::fs::write(&writing, b"x").unwrap();
+        remove_others(&directory, &[keep.clone(), writing.clone()]);
         assert!(keep.is_file());
+        assert!(writing.is_file());
         assert!(!old.exists());
         assert!(!partial.exists());
         assert!(other.is_file());

@@ -6001,7 +6001,9 @@ dependencies = [
  "gpui",
  "gpui-component",
  "libc",
+ "raw-window-handle",
  "rmac-apps",
+ "rmac-print-linux",
  "rmac-storage",
  "rmac-ui",
  "sysinfo 0.33.1",
@@ -6577,6 +6579,8 @@ dependencies = [
 name = "rmac-intelligence"
 version = "0.9.0-beta.1"
 dependencies = [
+ "async-channel",
+ "futures-util",
  "rmac-dbus",
  "rmac-storage",
  "serde",
@@ -6591,6 +6595,7 @@ version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
+ "futures-lite",
  "futures-util",
  "libc",
  "llama-cpp-2",
@@ -6783,6 +6788,7 @@ dependencies = [
  "rmac-portal",
  "rmac-storage",
  "rmac-ui",
+ "rmac-writing-tools",
  "serde",
  "serde_json",
  "uuid",
@@ -6926,6 +6932,7 @@ dependencies = [
  "rmac-storage",
  "rmac-ui",
  "rmac-windows-resource-build",
+ "rmac-writing-tools",
  "sha2 0.10.9",
  "zbus",
 ]
@@ -7833,6 +7840,7 @@ dependencies = [
  "rmac-storage",
  "rmac-ui",
  "rmac-windows-resource-build",
+ "rmac-writing-tools",
 ]
 
 [[package]]
@@ -8094,6 +8102,16 @@ name = "rmac-windows-resource-build"
 version = "0.9.0-beta.1"
 dependencies = [
  "embed-resource",
+]
+
+[[package]]
+name = "rmac-writing-tools"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "gpui",
+ "rmac-intelligence",
+ "rmac-ui",
 ]
 
 [[package]]

@@ -284,6 +284,7 @@ impl FinderView {
                     match result {
                         Ok((path, entry, availability)) => {
                             this.undo_available = availability;
+                            this.sync_redo();
                             if path.parent() == Some(this.cwd.as_path()) {
                                 this.root_entries.retain(|item| item.path != path);
                                 this.root_entries.push(entry.clone());

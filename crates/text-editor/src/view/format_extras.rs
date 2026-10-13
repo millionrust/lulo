@@ -85,6 +85,11 @@ pub(super) fn style_description(style: &rich::CharStyle, ruler: &rich::Paragraph
         rich::Alignment::Right => parts.push("Right".to_owned()),
         rich::Alignment::Justified => parts.push("Justified".to_owned()),
     }
+    match ruler.direction {
+        rich::WritingDirection::Default => {}
+        rich::WritingDirection::LeftToRight => parts.push("Left to right".to_owned()),
+        rich::WritingDirection::RightToLeft => parts.push("Right to left".to_owned()),
+    }
     if let Some(kind) = ruler.list {
         parts.push(format!("{} list", list_marker_name(kind)));
     }

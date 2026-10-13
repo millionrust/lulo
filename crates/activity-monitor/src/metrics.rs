@@ -1,4 +1,5 @@
 use crate::columns::ColKey;
+use crate::host_stats::DiskTotals;
 
 /// Which top-level pane is active. Each tab re-focuses the table on a different
 /// metric and surfaces its corresponding bottom summary panel.
@@ -82,6 +83,20 @@ pub(crate) struct Aggregates {
     pub(crate) threads: Option<u64>,
     /// File-backed page cache ("Cached Files"), when the platform exposes it.
     pub(crate) mem_cached: Option<u64>,
+    /// Block-device operation and byte counters since boot, and the
+    /// operations per second since the previous sample (MON-09).
+    pub(crate) disk_totals: Option<DiskTotals>,
+    pub(crate) disk_reads_rate: f64,
+    pub(crate) disk_writes_rate: f64,
+    /// Packets received / sent by every interface since boot, and per
+    /// second (MON-09).
+    pub(crate) net_total_packets_in: u64,
+    pub(crate) net_total_packets_out: u64,
+    pub(crate) net_packets_in_rate: f64,
+    pub(crate) net_packets_out_rate: f64,
+    /// Memory stall share over the last 10 seconds, from the kernel's PSI
+    /// (MON-08), when the kernel keeps it.
+    pub(crate) memory_pressure: Option<f32>,
 }
 
 /// A bounded ring of recent samples for each metric.

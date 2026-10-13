@@ -4,6 +4,8 @@
   `org.rmac.Intelligence1` service, prompt-prefix caching, Spotlight "Lulo can do this" rows and
   the Settings ▸ Lulo Intelligence pane. Fine-tuning is approved by the owner (2026-10-07) and is
   a planned phase. Any rented-GPU spend still needs the owner's account and payment.
+  Writing Tools (feature 2) landed on `op/ai-writing-tools` (2026-10-13): see "Phase 2
+  (Writing Tools) results".
 - **Scope:** new crates `rmac-intelligence` (types, prompts, hardware gate, action registry,
   client), `rmac-intelligence-service` (the model process), `rmac-voice` (speech, phase 3);
   a new System Settings pane `crates/system-settings/src/controller/intelligence`; hooks in
@@ -1053,6 +1055,137 @@ to call mum at 5" → a 5-minute timer); after 21/22 in every run, the one miss 
 the wifi" (the harness marks it lenient, a known base-model gap). A one-off "Getting ready…"
 check, the 0600 state and the idle exit (service gone within its timeout, the session at
 5–10 clock ticks over 2 s afterwards) passed in every run.
+
+## Phase 2 (Writing Tools) results (2026-10-13)
+
+Built on `op/ai-writing-tools`: feature 2 of §1, in Notes, Text Editor and Mail's compose
+window, on the same on-demand `org.rmac.Intelligence1` service.
+
+### What was built
+
+- **Closed tasks** (`rmac_intelligence::Task`): `proofread`, `rewrite`, `friendly`,
+  `professional`, `concise`, `summarise`, `key_points`, `list`. Each has its own fixed prompt
+  (`rmac_intelligence::writing`: system prompt, task instruction and one worked example in the
+  Qwen3.5 chat template, thinking off), its own prefix state file
+  (`prefix_state::writing_file`, kept beside the intent one; `remove_others` keeps every current
+  task's file), an input cap in tokens (640; 1,200 for Summarise and Key Points), an output cap
+  scaled from the input (at most 140 tokens for Summarise, 200 for Key Points, 600–900 for the
+  rest) and its own sampling (Proofread greedy; tones 0.45; condensing 0.3). The context grew to
+  2,048 tokens. A task's prefix is evaluated the first time it is used (about 4.8 s on the Tiny
+  model), saved 0600, and the last task's state stays in memory so Try Again starts at once.
+- **Streaming.** `Write(task, text, attempt) -> t` returns a job number at once; the answer
+  follows as `Delta(job, text)` signals and one `Done(job, outcome, detail)` (outcome
+  `finished`, `capped`, `cancelled`, `too_long`, `needs_faster_pc`, `off`, …; detail JSON with
+  the cleaned text and timings), all **addressed to the caller's unique name only**.
+  `Cancel(job)` stops only the caller's own job; the worker also checks every 2 s that the
+  caller is still on the bus, so an app that quits mid-answer stops the model. Text is ≤ 12 KiB
+  over the bus and tokenised *without* special tokens, so `<|im_end|>` in a note is just text.
+  The client (`client::write`, async) reads signals only from the connection that answered
+  `Write` and ends if the service's name owner changes. Idle cost is unchanged: the service
+  still exits 60 s after its last job.
+- **Callers:** a second exact-path list, `Purpose::Writing`: `/usr/bin/rmac-notes`,
+  `/usr/bin/rmac-text-editor`, `/usr/bin/rmac-mail` (and the same names, plus the unpackaged
+  bench, beside the service). Spotlight cannot call `Write`, and the writing apps cannot run
+  intents. `intelligence-unit` now also streams a Proofread through the real unit and refuses
+  a copy named `rmac-notes` outside the list.
+- **Deterministic guards:** every token that starts a character in a script the text does not
+  use is forbidden (a logit bias from each token's UTF-8 lead bytes), after the evaluation saw
+  the 0.8B model answer an English passage's Key Points in Chinese; a preface line ("Here is the
+  rewritten text:"), wrapping quotes and list numbering after a bullet are removed from the
+  final text.
+- **UI** (`crates/rmac-writing-tools`): Edit ▸ Writing Tools in all three apps (Show Writing
+  Tools; Proofread, Rewrite; Make Friendly, Make Professional, Make Concise; Summarise, Create
+  Key Points, Make List: macOS 26's submenu without Make Table and Compose, which these plain
+  fields and the closed task list cannot do), and the same submenu in the text's right-click
+  menu (the plain fields' menu now also has Cut/Copy/Paste/Select All; Text Editor's rich body
+  gained a right-click menu). Writing Tools work on the selection, or on all the text when
+  nothing is selected. A panel (design-lab/writing-tools.html) shows "Reading the text…", then
+  the answer as it streams, then **Try Again**, **Copy** and **Replace** (Return); **Stop**/
+  Escape cancels mid-answer. Replace is one undoable edit through each field's own edit path
+  and selects the new text, so Edit ▸ Undo/⌘Z restores the original; if the text was edited
+  meanwhile, Replace finds the original nearest where it was, or says to Copy instead. The
+  answer streams on a background executor; the UI thread only appends what arrives, batched
+  per frame. The submenu is **hidden** (`rmac_ui::set_menu_hidden`) while Lulo Intelligence is
+  off, the PC is not offered it, or no model is on disk; the apps look again, off the UI
+  thread, whenever a window becomes active (nothing polls). A task the PC's model is too small
+  for is shown disabled, and the panel says "<Task> needs a faster PC."
+- **Behaviour scenario** `scripts/behavior/run_writing_tools.py` (runtime check
+  `writing-tools`, fixture engine): off — no submenu, Activate refused, no service; on — all
+  nine commands in Text Editor and Notes, Proofread streams (3+ partial answers read from the
+  panel; first delta 0.17–0.22 s, done 2.0 s at 150 ms a word), Replace puts the answer in, ⌘Z
+  restores the original, Make Friendly stopped with Escape after its first words leaves the
+  document untouched and nothing finishes afterwards, the right-click menu shows Writing Tools,
+  Summarise on a Tiny-tier PC says it needs a faster PC without asking the service, and the
+  service exits once idle. It passed on the laptop's nested session.
+
+### Speed on the reference laptop (Qwen3.5-0.8B, 2 threads)
+
+Measured with the build lock held, the evaluation paused and the CPU otherwise idle, on the
+150-word passage `p30-rewrite-150` (164 input tokens), with the owner's verified model linked
+read-only into a private XDG tree.
+
+| | First token / first visible text | Decode | Whole answer (~150 tokens) |
+|---|---|---|---|
+| In process, Rewrite (warm, 3 runs) | p50 3.07 s | 14.4 tok/s | p50 13.5 s |
+| In process, Make Friendly | p50 3.05 s | 14.4 tok/s | p50 14.4 s |
+| In process, Proofread | p50 3.05 s | 15.2 tok/s | p50 13.8 s |
+| Through the service and D-Bus, first `Delta` on the client's clock, Rewrite (warm, 3) | p50 3.06 s (max 3.06) | 14.0 tok/s | p50 13.9 s |
+| Same, Make Friendly | p50 3.03 s | 13.9 tok/s | p50 14.7 s |
+| Cold: service activated, model loaded, task prefix evaluated for the first time | 8.85 s | | |
+| Cold with the task's prefix state already saved | 3.98 s | | |
+
+The first token is prefill: the text's own tokens at 54 tok/s (3.0 s for 164 tokens);
+streaming adds under 10 ms. Four prompt-processing threads instead of two gave 2.9–3.0 s, no
+real gain, so the service keeps two. Phase 0's "first token ≤ 2.5 s for 200 words" budget is
+**not met** (3.0 s for 150 words); the panel shows "Reading the text…" at once and the text
+then appears at reading speed. Service peak RSS 0.88–0.90 GiB, as for intents.
+
+### Quality: the evaluation set
+
+`tests/intelligence/writing-passages.jsonl`: 30 original passages (71–150 words: emails,
+notices, notes, a recipe, a review…), each with 4 key terms. Proofread inputs get 4 known
+errors each (`writing_eval::inject_errors`: confused words, swapped or dropped letters, a
+lower-case sentence start, a missing apostrophe; 120 in all), so fixes are counted exactly
+against the clean text, with every right word that changed counted as damage. The other tasks
+are checked for length (Summarise 5–60 words and ≤ 60 % of the passage; Concise 25–85 %;
+rewrites 60–180 %), key terms kept, every number kept, new wording (a rewrite that is ≥ 90 %
+the same words fails), bullet form (Key Points 2–6, List 2+), no preface, and **no invented
+numbers** (a date, time or amount the passage never had). Prompts were tuned on p01–p05 only;
+the table is the 25 held-out passages (`rmac-intelligence-bench writing-eval`, then
+`writing-rescore` with the final checks). The quality runs shared the CPU, so their timings
+are not used above.
+
+| Task | 0.8B held-out pass | 0.8B notes | 2B held-out pass | 2B notes |
+|---|---|---|---|---|
+| Proofread | **21/25** | 83/100 errors fixed (102/120 all 30), 5 right words changed, 15/30 exact | 19/25 | 94/100 fixed, but 21 right words changed (over-edits) |
+| Rewrite | 13/25 | most fails are near-copies; warmer sampling rewrote but changed facts ("a full gallon", "next week") | 19/25 | |
+| Make Friendly | **20/25** | 1 invented number | 20/25 | |
+| Make Professional | **18/25** | 0 invented | 20/25 | |
+| Make Concise | 13/25 | barely shortens (68 words p50 for ~78) | 24/25 | 58 words p50 |
+| Summarise | 16/25 | 44 words p50 (max 67): a condensed copy more than a summary | 19/25 | 40 words p50, max 61 |
+| Create Key Points | 15/25 | **7 answers invent a number** (a 10:00 start for "noon", 9 September for 5 September) | 18/25 | 3 invent a number |
+| Make List | 14/25 | **9 answers invent a number** | 21/25 | 3 invent a number |
+
+### Which tasks ship on which tier
+
+The rule: a task is offered on a tier when its model passes at least 70 % of the held-out
+passages and at most one answer in 25 invents a number. Applied:
+
+- **Tiny (0.8B; the reference laptop): Proofread, Make Friendly, Make Professional.**
+- **Standard (2B; PCs that decode it at ≥ 8 tok/s) adds Rewrite, Make Concise, Summarise,
+  Create Key Points and Make List.** On the reference laptop these are shown disabled and the
+  panel says "Needs a faster PC". Key Points and List still invent a number in 3 of 25 answers on
+  2B; they are offered there because the answer is only a preview the user reads before
+  Replace, and fine-tuning (§6) is the fix. `writing::Spec::min_tier`, pinned by a unit test.
+
+### Not done
+
+Writing prefixes are evaluated on first use, not during Settings' warm-up (doing it there would
+make Spotlight's own `Prepare` wait 40 s after an update); Mail compose has no behaviour scenario
+(it needs a mail account in the nested session; its menu rows are covered by the
+`rmac-app-menu` test and the panel is the same code as Text Editor's); the 2B speeds were not
+measured cleanly (the reference laptop is not offered 2B); fine-tuning for these tasks is phase 2
+of §10.
 
 ## 11. Open risks
 

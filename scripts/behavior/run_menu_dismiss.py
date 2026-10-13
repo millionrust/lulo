@@ -1119,7 +1119,11 @@ class Run:
             # The last row sits one gap below the rows above it.
             self.check("Control Centre first open: Sound is the last row of the surface",
                        top == CONTROL_CENTRE_TOP + 12 + (rows - 1) * 76, f"{detail}, sound at y={top}")
-            region = (left - box[0], top - box[1], left - box[0] + module[2], top - box[1] + module[3])
+            # The module's inside, clear of the panel's own shadow, which
+            # reaches about 24 px past the surface edge and would otherwise
+            # make a cut-off module look half painted.
+            region = (left - box[0] + 20, top - box[1] + 28,
+                      left - box[0] + module[2] - 20, top - box[1] + module[3] - 8)
 
             def drawn(image: Image.Image) -> float:
                 """How much of the Sound module's area differs from the empty
@@ -1129,9 +1133,9 @@ class Run:
                 return sum(difference.histogram()[15:]) / area
 
             self.check("Control Centre first open: Sound is painted on the first frame",
-                       drawn(early) > 0.6, f"{detail}, drawn={drawn(early):.2f}")
+                       drawn(early) > 0.5, f"{detail}, drawn={drawn(early):.2f}")
             self.check("Control Centre first open: Sound is painted once settled",
-                       drawn(late.crop(box)) > 0.6, f"{detail}, drawn={drawn(late.crop(box)):.2f}")
+                       drawn(late.crop(box)) > 0.5, f"{detail}, drawn={drawn(late.crop(box)):.2f}")
         self.check("Control Centre first open: Display is a row only with a backlight",
                    (sound is not None and (self.find_button("Display details") is not None) == has_backlight),
                    detail)

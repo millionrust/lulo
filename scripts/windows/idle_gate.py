@@ -173,6 +173,23 @@ def after_use_failures(
     return failures
 
 
+def app_memory_failures(results: dict[str, dict], budget_mb: float | None) -> list[str]:
+    """Any app (not the Lulo layer, which has its own budgets) over `budget_mb`
+    of private memory at idle; an 8 GB PC keeps several open at once."""
+    if budget_mb is None:
+        return []
+    failures = []
+    for app, measurement in sorted(results.items()):
+        if app in ("lulo-shell", "lulo-session"):
+            continue
+        private = measurement.get("idle_private_mb")
+        if private is not None and private > budget_mb:
+            failures.append(
+                f"{app}: {private:.1f} MB private at idle, over the budget of {budget_mb:g} MB"
+            )
+    return failures
+
+
 def world_tick_failures(results: dict[str, dict], max_ticks: float | None) -> list[str]:
     """Clock's World Clock redraw cost (`launch_smoke.py --world-tick-check`)
     against `max_ticks` per redraw; nothing to check when it was not run."""
@@ -220,6 +237,12 @@ def main() -> int:
         type=float,
         default=None,
         help="Fail when lulo-shell's private bytes after use grew more than this over idle.",
+    )
+    parser.add_argument(
+        "--app-private-mb",
+        type=float,
+        default=None,
+        help="Fail when any app's private bytes at idle are over this many MB.",
     )
     parser.add_argument(
         "--expect",
@@ -270,6 +293,13 @@ def main() -> int:
         failures += after_use_failures(
             results, arguments.shell_after_use_private_mb, arguments.shell_after_use_growth_mb
         )
+    for app, measurement in sorted(results.items()):
+        if measurement.get("idle_private_mb") is not None and app not in ("lulo-shell", "lulo-session"):
+            print(
+                f"idle gate: {app}: memory at idle: working set "
+                f"{measurement.get('idle_working_set_mb')} MB, private {measurement.get('idle_private_mb')} MB"
+            )
+    failures += app_memory_failures(results, arguments.app_private_mb)
     tick = results.get("rmac-clock", {}).get("world_tick")
     if tick is not None:
         print(

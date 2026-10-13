@@ -57,7 +57,17 @@ impl Pane {
 }
 
 thread_local! {
+    /// Set by [`show_accounts`] so a Settings window that opens next starts
+    /// on its Accounts pane.
+    static ACCOUNTS_FIRST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static OPEN: std::cell::Cell<Option<WindowHandle<Root>>> = const { std::cell::Cell::new(None) };
+}
+
+/// Opens Settings on its Accounts pane (when it opens fresh).
+#[cfg(windows)]
+pub fn show_accounts(cx: &mut App) {
+    ACCOUNTS_FIRST.with(|first| first.set(true));
+    show(cx);
 }
 
 /// Opens Mail ▸ Settings…, or brings the one already open to the front.
@@ -117,7 +127,11 @@ impl SettingsView {
         let (settings, error) = settings::load();
         Self {
             focus: cx.focus_handle(),
-            pane: Pane::General,
+            pane: if ACCOUNTS_FIRST.with(std::cell::Cell::take) {
+                Pane::Accounts
+            } else {
+                Pane::General
+            },
             settings,
             save_error: error.map(SharedString::from),
             accounts: delivery::accounts(),

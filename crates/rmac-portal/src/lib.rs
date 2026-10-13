@@ -3,6 +3,8 @@
 mod chooser;
 mod model;
 mod open;
+#[cfg(windows)]
+mod windows_dialog;
 
 pub use chooser::*;
 pub use model::*;

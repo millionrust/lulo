@@ -43,6 +43,18 @@ class IdleGateTests(unittest.TestCase):
         self.assertIn("rmac-clock", failures[0])
         self.assertIn("1200 x vsync tick", failures[0])
 
+    def test_app_memory_budget_ignores_the_lulo_layer_and_missing_readings(self) -> None:
+        results = {
+            "rmac-mail": {"idle_private_mb": 120.5},
+            "rmac-calendar": {"idle_private_mb": 410.0},
+            "rmac-player": {},
+            "lulo-shell": {"idle_private_mb": 900.0},
+        }
+        failures = idle_gate.app_memory_failures(results, 400.0)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("rmac-calendar", failures[0])
+        self.assertEqual(idle_gate.app_memory_failures(results, None), [])
+
     def test_terminal_is_exempt_and_a_missing_reading_fails(self) -> None:
         results = {
             "rmac-terminal": {"idle_ticks": 40.0},

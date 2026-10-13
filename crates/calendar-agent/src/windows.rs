@@ -183,7 +183,11 @@ fn announce(alarm: &ActiveAlarm) {
     } else {
         alarm.summary.as_str()
     };
-    let _ = rmac_win_toast::show(AUMID, title, &when);
+    if !rmac_win_toast::show(AUMID, title, &when) {
+        // No Start Menu shortcut carries the id (a build run from a folder):
+        // Windows drops the toast; the sound still plays.
+        eprintln!("rmac-calendar-agent: Windows did not show the reminder toast");
+    }
     let _ = rmac_sound::play_blocking(rmac_sound::Cue::Notification);
 }
 

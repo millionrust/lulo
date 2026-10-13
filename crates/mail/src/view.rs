@@ -1277,6 +1277,11 @@ impl MailView {
                             .text_size(px(13.0))
                             .child("Add Account…")
                             .on_click(cx.listener(|_, _: &ClickEvent, _, cx| {
+                                // Windows has no Internet Accounts: Mail's
+                                // own Settings ▸ Accounts adds the account.
+                                #[cfg(windows)]
+                                crate::settings_view::show_accounts(cx);
+                                #[cfg(not(windows))]
                                 cx.spawn(async move |_, _| {
                                     if let Err(error) =
                                         std::process::Command::new("rmac-system-settings")

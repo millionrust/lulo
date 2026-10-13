@@ -44,6 +44,8 @@ DENY_WORDS = (
     # Window commands that take the robot's own window away (it closes the
     # app's last window, which quits a single-window app, or parks it).
     "close", "minimise", "minimize", "full screen", "tile", "move window",
+    # A screenshot is saved into the owner's Pictures folder.
+    "screenshot", "from entire screen", "from selection", "from window",
 )
 
 # Action identifiers refused regardless of label (exact or prefix match).

@@ -1030,8 +1030,12 @@ class Run:
         if not self.check("Control Centre first open: opens",
                           self.wait_for(lambda: self.has_layer(namespace), 10, 0.02)):
             return
-        time.sleep(0.15)
+        # The first painted frame, however soon it arrives.
         early = self.capture("control-centre-first-open-early")
+        for _ in range(60):
+            if bottom(early, baseline):
+                break
+            early = self.capture("control-centre-first-open-early")
         sound = self.wait_for(lambda: self.find_button("Sound details"), 10)
         time.sleep(1.0)
         late = self.capture("control-centre-first-open-settled")

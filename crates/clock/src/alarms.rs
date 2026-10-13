@@ -67,6 +67,51 @@ impl Days {
     }
 }
 
+/// The sound an alarm rings with (CLOCK-03): the Mac's Alarm sheet has a
+/// Sound pop-up; Lulo offers the system sounds that suit an alarm.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlarmSound {
+    #[default]
+    Alert,
+    Notification,
+    Chime,
+    Unlock,
+    PlugIn,
+}
+
+impl AlarmSound {
+    pub const ALL: [Self; 5] = [
+        Self::Alert,
+        Self::Notification,
+        Self::Chime,
+        Self::Unlock,
+        Self::PlugIn,
+    ];
+
+    /// The pop-up's text; the default is marked as on the Mac.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Alert => "Alert (Default)",
+            Self::Notification => "Notification",
+            Self::Chime => "Chime",
+            Self::Unlock => "Unlock",
+            Self::PlugIn => "Plug In",
+        }
+    }
+
+    /// The system sound it plays.
+    pub fn cue(self) -> rmac_sound::Cue {
+        match self {
+            Self::Alert => rmac_sound::Cue::Alert,
+            Self::Notification => rmac_sound::Cue::Notification,
+            Self::Chime => rmac_sound::Cue::Boot,
+            Self::Unlock => rmac_sound::Cue::Unlock,
+            Self::PlugIn => rmac_sound::Cue::PowerPlug,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct Alarm {
@@ -77,6 +122,8 @@ pub struct Alarm {
     pub repeat: Days,
     pub enabled: bool,
     pub snooze: bool,
+    /// What the alarm rings with.
+    pub sound: AlarmSound,
     /// Unix seconds a snoozed alarm rings again.
     pub snoozed_until: Option<i64>,
     /// Unix seconds of the last occurrence that rang.
@@ -93,6 +140,7 @@ impl Default for Alarm {
             repeat: Days::default(),
             enabled: true,
             snooze: true,
+            sound: AlarmSound::default(),
             snoozed_until: None,
             last_fired: None,
         }
@@ -349,5 +397,30 @@ mod tests {
         let partial: Alarm = serde_json::from_str(r#"{"id":3,"hour":6}"#).unwrap();
         assert_eq!((partial.id, partial.hour, partial.minute), (3, 6, 0));
         assert!(partial.enabled && partial.snooze);
+    }
+
+    #[test]
+    fn an_alarm_remembers_its_sound_and_old_files_still_load() {
+        assert_eq!(AlarmSound::default(), AlarmSound::Alert);
+        assert_eq!(AlarmSound::Alert.label(), "Alert (Default)");
+        let labels: Vec<_> = AlarmSound::ALL.iter().map(|sound| sound.label()).collect();
+        let mut unique = labels.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(labels.len(), unique.len());
+        let cues: Vec<_> = AlarmSound::ALL.iter().map(|sound| sound.cue()).collect();
+        for (index, cue) in cues.iter().enumerate() {
+            assert!(!cues[..index].contains(cue), "{cue:?} is offered twice");
+        }
+        let chosen = Alarm {
+            sound: AlarmSound::Chime,
+            ..Alarm::default()
+        };
+        let json = serde_json::to_string(&chosen).unwrap();
+        assert!(json.contains("\"sound\":\"chime\""));
+        assert_eq!(serde_json::from_str::<Alarm>(&json).unwrap().sound, AlarmSound::Chime);
+        // A file saved before sounds existed has no field and rings Alert.
+        let old = r#"{"id":3,"hour":6,"minute":30}"#;
+        assert_eq!(serde_json::from_str::<Alarm>(old).unwrap().sound, AlarmSound::Alert);
     }
 }

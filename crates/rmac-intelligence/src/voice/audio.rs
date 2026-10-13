@@ -188,7 +188,9 @@ pub fn trim_silence(samples: &[f32], margin: usize) -> &[f32] {
 /// `max_gain`: a quiet microphone and a loud one give the recogniser the
 /// same level (Moonshine ends early on quiet input).
 pub fn normalise_peak(samples: &[f32], peak: f32, max_gain: f32) -> Vec<f32> {
-    let loudest = samples.iter().fold(0.0f32, |top, sample| top.max(sample.abs()));
+    let loudest = samples
+        .iter()
+        .fold(0.0f32, |top, sample| top.max(sample.abs()));
     let gain = if loudest > 0.0 {
         (peak / loudest).min(max_gain)
     } else {
@@ -344,15 +346,12 @@ mod tests {
     fn silence_around_speech_is_trimmed_to_a_margin() {
         let quiet = vec![0.001f32; STEP_SAMPLES * 10];
         let speech = tone(0.5, 0.2);
-        let clip: Vec<f32> = quiet
-            .iter()
-            .chain(&speech)
-            .chain(&quiet)
-            .copied()
-            .collect();
+        let clip: Vec<f32> = quiet.iter().chain(&speech).chain(&quiet).copied().collect();
         let trimmed = trim_silence(&clip, 1_600);
         assert_eq!(trimmed.len(), speech.len() + 3_200);
-        assert!(trimmed[1_600..1_600 + 800].iter().any(|sample| sample.abs() > 0.1));
+        assert!(trimmed[1_600..1_600 + 800]
+            .iter()
+            .any(|sample| sample.abs() > 0.1));
         // All quiet, or all loud: nothing to cut.
         assert_eq!(trim_silence(&quiet, 1_600).len(), quiet.len());
         assert_eq!(trim_silence(&speech, 1_600).len(), speech.len());
@@ -366,8 +365,12 @@ mod tests {
         let clip: Vec<f32> = quiet.iter().chain(&speech).chain(&quiet).copied().collect();
         let prepared = prepare_for_recognition(&clip);
         assert_eq!(prepared.len(), speech.len() + 2 * SPEECH_PADDING);
-        assert!(prepared[..SPEECH_PADDING].iter().all(|sample| *sample == 0.0));
-        let peak = prepared.iter().fold(0.0f32, |top, sample| top.max(sample.abs()));
+        assert!(prepared[..SPEECH_PADDING]
+            .iter()
+            .all(|sample| *sample == 0.0));
+        let peak = prepared
+            .iter()
+            .fold(0.0f32, |top, sample| top.max(sample.abs()));
         assert!((peak - 0.9).abs() < 1e-3, "{peak}");
         // Under 0.1 s of speech, or none: nothing to recognise.
         assert!(prepare_for_recognition(&tone(0.05, 0.2)).is_empty());

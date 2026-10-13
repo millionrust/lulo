@@ -5,9 +5,11 @@
   the Settings ▸ Lulo Intelligence pane. Fine-tuning is approved by the owner (2026-10-07) and is
   a planned phase. Any rented-GPU spend still needs the owner's account and payment.
   Writing Tools (feature 2) landed on `op/ai-writing-tools` (2026-10-13): see "Phase 2
-  (Writing Tools) results".
+  (Writing Tools) results". Voice slice 1, hold-to-talk, landed on `op/ai-voice`
+  (2026-10-13): see "Phase 3 (Voice) results".
 - **Scope:** new crates `rmac-intelligence` (types, prompts, hardware gate, action registry,
-  client), `rmac-intelligence-service` (the model process), `rmac-voice` (speech, phase 3);
+  client), `rmac-intelligence-service` (the model process, and since phase 3 the voice service
+  `rmac-voice-service`), `rmac-voice` (the talk key's listening pill, phase 3);
   a new System Settings pane `crates/system-settings/src/controller/intelligence`; hooks in
   Spotlight, Notes, Text Editor, Mail, Terminal, Preview, Files and the Help menu; session
   units in `crates/rmac-session/units/`; `scripts/intelligence/` for dataset and evaluation.
@@ -1186,6 +1188,151 @@ make Spotlight's own `Prepare` wait 40 s after an update); Mail compose has no b
 `rmac-app-menu` test and the panel is the same code as Text Editor's); the 2B speeds were not
 measured cleanly (the reference laptop is not offered 2B); fine-tuning for these tasks is phase 2
 of §10.
+
+## Phase 3 (Voice) results (2026-10-13)
+
+Built on `op/ai-voice`: slice 1 of §8, **hold-to-talk**, with zero idle cost. The wake word,
+spoken replies and Kokoro are later slices.
+
+### What was built
+
+- **The talk key: hold ⌥Space** (`rmac-shortcuts`' new `voice` shortcut, `ALT+space` for the
+  GlobalShortcuts portal and `Alt+Space` in the niri fallback). The press runs the dispatcher,
+  which starts `rmac-voice-hud.service` (on demand, `Restart=no`, never in the session target);
+  the HUD binds `shortcut-voice.sock`, takes the press and exits when it is done. niri swallows
+  the release of the key it bound (Space) but not of ⌥, which was down before the binding
+  fired, so the HUD's layer surface takes the keyboard (exclusive) and listens for ⌥ coming up.
+  If ⌥ is already up when the pill gets the keyboard (a quick tap), or no keyboard news arrives
+  within 0.7 s, it listens **hands-free** instead: the service ends the capture after speech
+  and a 0.9 s pause (an energy detector with an adaptive floor, `voice::audio::Endpointer`), or
+  on a second press. Escape cancels and keeps nothing. Losing the keyboard while held counts as
+  letting go. The key is ⌥Space, as §8 proposed; it is rebindable where the GlobalShortcuts
+  portal offers configuration (the same as every Lulo shortcut). There is no Fn/Globe
+  equivalent: PC keyboards do not report Fn to the OS. The Copilot key and a Settings pop-up
+  for the key are not in this slice.
+- **The listening pill** (`crates/rmac-voice`, `design-lab/voice-pill.html`): a 44-pt capsule
+  where Spotlight's bar opens, an orange microphone and a nine-bar level meter that moves only
+  when the service sends a level (about 20 a second, only while listening; never animated);
+  "Listening…", then "Working…"; plain messages when Talk to Lulo is off, the model is missing,
+  ONNX Runtime is missing, or nothing was heard. Its settings check runs first, off the UI
+  thread, so a press with Talk to Lulo off never starts the voice service.
+- **`org.rmac.Voice1`** (`rmac-voice-service`, a sibling binary in `rmac-intelligence-service`,
+  activated through `rmac-voice.service`): `Start(hands_free)`, `Stop() -> {text, timing}`,
+  `Cancel()`, `EndOnPause()`, and the signals `Level(d)` and `Ended()`, sent to the caller
+  alone. The same caller-check model as Intelligence1 (§4 and "The caller-check fix"): same
+  user, and the executable must be `/usr/libexec/rmac/rmac-voice-hud` (or the HUD and the
+  unpackaged `rmac-voice-bench` beside the service); a new `Purpose::Voice` list, so the HUD
+  cannot run intents or Writing Tools and nothing else can open the microphone. The unit has
+  no mount-namespace option (the test that forbids them covers it), `RestrictAddressFamilies=
+  AF_UNIX` (the bus and PipeWire are Unix sockets), `MemoryHigh=768M`, `MemoryMax=1G`,
+  `MemorySwapMax=0`, `CPUWeight=50`. Audio lives only in the capture's memory; nothing is
+  written to disk. The model starts loading on `Start`, so the load overlaps the speech, and
+  the process exits 10 s after the last capture, which unloads it.
+- **The microphone**: `pw-record` at 16 kHz mono, raw, started on `Start` and killed on `Stop`.
+  It is a PipeWire capture stream named "Lulo Voice".
+- **The menu bar's microphone indicator (BAR-09)**: `rmac-audio`'s snapshot now lists the apps
+  with a running PipeWire capture stream (monitor streams excluded), the shell status carries
+  it as `microphone`, and the menu bar draws the Mac's orange dot (`system_orange`) while any
+  app records, Lulo's voice included. The watcher already existed (`pw-dump --monitor`,
+  event-driven); a capture stream starting or stopping is one more node change, so this adds
+  no polling. It appears about a second after the microphone opens (the watcher's 1 s quiet
+  period).
+- **Into Spotlight**: the HUD leaves the transcript in `$XDG_RUNTIME_DIR/rmac/
+  voice-transcript.json` (0600, used once, ignored after 10 s) and opens Spotlight through its
+  shortcut. Spotlight's one hook takes it as it opens and puts it in the field as if typed, so
+  everything after is the typed pipeline: the same providers, the same closed intents and
+  guards, the same "Lulo can do this" row, and the same second Return before a Settings change.
+  A request the intents cannot do stays an ordinary search.
+- **Settings ▸ Lulo Intelligence ▸ Talk to Lulo**: the switch (off by default; Lulo
+  Intelligence must be on), the shortcut ("Hold ⌥Space"), and the voice model's download row
+  (Download / Stop / Resume / Remove), through the same `rmac-intelligence-fetch` helper
+  (`voice-tiny`, `voice-standard`), each file checked against its own SHA-256.
+
+### The runtime: Moonshine through ONNX Runtime, not the sherpa-onnx crate
+
+§8 chose Moonshine via sherpa-onnx. The models are sherpa-onnx's own Moonshine export
+(`csukuangfj/sherpa-onnx-moonshine-{tiny,base}-en-int8` on Hugging Face, revision-pinned, MIT
+licence from Useful Sensors), and the decoding follows sherpa-onnx's `OfflineMoonshineModel`
+and greedy search. The `sherpa-onnx` Rust crate itself is not used: its build script
+(`sherpa-onnx-sys` 1.13.8) downloads prebuilt archives from GitHub at build time, which a
+package build may not do, and its static archives also link espeak-ng (GPL-3.0) and
+piper-phonemize for its text-to-speech, which Lulo's MIT binaries must not link (§8's own
+espeak-ng flag). Instead `ort` 2.0.0-rc.11 (MIT/Apache-2.0, `load-dynamic`, no default
+features: no download, no TLS) opens the system ONNX Runtime, Ubuntu's `libonnxruntime1.23`
+(MIT, universe), with `dlopen` when a capture starts. Nothing native is compiled into Lulo, so
+no build-host path can reach the binary (the `-ffile-prefix-map` lesson needs no new flags),
+and cargo-deny sees only permissive crates (`ort`, `ort-sys`, `libloading` 0.9, `ndarray`,
+`matrixmultiply`, `rawpointer`). `rmac-session` *recommends* `libonnxruntime1.23`; without it
+the pill says so. ONNX Runtime's worker threads are told not to spin between runs.
+Moonshine v2 (2026-02-27) was not used: its sherpa-onnx archives carry a 14 KB licence rather
+than the 1 KB MIT text, and would need checking first.
+
+Two findings from the clips shaped the input: Moonshine Tiny often decoded *nothing* for speech
+with no pause before it, or after half a second of quiet, and for quiet input. The service now
+raises the capture to one level (peak 0.9, at most 30×), cuts it to the speech and puts back
+exactly 0.2 s of silence on each side (`voice::audio::prepare_for_recognition`). That turned
+three empty transcripts of 30 into words and made the variants of one clip (padded, quiet,
+both) agree.
+
+### Measurements on the reference laptop
+
+i5-5300U, 2 cores, Ubuntu's ONNX Runtime 1.23.2 unpacked into a private folder (installing it
+needs the owner), Moonshine Tiny int8 downloaded by the fetcher (123,967,539 bytes, all five
+checksums verified), 2 threads. There is no microphone to speak into, so the evaluation is 30
+recorded clips: 12 from espeak-ng (US, British, RP, Scottish, Caribbean voices, run from its
+Ubuntu package unpacked privately), 8 from macOS `say` (US, British, Australian, Irish) and 10
+Indian-English phrasings ("kindly switch on the dark mode", "please on the wifi", "do the
+needful and off the bluetooth", "put a timer of fifteen minutes", …) in the Indian-English
+voices Aman, Rishi and Tara. Synthetic speech is clean but robotic; real voices in a real room
+will differ, in both directions.
+
+| | Result | Budget (§8) |
+|---|---|---|
+| Release → transcript, in process (30 clips, warm) | p50 60 ms, p90 81 ms, max 96 ms (encode 11–21 ms, decode 7–78 ms) | ≤ 400 ms |
+| Release → transcript through `org.rmac.Voice1` and the bus, client clock (5 runs, "turn on dark mode") | 75–90 ms | |
+| Release → transcript in the nested session (30 clips) | p50 134 ms, p90 213 ms | |
+| Release → "Lulo can do this" row drawn, real Spotlight, nested session, warm (25 rows) | **p50 812 ms, p90 1,288 ms**, max 1,734 ms | ≤ 1.5 s warm |
+| — of which: transcript → Spotlight has it | p50 92 ms (hand-off, dispatcher, window) | |
+| — Spotlight's typing pause before asking | 157 ms (the 150 ms debounce) | |
+| — the language model's answer | p50 428 ms, p90 633 ms (0 ms for "open <app>", answered without the model) | |
+| Release → intent in process (transcript + Tiny intent, 30 clips) | p50 321 ms, p90 456 ms | ≤ 600 ms rule parser, ≤ 1.5 s LLM warm |
+| Cold first press (voice service activated, model loaded during a 2.6 s hold) | voice model load 1.0 s (bench) / 3.1 s (nested); the transcript waited 449 ms for it; release → row 2.1 s | ≤ 3.5 s cold |
+| Press → mic delivering audio (service side, file source) | 49–50 ms | |
+| Word error rate, 30 clips | **10.0 %** (13 errors in 130 words) | §8's figure for Tiny: 12 % |
+| — espeak-ng 12 / `say` 8 / Indian-English 10 | 4 clips with errors of 12 / 2 of 8 / 3 of 10 | |
+| Requests that reached the right row or answer (nested, 30) | 26 of the labels, plus "search for invoices" → Search Files (sensible); misses: "Tumbly to thorn" (mis-heard "turn bluetooth on" → Turn On Dark Mode, a Settings change that still asks first), "New to the sound" (mute), "Deo the needful and off the bluetooth" | |
+| Peak memory, voice service (VmHWM) | 205 MiB (in-process bench 201 MiB); with the Tiny language model in the same process, 1,040 MiB | MemoryHigh 768M |
+| Idle | 0 context switches 3–7 s after the last capture; the service exited within 10 s; the HUD exits after each press; with Talk to Lulo off a press never starts the service | zero |
+
+The nested session composites in software on the same two cores, so its numbers are
+pessimistic (phase 1.1 saw 1.2–2× the bench). An early version of the measurement walked the
+accessibility tree while the models worked and doubled every step; the runner now follows the
+HUD's and Spotlight's own traces instead (`run_voice.py --real-model`).
+
+**Not measured**: the real microphone. `pw-record` on the laptop would open the owner's live
+session's PipeWire, which agents must not touch, so press → microphone open, the indicator's
+real delay and real-voice accuracy wait for the owner's first try; the file source stands in
+for the microphone everywhere else.
+
+### Behaviour scenario
+
+`scripts/behavior/run_voice.py` (runtime check `voice`; fixture engines, no model files):
+Talk to Lulo off → the pill says to turn it on, the voice service never starts, Spotlight
+never opens; on → hold ⌥Space, "Listening…" after 0.46 s, let go, Spotlight shows "turn on
+dark mode" with "Turn On Dark Mode, Lulo can do this" 1.3 s after release, the first Return
+only asks, the second switches to Dark; Escape mid-hold hands nothing over; "what's the
+weather like" opens an ordinary search with no Lulo row; a tap listens hands-free and ends
+after the pause; both services exit when idle. It passed on the reference laptop's nested
+session. `--real-model CLIPS.jsonl` is the measurement above.
+
+### Not done in this slice
+
+The wake word, spoken replies (`spd-say`) and Kokoro; the Copilot key and a key pop-up in
+Settings; streaming recognition while the key is held (the clip is transcribed after release,
+which the numbers show is fast enough on Tiny); Moonshine Base on Standard PCs is pinned and
+downloadable but unmeasured (the reference laptop gets Tiny); non-English speech (whisper.cpp,
+§8); a Control Centre pill naming the app that recorded ("Lulo Voice recently"), the second
+half of BAR-09.
 
 ## 11. Open risks
 

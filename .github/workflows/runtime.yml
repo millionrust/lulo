@@ -25,7 +25,10 @@ jobs:
     # CI-only build settings, as in ci.yml (docs/ci.md "Build speed"):
     # sccache serves compiled crates from the GitHub Actions cache and mold
     # links; release and candidate builds keep their own settings.
+    # CARGO_TERM_COLOR matches ci.yml: rustc's --color argument is part of
+    # sccache's key, so the same crates are shared with the Linux jobs.
     env:
+      CARGO_TERM_COLOR: always
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_BUILD_JOBS: 4
       CARGO_INCREMENTAL: 0

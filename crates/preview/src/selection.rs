@@ -184,6 +184,81 @@ pub fn flood_fill(pixels: &RgbaImage, seed: (u32, u32), tolerance: u32) -> Mask 
     mask
 }
 
+/// Colour distance (sum of channel differences, 0..=1020) within which a
+/// pixel counts as the same background colour for [`remove_background`].
+pub const BACKGROUND_TOLERANCE: u32 = 60;
+
+/// Tools ▸ Remove Background (PRV-MENU-009): makes the image's background
+/// transparent. The background colour is the most common colour on the
+/// image's border (bucketed to 5 bits a channel, so noise and JPEG
+/// artefacts don't split it); every pixel connected to the border through
+/// pixels within [`BACKGROUND_TOLERANCE`] of that colour loses its alpha.
+/// Interior regions of the same colour that the border can't reach (the
+/// hole in a "0") are kept, as a subject's own colours should be. This is
+/// colour-keying from the edges, not subject recognition: a photo whose
+/// border isn't one flat colour changes little. Returns the pixels
+/// unchanged if nothing matched.
+pub fn remove_background(pixels: &RgbaImage) -> RgbaImage {
+    let (width, height) = pixels.dimensions();
+    if width == 0 || height == 0 {
+        return pixels.clone();
+    }
+    let border: Vec<(u32, u32)> = (0..width)
+        .flat_map(|x| [(x, 0), (x, height - 1)])
+        .chain((0..height).flat_map(|y| [(0, y), (width - 1, y)]))
+        .collect();
+    let mut buckets: std::collections::HashMap<[u8; 3], (usize, image::Rgba<u8>)> =
+        std::collections::HashMap::new();
+    for &(x, y) in &border {
+        let pixel = *pixels.get_pixel(x, y);
+        let key = [pixel.0[0] >> 3, pixel.0[1] >> 3, pixel.0[2] >> 3];
+        buckets.entry(key).or_insert((0, pixel)).0 += 1;
+    }
+    let Some((_, reference)) = buckets
+        .values()
+        .max_by_key(|(count, pixel)| (*count, pixel.0))
+        .copied()
+    else {
+        return pixels.clone();
+    };
+    let mut removed = Mask::empty(width, height);
+    let mut stack = Vec::new();
+    for (x, y) in border {
+        if !removed.get(x, y)
+            && channel_distance(*pixels.get_pixel(x, y), reference) <= BACKGROUND_TOLERANCE
+        {
+            removed.set(x, y, true);
+            stack.push((x, y));
+        }
+    }
+    while let Some((x, y)) = stack.pop() {
+        let neighbours = [
+            (x.wrapping_sub(1), y),
+            (x + 1, y),
+            (x, y.wrapping_sub(1)),
+            (x, y + 1),
+        ];
+        for (nx, ny) in neighbours {
+            if nx >= width || ny >= height || removed.get(nx, ny) {
+                continue;
+            }
+            if channel_distance(*pixels.get_pixel(nx, ny), reference) <= BACKGROUND_TOLERANCE {
+                removed.set(nx, ny, true);
+                stack.push((nx, ny));
+            }
+        }
+    }
+    let mut out = pixels.clone();
+    for y in 0..height {
+        for x in 0..width {
+            if removed.get(x, y) {
+                out.get_pixel_mut(x, y).0[3] = 0;
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,5 +362,39 @@ mod tests {
         let overlay = mask.overlay([10, 20, 30], 128);
         assert_eq!(*overlay.get_pixel(0, 0), Rgba([0, 0, 0, 0]));
         assert_eq!(*overlay.get_pixel(1, 1), Rgba([10, 20, 30, 128]));
+    }
+
+    #[test]
+    fn remove_background_clears_the_border_connected_colour_and_keeps_the_subject() {
+        // White 7x7 with a red 3x3 subject and a white hole inside it.
+        let mut pixels = RgbaImage::from_pixel(7, 7, Rgba([255, 255, 255, 255]));
+        for y in 2..5 {
+            for x in 2..5 {
+                pixels.put_pixel(x, y, Rgba([200, 0, 0, 255]));
+            }
+        }
+        pixels.put_pixel(3, 3, Rgba([255, 255, 255, 255]));
+        let out = remove_background(&pixels);
+        assert_eq!(out.get_pixel(0, 0).0[3], 0);
+        assert_eq!(out.get_pixel(6, 6).0[3], 0);
+        assert_eq!(out.get_pixel(2, 2).0, [200, 0, 0, 255]);
+        // The enclosed white pixel isn't reachable from the border.
+        assert_eq!(out.get_pixel(3, 3).0, [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn remove_background_tolerates_slight_noise_in_the_background() {
+        let mut pixels = RgbaImage::from_pixel(5, 5, Rgba([250, 250, 250, 255]));
+        pixels.put_pixel(0, 2, Rgba([245, 252, 248, 255]));
+        pixels.put_pixel(2, 2, Rgba([0, 0, 0, 255]));
+        let out = remove_background(&pixels);
+        assert_eq!(out.get_pixel(0, 2).0[3], 0);
+        assert_eq!(out.get_pixel(2, 2).0[3], 255);
+    }
+
+    #[test]
+    fn remove_background_leaves_an_empty_image_alone() {
+        let pixels = RgbaImage::new(0, 0);
+        assert_eq!(remove_background(&pixels).dimensions(), (0, 0));
     }
 }

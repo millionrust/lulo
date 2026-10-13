@@ -79,11 +79,13 @@ gpui::actions!(
         RotateRight,
         FlipHorizontal,
         FlipVertical,
+        RemoveBackground,
         RectangularSelection,
         AutomaticSelection,
         InvertSelection,
         Crop,
         Redact,
+        InsertBlankPage,
         BrowseSavedVersions,
         AnnotateHighlight,
         AnnotateUnderline,
@@ -258,6 +260,7 @@ fn bind_keys(cx: &mut App) {
             KeyBinding::new("shift-cmd-8", ZoomToSelection, context),
             KeyBinding::new("shift-cmd-f", Slideshow, context),
             KeyBinding::new("cmd-k", Crop, context),
+            KeyBinding::new("shift-cmd-k", RemoveBackground, context),
         ],
     );
 }

@@ -285,6 +285,21 @@
           "children": []
         },
         {
+          "label": "Insert",
+          "action": "preview::InsertMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Blank Page",
+              "action": "preview::InsertBlankPage",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Move to Bin",
           "action": "preview::MoveToTrash",
           "shortcut": "⌘⌫",
@@ -868,6 +883,13 @@
           "label": "Crop",
           "action": "preview::Crop",
           "shortcut": "⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Remove Background",
+          "action": "preview::RemoveBackground",
+          "shortcut": "⇧⌘K",
           "separator_before": false,
           "children": []
         },

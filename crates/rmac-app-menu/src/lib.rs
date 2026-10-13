@@ -2293,6 +2293,15 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             // only understands rectangles — the same simplification
             // macOS Preview's own Crop applies to any selection shape.
             item!("Invert Selection", "preview::InvertSelection", "⇧⌘I"),
+            // PRV-MENU-005/007: Blank Page splices an empty, same-size page
+            // after the current one (`markup::insert_blank_page`). Page
+            // from File… needs cross-document object import and is left
+            // out rather than faked.
+            submenu!(
+                "Insert",
+                "preview::InsertMenu",
+                [item!("Blank Page", "preview::InsertBlankPage", "")]
+            ),
             item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(
                 "Find",
@@ -2450,6 +2459,9 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Flip Horizontal", "preview::FlipHorizontal", ""),
             item!("Flip Vertical", "preview::FlipVertical", ""),
             item!("Crop", "preview::Crop", "⌘K"),
+            // PRV-MENU-009: colour-keys the border-connected background to
+            // transparent (`rmac_preview::selection::remove_background`).
+            item!("Remove Background", "preview::RemoveBackground", "⇧⌘K"),
             // PRV-MENU-015: real content removal (`rmac_preview::redact`)
             // — an image's selected pixels are overwritten black; a PDF
             // page is rasterised with the area burned in black and its

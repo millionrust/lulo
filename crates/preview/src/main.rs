@@ -82,6 +82,7 @@ gpui::actions!(
         RemoveBackground,
         RectangularSelection,
         AutomaticSelection,
+        TextSelection,
         InvertSelection,
         Crop,
         Redact,

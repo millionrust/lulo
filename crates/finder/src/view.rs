@@ -35,6 +35,7 @@ mod permanent_delete_controller;
 mod presentation;
 mod presentation_persistence;
 mod presentation_support;
+mod print_controller;
 mod preview_options;
 mod progress_window;
 mod quick_look_controller;
@@ -172,6 +173,7 @@ actions!(
         QuickLook,
         Slideshow,
         Compress,
+        PrintSelection,
         GetInfo,
         ShowInspector,
         GetSummaryInfo,

@@ -87,7 +87,7 @@ def show_windows(windows: list[int]) -> None:
         ctypes.windll.user32.ShowWindow(wintypes.HWND(hwnd), SW_SHOWNOACTIVATE)
 
 
-def scene_profile(root: Path) -> dict[str, str]:
+def scene_profile(root: Path, default_dock: bool = False) -> dict[str, str]:
     """Private Lulo profile folders holding the scene's Dock pins."""
     folders = {
         "XDG_CONFIG_HOME": root / "config",
@@ -100,10 +100,14 @@ def scene_profile(root: Path) -> dict[str, str]:
         folder.mkdir(parents=True, exist_ok=True)
     settings = folders["XDG_CONFIG_HOME"] / "rmac"
     settings.mkdir(parents=True, exist_ok=True)
-    pins = ",".join(f'"{app}"' for app in SCENE_PINS)
-    (settings / "shell.json").write_text(
-        f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n', encoding="utf-8"
-    )
+    if default_dock:
+        # A fresh profile's own pins (`ShellSettings::default`).
+        (settings / "shell.json").write_text('{"version": 3, "settings": {}}\n', encoding="utf-8")
+    else:
+        pins = ",".join(f'"{app}"' for app in SCENE_PINS)
+        (settings / "shell.json").write_text(
+            f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n', encoding="utf-8"
+        )
     return {name: str(path) for name, path in folders.items()}
 
 
@@ -142,7 +146,9 @@ def main() -> int:
                         help="a memory probe: the machine's own Wi-Fi, sound and battery readings")
     parser.add_argument("--desktop", default="", help="a memory probe: show this folder on the desktop")
     parser.add_argument("--open", default="",
-                        help="spotlight:<query> or control-centre: open that panel in the scene")
+                        help="spotlight:<query>, control-centre or apps: open that panel in the scene")
+    parser.add_argument("--default-dock", action="store_true",
+                        help="the Dock keeps a fresh profile's own pins")
     args = parser.parse_args()
 
     from PIL import ImageGrab
@@ -154,7 +160,7 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="lulo-scene-"))
     environment = {
         **os.environ,
-        **scene_profile(work),
+        **scene_profile(work, args.default_dock),
         "RMAC_SHELL_SCENE": "1",
         "RMAC_SHELL_SCENE_TIME": SCENE_TIME,
         "LULO_SHELL_TRACE": "1",

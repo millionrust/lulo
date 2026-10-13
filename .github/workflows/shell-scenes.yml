@@ -6,8 +6,9 @@ name: Shell scenes
 # 1024 x 768 at scale 1) on Lulo OS (nested niri, scripts/behavior/
 # run_shell_scene.py) and on windows-latest (scripts/windows/shell_scene.py),
 # then compares the two screens perceptually (scripts/compare_shell_scenes.py)
-# and fails when they drift apart. Three scenes: the desktop alone, Spotlight
-# with a query typed, and Control Centre open. The screens and a diff image
+# and fails when they drift apart. Four scenes: the desktop alone, Spotlight
+# with a query typed, Control Centre open, and Apps open over a fresh
+# profile's own Dock pins. The screens and a diff image
 # for each are in the `shell-scene-diff` artifact.
 on:
   push:
@@ -66,8 +67,8 @@ jobs:
       - name: Build the menu bar, the Dock and the desktop
         working-directory: shell
         run: cargo build --locked -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper --bins --features wayland
-      - name: Build Spotlight and Control Centre
-        run: cargo build --locked -p rmac-launcher-app -p rmac-quick-settings-app --bins
+      - name: Build Spotlight, Control Centre and Apps
+        run: cargo build --locked -p rmac-launcher-app -p rmac-quick-settings-app -p rmac-app-drawer --bins
       - name: Draw the scenes
         run: |
           niri="$RUNNER_TEMP/niri-package/usr/bin/niri"
@@ -79,6 +80,7 @@ jobs:
           scene --output scenes/linux.png
           scene --output scenes/linux-spotlight.png --open "spotlight:text editor"
           scene --output scenes/linux-control-centre.png --open control-centre
+          scene --output scenes/linux-apps.png --open apps --default-dock
       - name: Upload the scene
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -126,6 +128,8 @@ jobs:
             --output scenes/windows-spotlight.png --open "spotlight:text editor"
           python scripts/windows/shell_scene.py --bin-dir target/debug \
             --output scenes/windows-control-centre.png --open control-centre
+          python scripts/windows/shell_scene.py --bin-dir target/debug \
+            --output scenes/windows-apps.png --open apps --default-dock
           # Memory probes, not compared: the runner's own status readings,
           # then also its own Desktop folder.
           python scripts/windows/shell_scene.py --bin-dir target/debug \
@@ -179,7 +183,7 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           status=0
-          for scene in "" -spotlight -control-centre; do
+          for scene in "" -spotlight -control-centre -apps; do
             python scripts/compare_shell_scenes.py "scenes/linux$scene.png" "scenes/windows$scene.png" \
               --diff "scenes/diff$scene.png" --report "scenes/report$scene.json" || status=1
           done

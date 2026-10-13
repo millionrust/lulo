@@ -70,15 +70,17 @@ def scene_entry(text: str) -> str:
     return "".join(line + "\n" for line in text.splitlines() if not line.startswith("TryExec="))
 
 
-def prepare_profile(home: Path) -> None:
-    """The scene's settings, desktop entries, icons and empty Desktop."""
+def prepare_profile(home: Path, default_dock: bool = False) -> None:
+    """The scene's settings, desktop entries, icons and empty Desktop. With
+    `default_dock` the Dock keeps a fresh profile's own pins."""
     data = home / ".local/share"
     applications = data / "applications"
     applications.mkdir(parents=True, exist_ok=True)
     icons = data / "icons/hicolor"
     (icons / "scalable/apps").mkdir(parents=True, exist_ok=True)
     (icons / "index.theme").write_text(HICOLOR_INDEX)
-    for app in SCENE_PINS:
+    # Apps' own entry too, as Lulo OS installs it (and lulo-shell writes it).
+    for app in [*SCENE_PINS, "org.rmac.AppDrawer"]:
         entry = REPO / "packaging/rmac-apps/applications" / f"{app}.desktop"
         (applications / entry.name).write_text(scene_entry(entry.read_text(encoding="utf-8")))
     for icon in (REPO / "packaging/rmac-apps/icons").glob("*.svg"):
@@ -89,8 +91,11 @@ def prepare_profile(home: Path) -> None:
         shutil.copy(icon, dock / icon.name)
     settings = home / ".config/rmac"
     settings.mkdir(parents=True, exist_ok=True)
-    pins = ",".join(f'"{app}"' for app in SCENE_PINS)
-    (settings / "shell.json").write_text(f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n')
+    if default_dock:
+        (settings / "shell.json").write_text('{"version": 3, "settings": {}}\n')
+    else:
+        pins = ",".join(f'"{app}"' for app in SCENE_PINS)
+        (settings / "shell.json").write_text(f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n')
     for item in (home / "Desktop").iterdir():
         if item.is_dir():
             shutil.rmtree(item)
@@ -184,7 +189,7 @@ class Run:
         raise SystemExit(f"none of {', '.join(names)} in {self.args.bin_dir}")
 
     def run(self) -> int:
-        prepare_profile(self.home)
+        prepare_profile(self.home, self.args.default_dock)
         ready = self.work / "ready"
         ready.mkdir(exist_ok=True)
         try:
@@ -216,6 +221,8 @@ class Run:
                         print("FAIL Spotlight did not draw", flush=True)
                 elif self.args.open == "control-centre":
                     self.spawn([str(apps / "rmac-quick-settings")], "quick-settings", panel_env)
+                elif self.args.open == "apps":
+                    self.spawn([str(apps / "rmac-app-drawer"), "--service", "--show"], "apps", panel_env)
                 else:
                     raise SystemExit(f"unknown --open {self.args.open!r}")
             # Icons and the wallpaper decode off the UI thread; let them land.
@@ -289,6 +296,8 @@ def main() -> int:
                         help="spotlight:<query> or control-centre: open that panel in the scene")
     parser.add_argument("--app-bin-dir", default="",
                         help="directory with rmac-launcher and rmac-quick-settings (for --open)")
+    parser.add_argument("--default-dock", action="store_true",
+                        help="the Dock keeps a fresh profile's own pins")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

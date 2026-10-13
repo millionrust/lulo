@@ -15,6 +15,12 @@
 //! user's own Lulo switches that point at Lulo's files (Use Files for
 //! Folders, Start Lulo at Sign-In), so nothing is left pointing at a
 //! removed app.
+//!
+//! `lulo-session --after-install`, which the installer runs once it has
+//! finished (packaging/windows/Product.wxs), brings Lulo back for the user:
+//! after a fresh install, and after an upgrade unless they had turned Lulo
+//! off themselves (`registry::lulo_mode`). An upgrade stops a running Lulo
+//! with `--stop` first, which leaves Lulo mode as it was.
 
 use std::time::{Duration, Instant};
 
@@ -159,6 +165,8 @@ fn supervise() -> i32 {
         // The Lulo layer is on already.
         return 0;
     }
+    let _ = registry::set_lulo_mode(true);
+    registry::record_session_start();
     restore_windows_desktop();
     let shell = launch::install_dir().join("lulo-shell.exe");
     let mut starts: Vec<Instant> = Vec::new();
@@ -182,7 +190,41 @@ fn supervise() -> i32 {
     }
 }
 
-/// `lulo-session [--stop | --restore-windows-desktop | --uninstall]`.
+/// After an install or upgrade: start the Lulo layer in its own process,
+/// detached from the installer (which ends straight after), unless the user
+/// had turned Lulo off. Returns at once.
+fn start_after_install() -> i32 {
+    if registry::lulo_mode() == Some(false) {
+        return 0;
+    }
+    let Ok(session) = std::env::current_exe() else {
+        return 1;
+    };
+    use std::os::windows::process::CommandExt as _;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    let flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+    // Out of msiexec's job if it has one, so the layer outlives the
+    // install; a job that forbids breaking away still lets it start.
+    let started = std::process::Command::new(&session)
+        .creation_flags(flags | CREATE_BREAKAWAY_FROM_JOB)
+        .spawn()
+        .or_else(|_| {
+            std::process::Command::new(&session)
+                .creation_flags(flags)
+                .spawn()
+        });
+    match started {
+        Ok(_) => 0,
+        Err(error) => {
+            eprintln!("lulo-session: cannot start Lulo after installing: {error}");
+            1
+        }
+    }
+}
+
+/// `lulo-session [--stop | --restore-windows-desktop | --uninstall | --after-install]`.
 pub fn run(arguments: &[String]) -> i32 {
     match arguments.first().map(String::as_str) {
         None => supervise(),
@@ -191,6 +233,7 @@ pub fn run(arguments: &[String]) -> i32 {
             0
         }
         Some("--restore-windows-desktop") => {
+            let _ = registry::set_lulo_mode(false);
             stop_and_wait(10);
             restore_windows_desktop();
             0
@@ -200,10 +243,14 @@ pub fn run(arguments: &[String]) -> i32 {
             restore_windows_desktop();
             folders::turn_off();
             let _ = registry::set_starts_at_sign_in(None);
+            registry::forget_lulo_mode();
             0
         }
+        Some("--after-install") => start_after_install(),
         Some(_) => {
-            eprintln!("usage: lulo-session [--stop | --restore-windows-desktop | --uninstall]");
+            eprintln!(
+                "usage: lulo-session [--stop | --restore-windows-desktop | --uninstall | --after-install]"
+            );
             2
         }
     }

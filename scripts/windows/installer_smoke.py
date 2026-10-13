@@ -10,16 +10,19 @@ this is a round trip through what a person actually does, entirely silent
 2. Check that every app's exe landed under
    `%LOCALAPPDATA%\\Programs\\Lulo` and that its Start Menu shortcut exists
    under `%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Lulo`.
-3. Launch one app (rmac-calculator, the simplest) from its shortcut, the
+3. Check that the install brought Lulo up by itself: the MSI runs
+   `lulo-session --after-install` once it has finished, so `lulo-session`
+   and `lulo-shell` must be running without anyone starting them.
+4. Launch one app (rmac-calculator, the simplest) from its shortcut, the
    way a person would double-click it from Start, and check the process
    actually starts.
-4. Seed a dummy `RmacClockAlarm-*` scheduled task (the real ones are only
+5. Seed a dummy `RmacClockAlarm-*` scheduled task (the real ones are only
    created when Clock actually schedules an alarm, which this script does
    not do) to prove the uninstall step that removes them really runs.
-5. `msiexec /x <msi> /quiet` and check everything is gone: the install
+6. `msiexec /x <msi> /quiet` and check everything is gone: the install
    directory, the Start Menu shortcuts, every "Open with" registry entry
    this installer wrote, the Add/Remove Programs entry, and the scheduled
-   task from step 4.
+   task from step 5, and that Lulo is no longer running.
 
 Exits non-zero (naming every failure) if any check fails.
 """
@@ -181,6 +184,28 @@ def check_installed(failures: list[str]) -> None:
         )
 
 
+def forget_lulo_mode() -> None:
+    """A machine where Lulo never ran: no Lulo mode recorded."""
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r"Software\Lulo\Session", 0, winreg.KEY_SET_VALUE
+        ) as key:
+            winreg.DeleteValue(key, "LuloMode")
+    except OSError:
+        pass
+
+
+def check_lulo_started(failures: list[str]) -> None:
+    for image_name in ("lulo-session.exe", "lulo-shell.exe"):
+        running = wait_until(
+            lambda: is_process_running(image_name), PROCESS_TIMEOUT_SECONDS, PROCESS_POLL_SECONDS
+        )
+        if not running:
+            failures.append(f"{image_name} was not running after the install")
+        else:
+            print(f"{image_name} is running after the install")
+
+
 def check_launch(failures: list[str]) -> None:
     app = next(a for a in APPS if a["id"] == LAUNCH_APP)
     shortcut = start_menu_dir() / f"{app['name']}.lnk"
@@ -206,6 +231,9 @@ def check_uninstalled(failures: list[str]) -> None:
         failures.append("\"Lulo\" still listed in Add/Remove Programs after uninstall")
     if scheduled_task_exists("RmacClockAlarm-"):
         failures.append("a RmacClockAlarm-* scheduled task survived uninstall")
+    for image_name in ("lulo-session.exe", "lulo-shell.exe"):
+        if is_process_running(image_name):
+            failures.append(f"{image_name} still running after uninstall")
 
 
 def main(argv: list[str]) -> int:
@@ -219,8 +247,12 @@ def main(argv: list[str]) -> int:
     failures: list[str] = []
 
     print(f"installing {msi} silently")
+    forget_lulo_mode()
     msiexec("/i", msi)
     check_installed(failures)
+
+    print("checking that the install started Lulo")
+    check_lulo_started(failures)
 
     print(f"launching {LAUNCH_APP} from its Start Menu shortcut")
     check_launch(failures)

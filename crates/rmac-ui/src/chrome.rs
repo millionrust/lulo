@@ -777,9 +777,9 @@ impl RenderOnce for TrafficLights {
             .use_keyed_state("tl-zoom-focus", cx, |_, cx| cx.focus_handle())
             .read(cx)
             .clone();
-        let close_is_focused = close_focus.is_focused(window);
-        let min_is_focused = min_focus.is_focused(window);
-        let zoom_is_focused = zoom_focus.is_focused(window);
+        let close_is_focused = mac::shows_focus_ring(close_focus.is_focused(window), window);
+        let min_is_focused = mac::shows_focus_ring(min_focus.is_focused(window), window);
+        let zoom_is_focused = mac::shows_focus_ring(zoom_focus.is_focused(window), window);
         let zoom = traffic_light(
             "tl-zoom",
             "Enter Full Screen",

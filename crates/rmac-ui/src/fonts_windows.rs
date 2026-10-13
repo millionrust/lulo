@@ -2,16 +2,25 @@
 //! views"). Lulo OS draws everything in Inter (the `fonts-inter` package,
 //! made the system face by packaging/fontconfig/60-rmac.conf). Windows has
 //! no Inter, and GPUI fell back to Segoe UI, whose wider, differently
-//! spaced letters made every Lulo surface look like Windows. The same four
-//! Inter faces Lulo OS installs ship inside each Windows build, are added
-//! to the app's text system before its first window, and stand in for the
-//! system UI font, so text lays out exactly as it does on Lulo OS.
+//! spaced letters made every Lulo surface look like Windows. The Inter
+//! faces Lulo uses, the same files Lulo OS installs, ship inside each
+//! Windows build, are added to the app's text system before its first
+//! window, and stand in for the system UI font, so text lays out exactly
+//! as it does on Lulo OS. `gpui_windows` lends DirectWrite these bytes
+//! rather than copying them, and rasterizes their glyphs as Lulo OS does
+//! (ADR 0025, "Text").
+//!
+//! Thin and Light are here too: Calculator's display, Clock's dials and
+//! Weather's temperatures ask for them, and without them DirectWrite drew
+//! those numbers in Regular, much heavier than on Lulo OS.
 
 use std::borrow::Cow;
 
 use gpui::App;
 
-const FACES: [&[u8]; 4] = [
+const FACES: [&[u8]; 6] = [
+    include_bytes!("../../../assets/fonts/inter/Inter-Thin.otf"),
+    include_bytes!("../../../assets/fonts/inter/Inter-Light.otf"),
     include_bytes!("../../../assets/fonts/inter/Inter-Regular.otf"),
     include_bytes!("../../../assets/fonts/inter/Inter-Medium.otf"),
     include_bytes!("../../../assets/fonts/inter/Inter-SemiBold.otf"),

@@ -2,12 +2,17 @@ use std::{
     borrow::Cow,
     ffi::{c_uint, c_void},
     mem::ManuallyDrop,
+    sync::Arc,
 };
 
 use anyhow::{Context, Result};
 use collections::HashMap;
 use gpui_util::{ResultExt, maybe};
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use swash::{
+    scale::{Render, ScaleContext, Source, StrikeWith},
+    zeno::{Format, Vector},
+};
 use windows::{
     Win32::{
         Foundation::*,
@@ -33,6 +38,40 @@ struct FontInfo {
     features: IDWriteTypography,
     fallbacks: Option<IDWriteFontFallback>,
     font_collection: IDWriteFontCollection1,
+    /// rmac: the face in `DirectWriteState::swash_faces` whose glyphs swash
+    /// rasterizes instead of DirectWrite (see `SwashFace`).
+    swash: Option<usize>,
+}
+
+/// rmac (docs/decisions/0025-vendor-gpui-windows.md, "Text"): a font the
+/// app added itself, Lulo's Inter. DirectWrite rasterizes CFF outlines with
+/// stem darkening and symmetric vertical antialiasing, so Inter came out
+/// heavier and softer than on Lulo OS, where `gpui_wgpu` renders the same
+/// font file with swash, hinted, in grayscale. The glyphs of these faces
+/// are rasterized here by the same swash calls, so a Lulo window's text has
+/// Lulo OS's exact weight and sharpness; DirectWrite still shapes and lays
+/// out every line, and rasterizes every other font (system fallbacks,
+/// emoji).
+struct SwashFace {
+    data: Arc<Cow<'static, [u8]>>,
+    offset: u32,
+    key: swash::CacheKey,
+}
+
+impl SwashFace {
+    fn font(&self) -> swash::FontRef<'_> {
+        swash::FontRef {
+            data: &self.data,
+            offset: self.offset,
+            key: self.key,
+        }
+    }
+
+    /// The face's `head` table: unique per face (its checksum and dates),
+    /// and what a DirectWrite font face is matched by.
+    fn head(&self) -> Option<&[u8]> {
+        self.font().table(swash::tag_from_bytes(b"head"))
+    }
 }
 
 pub(crate) struct DirectWriteTextSystem {
@@ -77,6 +116,8 @@ struct DirectWriteState {
     font_to_font_id: HashMap<Font, FontId>,
     font_info_cache: HashMap<usize, FontId>,
     layout_line_scratch: Vec<u16>,
+    swash_faces: Vec<SwashFace>,
+    swash_context: Mutex<ScaleContext>,
 }
 
 impl GPUState {
@@ -222,6 +263,8 @@ impl DirectWriteTextSystem {
                     font_to_font_id: HashMap::default(),
                     font_info_cache: HashMap::default(),
                     layout_line_scratch: Vec::new(),
+                    swash_faces: Vec::new(),
+                    swash_context: Mutex::new(ScaleContext::new()),
                 }),
             },
             directx_devices,
@@ -299,10 +342,13 @@ impl PlatformTextSystem for DirectWriteTextSystem {
 
     fn recommended_rendering_mode(
         &self,
-        _font_id: FontId,
+        font_id: FontId,
         _font_size: Pixels,
     ) -> TextRenderingMode {
-        if self.components.system_subpixel_rendering {
+        // rmac: swash draws the app's own fonts in grayscale, as on Lulo OS.
+        if self.state.read().fonts[font_id.0].swash.is_some() {
+            TextRenderingMode::Grayscale
+        } else if self.components.system_subpixel_rendering {
             TextRenderingMode::Subpixel
         } else {
             TextRenderingMode::Grayscale
@@ -329,6 +375,8 @@ impl DirectWriteState {
                     )
                 })?;
 
+            let mut info = info;
+            info.swash = this.swash_face_for(&info.font_face);
             let font_id = FontId(this.fonts.len());
             let font_face_key = info.font_face.cast::<IUnknown>().unwrap().as_raw().addr();
             this.fonts.push(info);
@@ -362,30 +410,37 @@ impl DirectWriteState {
         components: &DirectWriteComponents,
         fonts: Vec<Cow<'static, [u8]>>,
     ) -> Result<()> {
+        // rmac: DirectWrite copies font data it is not told the owner of.
+        // Data that lives for the whole process (Lulo's Inter, compiled into
+        // each exe) is lent instead, with the factory as its nominal owner:
+        // each face otherwise cost a private copy of its 600 KB file in every
+        // process.
+        let owner: IUnknown = components.factory.cast()?;
         for font_data in fonts {
-            match font_data {
-                Cow::Borrowed(data) => unsafe {
-                    let font_file = components
-                        .in_memory_loader
-                        .CreateInMemoryFontFileReference(
-                            &components.factory,
-                            data.as_ptr().cast(),
-                            data.len() as _,
-                            None,
-                        )?;
-                    components.builder.AddFontFile(&font_file)?;
-                },
-                Cow::Owned(data) => unsafe {
-                    let font_file = components
-                        .in_memory_loader
-                        .CreateInMemoryFontFileReference(
-                            &components.factory,
-                            data.as_ptr().cast(),
-                            data.len() as _,
-                            None,
-                        )?;
-                    components.builder.AddFontFile(&font_file)?;
-                },
+            let owner = match &font_data {
+                Cow::Borrowed(_) => Some(&owner),
+                Cow::Owned(_) => None,
+            };
+            unsafe {
+                let font_file = components
+                    .in_memory_loader
+                    .CreateInMemoryFontFileReference(
+                        &components.factory,
+                        font_data.as_ptr().cast(),
+                        font_data.len() as _,
+                        owner,
+                    )?;
+                components.builder.AddFontFile(&font_file)?;
+            }
+            let font_data = Arc::new(font_data);
+            if let Some(faces) = swash::FontDataRef::new(&font_data) {
+                for font in faces.fonts() {
+                    self.swash_faces.push(SwashFace {
+                        data: Arc::clone(&font_data),
+                        offset: font.offset,
+                        key: font.key,
+                    });
+                }
             }
         }
         let set = unsafe { components.builder.CreateFontSet()? };
@@ -511,6 +566,7 @@ impl DirectWriteState {
                     features: direct_write_features,
                     fallbacks,
                     font_collection: collection.clone(),
+                    swash: None,
                 };
                 Some(font_info)
             });
@@ -749,11 +805,62 @@ impl DirectWriteState {
         Ok(glyph_analysis)
     }
 
+    /// rmac: which of the app's own faces (`SwashFace`) `font_face` is, by
+    /// its `head` table. A face DirectWrite simulates (bold or oblique from
+    /// another weight or style) stays DirectWrite's.
+    fn swash_face_for(&self, font_face: &IDWriteFontFace3) -> Option<usize> {
+        if self.swash_faces.is_empty()
+            || unsafe { font_face.GetSimulations() } != DWRITE_FONT_SIMULATIONS_NONE
+        {
+            return None;
+        }
+        let head = font_table(font_face, *b"head")?;
+        self.swash_faces
+            .iter()
+            .position(|face| face.head() == Some(head.as_slice()))
+    }
+
+    /// rmac: `params`' glyph as `gpui_wgpu`'s `CosmicTextSystem` renders it
+    /// on Lulo OS (hinted, grayscale, the same subpixel offset), when its
+    /// font is one of the app's own faces; `None` leaves the glyph to
+    /// DirectWrite. Bounds and pixels both come from here, so they agree.
+    fn swash_glyph(&self, params: &RenderGlyphParams) -> Option<swash::scale::image::Image> {
+        if params.is_emoji || params.subpixel_rendering {
+            return None;
+        }
+        let face = &self.swash_faces[self.fonts[params.font_id.0].swash?];
+        let glyph_id = u16::try_from(params.glyph_id.0).ok()?;
+        let offset = Vector::new(
+            params.subpixel_variant.x as f32 / SUBPIXEL_VARIANTS_X as f32 / params.scale_factor,
+            params.subpixel_variant.y as f32 / gpui::SUBPIXEL_VARIANTS_Y as f32 / params.scale_factor,
+        );
+        let mut context = self.swash_context.lock();
+        let mut scaler = context
+            .builder(face.font())
+            .size(params.font_size.as_f32() * params.scale_factor)
+            .hint(true)
+            .build();
+        let image = Render::new(&[Source::Bitmap(StrikeWith::ExactSize), Source::Outline])
+            .format(Format::Alpha)
+            .offset(offset)
+            .render(&mut scaler, glyph_id)?;
+        (image.content == swash::scale::image::Content::Mask).then_some(image)
+    }
+
     fn raster_bounds(
         &self,
         components: &DirectWriteComponents,
         params: &RenderGlyphParams,
     ) -> Result<Bounds<DevicePixels>> {
+        if let Some(image) = self.swash_glyph(params) {
+            return Ok(Bounds {
+                origin: point(image.placement.left.into(), (-image.placement.top).into()),
+                size: size(
+                    (image.placement.width as i32).into(),
+                    (image.placement.height as i32).into(),
+                ),
+            });
+        }
         let glyph_analysis = self.create_glyph_run_analysis(components, params)?;
 
         let texture_type = if params.subpixel_rendering {
@@ -801,6 +908,10 @@ impl DirectWriteState {
     ) -> Result<(Size<DevicePixels>, Vec<u8>)> {
         if glyph_bounds.size.width.0 == 0 || glyph_bounds.size.height.0 == 0 {
             anyhow::bail!("glyph bounds are empty");
+        }
+
+        if let Some(image) = self.swash_glyph(params) {
+            return Ok((glyph_bounds.size, image.data));
         }
 
         let bitmap_data = if params.is_emoji {
@@ -1700,6 +1811,31 @@ fn get_font_names_from_collection(
         }
 
         result
+    }
+}
+
+/// rmac: a copy of `font_face`'s OpenType table `tag`, if it has one.
+fn font_table(font_face: &IDWriteFontFace3, tag: [u8; 4]) -> Option<Vec<u8>> {
+    let mut data = std::ptr::null_mut();
+    let mut size = 0u32;
+    let mut context = std::ptr::null_mut();
+    let mut exists = BOOL(0);
+    unsafe {
+        font_face
+            .TryGetFontTable(
+                u32::from_le_bytes(tag),
+                &mut data,
+                &mut size,
+                &mut context,
+                &mut exists,
+            )
+            .ok()?;
+        if !exists.as_bool() || data.is_null() {
+            return None;
+        }
+        let table = std::slice::from_raw_parts(data.cast::<u8>(), size as usize).to_vec();
+        font_face.ReleaseFontTable(context);
+        Some(table)
     }
 }
 

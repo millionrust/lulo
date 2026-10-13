@@ -40,8 +40,8 @@ pub fn payload(title: &str, body: &str) -> String {
 pub fn show(aumid: &str, title: &str, body: &str) -> bool {
     use windows::core::HSTRING;
     use windows::Data::Xml::Dom::XmlDocument;
-    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
     use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
 
     // SAFETY: initialising the apartment for this thread; a second call
     // (already initialised) returns an error that is fine to ignore.

@@ -693,7 +693,13 @@ mod tests {
         {
             let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
             let options = zip::write::SimpleFileOptions::default();
-            for name in ["keep.txt", "CON", "aux.txt", "stream.txt:evil", "dir./x.txt"] {
+            for name in [
+                "keep.txt",
+                "CON",
+                "aux.txt",
+                "stream.txt:evil",
+                "dir./x.txt",
+            ] {
                 writer.start_file(name, options).unwrap();
                 writer.write_all(b"x").unwrap();
             }

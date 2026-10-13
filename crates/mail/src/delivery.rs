@@ -263,19 +263,15 @@ fn smtp_server(account: &ComposeAccount) -> Option<Config> {
         .ok()?
         .stored_by_path(&account.path)
         .ok()?;
-    let smtp = stored
-        .smtp
-        .or_else(|| {
-            let preset = Provider::Google.info().servers?;
-            (stored.provider == "google").then(|| {
-                rmac_accounts_linux::winstore::StoredServer {
-                    host: preset.smtp_host.into(),
-                    port: preset.smtp_port,
-                    security: "starttls".into(),
-                    username: account.address.clone(),
-                }
-            })
-        })?;
+    let smtp = stored.smtp.or_else(|| {
+        let preset = Provider::Google.info().servers?;
+        (stored.provider == "google").then(|| rmac_accounts_linux::winstore::StoredServer {
+            host: preset.smtp_host.into(),
+            port: preset.smtp_port,
+            security: "starttls".into(),
+            username: account.address.clone(),
+        })
+    })?;
     Some(Config {
         host: smtp.host.clone(),
         port: smtp.port,

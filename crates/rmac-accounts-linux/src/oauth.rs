@@ -556,7 +556,11 @@ pub mod callback {
         PENDING
             .lock()
             .ok()
-            .and_then(|pending| pending.as_ref().map(|sender| sender.send((String::new(), uri.to_owned()))))
+            .and_then(|pending| {
+                pending
+                    .as_ref()
+                    .map(|sender| sender.send((String::new(), uri.to_owned())))
+            })
             .is_some_and(|sent| sent.is_ok())
     }
 
@@ -566,12 +570,19 @@ pub mod callback {
 
     fn set_value(key: HKEY, name: &str, value: &str) -> Result<(), Error> {
         let name = wide(name);
-        let data: Vec<u8> = wide(value).iter().flat_map(|unit| unit.to_le_bytes()).collect();
+        let data: Vec<u8> = wide(value)
+            .iter()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect();
         // SAFETY: `name` is NUL-terminated and `data` outlives the call.
         let status = unsafe {
             RegSetValueExW(
                 key,
-                if name.len() == 1 { PCWSTR::null() } else { PCWSTR(name.as_ptr()) },
+                if name.len() == 1 {
+                    PCWSTR::null()
+                } else {
+                    PCWSTR(name.as_ptr())
+                },
                 None,
                 REG_SZ,
                 Some(&data),
@@ -625,7 +636,10 @@ pub mod callback {
             return Err(Error::InvalidResponse);
         }
         let root = format!("Software\\Classes\\{scheme}");
-        write_key(&root, &[("", &format!("URL:{scheme}")), ("URL Protocol", "")])?;
+        write_key(
+            &root,
+            &[("", &format!("URL:{scheme}")), ("URL Protocol", "")],
+        )?;
         write_key(
             &format!("{root}\\shell\\open\\command"),
             &[("", &format!("\"{exe}\" \"%1\""))],

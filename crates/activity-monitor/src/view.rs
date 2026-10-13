@@ -1047,16 +1047,34 @@ fn hide_linux_only_commands(cx: &mut gpui::App) {
     }
     for (action, column) in [
         ("activity_monitor::ToggleFootprintColumn", ColKey::Footprint),
-        ("activity_monitor::ToggleRealPrivateColumn", ColKey::RealPrivate),
-        ("activity_monitor::ToggleRealSharedColumn", ColKey::RealShared),
-        ("activity_monitor::ToggleCompressedColumn", ColKey::Compressed),
+        (
+            "activity_monitor::ToggleRealPrivateColumn",
+            ColKey::RealPrivate,
+        ),
+        (
+            "activity_monitor::ToggleRealSharedColumn",
+            ColKey::RealShared,
+        ),
+        (
+            "activity_monitor::ToggleCompressedColumn",
+            ColKey::Compressed,
+        ),
         ("activity_monitor::ToggleKindColumn", ColKey::Kind),
         ("activity_monitor::ToggleSandboxColumn", ColKey::Sandbox),
-        ("activity_monitor::ToggleIdleWakeUpsColumn", ColKey::IdleWakeUps),
-        ("activity_monitor::ToggleGpuPercentColumn", ColKey::GpuPercent),
+        (
+            "activity_monitor::ToggleIdleWakeUpsColumn",
+            ColKey::IdleWakeUps,
+        ),
+        (
+            "activity_monitor::ToggleGpuPercentColumn",
+            ColKey::GpuPercent,
+        ),
         ("activity_monitor::ToggleGpuTimeColumn", ColKey::GpuTime),
         ("activity_monitor::TogglePortsColumn", ColKey::Ports),
-        ("activity_monitor::TogglePreventingSleepColumn", ColKey::PreventingSleep),
+        (
+            "activity_monitor::TogglePreventingSleepColumn",
+            ColKey::PreventingSleep,
+        ),
     ] {
         rmac_ui::set_menu_hidden(action, !column.available(), cx);
     }

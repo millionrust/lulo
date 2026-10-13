@@ -103,34 +103,41 @@ impl MonitorView {
                     .text_color(mac::text_tertiary())
                     .child("Columns"),
             )
-            .children(ColKey::ALL.into_iter().filter(|key| key.available()).map(|key| {
-                let on = visible.contains(&key);
-                let disabled = key.required();
-                div()
-                    .id(SharedString::from(key.id()))
-                    .h_flex()
-                    .items_center()
-                    .gap_2()
-                    .h(px(24.0))
-                    .mx_1()
-                    .px_2()
-                    .rounded(px(mac::radius_menu_item()))
-                    .text_size(rmac_ui::text_px(13.0))
-                    .text_color(if disabled {
-                        mac::text_tertiary()
-                    } else {
-                        mac::text()
-                    })
-                    .when(!disabled, |element: Stateful<gpui::Div>| {
-                        element
-                            .hover(|hover| hover.bg(mac::accent()).text_color(mac::on_accent()))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.toggle_column(key, cx);
-                            }))
-                    })
-                    .child(div().w(px(14.0)).child(if on { "✓" } else { "" }))
-                    .child(div().flex_1().child(key.title()))
-            }))
+            .children(
+                ColKey::ALL
+                    .into_iter()
+                    .filter(|key| key.available())
+                    .map(|key| {
+                        let on = visible.contains(&key);
+                        let disabled = key.required();
+                        div()
+                            .id(SharedString::from(key.id()))
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .h(px(24.0))
+                            .mx_1()
+                            .px_2()
+                            .rounded(px(mac::radius_menu_item()))
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(if disabled {
+                                mac::text_tertiary()
+                            } else {
+                                mac::text()
+                            })
+                            .when(!disabled, |element: Stateful<gpui::Div>| {
+                                element
+                                    .hover(|hover| {
+                                        hover.bg(mac::accent()).text_color(mac::on_accent())
+                                    })
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.toggle_column(key, cx);
+                                    }))
+                            })
+                            .child(div().w(px(14.0)).child(if on { "✓" } else { "" }))
+                            .child(div().flex_1().child(key.title()))
+                    }),
+            )
     }
 
     /// The View filter dropdown (MON-03), opened from the window subtitle.

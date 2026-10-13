@@ -5,8 +5,8 @@
 
 use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, HWND,
-    LPARAM, WPARAM,
+    CloseHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, HWND, LPARAM,
+    WPARAM,
 };
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, GetDriveTypeW, GetLogicalDrives, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ,
@@ -15,13 +15,13 @@ use windows::Win32::Storage::FileSystem::{
 use windows::Win32::System::Ioctl::{DISK_PERFORMANCE, IOCTL_DISK_PERFORMANCE};
 use windows::Win32::System::ProcessStatus::{GetPerformanceInfo, PERFORMANCE_INFORMATION};
 use windows::Win32::System::Threading::{
-    GetProcessTimes, GetSystemTimes, OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    GetProcessTimes, GetSystemTimes, OpenProcess, TerminateProcess, WaitForSingleObject,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
 };
+use windows::Win32::System::IO::DeviceIoControl;
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowThreadProcessId, IsWindowVisible, PostMessageW, WM_CLOSE,
 };
-use windows::Win32::System::IO::DeviceIoControl;
 
 use crate::host_stats::DiskTotals;
 use crate::process_signal::SignalOutcome;
@@ -136,7 +136,8 @@ pub(crate) fn process_cpu_seconds(pid: u32) -> Option<u64> {
         FILETIME::default(),
     );
     // SAFETY: four valid out-pointers that live for the call.
-    let times = unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) };
+    let times =
+        unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) };
     // SAFETY: opened above, closed once.
     let _ = unsafe { CloseHandle(handle) };
     times.ok()?;

@@ -43,7 +43,8 @@ fn show(title: &str, filters: &[Filter], multiple: bool) -> windows::core::Resul
     // SAFETY: standard COM usage on a thread that initialised its apartment;
     // every buffer handed to the dialog outlives the call that uses it.
     unsafe {
-        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)?;
+        let dialog: IFileOpenDialog =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)?;
         let title = wide(title);
         dialog.SetTitle(PCWSTR(title.as_ptr()))?;
         let mut options = dialog.GetOptions()? | FOS_FORCEFILESYSTEM;
@@ -105,7 +106,10 @@ pub async fn open_files(
         return Err(failure("the Open dialog could not start"));
     }
     match receiver.recv().await {
-        Ok(Ok(paths)) => Ok(paths.into_iter().filter(|path| path.is_absolute()).collect()),
+        Ok(Ok(paths)) => Ok(paths
+            .into_iter()
+            .filter(|path| path.is_absolute())
+            .collect()),
         Ok(Err(_)) | Err(_) => Err(failure("the Open dialog could not be shown")),
     }
 }

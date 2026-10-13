@@ -156,7 +156,10 @@ mod tests {
         let name = unique("short");
         assert_eq!(read_secret(&name).unwrap(), None);
         write_secret(&name, "planted-password").unwrap();
-        assert_eq!(read_secret(&name).unwrap().as_deref(), Some("planted-password"));
+        assert_eq!(
+            read_secret(&name).unwrap().as_deref(),
+            Some("planted-password")
+        );
         write_secret(&name, "replaced").unwrap();
         assert_eq!(read_secret(&name).unwrap().as_deref(), Some("replaced"));
         delete_secret(&name);
@@ -166,7 +169,9 @@ mod tests {
     #[test]
     fn a_token_longer_than_one_credential_round_trips() {
         let name = unique("long");
-        let long: String = (0..5_000).map(|n| char::from(b'a' + (n % 26) as u8)).collect();
+        let long: String = (0..5_000)
+            .map(|n| char::from(b'a' + (n % 26) as u8))
+            .collect();
         write_secret(&name, &long).unwrap();
         assert_eq!(read_secret(&name).unwrap().as_deref(), Some(long.as_str()));
         // A shorter value afterwards leaves no stale chunks behind.

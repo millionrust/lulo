@@ -6,8 +6,8 @@
 //! return errors rather than producing a misleading schedule.
 
 mod ical;
-pub mod local;
 mod layout;
+pub mod local;
 mod recurrence;
 
 pub use ical::{Calendar, CalendarError, Event, TimeValue, Zone};

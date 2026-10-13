@@ -144,12 +144,14 @@ pub(crate) fn windows_unsafe(name: &str) -> bool {
     }
     let stem = name.split('.').next().unwrap_or(name).trim_end();
     let upper = stem.to_ascii_uppercase();
-    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
-        || ["COM", "LPT"].iter().any(|prefix| {
-            upper
-                .strip_prefix(prefix)
-                .is_some_and(|rest| matches!(rest.chars().next(), Some('1'..='9')) && rest.len() == 1)
-        })
+    matches!(
+        upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        upper
+            .strip_prefix(prefix)
+            .is_some_and(|rest| matches!(rest.chars().next(), Some('1'..='9')) && rest.len() == 1)
+    })
 }
 
 #[cfg(test)]
@@ -159,8 +161,20 @@ mod tests {
     #[test]
     fn windows_special_names_are_refused() {
         for bad in [
-            "CON", "con", "NUL.txt", "aux.tar.gz", "COM1", "lpt9.log", "a:b", "C:", "x|y", "dir.",
-            "name ", "", "a?b", "stream:$DATA",
+            "CON",
+            "con",
+            "NUL.txt",
+            "aux.tar.gz",
+            "COM1",
+            "lpt9.log",
+            "a:b",
+            "C:",
+            "x|y",
+            "dir.",
+            "name ",
+            "",
+            "a?b",
+            "stream:$DATA",
         ] {
             assert!(windows_unsafe(bad), "{bad:?} should be refused");
         }
@@ -169,7 +183,14 @@ mod tests {
     #[test]
     fn ordinary_names_are_kept() {
         for good in [
-            "report.pdf", "Archive", "COM10", "console", "nul0", "a b", ".hidden", "über.txt",
+            "report.pdf",
+            "Archive",
+            "COM10",
+            "console",
+            "nul0",
+            "a b",
+            ".hidden",
+            "über.txt",
         ] {
             assert!(!windows_unsafe(good), "{good:?} should be kept");
         }

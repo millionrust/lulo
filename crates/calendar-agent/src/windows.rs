@@ -139,7 +139,9 @@ pub fn arm(wake: Option<DateTime<Utc>>, exe: &Path) -> io::Result<()> {
     let exe = exe
         .to_str()
         .filter(|path| !path.contains(['"', '%']))
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "the path cannot be scheduled"))?;
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "the path cannot be scheduled")
+        })?;
     let start = round_up_to_minute(wake).with_timezone(&Local).naive_local();
     let directory = state::state_path()
         .and_then(|path| path.parent().map(Path::to_path_buf))
@@ -214,10 +216,18 @@ mod tests {
 
     #[test]
     fn a_wake_is_rounded_up_to_the_next_whole_minute() {
-        let at = |s, ns| Utc.with_ymd_and_hms(2026, 10, 14, 9, 14, s).unwrap() + Duration::nanoseconds(ns);
+        let at = |s, ns| {
+            Utc.with_ymd_and_hms(2026, 10, 14, 9, 14, s).unwrap() + Duration::nanoseconds(ns)
+        };
         assert_eq!(round_up_to_minute(at(0, 0)), at(0, 0));
-        assert_eq!(round_up_to_minute(at(1, 0)), at(0, 0) + Duration::minutes(1));
-        assert_eq!(round_up_to_minute(at(30, 5)), at(0, 0) + Duration::minutes(1));
+        assert_eq!(
+            round_up_to_minute(at(1, 0)),
+            at(0, 0) + Duration::minutes(1)
+        );
+        assert_eq!(
+            round_up_to_minute(at(30, 5)),
+            at(0, 0) + Duration::minutes(1)
+        );
     }
 
     #[test]

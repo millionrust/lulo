@@ -143,7 +143,12 @@ fn owner_key(uid: &sysinfo::Uid) -> u32 {
 fn owner_key(uid: &sysinfo::Uid) -> u32 {
     let sid = uid.to_string();
     const SERVICE_PREFIXES: [&str; 6] = [
-        "S-1-5-18", "S-1-5-19", "S-1-5-20", "S-1-5-80-", "S-1-5-90-", "S-1-5-96-",
+        "S-1-5-18",
+        "S-1-5-19",
+        "S-1-5-20",
+        "S-1-5-80-",
+        "S-1-5-90-",
+        "S-1-5-96-",
     ];
     if SERVICE_PREFIXES
         .iter()

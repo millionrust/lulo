@@ -143,7 +143,6 @@ pub enum UiEvent {
     AccountRemoved(Uuid),
 }
 
-
 /// Graph sync is supplied by MAIL-9. The runtime owns its five-minute
 /// schedule; the adapter only needs to implement `BackendFactory`.
 pub struct ProviderFactory {

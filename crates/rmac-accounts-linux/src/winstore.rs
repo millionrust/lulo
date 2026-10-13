@@ -282,7 +282,11 @@ impl WinAccounts {
             self.save_secret(&account.id, "refresh-token", rotated)?;
         }
         let mut index = self.load()?;
-        if let Some(stored) = index.accounts.iter_mut().find(|stored| stored.id == account.id) {
+        if let Some(stored) = index
+            .accounts
+            .iter_mut()
+            .find(|stored| stored.id == account.id)
+        {
             stored.expires_at = refreshed.expires_at;
         }
         self.save(&index)?;
@@ -292,7 +296,12 @@ impl WinAccounts {
 
 impl GoaApi for WinAccounts {
     fn accounts(&self) -> Result<Vec<GoaAccount>, Error> {
-        Ok(self.load()?.accounts.iter().map(StoredAccount::to_goa).collect())
+        Ok(self
+            .load()?
+            .accounts
+            .iter()
+            .map(StoredAccount::to_goa)
+            .collect())
     }
 
     /// Windows has no account-change signal, and Lulo's apps add and remove
@@ -438,7 +447,8 @@ mod tests {
     use super::*;
 
     fn store(label: &str) -> (WinAccounts, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("lulo-accounts-{label}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("lulo-accounts-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         (WinAccounts::at(dir.join("lulo/accounts.json")), dir)
     }
@@ -514,7 +524,10 @@ mod tests {
         let listed = accounts.accounts().unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(
-            accounts.password(&listed[0].path, "imap-password").unwrap().expose(),
+            accounts
+                .password(&listed[0].path, "imap-password")
+                .unwrap()
+                .expose(),
             "two"
         );
         accounts.remove(&listed[0].path).unwrap();
@@ -537,7 +550,9 @@ mod tests {
         accounts.set_service(&path, Service::Mail, false).unwrap();
         assert!(!accounts.accounts().unwrap()[0].services.mail);
         assert!(accounts.remove("win:nope").is_err());
-        assert!(accounts.remove("/org/gnome/OnlineAccounts/Accounts/1").is_err());
+        assert!(accounts
+            .remove("/org/gnome/OnlineAccounts/Accounts/1")
+            .is_err());
         accounts.remove(&path).unwrap();
         let _ = std::fs::remove_dir_all(dir);
     }

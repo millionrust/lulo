@@ -136,7 +136,10 @@ pub async fn choose_preview_documents() -> Result<Vec<PathBuf>, Error> {
                 name: "Images and PDF documents",
                 patterns: "*.pdf;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.tif;*.tiff",
             },
-            Filter { name: "All Files", patterns: "*.*" },
+            Filter {
+                name: "All Files",
+                patterns: "*.*",
+            },
         ];
         open_files("Open", &FILTERS, true).await
     }
@@ -268,7 +271,10 @@ pub async fn choose_mail_attachments() -> Result<Vec<PathBuf>, Error> {
     #[cfg(windows)]
     {
         use crate::windows_dialog::{open_files, Filter};
-        static FILTERS: [Filter; 1] = [Filter { name: "All Files", patterns: "*.*" }];
+        static FILTERS: [Filter; 1] = [Filter {
+            name: "All Files",
+            patterns: "*.*",
+        }];
         open_files("Attach File", &FILTERS, true).await
     }
     #[cfg(not(any(target_os = "linux", windows)))]

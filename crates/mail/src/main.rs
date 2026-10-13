@@ -230,7 +230,10 @@ fn watch_account_changes(
     ));
     accounts_win::set_on_change(move |cx| {
         let accounts = delivery::accounts();
-        let paths: HashSet<String> = accounts.iter().map(|account| account.path.clone()).collect();
+        let paths: HashSet<String> = accounts
+            .iter()
+            .map(|account| account.path.clone())
+            .collect();
         if let Some(runtime) = &runtime {
             for gone in known.borrow().difference(&paths) {
                 runtime.remove_account(gone);

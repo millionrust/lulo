@@ -148,20 +148,26 @@ fn rename_noreplace(from: &Path, to: &Path) -> io::Result<()> {
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
 
-    let wide = |path: &Path| -> Vec<u16> { path.as_os_str().encode_wide().chain(Some(0)).collect() };
+    let wide =
+        |path: &Path| -> Vec<u16> { path.as_os_str().encode_wide().chain(Some(0)).collect() };
     let (from, to) = (wide(from), wide(to));
     // SAFETY: both are NUL-terminated and outlive the call.
-    unsafe { MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), MOVE_FILE_FLAGS(0)) }.map_err(
-        |error| {
-            let code = error.code().0 & 0xffff;
-            // ERROR_ALREADY_EXISTS (183) and ERROR_FILE_EXISTS (80).
-            if code == 183 || code == 80 {
-                io::Error::from(io::ErrorKind::AlreadyExists)
-            } else {
-                io::Error::from_raw_os_error(code)
-            }
-        },
-    )
+    unsafe {
+        MoveFileExW(
+            PCWSTR(from.as_ptr()),
+            PCWSTR(to.as_ptr()),
+            MOVE_FILE_FLAGS(0),
+        )
+    }
+    .map_err(|error| {
+        let code = error.code().0 & 0xffff;
+        // ERROR_ALREADY_EXISTS (183) and ERROR_FILE_EXISTS (80).
+        if code == 183 || code == 80 {
+            io::Error::from(io::ErrorKind::AlreadyExists)
+        } else {
+            io::Error::from_raw_os_error(code)
+        }
+    })
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]

@@ -13,8 +13,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity, FocusHandle, FontWeight,
-    IntoElement, ParentElement as _, Render, SharedString, Styled as _, Window,
+    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity, FocusHandle,
+    FontWeight, IntoElement, ParentElement as _, Render, SharedString, Styled as _, Window,
 };
 use rmac_accounts::autoconfig::{DiscoveryStep, MailConfig, MailServer};
 use rmac_accounts::model::{email_domain, Services};
@@ -197,7 +197,9 @@ impl AccountsView {
         let generation = self.generation;
         let found = off_thread(move || discover(&SystemDiscovery, &address));
         cx.spawn(async move |this, cx| {
-            let Ok(result) = found.recv().await else { return };
+            let Ok(result) = found.recv().await else {
+                return;
+            };
             let _ = this.update(cx, |this, cx| {
                 if this.generation != generation {
                     return;
@@ -243,18 +245,18 @@ impl AccountsView {
         let generation = self.generation;
         let signed_in = off_thread(move || sign_in(provider));
         cx.spawn(async move |this, cx| {
-            let Ok(result) = signed_in.recv().await else { return };
+            let Ok(result) = signed_in.recv().await else {
+                return;
+            };
             let _ = this.update(cx, |this, cx| {
                 if this.generation != generation {
                     return;
                 }
                 match result {
                     Ok(()) => this.finish(cx),
-                    Err(_) => this.fail(
-                        "The sign-in didn't finish. Try again.",
-                        Stage::Address,
-                        cx,
-                    ),
+                    Err(_) => {
+                        this.fail("The sign-in didn't finish. Try again.", Stage::Address, cx)
+                    }
                 }
             });
         })
@@ -262,7 +264,12 @@ impl AccountsView {
     }
 
     /// Password (and servers) entered: check them, then keep the account.
-    fn add_password_account(&mut self, config: Option<MailConfig>, manual: bool, cx: &mut Context<Self>) {
+    fn add_password_account(
+        &mut self,
+        config: Option<MailConfig>,
+        manual: bool,
+        cx: &mut Context<Self>,
+    ) {
         let address = Self::text(&self.address, cx).trim().to_owned();
         let name = Self::text(&self.name, cx).trim().to_owned();
         let password = Self::text(&self.password, cx);
@@ -326,11 +333,12 @@ impl AccountsView {
             return;
         }
         self.confirm_remove = None;
-        let removed = off_thread(move || {
-            WinAccounts::session().and_then(|store| store.remove(&path))
-        });
+        let removed =
+            off_thread(move || WinAccounts::session().and_then(|store| store.remove(&path)));
         cx.spawn(async move |this, cx| {
-            let Ok(result) = removed.recv().await else { return };
+            let Ok(result) = removed.recv().await else {
+                return;
+            };
             let _ = this.update(cx, |this, cx| match result {
                 Ok(()) => this.finish(cx),
                 Err(_) => this.fail("The account couldn't be removed.", Stage::List, cx),
@@ -354,7 +362,12 @@ impl AccountsView {
             .child(div().flex_1().child(TextField::new(input)))
     }
 
-    fn buttons(&self, primary: &'static str, cx: &mut Context<Self>, go: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> impl IntoElement {
+    fn buttons(
+        &self,
+        primary: &'static str,
+        cx: &mut Context<Self>,
+        go: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> impl IntoElement {
         let busy = self.busy;
         div()
             .h_flex()

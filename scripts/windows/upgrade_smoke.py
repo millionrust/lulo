@@ -29,7 +29,9 @@ each start under HKCU\\Software\\Lulo\\Session (`LastStarted`), so:
 - the re-stamped build, with Lulo mode on (`LuloMode` 1), starts it again.
 
 And an upgrade keeps the user's Start Lulo at Sign-In value (the installer
-used to delete it on every install), which uninstall removes.
+used to delete it on every install) and the Lulo layer's settings under
+HKCU\\Software\\Lulo\\Shell (it used to delete the key with the old product
+on every upgrade); uninstall removes both.
 
 Exits non-zero naming every failure.
 """
@@ -53,6 +55,8 @@ STAND_IN = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32" / "whoami.
 BUILDS = [(100, "build-100"), (101, "build-101"), (101, "restamp-101")]
 SESSION_KEY = r"Software\Lulo\Session"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+SHELL_KEY = r"Software\Lulo\Shell"
+SHELL_PROBE = "UpgradeSmokeProbe"
 # The Lulo mode set before each install (None: Lulo never ran here), and
 # whether that install must start Lulo.
 LULO_MODE_BEFORE = {"build-100": None, "build-101": 0, "restamp-101": 1}
@@ -193,6 +197,8 @@ def main(argv: list[str]) -> int:
             # The user's Start Lulo at Sign-In, which an upgrade must keep.
             session = install_dir() / "lulo-session.exe"
             set_value(RUN_KEY, "Lulo", f'"{session}"', winreg.REG_SZ)
+            # And one of the Lulo layer's own settings, which it must keep too.
+            set_value(SHELL_KEY, SHELL_PROBE, 1)
         code = msiexec("/i", msi)
         if code != 0:
             failures.append(f"installing {msi.name} failed: exit {code}")
@@ -217,6 +223,8 @@ def main(argv: list[str]) -> int:
         print(f"{msi.name}: Lulo {'started' if started else 'not started'}", flush=True)
         if marker != "build-100" and read_value(RUN_KEY, "Lulo") is None:
             failures.append(f"{msi.name} removed the user's Start Lulo at Sign-In value")
+        if marker != "build-100" and read_value(SHELL_KEY, SHELL_PROBE) != 1:
+            failures.append(f"{msi.name} removed the Lulo layer's settings ({SHELL_KEY})")
 
     code = msiexec("/x", msis[-1][2])
     if code != 0:
@@ -230,6 +238,8 @@ def main(argv: list[str]) -> int:
         delete_value(RUN_KEY, "Lulo")
     if read_value(SESSION_KEY, "LuloMode") is not None:
         failures.append("Lulo mode survived uninstall")
+    if read_value(SHELL_KEY, SHELL_PROBE) is not None:
+        failures.append(f"the Lulo layer's settings ({SHELL_KEY}) survived uninstall")
 
     if failures:
         print(f"\n{len(failures)} upgrade check(s) failed:", file=sys.stderr)

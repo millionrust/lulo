@@ -1,16 +1,16 @@
 use std::fmt;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 use std::collections::HashMap;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 type SettingsMap = HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>;
 
-#[cfg(all(target_os = "macos", not(test)))]
+#[cfg(all(not(target_os = "linux"), not(test)))]
 type SettingsMap = ();
 
 #[derive(Clone)]
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct VpnProfileEditId {
     profile: super::VpnProfileId,
     settings: SettingsMap,
@@ -59,7 +59,7 @@ impl fmt::Debug for VpnProfileConfiguration {
 }
 
 #[derive(Clone)]
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct VpnProfileEdit {
     id: VpnProfileEditId,
     name: String,
@@ -146,11 +146,11 @@ impl std::error::Error for VpnEditValidationError {}
 pub(super) fn configuration(
     id: &super::VpnProfileId,
 ) -> Result<VpnProfileConfiguration, super::Error> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         linux_configuration(id)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = id;
         Err(super::Error::new(
@@ -161,11 +161,11 @@ pub(super) fn configuration(
 }
 
 pub(super) fn update(edit: &VpnProfileEdit) -> Result<super::VpnSnapshot, super::Error> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         linux_update(edit)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = edit;
         Err(super::Error::new(
@@ -191,7 +191,7 @@ fn validate_username(value: &str) -> Result<String, VpnEditValidationError> {
     Ok(value.to_owned())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_configuration(id: &super::VpnProfileId) -> Result<VpnProfileConfiguration, super::Error> {
     let connection = super::system_connection("connect to NetworkManager for VPN editing")?;
     require_exact_record(&connection, id)?;
@@ -206,7 +206,7 @@ fn linux_configuration(id: &super::VpnProfileId) -> Result<VpnProfileConfigurati
     configuration_from_settings(id.clone(), settings, &connection_type)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn configuration_from_settings(
     profile: super::VpnProfileId,
     settings: SettingsMap,
@@ -244,7 +244,7 @@ fn configuration_from_settings(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn linux_update(edit: &VpnProfileEdit) -> Result<super::VpnSnapshot, super::Error> {
     let connection = super::system_connection("connect to NetworkManager for VPN editing")?;
     require_exact_record(&connection, &edit.id.profile)?;
@@ -317,7 +317,7 @@ fn linux_update(edit: &VpnProfileEdit) -> Result<super::VpnSnapshot, super::Erro
     Ok(snapshot)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn run_modify_command(edit: &VpnProfileEdit) -> Result<(), super::Error> {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
@@ -390,7 +390,7 @@ fn run_modify_command(edit: &VpnProfileEdit) -> Result<(), super::Error> {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Debug, PartialEq, Eq)]
 struct EditableValues {
     name: String,
@@ -399,7 +399,7 @@ struct EditableValues {
     timeout: u32,
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 impl EditableValues {
     fn from_edit(edit: &VpnProfileEdit) -> Self {
         Self {
@@ -441,7 +441,7 @@ impl EditableValues {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 fn settings_without_editable_values(
     mut settings: SettingsMap,
     supports_vpn_options: bool,
@@ -459,7 +459,7 @@ fn settings_without_editable_values(
     settings
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn require_exact_record(
     connection: &zbus::blocking::Connection,
     id: &super::VpnProfileId,
@@ -471,7 +471,7 @@ fn require_exact_record(
         .ok_or_else(|| super::Error::new("find VPN profile", "the profile no longer exists"))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn stable_profile_settings(
     connection: &zbus::blocking::Connection,
     id: &super::VpnProfileId,
@@ -517,7 +517,7 @@ fn stable_profile_settings(
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn validate_profile_type(
     id: &super::VpnProfileId,
     settings: &SettingsMap,
@@ -541,7 +541,7 @@ fn validate_profile_type(
     Ok(connection_type)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn settings_proxy(
     connection: &zbus::blocking::Connection,
 ) -> Result<zbus::blocking::Proxy<'_>, super::Error> {
@@ -554,7 +554,7 @@ fn settings_proxy(
     .map_err(|error| super::Error::new("open VPN profile inventory", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn profile_proxy<'a>(
     connection: &'a zbus::blocking::Connection,
     path: &'a str,

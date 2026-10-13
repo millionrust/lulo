@@ -141,11 +141,16 @@ fn system_watch_plan(report: &Report) -> (Vec<PathBuf>, Interests) {
     let trash_folders = trash::os_limited::trash_folders()
         .map(|folders| folders.into_iter().collect::<Vec<_>>())
         .unwrap_or_default();
-    #[cfg(not(all(
-        unix,
-        not(target_os = "macos"),
-        not(target_os = "ios"),
-        not(target_os = "android")
+    #[cfg(windows)]
+    let trash_folders = crate::recycle_bin::folders();
+    #[cfg(not(any(
+        windows,
+        all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        )
     )))]
     let trash_folders = Vec::new();
     let mounts_file = cfg!(target_os = "linux").then_some(Path::new("/proc/self/mounts"));
@@ -203,6 +208,10 @@ pub(crate) fn candidate_interests(
     for folder in trash_folders {
         contents.push(folder.join("files"));
         contents.push(folder.join("info"));
+        // A Windows Recycle Bin folder holds its `$R`/`$I` pairs itself.
+        if cfg!(windows) {
+            contents.push(folder.clone());
+        }
     }
     contents.extend(mounts_file.map(Path::to_path_buf));
     Interests {
@@ -238,6 +247,9 @@ pub(crate) fn candidate_watch_targets(
     for folder in trash_folders {
         candidates.push(folder.join("files"));
         candidates.push(folder.join("info"));
+        if cfg!(windows) {
+            candidates.push(folder.clone());
+        }
     }
     if let Some(mounts_file) = mounts_file {
         candidates.push(mounts_file.to_path_buf());

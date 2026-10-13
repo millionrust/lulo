@@ -36,7 +36,9 @@ env:
     -p rmac-finder -p rmac-mounts -p rmac-search -p rmac-app-launch
     -p rmac-pasteboard -p rmac-archive -p rmac-quick-look
     -p rmac-system-settings -p rmac-appearance-portal
-    -p rmac-app-menu -p rmac-win-shell
+    -p rmac-app-menu -p rmac-win-shell -p rmac-compositor-system
+    -p rmac-shell-runtime -p rmac-launcher-app -p rmac-quick-settings-app -p rmac-osd
+    -p rmac-app-drawer
 
 jobs:
   # Only `docs/**/*.md` changed: the Rust, Windows and macOS jobs are
@@ -407,8 +409,15 @@ jobs:
         with:
           version: v0.18.0
 
+      # The shell's views (shell/bins, shell/crates; ADR 0023, "Phase 3
+      # revised: shared shell views") are libraries of the shell workspace
+      # that lulo-shell links, so Clippy checks their Windows code there.
       - name: Run Clippy
-        run: cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
+        run: |
+          cargo clippy --locked --keep-going $RMAC_WINDOWS_PACKAGES --all-targets -- -D warnings
+          (cd shell && cargo clippy --locked --keep-going \
+            -p rmac-shell-layer -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper \
+            --lib --tests -- -D warnings)
 
   windows-tests:
     name: Windows tests
@@ -436,7 +445,12 @@ jobs:
       # gpui_windows (ADR 0025) runs with the apps' packages so it builds
       # with the same features: its frame-loop tests and upstream's own.
       - name: Run tests
-        run: cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
+        run: |
+          cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
+          (cd shell && cargo test --locked --no-fail-fast -p rmac-shell-layer --lib)
+          # The settings store's own tests assume Unix files; the Windows
+          # Dock migration is checked on its own.
+          cargo test --locked -p rmac-shell-settings --lib a_windows_dock_saved_before_apps
 
   windows-build:
     name: Windows build

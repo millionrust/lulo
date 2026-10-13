@@ -5,6 +5,8 @@ use std::fmt;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(windows)]
+pub mod windows;
 
 const PRESENTATION_VERSION: u8 = 1;
 const MAX_TITLE_BYTES: usize = 128;
@@ -176,7 +178,11 @@ pub fn brightness() -> Result<u8, Error> {
     {
         linux::brightness()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        windows::brightness().ok_or_else(|| Error::new(Operation::ReadBrightness))
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         Err(Error::new(Operation::ReadBrightness))
     }
@@ -189,7 +195,11 @@ pub fn set_brightness(percentage: u8) -> Result<u8, Error> {
     {
         linux::set_brightness_percentage(percentage)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        windows::set_brightness(percentage).ok_or_else(|| Error::new(Operation::ChangeBrightness))
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = percentage;
         Err(Error::new(Operation::ChangeBrightness))

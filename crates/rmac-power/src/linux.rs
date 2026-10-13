@@ -2,28 +2,28 @@
 
 use super::*;
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) const UPOWER_SERVICE: &str = "org.freedesktop.UPower";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const WATCH_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const HISTORY_TIMESPAN_SECONDS: u32 = 24 * 60 * 60;
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) const HISTORY_POINT_LIMIT: usize = 96;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const THRESHOLD_VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const THRESHOLD_VERIFY_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(100);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     let connection = rmac_dbus::system_blocking()
         .map_err(|error| Error::new("connect to the power service", error.to_string()))?;
     system_snapshot_with_connection(&connection)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_snapshot_with_connection(
     connection: &zbus::blocking::Connection,
 ) -> Result<Snapshot, Error> {
@@ -33,7 +33,7 @@ pub(super) fn system_snapshot_with_connection(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_battery(
     connection: &zbus::blocking::Connection,
 ) -> Result<Option<Battery>, Error> {
@@ -110,7 +110,7 @@ pub(super) fn linux_battery(
     }))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) struct PhysicalBattery {
     object_path: String,
     native_path: String,
@@ -125,7 +125,7 @@ pub(super) struct PhysicalBattery {
     threshold_firmware_managed: bool,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn physical_batteries(
     connection: &zbus::blocking::Connection,
     upower: &zbus::blocking::Proxy<'_>,
@@ -180,12 +180,12 @@ pub(super) fn physical_batteries(
     Some(batteries)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn threshold_percent(value: Option<u32>) -> Option<u8> {
     value.filter(|value| *value <= 100).map(|value| value as u8)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn charge_threshold_from_batteries(
     batteries: &[PhysicalBattery],
     service_owner: Option<&str>,
@@ -220,7 +220,7 @@ pub(super) fn charge_threshold_from_batteries(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn battery_history(
     connection: &zbus::blocking::Connection,
     display_device: &zbus::blocking::Proxy<'_>,
@@ -243,7 +243,7 @@ pub(super) fn battery_history(
     history_from_device(&device).unwrap_or_default()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn history_from_device(device: &zbus::blocking::Proxy<'_>) -> Option<BatteryHistory> {
     if optional_property::<bool>(device, "HasHistory") != Some(true) {
         return None;
@@ -270,7 +270,7 @@ pub(super) fn history_from_device(device: &zbus::blocking::Proxy<'_>) -> Option<
     })
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn normalize_history(raw: Vec<(u32, f64, u32)>) -> Vec<BatteryHistoryPoint> {
     let mut points = raw
         .into_iter()
@@ -291,7 +291,7 @@ pub(super) fn normalize_history(raw: Vec<(u32, f64, u32)>) -> Vec<BatteryHistory
     points
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn upower_service_owner(
     connection: &zbus::blocking::Connection,
 ) -> Result<String, Error> {
@@ -306,7 +306,7 @@ pub(super) fn upower_service_owner(
         .map_err(|error| Error::new("identify UPower", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn optional_property<T>(proxy: &zbus::blocking::Proxy<'_>, name: &str) -> Option<T>
 where
     T: TryFrom<zbus::zvariant::OwnedValue>,
@@ -315,7 +315,7 @@ where
     proxy.get_property(name).ok()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 #[derive(Clone, Copy)]
 pub(super) struct ProfileEndpoint {
     destination: &'static str,
@@ -323,7 +323,7 @@ pub(super) struct ProfileEndpoint {
     interface: &'static str,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const PROFILE_ENDPOINTS: [ProfileEndpoint; 2] = [
     ProfileEndpoint {
         destination: "org.freedesktop.UPower.PowerProfiles",
@@ -337,7 +337,7 @@ pub(super) const PROFILE_ENDPOINTS: [ProfileEndpoint; 2] = [
     },
 ];
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_profiles(connection: &zbus::blocking::Connection) -> Profiles {
     PROFILE_ENDPOINTS
         .iter()
@@ -345,7 +345,7 @@ pub(super) fn linux_profiles(connection: &zbus::blocking::Connection) -> Profile
         .unwrap_or_default()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn profiles_at_endpoint(
     connection: &zbus::blocking::Connection,
     endpoint: ProfileEndpoint,
@@ -382,7 +382,7 @@ pub(super) fn profiles_at_endpoint(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn property_string(
     properties: &std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
     key: &str,
@@ -394,7 +394,7 @@ pub(super) fn property_string(
         .filter(|value| !value.is_empty())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_set_profile(profile: PowerProfile) -> Result<(), Error> {
     let connection = rmac_dbus::system_blocking()
         .map_err(|error| Error::new("connect to the power profile service", error.to_string()))?;
@@ -417,7 +417,7 @@ pub(super) fn system_set_profile(profile: PowerProfile) -> Result<(), Error> {
     Err(Error::new("change the power profile", failures.join("; ")))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_set_charge_threshold(
     threshold: &ChargeThreshold,
     enabled: bool,
@@ -479,7 +479,7 @@ pub(super) fn system_set_charge_threshold(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn revalidate_threshold_battery(
     connection: &zbus::blocking::Connection,
     identity: &ChargeThresholdIdentity,
@@ -535,7 +535,7 @@ pub(super) fn revalidate_threshold_battery(
     Ok(battery)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
     let mut unavailable_reported = false;
     loop {
@@ -549,7 +549,7 @@ pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn watch_once(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,
@@ -669,7 +669,7 @@ pub(super) async fn watch_once(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn service_signal_rule(
     service: &'static str,
     operation: &'static str,
@@ -691,7 +691,7 @@ pub(super) fn service_signal_rule(
 /// that connects or disconnects. Treating those as power changes made the
 /// desktop re-read UPower on a fresh connection whose `NameOwnerChanged`
 /// triggered the next read: a loop that kept the desktop busy at idle.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn read_signal(
     message: Option<Result<zbus::Message, zbus::Error>>,
     operation: &'static str,
@@ -709,19 +709,19 @@ pub(super) fn read_signal(
 }
 
 /// Whether a signal came from a service rather than the message bus itself.
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn sent_by_service(sender: Option<&str>) -> bool {
     matches!(sender, Some(sender) if sender != "org.freedesktop.DBus")
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PowerOwnerEvent {
     Upower(bool),
     Profiles,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn read_owner_event(
     message: Option<Result<zbus::Message, zbus::Error>>,
 ) -> Result<Option<PowerOwnerEvent>, Error> {
@@ -735,7 +735,7 @@ pub(super) fn read_owner_event(
     Ok(power_owner_event(&name, &new_owner))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn power_owner_event(name: &str, new_owner: &str) -> Option<PowerOwnerEvent> {
     if name == UPOWER_SERVICE {
         Some(PowerOwnerEvent::Upower(!new_owner.is_empty()))
@@ -746,7 +746,7 @@ pub(super) fn power_owner_event(name: &str, new_owner: &str) -> Option<PowerOwne
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn publish_changed(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,
@@ -763,7 +763,7 @@ pub(super) async fn publish_changed(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn publish_unavailable(
     sender: &async_channel::Sender<WatchEvent>,
     unavailable_reported: &mut bool,
@@ -778,7 +778,7 @@ pub(super) async fn publish_unavailable(
     Ok(())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn battery_state_from_upower(state: u32) -> BatteryState {
     match state {
         1 => BatteryState::Charging,
@@ -791,7 +791,7 @@ pub(super) fn battery_state_from_upower(state: u32) -> BatteryState {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_profile(profile: &str) -> Option<PowerProfile> {
     match profile {
         "power-saver" => Some(PowerProfile::PowerSaver),
@@ -801,7 +801,7 @@ pub(super) fn parse_profile(profile: &str) -> Option<PowerProfile> {
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn normalize_profiles(profiles: &mut Vec<PowerProfile>) {
     profiles.sort_by_key(|profile| match profile {
         PowerProfile::PowerSaver => 0,

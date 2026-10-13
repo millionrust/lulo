@@ -2,14 +2,14 @@
 
 use super::*;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const NETWORK_MANAGER_SERVICE: &str = "org.freedesktop.NetworkManager";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const WIFI_WATCH_RECONNECT_DELAY: Duration = Duration::from_secs(1);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const WIFI_WATCH_QUIET_PERIOD: Duration = Duration::from_millis(75);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn system_watch_wifi(
     sender: async_channel::Sender<WifiWatchEvent>,
 ) -> Result<(), Error> {
@@ -26,7 +26,7 @@ pub(super) async fn system_watch_wifi(
         async_io::Timer::after(WIFI_WATCH_RECONNECT_DELAY).await;
     }
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn watch_wifi_once(
     sender: &async_channel::Sender<WifiWatchEvent>,
     unavailable_reported: &mut bool,
@@ -131,7 +131,7 @@ pub(super) async fn watch_wifi_once(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn read_wifi_signal(
     message: Option<Result<zbus::Message, zbus::Error>>,
 ) -> Result<(), Error> {
@@ -142,7 +142,7 @@ pub(super) fn read_wifi_signal(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn read_network_manager_owner(
     message: Option<Result<zbus::Message, zbus::Error>>,
 ) -> Result<Option<bool>, Error> {
@@ -156,12 +156,12 @@ pub(super) fn read_network_manager_owner(
     Ok(network_manager_owner_availability(&name, &new_owner))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn network_manager_owner_availability(name: &str, new_owner: &str) -> Option<bool> {
     (name == "org.freedesktop.NetworkManager").then_some(!new_owner.is_empty())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn publish_wifi_changed(
     sender: &async_channel::Sender<WifiWatchEvent>,
     unavailable_reported: &mut bool,
@@ -178,7 +178,7 @@ pub(super) async fn publish_wifi_changed(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) async fn publish_wifi_unavailable(
     sender: &async_channel::Sender<WifiWatchEvent>,
     unavailable_reported: &mut bool,
@@ -193,7 +193,7 @@ pub(super) async fn publish_wifi_unavailable(
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 impl WifiService for SystemWifiService {
     fn snapshot(&self) -> Result<WifiSnapshot, Error> {
         linux_snapshot()
@@ -255,7 +255,7 @@ impl WifiService for SystemWifiService {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_snapshot() -> Result<WifiSnapshot, Error> {
     let connection = system_connection("connect to NetworkManager")?;
     let manager = manager_proxy(&connection)?;
@@ -311,7 +311,7 @@ pub(super) fn linux_snapshot() -> Result<WifiSnapshot, Error> {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) struct WifiAccessPointRecord {
     id: WifiNetworkId,
     path: zbus::zvariant::OwnedObjectPath,
@@ -319,14 +319,14 @@ pub(super) struct WifiAccessPointRecord {
     connected: bool,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) struct WifiProfileRecord {
     id: WifiNetworkId,
     connection_path: zbus::zvariant::OwnedObjectPath,
     timestamp: u64,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_wifi_access_points(
     connection: &zbus::blocking::Connection,
     device: &zbus::zvariant::OwnedObjectPath,
@@ -385,7 +385,7 @@ pub(super) fn linux_wifi_access_points(
     Ok(access_points)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_wifi_profiles(
     connection: &zbus::blocking::Connection,
 ) -> Result<Vec<WifiProfileRecord>, Error> {
@@ -429,7 +429,7 @@ pub(super) fn linux_wifi_profiles(
     Ok(profiles)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn wifi_profile_identity(
     settings: &HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>,
 ) -> Option<(WifiNetworkId, u64)> {
@@ -444,7 +444,7 @@ pub(super) fn wifi_profile_identity(
     Some((id, property::<u64>(connection, "timestamp").unwrap_or(0)))
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn exact_created_wifi_profile(
     settings: &HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>,
     profile_uuid: &str,
@@ -458,7 +458,7 @@ pub(super) fn exact_created_wifi_profile(
             == Some(profile_uuid)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn wifi_security_from_access_point(flags: u32, wpa: u32, rsn: u32) -> WifiSecurity {
     const PSK: u32 = 0x0000_0100;
     const ENTERPRISE: u32 = 0x0000_0200;
@@ -489,7 +489,7 @@ pub(super) fn wifi_security_from_access_point(flags: u32, wpa: u32, rsn: u32) ->
     }
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn wifi_security_from_profile(
     security: &HashMap<String, zbus::zvariant::OwnedValue>,
 ) -> WifiSecurity {
@@ -503,7 +503,7 @@ pub(super) fn wifi_security_from_profile(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_connect_wifi(network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
     use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
@@ -558,7 +558,7 @@ pub(super) fn linux_connect_wifi(network: &WifiNetworkId) -> Result<WifiSnapshot
     wait_for_wifi_activation(&connection, &active_path, &device, network, None)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_connect_wifi_with_password(
     network: &WifiNetworkId,
     password: WifiPassword,
@@ -637,7 +637,7 @@ pub(super) fn linux_connect_wifi_with_password(
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_connect_enterprise_wifi(
     network: &WifiNetworkId,
     credentials: WifiEnterpriseCredentials,
@@ -719,7 +719,7 @@ pub(super) fn linux_connect_enterprise_wifi(
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn wait_for_new_wifi_activation(
     connection: &zbus::blocking::Connection,
     profile_path: &zbus::zvariant::OwnedObjectPath,
@@ -747,7 +747,7 @@ pub(super) fn wait_for_new_wifi_activation(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn delete_exact_created_wifi_profile(
     connection: &zbus::blocking::Connection,
     profile_path: &zbus::zvariant::OwnedObjectPath,
@@ -797,7 +797,7 @@ pub(super) fn delete_exact_created_wifi_profile(
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn wifi_connection_paths(
     connection: &zbus::blocking::Connection,
 ) -> Result<Vec<zbus::zvariant::OwnedObjectPath>, Error> {
@@ -813,7 +813,7 @@ pub(super) fn wifi_connection_paths(
         .map_err(|error| Error::new("list saved Wi-Fi connections", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_forget_wifi(network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
     use zbus::zvariant::OwnedObjectPath;
 
@@ -920,7 +920,7 @@ pub(super) fn linux_forget_wifi(network: &WifiNetworkId) -> Result<WifiSnapshot,
     linux_snapshot()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn device_active_connection(
     connection: &zbus::blocking::Connection,
     device: &zbus::zvariant::OwnedObjectPath,
@@ -938,7 +938,7 @@ pub(super) fn device_active_connection(
     Ok((active.as_str() != "/").then_some(active))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn wait_for_wifi_activation(
     connection: &zbus::blocking::Connection,
     active_path: &zbus::zvariant::OwnedObjectPath,
@@ -1004,7 +1004,7 @@ pub(super) fn wait_for_wifi_activation(
     ))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn wifi_activation_failure(
     connection: &zbus::blocking::Connection,
     device: &zbus::zvariant::OwnedObjectPath,
@@ -1034,7 +1034,7 @@ pub(super) fn wifi_activation_failure(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_network_snapshot() -> Result<NetworkSnapshot, Error> {
     use zbus::zvariant::OwnedObjectPath;
 
@@ -1159,21 +1159,21 @@ pub(super) fn linux_network_snapshot() -> Result<NetworkSnapshot, Error> {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) struct VpnRecord {
     pub(super) profile: VpnProfile,
     connection_path: zbus::zvariant::OwnedObjectPath,
     pub(super) active_path: Option<zbus::zvariant::OwnedObjectPath>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const VPN_ACTIVATION_TIMEOUT: Duration = Duration::from_secs(60);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const VPN_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(10);
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) const VPN_STATE_INTERVAL: Duration = Duration::from_millis(250);
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_vpn_snapshot() -> Result<VpnSnapshot, Error> {
     let connection = system_connection("connect to NetworkManager")?;
     let mut records = linux_vpn_records(&connection)?;
@@ -1188,7 +1188,7 @@ pub(super) fn linux_vpn_snapshot() -> Result<VpnSnapshot, Error> {
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_set_vpn_enabled(
     id: &VpnProfileId,
     enabled: bool,
@@ -1231,7 +1231,7 @@ pub(super) fn linux_set_vpn_enabled(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn wait_for_vpn_activation(
     connection: &zbus::blocking::Connection,
     id: &VpnProfileId,
@@ -1303,7 +1303,7 @@ pub(super) fn wait_for_vpn_activation(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn stop_exact_vpn_activation(
     connection: &zbus::blocking::Connection,
     id: &VpnProfileId,
@@ -1327,7 +1327,7 @@ pub(super) fn stop_exact_vpn_activation(
         .map_err(|error| Error::new(operation, error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn wait_for_vpn_deactivation(
     connection: &zbus::blocking::Connection,
     id: &VpnProfileId,
@@ -1352,7 +1352,7 @@ pub(super) fn wait_for_vpn_deactivation(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn exact_active_vpn(
     connection: &zbus::blocking::Connection,
     id: &VpnProfileId,
@@ -1380,7 +1380,7 @@ pub(super) fn exact_active_vpn(
         && uuid == id.uuid)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn linux_vpn_records(
     connection: &zbus::blocking::Connection,
 ) -> Result<Vec<VpnRecord>, Error> {
@@ -1495,7 +1495,7 @@ pub(super) fn linux_vpn_records(
     Ok(records)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn active_connection_name(
     connection: &zbus::blocking::Connection,
     path: &zbus::zvariant::OwnedObjectPath,
@@ -1512,7 +1512,7 @@ pub(super) fn active_connection_name(
     .filter(|name| !name.is_empty())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn read_ip_configuration(
     connection: &zbus::blocking::Connection,
     path: &zbus::zvariant::OwnedObjectPath,
@@ -1556,14 +1556,14 @@ pub(super) fn read_ip_configuration(
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn system_connection(
     operation: &'static str,
 ) -> Result<zbus::blocking::Connection, Error> {
     rmac_dbus::system_blocking().map_err(|error| Error::new(operation, error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn manager_proxy(
     connection: &zbus::blocking::Connection,
 ) -> Result<zbus::blocking::Proxy<'_>, Error> {
@@ -1576,7 +1576,7 @@ pub(super) fn manager_proxy(
     .map_err(|error| Error::new("open NetworkManager", error.to_string()))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub(super) fn wifi_device_path(
     connection: &zbus::blocking::Connection,
 ) -> Result<Option<zbus::zvariant::OwnedObjectPath>, Error> {
@@ -1602,7 +1602,7 @@ pub(super) fn wifi_device_path(
     Ok(None)
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn property<T>(
     properties: &HashMap<String, zbus::zvariant::OwnedValue>,
     key: &str,
@@ -1615,7 +1615,7 @@ where
         .and_then(|value| T::try_from(value).ok())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn property_string(
     properties: &HashMap<String, zbus::zvariant::OwnedValue>,
     key: &str,
@@ -1627,7 +1627,7 @@ pub(super) fn property_string(
         .filter(|value| !value.is_empty())
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn property_bytes(
     properties: &HashMap<String, zbus::zvariant::OwnedValue>,
     key: &str,

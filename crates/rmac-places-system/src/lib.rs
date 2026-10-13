@@ -2,6 +2,8 @@
 
 mod backend;
 mod model;
+#[cfg(windows)]
+mod recycle_bin;
 mod snapshot;
 mod trash;
 

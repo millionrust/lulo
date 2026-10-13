@@ -9,12 +9,21 @@
 //! rectangle (the assumption this whole channel rests on) has not been
 //! confirmed interactively on the reference laptop.
 
+//! On Windows Apps and the Dock run in one process (`lulo-shell`) and no
+//! drag hint is sent yet (WIN-OS-72).
+
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::io;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
+#[cfg(unix)]
 use std::os::unix::net::UnixDatagram;
+#[cfg(unix)]
 use std::path::PathBuf;
 
+#[cfg(unix)]
 const SOCKET_NAME: &str = "dock-drag.sock";
 const MAX_WIRE_BYTES: usize = 512;
 
@@ -29,6 +38,7 @@ pub enum Phase {
     Cancel,
 }
 
+#[cfg(unix)]
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, message)
 }
@@ -36,6 +46,7 @@ fn invalid(message: &'static str) -> io::Error {
 /// `$XDG_RUNTIME_DIR/rmac/dock-drag.sock`, with the same ownership checks
 /// as the Dock's own `socket_path` (duplicated per-binary, matching every
 /// other `shell/bins/*` local command endpoint in this repository).
+#[cfg(unix)]
 fn socket_path() -> io::Result<PathBuf> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
@@ -63,9 +74,16 @@ pub fn send(app_id: &str, phase: Phase) {
         Phase::Drop(fraction) => format!("drop:{fraction}:{app_id}"),
         Phase::Cancel => format!("cancel:{app_id}"),
     };
-    if encoded.len() > MAX_WIRE_BYTES {
-        return;
+    #[cfg(unix)]
+    if encoded.len() <= MAX_WIRE_BYTES {
+        send_encoded(&encoded);
     }
+    #[cfg(not(unix))]
+    let _ = (encoded, MAX_WIRE_BYTES);
+}
+
+#[cfg(unix)]
+fn send_encoded(encoded: &str) {
     let Ok(path) = socket_path() else {
         return;
     };
@@ -75,7 +93,7 @@ pub fn send(app_id: &str, phase: Phase) {
     let _ = socket.send_to(encoded.as_bytes(), path);
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

@@ -1350,6 +1350,7 @@ mod linux_wayland {
                         .find(|workspace| workspace.focused)
                         .and_then(|workspace| workspace.active_window);
                     let Some(target) = live.or(remembered) else {
+                        eprintln!("focus return: no window to return to");
                         return;
                     };
                     // A click gave the bar niri's on-demand layer focus,
@@ -1382,6 +1383,9 @@ mod linux_wayland {
                         .windows
                         .iter()
                         .any(|candidate| candidate.id == target && candidate.focused);
+                    if attempt == 0 || settled {
+                        eprintln!("focus return: attempt {attempt}, window {target:?} focused: {settled}");
+                    }
                     if settled {
                         return;
                     }

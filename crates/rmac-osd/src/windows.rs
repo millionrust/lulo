@@ -13,7 +13,8 @@ use std::sync::OnceLock;
 
 use windows::core::{w, BSTR};
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+    CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CLSCTX_INPROC_SERVER,
+    COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
 };
 use windows::Win32::System::Variant::{
     VariantToInt32, VariantToStringAlloc, VARENUM, VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0,
@@ -77,15 +78,26 @@ pub fn run_brightness_helper(arguments: &[String]) -> i32 {
     }
 }
 
+/// `result`'s value; an error is told on stderr (`stage` names the call),
+/// which the helper's caller discards and a person running the helper sees.
+fn checked<T>(stage: &str, result: windows::core::Result<T>) -> Option<T> {
+    result
+        .map_err(|error| eprintln!("brightness: {stage}: {error}"))
+        .ok()
+}
+
 fn services() -> Option<IWbemServices> {
     // SAFETY: COM on this thread (a blocking worker or the helper's main
     // thread); the objects are released when dropped.
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let locator: IWbemLocator =
-            CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER).ok()?;
-        locator
-            .ConnectServer(
+        let locator: IWbemLocator = checked(
+            "WbemLocator",
+            CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER),
+        )?;
+        let services = checked(
+            "ConnectServer",
+            locator.ConnectServer(
                 &BSTR::from("ROOT\\WMI"),
                 &BSTR::new(),
                 &BSTR::new(),
@@ -93,26 +105,45 @@ fn services() -> Option<IWbemServices> {
                 0,
                 &BSTR::new(),
                 None,
-            )
-            .ok()
+            ),
+        )?;
+        // WMI's provider acts as the caller: without impersonation the
+        // monitor classes answer nothing (10: NTLM / Negotiate, 0: no
+        // authorisation service).
+        checked(
+            "CoSetProxyBlanket",
+            CoSetProxyBlanket(
+                &services,
+                10,
+                0,
+                None,
+                RPC_C_AUTHN_LEVEL_CALL,
+                RPC_C_IMP_LEVEL_IMPERSONATE,
+                None,
+                EOAC_NONE,
+            ),
+        )?;
+        Some(services)
     }
 }
 
 fn first(services: &IWbemServices, query: &str) -> Option<IWbemClassObject> {
     // SAFETY: a WQL query on a live service; one object is taken.
     unsafe {
-        let objects: IEnumWbemClassObject = services
-            .ExecQuery(
+        let objects: IEnumWbemClassObject = checked(
+            "ExecQuery",
+            services.ExecQuery(
                 &BSTR::from("WQL"),
                 &BSTR::from(query),
                 WBEM_GENERIC_FLAG_TYPE(WBEM_FLAG_FORWARD_ONLY.0 | WBEM_FLAG_RETURN_IMMEDIATELY.0),
                 None,
-            )
-            .ok()?;
+            ),
+        )?;
         let mut found = [None];
         let mut returned = 0u32;
-        let _ = objects.Next(WBEM_INFINITE, &mut found, &mut returned);
+        let status = objects.Next(WBEM_INFINITE, &mut found, &mut returned);
         if returned == 0 {
+            eprintln!("brightness: {query}: nothing ({status:?})");
             return None;
         }
         found[0].take()
@@ -128,10 +159,11 @@ fn read_in_process() -> Option<u8> {
     let mut value = VARIANT::default();
     // SAFETY: reads one property into a VARIANT this function owns.
     unsafe {
-        object
-            .Get(w!("CurrentBrightness"), 0, &mut value, None, None)
-            .ok()?;
-        u8::try_from(VariantToInt32(&value).ok()?.clamp(0, 100)).ok()
+        checked(
+            "CurrentBrightness",
+            object.Get(w!("CurrentBrightness"), 0, &mut value, None, None),
+        )?;
+        u8::try_from(checked("VariantToInt32", VariantToInt32(&value))?.clamp(0, 100)).ok()
     }
 }
 

@@ -87,8 +87,11 @@ pub fn ensure_running_icon(app_id: &str, exe_path: &str) {
     {
         return;
     }
-    let has_entry = rmac_apps::windows_apps::data_home()
-        .is_some_and(|home| home.join("applications").join(format!("{app_id}.desktop")).is_file());
+    let has_entry = rmac_apps::windows_apps::data_home().is_some_and(|home| {
+        home.join("applications")
+            .join(format!("{app_id}.desktop"))
+            .is_file()
+    });
     if has_entry {
         return;
     }

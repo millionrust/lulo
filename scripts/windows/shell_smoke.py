@@ -955,7 +955,12 @@ def check_shell(
         if files_tile is None:
             failures.append("the Dock has no Files tile")
 
-        # 2. Idle, before any input.
+        # 2. Idle, before any input, once start-up's own work is done:
+        # Windows' Apps folder read into desktop entries by its helper
+        # process (slow on the runner), which the catalogue watchers follow.
+        apps = log.wait_for(r"^windows apps: \d+ entries", 90.0)
+        print(f"shell: {apps.group(0) if apps else 'windows apps: not read within 90 s'}")
+        time.sleep(3.0)
         phases = startup_phases(log.text())
         for name, pid in (("lulo-shell", shell_pid), ("lulo-session", session.pid)):
             measurement: dict = {"launch_ms": round(launch_ms), "startup": phases if name == "lulo-shell" else []}

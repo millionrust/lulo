@@ -253,7 +253,9 @@ function New-Run($key, $name) {
 }
 
 function Profile-Env($run) {
-    $prof = Join-Path $Scratch 'profile'
+    # A fresh profile per run: state an earlier run left (a window saved in full
+    # screen, an autosaved draft) must not change what this run sees.
+    $prof = Join-Path $out 'profile'
     New-Item -ItemType Directory -Force "$prof\Roaming", "$prof\Local", "$prof\Temp" | Out-Null
     $envs = @('APPDATA', "$prof\Roaming", 'LOCALAPPDATA', "$prof\Local", 'TEMP', "$prof\Temp", 'TMP', "$prof\Temp", 'RMAC_MENU_STRIP_TRACE', '1')
     if ($MenuMode -eq 'strip') { $envs += @('USERNAME', 'lulo-robot') }

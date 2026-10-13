@@ -1352,29 +1352,26 @@ mod linux_wayland {
                     // niri reports no active window for a workspace whose
                     // floating layer is not the active one, which is where a
                     // window sits while the bar holds the on-demand grab (the
-                    // nested niri on CI, where the probe is floating). The
-                    // window the keyboard was last on is then the most
-                    // recently focused one on the focused workspace.
+                    // nested niri on CI, where the probe is floating), and
+                    // can report no workspace as focused at that moment
+                    // either. The window the keyboard was last on is then
+                    // the most recently focused one that is not parked.
                     let latest = || {
-                        let workspace = snapshot
-                            .workspaces
-                            .iter()
-                            .find(|workspace| workspace.focused)?
-                            .id;
                         snapshot
                             .windows
                             .iter()
-                            .filter(|window| {
-                                window.workspace == Some(workspace)
-                                    && !rmac_compositor::window_is_parked(&snapshot, window)
-                            })
+                            .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
                             .max_by_key(|window| {
                                 window.focus_timestamp.map(|t| (t.seconds, t.nanoseconds))
                             })
                             .map(|window| window.id)
                     };
                     let Some(target) = live.or(remembered).or_else(latest) else {
-                        eprintln!("focus return: no window to return to");
+                        eprintln!(
+                            "focus return: no window to return to ({} windows, {} workspaces)",
+                            snapshot.windows.len(),
+                            snapshot.workspaces.len()
+                        );
                         return;
                     };
                     // A click gave the bar niri's on-demand layer focus,

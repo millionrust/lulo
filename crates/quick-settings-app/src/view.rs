@@ -1104,7 +1104,10 @@ mod tests {
                 display,
                 banners: 0,
             };
-            assert_eq!(initial_surface_height(display), later.surface_height() as f32);
+            assert_eq!(
+                initial_surface_height(display),
+                later.surface_height() as f32
+            );
         }
     }
 

@@ -699,8 +699,10 @@ pub(super) fn read_signal(
     match message {
         Some(Ok(message)) => {
             let header = message.header();
-            Ok(sent_by_service(header.sender().map(|sender| sender.as_str()))
-                && !is_mock_call_log(header.interface().map(|interface| interface.as_str())))
+            Ok(
+                sent_by_service(header.sender().map(|sender| sender.as_str()))
+                    && !is_mock_call_log(header.interface().map(|interface| interface.as_str())),
+            )
         }
         Some(Err(error)) => Err(Error::new(operation, error.to_string())),
         None => Err(Error::new(operation, "the signal stream ended")),

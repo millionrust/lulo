@@ -787,6 +787,43 @@ def check_clock_tabs(app: str, hwnd: int) -> str | None:
 
 
 WM_CLOSE = 0x0010
+CONSOLE_HOSTS = ("conhost.exe", "openconsole.exe")
+TH32CS_SNAPPROCESS = 0x00000002
+
+
+class _PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ctypes.c_size_t),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", wintypes.LONG),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.WCHAR * 260),
+    ]
+
+
+def process_tree() -> dict[int, tuple[int, str]]:
+    """Every process: pid -> (parent pid, exe name)."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    tree: dict[int, tuple[int, str]] = {}
+    if not snapshot or snapshot == wintypes.HANDLE(-1).value:
+        return tree
+    try:
+        entry = _PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+        more = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+        while more:
+            tree[entry.th32ProcessID] = (entry.th32ParentProcessID, entry.szExeFile)
+            more = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    return tree
 
 
 def check_terminal_closes(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
@@ -795,6 +832,19 @@ def check_terminal_closes(app: str, process: subprocess.Popen, hwnd: int) -> str
     Found by the robot: on Windows every close asked "Do you want to
     terminate running processes in this window?", the shell itself
     counting as a running program."""
+    # The shell (Terminal's child that is not its console host) must be idle:
+    # a program it runs is a real reason to ask.
+    tree = process_tree()
+    shells = [pid for pid, (parent, name) in tree.items() if parent == process.pid and name.lower() not in CONSOLE_HOSTS]
+    busy = {
+        pid: name
+        for pid, (parent, name) in tree.items()
+        if parent in shells and name.lower() not in CONSOLE_HOSTS
+    }
+    print(f"{app}: shells {[tree[pid][1] for pid in shells]}, their programs {sorted(busy.values())}")
+    if busy:
+        print(f"{app}: the shell is running {sorted(busy.values())}; the idle-close check is skipped")
+        return None
     user32().PostMessageW(wintypes.HWND(hwnd), WM_CLOSE, 0, 0)
     deadline = time.monotonic() + 10.0
     while time.monotonic() < deadline:
@@ -933,7 +983,6 @@ def launch(
                 check_menu_strip(app, hwnd, screenshots),
                 check_menu_command(app, process, hwnd),
                 check_new_shortcut(app, process, screenshots),
-                check_window_keys(app, process, hwnd),
             )
             if error
         ]
@@ -949,6 +998,10 @@ def launch(
             error = check_open_panel(app, process, hwnd)
             if error:
                 errors.append(error)
+        # After the checks above: it toggles full screen and minimises.
+        error = check_window_keys(app, process, hwnd)
+        if error:
+            errors.append(error)
         if app == "rmac-terminal" and not errors:
             # Last: it closes the window.
             error = check_terminal_closes(app, process, hwnd)

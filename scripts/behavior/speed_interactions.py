@@ -53,8 +53,8 @@ from run_frame_timing import read_trace
 
 FRAME_BUDGET_MS = 1000.0 / 60.0
 FRAME_SHARE_TARGET = 0.99
-# An interactive resize relays out the whole window on every configure (no
-# upstream GPUI patch to avoid that yet, SPEED-12), so its own target is
+# An interactive resize relays out the window on every configure (cached
+# views are reused since ADR 0026, SPEED-12), so its own target is
 # looser than ordinary scrolling's 99 %.
 RESIZE_FRAME_SHARE_TARGET = 0.95
 TYPING_P95_TARGET_MS = 16.0

@@ -291,8 +291,59 @@ impl OAuthAttempt {
     }
 }
 
+/// A new access token from a stored refresh token (the refresh grant). The
+/// provider may rotate the refresh token, in which case it is returned too.
+pub fn refresh_access_token(provider: Provider, refresh_token: &Secret) -> Result<Tokens, Error> {
+    let config = provider.info().oauth.ok_or(Error::InvalidResponse)?;
+    if Url::parse(config.token_uri)
+        .map_err(|_| Error::InvalidResponse)?
+        .scheme()
+        != "https"
+    {
+        return Err(Error::InvalidResponse);
+    }
+    let response = https_agent(Duration::from_secs(15))
+        .post(config.token_uri)
+        .send_form([
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token.expose()),
+            ("client_id", config.client_id),
+            ("client_secret", config.client_secret),
+            ("scope", config.scopes),
+        ])
+        .map_err(|_| Error::SignInFailed)?;
+    let value = bounded_json(response)?;
+    let access = value
+        .get("access_token")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or(Error::InvalidResponse)?;
+    let expires_in = value
+        .get("expires_in")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0 && *value <= 86_400 * 365)
+        .ok_or(Error::InvalidResponse)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| Error::InvalidResponse)?;
+    Ok(Tokens {
+        access_token: Secret::new(access.to_owned()),
+        refresh_token: value
+            .get("refresh_token")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(|value| Secret::new(value.to_owned())),
+        expires_at: (now.as_micros() as i64).saturating_add(expires_in.saturating_mul(1_000_000)),
+        identity: String::new(),
+        presentation_identity: String::new(),
+    })
+}
+
 fn random_secret() -> Result<Secret, Error> {
     let mut bytes = [0_u8; 32];
+    #[cfg(windows)]
+    getrandom::fill(&mut bytes).map_err(|_| Error::Unavailable)?;
+    #[cfg(not(windows))]
     std::fs::File::open("/dev/urandom")
         .and_then(|mut file| file.read_exact(&mut bytes))
         .map_err(|_| Error::Unavailable)?;

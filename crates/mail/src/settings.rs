@@ -431,10 +431,10 @@ mod tests {
         save_to(&path, &settings).unwrap();
         let loaded = load_from(&path).unwrap();
         assert_eq!(loaded, settings);
-        let mode = std::fs::metadata(&path).unwrap().permissions();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(&path).unwrap().permissions();
             assert_eq!(mode.mode() & 0o777, 0o600);
         }
         let _ = std::fs::remove_dir_all(&directory);

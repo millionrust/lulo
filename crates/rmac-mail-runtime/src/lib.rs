@@ -4,6 +4,8 @@
 mod imap;
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(windows)]
+pub mod windows;
 
 use std::{
     collections::HashMap,
@@ -131,7 +133,34 @@ pub trait BackendFactory: Send + Sync + 'static {
     fn connect(&self, account: &Account) -> Result<Box<dyn Backend>, Error>;
 }
 
-/// A `linux::ProviderFactory` `graph` slot for builds without the Microsoft
+/// What the sync coordinator tells the Mail window (Linux's `DesktopSink`
+/// and Windows' `windows::ToastSink` both send these).
+pub enum UiEvent {
+    Snapshot(Snapshot),
+    NewMail(NewMail),
+    Failure { account: Uuid, message: String },
+    OpenMessage { account: Uuid, message_id: i64 },
+    AccountRemoved(Uuid),
+}
+
+
+/// Graph sync is supplied by MAIL-9. The runtime owns its five-minute
+/// schedule; the adapter only needs to implement `BackendFactory`.
+pub struct ProviderFactory {
+    pub imap: ImapFactory,
+    pub graph: Arc<dyn BackendFactory>,
+}
+
+impl BackendFactory for ProviderFactory {
+    fn connect(&self, account: &Account) -> Result<Box<dyn Backend>, Error> {
+        match &account.transport {
+            Transport::Imap(_) => self.imap.connect(account),
+            Transport::Graph => self.graph.connect(account),
+        }
+    }
+}
+
+/// A `ProviderFactory` `graph` slot for builds without the Microsoft
 /// Graph backend (`rmac-mail-graph`, MAIL-9, which Mail itself wires in).
 /// Every `ms_graph` account fails to connect with `Error::GraphUnavailable`,
 /// which the worker treats as a user-visible failure rather than a silent

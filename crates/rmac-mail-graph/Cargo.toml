@@ -20,5 +20,5 @@ sha2.workspace = true
 ureq.workspace = true
 uuid.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(any(target_os = "linux", windows))'.dependencies]
 rmac-accounts-linux.workspace = true

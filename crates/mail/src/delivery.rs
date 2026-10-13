@@ -7,10 +7,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rmac_accounts::provider::{Provider, SocketSecurity};
 #[cfg(target_os = "linux")]
 use rmac_accounts_linux::{goa::GoaBus, GoaApi};
+#[cfg(windows)]
+use rmac_accounts_linux::{
+    winstore::{Kind, WinAccounts},
+    GoaApi,
+};
 use rmac_mail_mime::{build, guess_content_type, Draft};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use rmac_mail_runtime::account_id;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use rmac_mail_smtp::Secret;
 use rmac_mail_smtp::{drain_outbox, Authentication, Config, Security};
 use rmac_mail_storage::{MailStorage, NewMessage, FLAG_DRAFT};
@@ -45,7 +50,25 @@ pub fn accounts() -> Vec<ComposeAccount> {
         .collect()
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the mail accounts in Lulo's own store (Credential Manager for
+/// the secrets).
+#[cfg(windows)]
+pub fn accounts() -> Vec<ComposeAccount> {
+    WinAccounts::session()
+        .and_then(|store| store.stored())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|account| account.mail)
+        .map(|account| ComposeAccount {
+            path: account.path(),
+            id: account_id(&account.to_goa()),
+            address: account.identity,
+            provider: account.provider,
+        })
+        .collect()
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn accounts() -> Vec<ComposeAccount> {
     Vec::new()
 }
@@ -204,9 +227,88 @@ fn smtp_authentication(account: &ComposeAccount) -> Option<Authentication> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the stored SMTP password, or the OAuth token for Google.
+#[cfg(windows)]
+fn smtp_authentication(account: &ComposeAccount) -> Option<Authentication> {
+    let store = WinAccounts::session().ok()?;
+    let stored = store.stored_by_path(&account.path).ok()?;
+    if stored.kind == Kind::OAuth {
+        let token = store.access_token(&account.path).ok()?;
+        Some(Authentication::Xoauth2 {
+            user: account.address.clone(),
+            token: Secret::new(token.expose().to_owned()),
+        })
+    } else {
+        let password = store.password(&account.path, "smtp-password").ok()?;
+        let user = stored
+            .smtp
+            .map_or_else(|| account.address.clone(), |smtp| smtp.username);
+        Some(Authentication::Plain {
+            user,
+            password: Secret::new(password.expose().to_owned()),
+        })
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn smtp_authentication(_account: &ComposeAccount) -> Option<Authentication> {
     None
+}
+
+/// The SMTP server to submit through: what the account stored on Windows
+/// (a discovered or typed-in server), otherwise the provider's preset.
+#[cfg(windows)]
+fn smtp_server(account: &ComposeAccount) -> Option<Config> {
+    let stored = WinAccounts::session()
+        .ok()?
+        .stored_by_path(&account.path)
+        .ok()?;
+    let smtp = stored
+        .smtp
+        .or_else(|| {
+            let preset = Provider::Google.info().servers?;
+            (stored.provider == "google").then(|| {
+                rmac_accounts_linux::winstore::StoredServer {
+                    host: preset.smtp_host.into(),
+                    port: preset.smtp_port,
+                    security: "starttls".into(),
+                    username: account.address.clone(),
+                }
+            })
+        })?;
+    Some(Config {
+        host: smtp.host.clone(),
+        port: smtp.port,
+        helo_name: "localhost".into(),
+        security: match smtp.security() {
+            SocketSecurity::Tls => Security::ImplicitTls,
+            SocketSecurity::StartTls => Security::StartTls,
+        },
+    })
+}
+
+#[cfg(not(windows))]
+fn smtp_server(account: &ComposeAccount) -> Option<Config> {
+    let domain = account
+        .address
+        .rsplit_once('@')
+        .map(|(_, domain)| domain)
+        .unwrap_or_default();
+    let provider = if account.provider == "google" {
+        Provider::Google
+    } else {
+        Provider::from_domain(domain)
+    };
+    let server = provider.info().servers?;
+    Some(Config {
+        host: server.smtp_host.into(),
+        port: server.smtp_port,
+        helo_name: "localhost".into(),
+        security: match server.smtp_security {
+            SocketSecurity::Tls => Security::ImplicitTls,
+            SocketSecurity::StartTls => Security::StartTls,
+        },
+    })
 }
 
 /// Microsoft accounts send through Graph's `sendMail` (MAIL-9) with GOA's
@@ -227,7 +329,22 @@ fn graph_delivery(account: &ComposeAccount, storage: &mut MailStorage) -> Delive
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+fn graph_delivery(account: &ComposeAccount, storage: &mut MailStorage) -> DeliveryResult {
+    let Ok(token) = rmac_mail_graph::account_token(&account.path) else {
+        return DeliveryResult::Queued;
+    };
+    let client = rmac_mail_graph::Client::new(
+        std::sync::Arc::new(rmac_mail_graph::UreqTransport::new()),
+        token,
+    );
+    match rmac_mail_graph::drain_outbox(&client, storage) {
+        Ok(_) => DeliveryResult::Sent,
+        Err(_) => DeliveryResult::Queued,
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn graph_delivery(_account: &ComposeAccount, _storage: &mut MailStorage) -> DeliveryResult {
     DeliveryResult::Queued
 }
@@ -263,30 +380,11 @@ pub fn deliver(
     if account.provider == "ms_graph" {
         return graph_delivery(account, &mut storage);
     }
-    let domain = account
-        .address
-        .rsplit_once('@')
-        .map(|(_, domain)| domain)
-        .unwrap_or_default();
-    let provider = if account.provider == "google" {
-        Provider::Google
-    } else {
-        Provider::from_domain(domain)
-    };
-    let Some(server) = provider.info().servers else {
-        return DeliveryResult::Queued;
-    };
     let Some(auth) = smtp_authentication(account) else {
         return DeliveryResult::Queued;
     };
-    let config = Config {
-        host: server.smtp_host.into(),
-        port: server.smtp_port,
-        helo_name: "localhost".into(),
-        security: match server.smtp_security {
-            SocketSecurity::Tls => Security::ImplicitTls,
-            SocketSecurity::StartTls => Security::StartTls,
-        },
+    let Some(config) = smtp_server(account) else {
+        return DeliveryResult::Queued;
     };
     match drain_outbox(&mut storage, &config, &auth) {
         Ok(_) => DeliveryResult::Sent,

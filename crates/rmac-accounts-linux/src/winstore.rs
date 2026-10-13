@@ -210,6 +210,19 @@ impl WinAccounts {
             .ok_or(Error::InvalidResponse)
     }
 
+    /// The id an account will have: the existing one for an address already
+    /// added with this provider, otherwise a fresh one. Chosen before the
+    /// secrets are saved so they land under the id the index keeps.
+    fn id_for(&self, provider: &str, identity: &str) -> Result<String, Error> {
+        let existing = self.load()?.accounts.into_iter().find(|existing| {
+            existing.provider == provider && existing.identity.eq_ignore_ascii_case(identity)
+        });
+        match existing {
+            Some(existing) => Ok(existing.id),
+            None => new_id(),
+        }
+    }
+
     fn push(&self, mut account: StoredAccount) -> Result<String, Error> {
         let mut index = self.load()?;
         if index.accounts.len() >= MAX_ACCOUNTS {
@@ -297,7 +310,7 @@ impl GoaApi for WinAccounts {
         if info.oauth.is_none() || account.refresh_token.is_none() {
             return Err(Error::InvalidResponse);
         }
-        let id = new_id()?;
+        let id = self.id_for(info.goa_ids[0], account.identity)?;
         self.save_secret(&id, "access-token", account.access_token)?;
         if let Some(refresh) = account.refresh_token {
             self.save_secret(&id, "refresh-token", refresh)?;
@@ -316,11 +329,11 @@ impl GoaApi for WinAccounts {
             caldav_uri: None,
             expires_at: account.expires_at,
         };
-        self.push(stored).inspect_err(|_| Self::forget_secrets(&id))
+        self.push(stored)
     }
 
     fn add_password_mail(&self, account: &PasswordMailAccount<'_>) -> Result<String, Error> {
-        let id = new_id()?;
+        let id = self.id_for("imap_smtp", account.address)?;
         self.save_secret(&id, "imap-password", account.imap_password)?;
         self.save_secret(&id, "smtp-password", account.smtp_password)?;
         let stored = StoredAccount {
@@ -337,14 +350,14 @@ impl GoaApi for WinAccounts {
             caldav_uri: None,
             expires_at: 0,
         };
-        self.push(stored).inspect_err(|_| Self::forget_secrets(&id))
+        self.push(stored)
     }
 
     fn add_password_calendar(
         &self,
         account: &PasswordCalendarAccount<'_>,
     ) -> Result<String, Error> {
-        let id = new_id()?;
+        let id = self.id_for("caldav", account.username)?;
         self.save_secret(&id, "caldav-password", account.password)?;
         let stored = StoredAccount {
             id: id.clone(),
@@ -360,7 +373,7 @@ impl GoaApi for WinAccounts {
             caldav_uri: Some(account.caldav_uri.into()),
             expires_at: 0,
         };
-        self.push(stored).inspect_err(|_| Self::forget_secrets(&id))
+        self.push(stored)
     }
 
     fn remove(&self, path: &str) -> Result<(), Error> {

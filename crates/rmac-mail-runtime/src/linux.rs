@@ -133,13 +133,7 @@ pub fn watch_connectivity(runtime: Arc<Runtime>) -> thread::JoinHandle<()> {
     })
 }
 
-pub enum UiEvent {
-    Snapshot(Snapshot),
-    NewMail(NewMail),
-    Failure { account: Uuid, message: String },
-    OpenMessage { account: Uuid, message_id: i64 },
-    AccountRemoved(Uuid),
-}
+pub use crate::UiEvent;
 
 /// Posts to the same freedesktop service owned by Lulo Notification Centre.
 /// The optional channel gives the Mail window immutable state updates.
@@ -296,21 +290,7 @@ impl EventSink for DesktopSink {
     }
 }
 
-/// Graph sync is supplied by MAIL-9. The runtime owns its five-minute
-/// schedule; the adapter only needs to implement `BackendFactory`.
-pub struct ProviderFactory {
-    pub imap: ImapFactory,
-    pub graph: Arc<dyn BackendFactory>,
-}
-
-impl BackendFactory for ProviderFactory {
-    fn connect(&self, account: &Account) -> Result<Box<dyn Backend>, Error> {
-        match &account.transport {
-            Transport::Imap(_) => self.imap.connect(account),
-            Transport::Graph => self.graph.connect(account),
-        }
-    }
-}
+pub use crate::ProviderFactory;
 
 #[cfg(test)]
 mod tests {

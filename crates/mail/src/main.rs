@@ -62,15 +62,17 @@ type ViewHandle = Rc<RefCell<Option<WeakEntity<MailView>>>>;
 /// an `async_channel` a GPUI task can `.await` on the foreground thread.
 /// Returns the runtime so organise actions can wake the right account's
 /// worker right after queuing a journal entry (`view.rs::dispatch_persist`).
-#[cfg(target_os = "linux")]
-fn start_live_sync(
+/// Bridges the sync runtime's events into the window: a plain
+/// `std::sync::mpsc` sink is drained on its own thread and forwarded into an
+/// `async_channel` a GPUI task can `.await` on the foreground thread.
+#[cfg(any(target_os = "linux", windows))]
+fn forward_events(
     accounts: Vec<delivery::ComposeAccount>,
     view_handle: ViewHandle,
     cx: &mut App,
-) -> Option<Arc<rmac_mail_runtime::Runtime>> {
-    use rmac_mail_runtime::linux::{self, DesktopSink, UiEvent};
+) -> std::sync::mpsc::Sender<rmac_mail_runtime::UiEvent> {
+    use rmac_mail_runtime::UiEvent;
 
-    let root = delivery::data_root()?;
     let (std_tx, std_rx) = std::sync::mpsc::channel::<UiEvent>();
     let (async_tx, async_rx) = async_channel::unbounded();
     std::thread::spawn(move || {
@@ -80,19 +82,6 @@ fn start_live_sync(
             }
         }
     });
-    let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(DesktopSink::new(Some(std_tx)));
-    // GOA `ms_graph` accounts (Microsoft 365, Outlook.com) sync through
-    // Microsoft Graph (MAIL-9); `linux::resolve_goa` routes them here.
-    let factory = Arc::new(linux::ProviderFactory {
-        imap: rmac_mail_runtime::ImapFactory::goa(),
-        graph: Arc::new(rmac_mail_graph::GraphFactory::goa(root.clone())),
-    });
-    let runtime = Arc::new(rmac_mail_runtime::Runtime::new(root, factory, sink));
-    // Seeds every mail-capable GOA account already configured (`watch`
-    // emits `Added` for each on the first call), then reacts to Internet
-    // Accounts changes for as long as Mail runs.
-    linux::watch_goa(Arc::clone(&runtime));
-    linux::watch_connectivity(Arc::clone(&runtime));
     cx.spawn(async move |cx| loop {
         let Ok(event) = async_rx.recv().await else {
             break;
@@ -125,17 +114,70 @@ fn start_live_sync(
         }
     })
     .detach();
+    std_tx
+}
+
+/// Starts GOA account discovery and per-account IMAP sync (MAIL-4) and
+/// bridges its snapshot/new-mail/open-message events into the window.
+/// Returns the runtime so organise actions can wake the right account's
+/// worker right after queuing a journal entry (`view.rs::dispatch_persist`).
+#[cfg(target_os = "linux")]
+fn start_live_sync(
+    accounts: Vec<delivery::ComposeAccount>,
+    view_handle: ViewHandle,
+    cx: &mut App,
+) -> Option<Arc<rmac_mail_runtime::Runtime>> {
+    use rmac_mail_runtime::linux::{self, DesktopSink};
+
+    let root = delivery::data_root()?;
+    let std_tx = forward_events(accounts, view_handle, cx);
+    let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(DesktopSink::new(Some(std_tx)));
+    // GOA `ms_graph` accounts (Microsoft 365, Outlook.com) sync through
+    // Microsoft Graph (MAIL-9); `linux::resolve_goa` routes them here.
+    let factory = Arc::new(linux::ProviderFactory {
+        imap: rmac_mail_runtime::ImapFactory::goa(),
+        graph: Arc::new(rmac_mail_graph::GraphFactory::goa(root.clone())),
+    });
+    let runtime = Arc::new(rmac_mail_runtime::Runtime::new(root, factory, sink));
+    // Seeds every mail-capable GOA account already configured (`watch`
+    // emits `Added` for each on the first call), then reacts to Internet
+    // Accounts changes for as long as Mail runs.
+    linux::watch_goa(Arc::clone(&runtime));
+    linux::watch_connectivity(Arc::clone(&runtime));
     Some(runtime)
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the accounts in Lulo's own store (secrets in the Credential
+/// Manager) sync through the same runtime; new messages arrive as toasts.
+#[cfg(windows)]
+fn start_live_sync(
+    accounts: Vec<delivery::ComposeAccount>,
+    view_handle: ViewHandle,
+    cx: &mut App,
+) -> Option<Arc<rmac_mail_runtime::Runtime>> {
+    use rmac_mail_runtime::windows::{self, ToastSink};
+
+    let root = delivery::data_root()?;
+    let std_tx = forward_events(accounts, view_handle, cx);
+    let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(ToastSink::new(Some(std_tx)));
+    let factory = Arc::new(rmac_mail_runtime::ProviderFactory {
+        imap: windows::imap_factory(),
+        graph: Arc::new(rmac_mail_graph::GraphFactory::windows(root.clone())),
+    });
+    let runtime = Arc::new(rmac_mail_runtime::Runtime::new(root, factory, sink));
+    let seeded = Arc::clone(&runtime);
+    std::thread::spawn(move || windows::seed_accounts(&seeded));
+    Some(runtime)
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn start_live_sync(
     _accounts: Vec<delivery::ComposeAccount>,
     _view_handle: ViewHandle,
     _cx: &mut App,
 ) -> Option<Arc<rmac_mail_runtime::Runtime>> {
-    // GOA and the sync runtime are Linux session services; Lulo OS only
-    // ships on Linux, but CI's macOS clippy pass still compiles this crate.
+    // GOA and the sync runtime are session services of Lulo OS and the
+    // Windows account store; CI's macOS clippy pass still compiles this crate.
     None
 }
 

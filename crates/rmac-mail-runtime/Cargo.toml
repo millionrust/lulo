@@ -20,3 +20,6 @@ zbus.workspace = true
 
 [dev-dependencies]
 rustls.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+rmac-win-toast.workspace = true

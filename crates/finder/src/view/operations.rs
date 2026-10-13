@@ -205,6 +205,7 @@ impl FinderView {
                             if this.operation_journal.is_none() {
                                 this.undo_available = None;
                             }
+                            this.sync_redo();
                             this.record_operation_failures(report.failures, cx);
                             if play_drop_sound {
                                 let _ = rmac_sound::play(rmac_sound::Cue::DragDrop);

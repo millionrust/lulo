@@ -43,11 +43,11 @@ use rmac_ui::{InputEvent, InputState, Position, Rope, RopeExt as _};
 use crate::PrintFile;
 use crate::{document, long_lines, recovery, storage};
 use crate::{
-    ActualSize, AlignCentre, AlignLeft, AlignRight, CloseAll, CloseBar, CloseWindow, CopyRuler,
-    DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont, JumpToSelection, NewFile,
-    OpenFile, OpenPageSetup, PasteRuler, QuitAndKeepWindows, SaveFile, SaveFileAs, SaveGoToFolder,
-    SelectLine, ShowRuler, ShowSettings, ToggleFind, ToggleMono, ToggleReplace, ToggleRichText,
-    ToggleWrapToPage, UseSelectionForFind, ZoomIn, ZoomOut,
+    ActualSize, AlignCentre, AlignLeft, AlignRight, CloseAll, CloseBar, CloseWindow, Complete,
+    CopyRuler, DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont, JumpToSelection,
+    NewFile, OpenFile, OpenPageSetup, PasteRuler, QuitAndKeepWindows, SaveFile, SaveFileAs,
+    SaveGoToFolder, SelectLine, ShowRuler, ShowSettings, ToggleFind, ToggleMono, ToggleReplace,
+    ToggleRichText, ToggleWrapToPage, UseSelectionForFind, ZoomIn, ZoomOut,
 };
 
 use document_io::{
@@ -327,6 +327,11 @@ struct EditorView {
     _subscriptions: Vec<Subscription>,
     /// Edit ▸ Spelling and Grammar / Substitutions for the document.
     text_assist: rmac_ui::text_assist::TextAssistSettings,
+    /// Settings ▸ New Document's "...in rich text documents only" scopes
+    /// (TXT-SETTINGS-001/003), taken when the window opens like the other
+    /// defaults.
+    spelling_rich_text_only: bool,
+    smart_quotes_rich_text_only: bool,
     spell_checker: Arc<rmac_spelling::HunspellChecker>,
     /// Edit ▸ Substitutions ▸ Data Detectors: checked, persisted for this
     /// session, with no live effect wired yet (see docs/parity.md TE-07).
@@ -336,6 +341,8 @@ struct EditorView {
     /// The rich-text body's right-click menu (Cut, Copy, Paste, Select
     /// All, Writing Tools), while open.
     rich_menu: Option<rmac_ui::ContextMenuState>,
+    /// Edit ▸ Complete (⌥⎋): the run of presses on the word being typed.
+    completion: Option<rmac_ui::text_complete::CompletionCycle>,
 }
 
 #[cfg(test)]

@@ -722,6 +722,10 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 "⌥⇧⌘V"
             ),
             item!("Delete", "input::Delete", ""),
+            // TXT-MENU-001: completes the word before the caret from the
+            // document's own words and the system word list; press again for
+            // the next match (`rmac_ui::text_complete`).
+            item!("Complete", "text_editor::Complete", "⌥⎋"),
             item!("Select All", "input::SelectAll", "⌘A"),
             submenu!(
                 "Insert",
@@ -852,6 +856,27 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                     item!("Centre", "text_editor::AlignCentre", "⌘|"),
                     item!("Justify", "text_editor::AlignJustify", ""),
                     item!("Align Right", "text_editor::AlignRight", "⌘}"),
+                    // TXT-MENU-002/004/005/006: the paragraph's direction,
+                    // which also decides which edge Align Left and Align
+                    // Right mean.
+                    submenu!(
+                        "Writing Direction",
+                        "text_editor::WritingDirectionMenu",
+                        [
+                            item!("Default", "text_editor::WritingDirectionDefault", ""),
+                            item!(
+                                "Left to Right",
+                                "text_editor::WritingDirectionLeftToRight",
+                                ""
+                            ),
+                            item!(
+                                "Right to Left",
+                                "text_editor::WritingDirectionRightToLeft",
+                                ""
+                            ),
+                        ],
+                        separator
+                    ),
                     item!("Show Ruler", "text_editor::ShowRuler", "⌘R", separator),
                     item!("Copy Ruler", "text_editor::CopyRuler", "⌃⌘C"),
                     item!("Paste Ruler", "text_editor::PasteRuler", "⌃⌘V"),
@@ -1238,6 +1263,19 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
             ),
             item!("Show Previous Tab", "terminal::PrevTab", "⇧⌘[", separator),
             item!("Show Next Tab", "terminal::NextTab", "⇧⌘]"),
+            // TRM-MENU-011/012: back to Settings ▸ Window ▸ Size, for this
+            // window or for every Terminal window of the app.
+            item!(
+                "Return to Default Size",
+                "terminal::ReturnToDefaultSize",
+                "",
+                separator
+            ),
+            item!(
+                "Return All to Default Size",
+                "terminal::ReturnAllToDefaultSize",
+                ""
+            ),
         ],
     },
     MenuSpec {
@@ -1636,6 +1674,8 @@ const FILES_MENUS: &[MenuSpec] = &[
         label: "Edit",
         items: &[
             item!("Undo", "finder::UndoOperation", "⌘Z"),
+            // FILES-32: repeats the operation Undo just reversed.
+            item!("Redo", "finder::RedoOperation", "⇧⌘Z"),
             item!("Cut", "finder::CutItems", "⌘X", separator),
             item!("Copy", "finder::CopyItems", "⌘C"),
             // ⌥ alternates of Copy and Paste on the Mac.
@@ -1739,6 +1779,8 @@ const FILES_MENUS: &[MenuSpec] = &[
             // (which has its own Clear Menu) instead.
             item!("Recent Folders", "finder::ShowRecentFolders", ""),
             item!("Go to Folder…", "finder::GoToFolder", "⇧⌘G", separator),
+            // FILES-39: mounts the address through GVFS (`gio mount`).
+            item!("Connect to Server…", "finder::ConnectToServer", "⌘K"),
         ],
     },
     MenuSpec {
@@ -1794,6 +1836,14 @@ const MONITOR_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Close", "activity_monitor::Close", "⌘W"),
             item!("Close All", "activity_monitor::CloseAll", "⌥⌘W"),
+            // MON-MENU-002: the process list as shown, through the print
+            // portal (`process_print`).
+            item!(
+                "Print…",
+                "activity_monitor::PrintProcesses",
+                "⌘P",
+                separator
+            ),
         ],
     },
     MenuSpec {
@@ -1850,6 +1900,45 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                     item!(
                         "Bytes Written",
                         "activity_monitor::ToggleBytesWrittenColumn",
+                        ""
+                    ),
+                    // MON-MENU-006/007/008/009/011/016/017: filled from /proc
+                    // only while one of them is shown.
+                    item!("Memory", "activity_monitor::ToggleFootprintColumn", ""),
+                    item!(
+                        "Real Private Memory",
+                        "activity_monitor::ToggleRealPrivateColumn",
+                        ""
+                    ),
+                    item!(
+                        "Real Shared Memory",
+                        "activity_monitor::ToggleRealSharedColumn",
+                        ""
+                    ),
+                    item!(
+                        "Compressed Memory",
+                        "activity_monitor::ToggleCompressedColumn",
+                        ""
+                    ),
+                    item!("Kind", "activity_monitor::ToggleKindColumn", ""),
+                    item!("Sandbox", "activity_monitor::ToggleSandboxColumn", ""),
+                    item!(
+                        "Idle Wake Ups",
+                        "activity_monitor::ToggleIdleWakeUpsColumn",
+                        ""
+                    ),
+                    // MON-MENU-003/004: from the DRM clients each process
+                    // holds open (`/proc/<pid>/fdinfo`), where the driver
+                    // reports them.
+                    item!("% GPU", "activity_monitor::ToggleGpuPercentColumn", ""),
+                    item!("GPU Time", "activity_monitor::ToggleGpuTimeColumn", ""),
+                    // MON-MENU-002/008: open descriptors (the Linux
+                    // counterpart of Mach ports) and logind sleep/idle
+                    // inhibitors, filled only while shown.
+                    item!("# Ports", "activity_monitor::TogglePortsColumn", ""),
+                    item!(
+                        "Preventing Sleep",
+                        "activity_monitor::TogglePreventingSleepColumn",
                         ""
                     ),
                 ]
@@ -1922,6 +2011,15 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                 "activity_monitor::ShowInactiveProcesses",
                 ""
             ),
+            // MON-MENU-023: processes that own a window, from the
+            // compositor's window list.
+            item!(
+                "Windowed Processes",
+                "activity_monitor::ShowWindowedProcesses",
+                ""
+            ),
+            // MON-MENU-015: processes holding a graphics (DRM) client.
+            item!("GPU Processes", "activity_monitor::ShowGpuProcesses", ""),
             item!(
                 "Selected Processes",
                 "activity_monitor::ShowSelectedProcesses",
@@ -2302,11 +2400,14 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
                 ],
                 separator
             ),
-            // PREV-15: the Mac's File menu also has Duplicate, Enter
-            // Password…, Edit Permissions…, Import from Camera/Scanner and
-            // Share ▸ — none of those has a working implementation to wire
-            // up yet, so none is listed rather than adding a dead item.
-            // Take Screenshot, Export As…, Rename… and Move To… now do.
+            // PRV-MENU-001: enabled for a PDF that is waiting for its
+            // password; the same sheet opens by itself when one is opened.
+            item!("Enter Password…", "preview::EnterPassword", ""),
+            // PREV-15: the Mac's File menu also has Edit Permissions…,
+            // Import from Camera/Scanner and Share ▸ — none of those has a
+            // working implementation to wire up yet, so none is listed
+            // rather than adding a dead item. Duplicate, Enter Password…,
+            // Take Screenshot, Export As…, Rename… and Move To… do work.
             submenu!(
                 "Take Screenshot",
                 "preview::TakeScreenshotMenu",
@@ -2345,13 +2446,16 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             // macOS Preview's own Crop applies to any selection shape.
             item!("Invert Selection", "preview::InvertSelection", "⇧⌘I"),
             // PRV-MENU-005/007: Blank Page splices an empty, same-size page
-            // after the current one (`markup::insert_blank_page`). Page
-            // from File… needs cross-document object import and is left
-            // out rather than faked.
+            // after the current one (`markup::insert_blank_page`); Page from
+            // File… splices in every page of a chosen PDF or image
+            // (`markup::insert_pages_from`).
             submenu!(
                 "Insert",
                 "preview::InsertMenu",
-                [item!("Blank Page", "preview::InsertBlankPage", "")]
+                [
+                    item!("Blank Page", "preview::InsertBlankPage", ""),
+                    item!("Page from File…", "preview::InsertPageFromFile", ""),
+                ]
             ),
             item!("Move to Bin", "preview::MoveToTrash", "⌘⌫"),
             submenu!(

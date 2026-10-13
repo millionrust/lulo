@@ -207,7 +207,8 @@ impl MonitorView {
                             .text_color(mac::text())
                             .child(path),
                     ),
-            );
+            )
+            .children(self.render_open_files());
 
         // A hand-rolled scrim + card used to render here with no role and no
         // Tab trap, so Tab could leave the inspector for the process table
@@ -215,6 +216,58 @@ impl MonitorView {
         // `.tab_group()` on the card keeps Tab/Shift-Tab inside it, matching
         // `rmac_ui::alert`'s pattern.
         Some(rmac_ui::dialog("activity-monitor-inspector", card).into_any_element())
+    }
+
+    /// The inspector's Open Files section: the descriptors read when it
+    /// opened, kind and name, the first few with a count of the rest.
+    fn render_open_files(&self) -> Option<gpui::AnyElement> {
+        const SHOWN: usize = 8;
+        let files = self.inspect_files.as_ref()?;
+        let row = |kind: &'static str, name: String| {
+            div()
+                .h_flex()
+                .gap_2()
+                .child(
+                    div()
+                        .w(px(52.0))
+                        .flex_none()
+                        .text_size(rmac_ui::text_px(11.0))
+                        .text_color(mac::text_secondary())
+                        .child(kind),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_size(rmac_ui::text_px(11.0))
+                        .text_color(mac::text())
+                        .child(name),
+                )
+        };
+        let hidden = files.len().saturating_sub(SHOWN);
+        Some(
+            div()
+                .v_flex()
+                .gap_1()
+                .pt_2()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text_secondary())
+                        .child(format!("Open Files and Ports ({})", files.len())),
+                )
+                .children(
+                    files
+                        .iter()
+                        .take(SHOWN)
+                        .map(|file| row(file.kind, file.name.clone())),
+                )
+                .when(hidden > 0, |list| {
+                    list.child(row("", format!("and {hidden} more")))
+                })
+                .into_any_element(),
+        )
     }
 
     /// View ▸ Send Signal to Process… (MON-10/14, MON-MENU-032).

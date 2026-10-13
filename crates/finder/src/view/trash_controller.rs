@@ -47,6 +47,16 @@ impl FinderView {
         if paths.is_empty() {
             return;
         }
+        self.trash_paths(paths, cx);
+    }
+
+    /// Move `paths` to the Bin as one undoable batch. Shared by Move to
+    /// Bin and Redo; the caller has already checked that nothing else is
+    /// running.
+    pub(super) fn trash_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if paths.is_empty() {
+            return;
+        }
 
         #[cfg(any(target_os = "linux", all(test, unix)))]
         {

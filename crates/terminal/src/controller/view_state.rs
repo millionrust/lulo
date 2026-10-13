@@ -495,6 +495,35 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Window ▸ Return to Default Size (TRM-MENU-011): put this window back
+    /// to the Settings ▸ Window ▸ Size cell count at the current font size,
+    /// whatever the user dragged it to. The grid itself refits through
+    /// `resize_to` on the next frame, exactly as after a manual resize.
+    pub(super) fn return_to_default_size(&mut self, window: &mut Window) {
+        let (cols, rows) = match settings::load() {
+            Ok(settings) => (usize::from(settings.columns), usize::from(settings.rows)),
+            Err(_) => (
+                usize::from(settings::Settings::default().columns),
+                usize::from(settings::Settings::default().rows),
+            ),
+        };
+        let (width, height) = default_content_size(
+            cols,
+            rows,
+            self.cell_w,
+            self.line_h,
+            self.terminal_content_top(),
+        );
+        // The window's outer bounds exceed the grid's viewport by the same
+        // margin before and after, so shift by the content-size difference.
+        let content = rmac_ui::window_content_size(window);
+        let outer = window.bounds().size;
+        window.resize(gpui::size(
+            outer.width + px(width) - content.width,
+            outer.height + px(height) - content.height,
+        ));
+    }
+
     /// Recompute the grid from the window size and propagate to the terminal + PTY.
     pub(super) fn resize_to(&mut self, window: &Window) {
         self.cell_w = measure_cell_w(window, self.font_size);
@@ -509,5 +538,37 @@ impl TerminalView {
         let _ = self.tabs[self.active].resize(size);
         self.cols = self.tabs[self.active].accepted_size.cols;
         self.rows = self.tabs[self.active].accepted_size.lines;
+    }
+}
+
+/// The content size, in pixels, of a window showing `cols` × `rows` cells:
+/// the grid plus the horizontal padding and the title/tab bar above it and
+/// the padding below.
+pub(super) fn default_content_size(
+    cols: usize,
+    rows: usize,
+    cell_w: f32,
+    line_h: f32,
+    content_top: f32,
+) -> (f32, f32) {
+    (
+        cols as f32 * cell_w + 2.0 * PAD_X,
+        rows as f32 * line_h + content_top + PAD_BOTTOM,
+    )
+}
+
+#[cfg(test)]
+mod default_size_tests {
+    use super::*;
+
+    #[test]
+    fn default_size_is_the_cell_grid_plus_chrome() {
+        let (width, height) = default_content_size(80, 24, 7.0, 16.0, 40.0);
+        assert_eq!(width, 80.0 * 7.0 + 2.0 * PAD_X);
+        assert_eq!(height, 24.0 * 16.0 + 40.0 + PAD_BOTTOM);
+        // A taller tab bar leaves the same grid, so the window grows by
+        // exactly the difference.
+        let (_, taller) = default_content_size(80, 24, 7.0, 16.0, 62.0);
+        assert_eq!(taller - height, 22.0);
     }
 }

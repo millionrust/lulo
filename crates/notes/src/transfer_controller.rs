@@ -660,6 +660,23 @@ impl NotesView {
         .detach();
     }
 
+    /// Files dragged onto the Notes window: each attaches to the open note
+    /// as a chip, exactly as File ▸ Attach File… adds a chosen one. Folders
+    /// and anything that is not a file are left alone.
+    pub(super) fn attach_dropped_files(
+        &mut self,
+        dropped: &[std::path::PathBuf],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.body_format_editable() {
+            return;
+        }
+        for path in rmac_ui::dropped_files(dropped) {
+            self.insert_file_attachment_chip(path, window, cx);
+        }
+    }
+
     pub(super) fn insert_file_attachment_chip(
         &mut self,
         path: std::path::PathBuf,

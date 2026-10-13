@@ -242,6 +242,13 @@
           "children": []
         },
         {
+          "label": "Complete",
+          "action": "text_editor::Complete",
+          "shortcut": "⌥⎋",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Select All",
           "action": "input::SelectAll",
           "shortcut": "⌘A",
@@ -868,6 +875,35 @@
               "children": []
             },
             {
+              "label": "Writing Direction",
+              "action": "text_editor::WritingDirectionMenu",
+              "shortcut": "",
+              "separator_before": true,
+              "children": [
+                {
+                  "label": "Default",
+                  "action": "text_editor::WritingDirectionDefault",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Left to Right",
+                  "action": "text_editor::WritingDirectionLeftToRight",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Right to Left",
+                  "action": "text_editor::WritingDirectionRightToLeft",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
+            },
+            {
               "label": "Show Ruler",
               "action": "text_editor::ShowRuler",
               "shortcut": "⌘R",
@@ -1307,6 +1343,10 @@
       },
       {
         "kind": "control",
+        "label": "Check and correct spelling in rich text documents only"
+      },
+      {
+        "kind": "control",
         "label": "Smart copy/paste"
       },
       {
@@ -1316,6 +1356,10 @@
       {
         "kind": "control",
         "label": "Smart dashes"
+      },
+      {
+        "kind": "control",
+        "label": "Smart quotes and dashes in rich text documents only"
       },
       {
         "kind": "control",

@@ -412,6 +412,7 @@ impl RenderOnce for Input {
                     .on_action(window.listener_for(&self.state, InputState::enter))
                     .on_action(window.listener_for(&self.state, InputState::escape))
                     .on_action(window.listener_for(&self.state, InputState::paste))
+                    .on_action(window.listener_for(&self.state, InputState::yank))
                     .on_action(window.listener_for(&self.state, InputState::cut))
                     .on_action(window.listener_for(&self.state, InputState::undo))
                     .on_action(window.listener_for(&self.state, InputState::redo))

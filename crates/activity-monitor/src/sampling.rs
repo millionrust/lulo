@@ -7,7 +7,7 @@ use sysinfo::Networks;
 
 use crate::cpu_ticks;
 use crate::gpu_stats::{self, GpuReading};
-use crate::host_stats;
+use crate::host_stats::{self, DiskTotals};
 use crate::metrics::{Aggregates, History, NetIface, REFRESH_SECS};
 use crate::process_table::{is_thread_group_leader, resync_selection, ProcessTableDelegate};
 use crate::view::MonitorView;
@@ -18,6 +18,7 @@ pub(crate) struct Sampler {
     pub(crate) history: History,
     pub(crate) interfaces: Vec<NetIface>,
     prev_cpu_ticks: Option<[u64; 4]>,
+    prev_disk: Option<DiskTotals>,
     pub(crate) cpu_split: Option<(f32, f32, f32)>,
     last_sample: Option<Instant>,
     /// Window ▸ GPU History's latest reading, kept separate from
@@ -34,6 +35,7 @@ impl Sampler {
             history: History::default(),
             interfaces: Vec::new(),
             prev_cpu_ticks: None,
+            prev_disk: None,
             cpu_split: None,
             last_sample: None,
             gpu_reading: GpuReading::Unavailable,
@@ -68,6 +70,27 @@ impl Sampler {
             .fold((0u64, 0u64), |(received, sent), data| {
                 (received + data.received(), sent + data.transmitted())
             });
+
+        let (packets_in, packets_out) =
+            self.networks
+                .list()
+                .values()
+                .fold((0u64, 0u64), |(received, sent), data| {
+                    (
+                        received.saturating_add(data.packets_received()),
+                        sent.saturating_add(data.packets_transmitted()),
+                    )
+                });
+        let (total_packets_in, total_packets_out) =
+            self.networks
+                .list()
+                .values()
+                .fold((0u64, 0u64), |(received, sent), data| {
+                    (
+                        received.saturating_add(data.total_packets_received()),
+                        sent.saturating_add(data.total_packets_transmitted()),
+                    )
+                });
 
         self.interfaces = self
             .networks
@@ -128,6 +151,19 @@ impl Sampler {
                         sent.saturating_add(interface.total_sent),
                     )
                 });
+        aggregates.net_total_packets_in = total_packets_in;
+        aggregates.net_total_packets_out = total_packets_out;
+        aggregates.net_packets_in_rate = packets_in as f64 / elapsed_secs;
+        aggregates.net_packets_out_rate = packets_out as f64 / elapsed_secs;
+        aggregates.disk_totals = host_stats::disk_totals();
+        if let (Some(before), Some(now)) = (self.prev_disk, aggregates.disk_totals) {
+            aggregates.disk_reads_rate =
+                host_stats::per_second(before.reads, now.reads, elapsed_secs);
+            aggregates.disk_writes_rate =
+                host_stats::per_second(before.writes, now.writes, elapsed_secs);
+        }
+        self.prev_disk = aggregates.disk_totals;
+        aggregates.memory_pressure = host_stats::memory_pressure();
         aggregates.threads = host_stats::thread_count();
         aggregates.mem_cached = host_stats::cached_bytes();
 

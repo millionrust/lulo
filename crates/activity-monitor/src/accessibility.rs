@@ -25,10 +25,32 @@ pub enum ProcessColumn {
     /// Bytes written since the last refresh (MON-MENU-019): the write half
     /// of the combined `Disk` column.
     BytesWritten,
+    /// Proportional memory footprint (MON-MENU-016), the Mac's "Memory".
+    Footprint,
+    /// Memory only this process maps (MON-MENU-006).
+    RealPrivateMemory,
+    /// Memory shared with other processes (MON-MENU-007).
+    RealSharedMemory,
+    /// This process's pages held in swap or zram (MON-MENU-017).
+    CompressedMemory,
+    /// What the executable was built for (MON-MENU-008).
+    Kind,
+    /// Whether a seccomp filter confines the process (MON-MENU-009).
+    Sandbox,
+    /// Wake-ups from sleep since the last sample (MON-MENU-011).
+    IdleWakeUps,
+    /// Busiest graphics engine's utilisation (MON-MENU-003).
+    GpuPercent,
+    /// Total graphics-engine busy time (MON-MENU-004).
+    GpuTime,
+    /// Open descriptors, the Mac's "# Ports" (MON-MENU-002).
+    Ports,
+    /// Holds a sleep or idle inhibitor (MON-MENU-008).
+    PreventingSleep,
 }
 
 impl ProcessColumn {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 26] = [
         Self::Pid,
         Self::Name,
         Self::Cpu,
@@ -44,6 +66,17 @@ impl ProcessColumn {
         Self::RunTime,
         Self::Status,
         Self::Threads,
+        Self::Footprint,
+        Self::RealPrivateMemory,
+        Self::RealSharedMemory,
+        Self::CompressedMemory,
+        Self::Kind,
+        Self::Sandbox,
+        Self::IdleWakeUps,
+        Self::GpuPercent,
+        Self::GpuTime,
+        Self::Ports,
+        Self::PreventingSleep,
     ];
 
     pub const fn title(self) -> &'static str {
@@ -51,7 +84,7 @@ impl ProcessColumn {
             Self::Pid => "PID",
             Self::Name => "Process Name",
             Self::Cpu => "% CPU",
-            Self::Memory => "Memory",
+            Self::Memory => "Real Memory",
             // macOS's own Energy Impact figure is proprietary; ours is a
             // stated estimate from CPU and disk I/O (process_table.rs), so
             // the column header says so rather than implying a measurement.
@@ -66,6 +99,17 @@ impl ProcessColumn {
             Self::CpuTime => "CPU Time",
             Self::BytesRead => "Bytes Read",
             Self::BytesWritten => "Bytes Written",
+            Self::Footprint => "Memory",
+            Self::RealPrivateMemory => "Real Private Memory",
+            Self::RealSharedMemory => "Real Shared Memory",
+            Self::CompressedMemory => "Compressed Memory",
+            Self::Kind => "Kind",
+            Self::Sandbox => "Sandbox",
+            Self::IdleWakeUps => "Idle Wake Ups",
+            Self::GpuPercent => "% GPU",
+            Self::GpuTime => "GPU Time",
+            Self::Ports => "# Ports",
+            Self::PreventingSleep => "Preventing Sleep",
         }
     }
 }

@@ -430,6 +430,14 @@ impl SettingsView {
                     );
                 }),
             ))
+            .child(Self::checkbox_row(
+                "settings-spelling-rich-text-only",
+                "Check and correct spelling in rich text documents only",
+                self.settings.spelling_rich_text_only,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.spelling_rich_text_only = *value, cx);
+                }),
+            ))
             .child(Self::section_label("Substitutions"))
             .child(Self::checkbox_row(
                 "settings-smart-copy-paste",
@@ -453,6 +461,14 @@ impl SettingsView {
                 self.settings.smart_dashes_default,
                 cx.listener(|this, value: &bool, _, cx| {
                     this.edit(|settings| settings.smart_dashes_default = *value, cx);
+                }),
+            ))
+            .child(Self::checkbox_row(
+                "settings-smart-quotes-rich-text-only",
+                "Smart quotes and dashes in rich text documents only",
+                self.settings.smart_quotes_rich_text_only,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.smart_quotes_rich_text_only = *value, cx);
                 }),
             ))
             .child(Self::checkbox_row(

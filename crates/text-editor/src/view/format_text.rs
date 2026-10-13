@@ -10,7 +10,7 @@
 //! Mac greys them out there.
 
 use super::*;
-use rmac_editor::rich::{Alignment, CharStyle, ListKind, ParagraphStyle};
+use rmac_editor::rich::{Alignment, CharStyle, ListKind, ParagraphStyle, WritingDirection};
 
 /// A size typed in the Fonts panel, in points.
 fn parse_font_size(text: &str) -> Option<f32> {
@@ -498,6 +498,18 @@ impl EditorView {
         if self.text_format_editable() {
             self.rich
                 .update(cx, |editor, cx| editor.set_alignment(alignment, cx));
+        }
+    }
+
+    /// Format ▸ Text ▸ Writing Direction.
+    pub(super) fn set_writing_direction(
+        &mut self,
+        direction: WritingDirection,
+        cx: &mut Context<Self>,
+    ) {
+        if self.text_format_editable() {
+            self.rich
+                .update(cx, |editor, cx| editor.set_writing_direction(direction, cx));
         }
     }
 

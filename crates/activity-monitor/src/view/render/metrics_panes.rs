@@ -12,6 +12,7 @@
 mod network;
 
 use super::*;
+use crate::host_stats::PressureLevel;
 use crate::metrics::History;
 use gpui::AnyElement;
 
@@ -366,7 +367,21 @@ impl MonitorView {
             rows.push(("Cached Files:", format_mem(cached), None));
         }
         rows.push(("Swap Used:", format_mem(aggregates.swap_used), None));
-        vec![
+        // MON-08: the kernel's own memory pressure (PSI), banded like the
+        // Mac's green, yellow and red pressure graph.
+        let pressure = aggregates.memory_pressure.map(|stall| {
+            let level = PressureLevel::from_stall_percent(stall);
+            let band = match level {
+                PressureLevel::Normal => green().line,
+                PressureLevel::Warning => mac::system_yellow(),
+                PressureLevel::Critical => red().line,
+            };
+            vec![
+                ("Memory Pressure:", level.label().to_string(), Some(band)),
+                ("Stalled (10 sec):", format!("{stall:.1}%"), None),
+            ]
+        });
+        let mut cells = vec![
             // rmac graphs the share of memory in use; the Mac's pressure
             // metric is private, so the title says what is drawn.
             self.graph_cell(
@@ -378,7 +393,11 @@ impl MonitorView {
                 },
             ),
             self.stats_cell(rows),
-        ]
+        ];
+        if let Some(pressure) = pressure {
+            cells.push(self.stats_cell(pressure));
+        }
+        cells
     }
 
     fn energy_cells(&self) -> Vec<AnyElement> {
@@ -396,31 +415,54 @@ impl MonitorView {
 
     fn disk_cells(&self) -> Vec<AnyElement> {
         let aggregates = &self.sampler.aggregates;
-        vec![
-            self.graph_cell(
-                "DATA",
-                Graph::Mirrored {
-                    above: &self.sampler.history.disk_read,
-                    below: &self.sampler.history.disk_write,
-                },
-            ),
-            self.stats_cell(vec![
-                (
-                    "Data read/sec:",
-                    format_bytes(aggregates.disk_read_rate as u64),
-                    Some(blue().line),
-                ),
-                (
-                    "Data written/sec:",
-                    format_bytes(aggregates.disk_write_rate as u64),
-                    Some(red().line),
-                ),
-            ]),
-        ]
+        let mut cells = vec![self.graph_cell(
+            "DATA",
+            Graph::Mirrored {
+                above: &self.sampler.history.disk_read,
+                below: &self.sampler.history.disk_write,
+            },
+        )];
+        // MON-09: the Mac's Disk tab pairs cumulative counts (left) with the
+        // per-second rates (right).
+        if let Some(totals) = aggregates.disk_totals {
+            cells.push(self.stats_cell(vec![
+                ("Reads in:", format_count(totals.reads), None),
+                ("Writes out:", format_count(totals.writes), None),
+                ("Data read:", format_bytes(totals.bytes_read), None),
+                ("Data written:", format_bytes(totals.bytes_written), None),
+            ]));
+        }
+        let mut rates = Vec::new();
+        if aggregates.disk_totals.is_some() {
+            rates.push((
+                "Reads in/sec:",
+                format_count(aggregates.disk_reads_rate as u64),
+                None,
+            ));
+            rates.push((
+                "Writes out/sec:",
+                format_count(aggregates.disk_writes_rate as u64),
+                None,
+            ));
+        }
+        rates.push((
+            "Data read/sec:",
+            format_bytes(aggregates.disk_read_rate as u64),
+            Some(blue().line),
+        ));
+        rates.push((
+            "Data written/sec:",
+            format_bytes(aggregates.disk_write_rate as u64),
+            Some(red().line),
+        ));
+        cells.push(self.stats_cell(rates));
+        cells
     }
 
     fn network_cells(&self) -> Vec<AnyElement> {
         let aggregates = &self.sampler.aggregates;
+        // MON-09: cumulative packets and data (left), then the per-second
+        // figures (right), as the Mac's Network tab lays them out.
         vec![
             self.graph_cell(
                 "DATA",
@@ -431,11 +473,33 @@ impl MonitorView {
             ),
             self.stats_cell(vec![
                 (
+                    "Packets in:",
+                    format_count(aggregates.net_total_packets_in),
+                    None,
+                ),
+                (
+                    "Packets out:",
+                    format_count(aggregates.net_total_packets_out),
+                    None,
+                ),
+                (
                     "Data received:",
                     format_bytes(aggregates.net_total_recv),
                     None,
                 ),
                 ("Data sent:", format_bytes(aggregates.net_total_sent), None),
+            ]),
+            self.stats_cell(vec![
+                (
+                    "Packets in/sec:",
+                    format_count(aggregates.net_packets_in_rate as u64),
+                    None,
+                ),
+                (
+                    "Packets out/sec:",
+                    format_count(aggregates.net_packets_out_rate as u64),
+                    None,
+                ),
                 (
                     "Data received/sec:",
                     format_bytes(aggregates.net_recv_rate as u64),

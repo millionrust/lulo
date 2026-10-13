@@ -76,6 +76,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         settings_rx,
         focus_rx,
         notification_rx,
+        rmac_hardware::subscribe(),
         SystemServiceReader,
     );
     let (_, _, _, _, _, _) = futures_util::try_join!(
@@ -119,6 +120,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         settings_rx,
         focus_rx,
         notification_rx,
+        rmac_hardware::subscribe(),
         crate::windows::WindowsServiceReader,
     );
     futures_util::try_join!(compositor, services, settings, consumer)?;
@@ -143,6 +145,8 @@ async fn watch_scene(sender: Sender<Update>) -> Result<(), Error> {
         service_tx.closed().await;
         Ok::<(), Error>(())
     };
+    // The scenes draw the same items on every machine: no hardware mask.
+    let (_hardware_tx, hardware_rx) = async_channel::bounded(1);
     let consumer = consume(
         sender,
         compositor_rx,
@@ -150,6 +154,7 @@ async fn watch_scene(sender: Sender<Update>) -> Result<(), Error> {
         settings_rx,
         focus_rx,
         notification_rx,
+        hardware_rx,
         crate::scene::SceneServiceReader,
     );
     futures_util::try_join!(
@@ -274,6 +279,8 @@ async fn wait_or_closed<T>(sender: &Sender<T>, duration: std::time::Duration) {
     }
 }
 
+// One receiver per source; a struct would only rename them.
+#[allow(clippy::too_many_arguments)]
 async fn consume(
     sender: Sender<Update>,
     compositor: async_channel::Receiver<rmac_compositor::Event>,
@@ -281,6 +288,7 @@ async fn consume(
     settings: async_channel::Receiver<Result<rmac_shell_settings::ShellSettings, String>>,
     focus: async_channel::Receiver<Result<rmac_focus_runtime::Projection, String>>,
     notifications: async_channel::Receiver<Result<rmac_notifications::Indicator, String>>,
+    hardware: async_channel::Receiver<rmac_hardware::HardwareProfile>,
     reader: impl ServiceReader + Copy,
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
@@ -302,6 +310,14 @@ async fn consume(
         let settings_event = futures_util::FutureExt::fuse(settings.recv());
         let focus_event = futures_util::FutureExt::fuse(focus.recv());
         let notification_event = futures_util::FutureExt::fuse(notifications.recv());
+        // The hardware stream never ends while the process lives; were it
+        // to close, it must not wake this loop again.
+        let hardware_event = futures_util::FutureExt::fuse(async {
+            match hardware.recv().await {
+                Ok(profile) => profile,
+                Err(_) => futures_util::future::pending().await,
+            }
+        });
         let closed = futures_util::FutureExt::fuse(sender.closed());
         futures_util::pin_mut!(
             compositor_event,
@@ -309,6 +325,7 @@ async fn consume(
             settings_event,
             focus_event,
             notification_event,
+            hardware_event,
             closed
         );
         futures_util::select! {
@@ -342,6 +359,9 @@ async fn consume(
             event = notification_event => {
                 let event = event.map_err(|_| Error::new("receive Notification Center state", "watcher stopped"))?;
                 coordinator.apply_notifications(event);
+            },
+            profile = hardware_event => {
+                coordinator.apply_hardware(&profile);
             },
             _ = closed => return Ok(()),
         }

@@ -227,7 +227,7 @@ impl Render for QuickSettingsView {
             None => self.detail_view(shown, g::PANEL_LEFT, banner_block, cx),
             Some((detail, amount)) => {
                 let (tile_x, tile_y, tile_width, tile_height) =
-                    tile_rect(detail, &modules, self.brightness.is_some());
+                    tile_rect(detail, &modules, self.hardware.wifi);
                 let lerp = |from: f32, to: f32| from + (to - from) * amount;
                 let (x, y) = (lerp(tile_x, g::PANEL_LEFT), lerp(tile_y, banner_block));
                 let width = lerp(tile_width, g::PANEL_WIDTH);
@@ -248,25 +248,40 @@ impl Render for QuickSettingsView {
         let grid_visible = detail.is_none() || reveal.is_some();
 
         let row_top = |row: usize| modules.row_top(row) as f32;
-        let mut row = 0;
+        // The half-width modules flow into the slots beside and below Now
+        // Playing; a PC without a radio has no pill for it (ADR 0027).
+        let place = |index: usize| {
+            let slot = modules.slot(index);
+            (
+                if slot.right { PITCH * 2.0 } else { 0.0 },
+                row_top(slot.row),
+            )
+        };
         if grid_visible {
-            children.push(self.pill_wifi(0.0, row_top(row), &view.wifi, cx));
-            children.push(self.now_playing(PITCH * 2.0, row_top(row), cx));
-            children.push(self.pill_bluetooth(0.0, row_top(row + 1), &view.bluetooth, cx));
-            row += 2;
-            let mut column = 0.0;
+            children.push(self.now_playing(PITCH * 2.0, row_top(0), cx));
+            let mut index = 0;
+            if self.hardware.wifi {
+                let (x, y) = place(index);
+                children.push(self.pill_wifi(x, y, &view.wifi, cx));
+                index += 1;
+            }
+            if self.hardware.bluetooth {
+                let (x, y) = place(index);
+                children.push(self.pill_bluetooth(x, y, &view.bluetooth, cx));
+                index += 1;
+            }
+            let (mut column, top) = place(index);
             if layout::low_power_available(&view.power.value) && view.power.available {
-                children.push(self.low_power_circle(column, row_top(row), &view.power, cx));
+                children.push(self.low_power_circle(column, top, &view.power, cx));
                 column += PITCH;
             }
-            children.push(self.screenshot_circle(column, row_top(row), cx));
-            children.push(self.pill_focus(PITCH * 2.0, row_top(row), &view.focus, cx));
-            row += 1;
+            children.push(self.screenshot_circle(column, top, cx));
+            let (x, y) = place(index + 1);
+            children.push(self.pill_focus(x, y, &view.focus, cx));
             if let Some(level) = self.brightness {
-                children.push(self.display_module(row_top(row), level, cx));
-                row += 1;
+                children.push(self.display_module(row_top(modules.display_row()), level, cx));
             }
-            children.push(self.sound_module(row_top(row), &view.sound, cx));
+            children.push(self.sound_module(row_top(modules.sound_row()), &view.sound, cx));
         }
         let content_height = if !grid_visible {
             (banner_block - PADDING).max(0.0)
@@ -331,15 +346,15 @@ impl Render for QuickSettingsView {
 }
 
 /// The tile a detail view grows out of, in surface coordinates: Wi-Fi and
-/// Bluetooth are the two left pills, Display and Sound the full-width rows
-/// (Now Playing is always shown, so the pills take rows 0 and 1).
-fn tile_rect(detail: Detail, modules: &layout::Modules, display: bool) -> (f32, f32, f32, f32) {
+/// Bluetooth are the first pills beside Now Playing (Bluetooth first when
+/// there is no Wi-Fi), Display and Sound the full-width rows.
+fn tile_rect(detail: Detail, modules: &layout::Modules, wifi: bool) -> (f32, f32, f32, f32) {
     let top = |row: usize| PADDING + modules.row_top(row) as f32;
     match detail {
         Detail::Wifi => (PADDING, top(0), PILL_WIDTH, CELL),
-        Detail::Bluetooth => (PADDING, top(1), PILL_WIDTH, CELL),
-        Detail::Display => (PADDING, top(3), GRID_WIDTH, CELL),
-        Detail::Sound => (PADDING, top(3 + usize::from(display)), GRID_WIDTH, CELL),
+        Detail::Bluetooth => (PADDING, top(usize::from(wifi)), PILL_WIDTH, CELL),
+        Detail::Display => (PADDING, top(modules.display_row()), GRID_WIDTH, CELL),
+        Detail::Sound => (PADDING, top(modules.sound_row()), GRID_WIDTH, CELL),
     }
 }
 

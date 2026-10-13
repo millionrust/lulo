@@ -176,6 +176,7 @@ rmac-sharing-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-sharing-li
 # `rmac-ui` so shell binaries never pull in the `spellbook` dependency.
 rmac-spelling = { version = "=0.9.0-beta.1", path = "crates/rmac-spelling" }
 rmac-storage = { version = "=0.9.0-beta.1", path = "crates/rmac-storage" }
+rmac-hardware = { version = "=0.9.0-beta.1", path = "crates/rmac-hardware" }
 rmac-system-info = { version = "=0.9.0-beta.1", path = "crates/rmac-system-info" }
 rmac-thumbnails = { version = "=0.9.0-beta.1", path = "crates/rmac-thumbnails" }
 rmac-theme = { version = "=0.9.0-beta.1", path = "crates/rmac-theme" }

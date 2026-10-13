@@ -223,3 +223,52 @@ fn quick_settings_change_does_not_redraw_the_compact_bar() {
     assert!(!update.visible);
     assert!(update.quick_settings_visible);
 }
+
+#[test]
+fn hardware_without_a_battery_hides_the_battery_item() {
+    let battery = rmac_power::Battery {
+        percentage: 80,
+        state: rmac_power::BatteryState::Discharging,
+        on_battery: true,
+        seconds_remaining: None,
+        capacity: None,
+        charge_cycles: None,
+        energy_rate_watts: None,
+        model: None,
+        charge_threshold: rmac_power::ChargeThreshold::default(),
+        history: rmac_power::BatteryHistory::default(),
+    };
+    let reader = FakeReader {
+        power: Ok(rmac_power::Snapshot {
+            battery: Some(battery),
+            profiles: rmac_power::Profiles::default(),
+        }),
+        ..Default::default()
+    };
+    let mut coordinator = Coordinator::default();
+    coordinator.refresh_services(
+        Sources {
+            power: true,
+            ..Sources::empty()
+        },
+        &reader,
+    );
+    // Before detection: everything the services report shows.
+    assert!(coordinator.snapshot().status.battery.is_some());
+    assert_eq!(coordinator.snapshot().hardware, None);
+    let laptop = rmac_hardware::HardwareProfile {
+        batteries: 1,
+        ..Default::default()
+    };
+    assert!(coordinator.apply_hardware(&laptop));
+    assert!(coordinator.snapshot().status.battery.is_some());
+    // A desktop on a UPS: UPower reports a battery, the PC has none.
+    let desktop = rmac_hardware::HardwareProfile::default();
+    assert!(coordinator.apply_hardware(&desktop));
+    assert!(coordinator.snapshot().status.battery.is_none());
+    assert!(!coordinator.snapshot().hardware.unwrap().wifi);
+    assert!(
+        !coordinator.apply_hardware(&desktop),
+        "same hardware: no update"
+    );
+}

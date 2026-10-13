@@ -197,6 +197,9 @@ jobs:
             fi
           done
           python3 scripts/behavior/runtime_ci.py prepare runtime-bin
+          # The hardware profile (ADR 0027) on the runner the nested sessions
+          # use: printed, no panic, detection within its 20 ms budget.
+          runtime-bin/rmac-hardware --check
           niri="$RUNNER_TEMP/niri-package/usr/bin/niri"
           export PATH="$(dirname "$niri"):$PATH"
           for SUITE in $SUITES; do

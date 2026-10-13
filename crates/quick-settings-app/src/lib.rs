@@ -327,7 +327,8 @@ fn open_popover(
     #[cfg(not(target_os = "linux"))]
     let brightness = None;
     let bounds = if cfg!(target_os = "linux") {
-        let height = crate::view::initial_surface_height(brightness.is_some());
+        let hidden_pills = crate::view::hidden_pills(&crate::view::hardware_now());
+        let height = crate::view::initial_surface_height(brightness.is_some(), hidden_pills);
         // Cost nothing without RMAC_FRAME_TRACE: what the surface opened at,
         // so a run that sees it change afterwards can say why.
         rmac_ui::trace_mark(&format!(
@@ -464,6 +465,11 @@ fn notify_ready() -> std::result::Result<(), String> {
 /// Control Centre's service in a process that already runs GPUI; opening
 /// it is up to the caller (`toggle`) or the shortcut endpoint (`run`).
 pub fn start(cx: &mut App) {
+    // Detect the hardware now, off this thread, so the first open already
+    // knows which radios to show (ADR 0027). The scenes draw every module.
+    if !rmac_shell_runtime::scene::active() {
+        rmac_hardware::start();
+    }
     cx.set_global(QuickSettingsService {
         active: None,
         next_token: 0,

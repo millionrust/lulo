@@ -8,15 +8,30 @@ pub struct Coordinator {
     quick_settings: rmac_quick_settings::Inputs,
     health: HealthSnapshot,
     last_on_battery: Option<bool>,
+    hardware: Option<rmac_hardware::Adaptations>,
 }
 
 impl Coordinator {
     pub fn snapshot(&self) -> Snapshot {
+        let mut status = self.status.snapshot();
+        // A PC without a battery shows no battery item, whatever a UPower
+        // or power-status reading says (a UPS, a peripheral's cell).
+        if self.hardware.is_some_and(|hardware| !hardware.battery) {
+            status.battery = None;
+        }
         Snapshot {
-            status: self.status.snapshot(),
+            status,
             quick_settings: self.quick_settings.clone(),
             health: self.health.clone(),
+            hardware: self.hardware,
         }
+    }
+
+    /// The hardware profile was detected, or changed on hot-plug.
+    pub fn apply_hardware(&mut self, profile: &rmac_hardware::HardwareProfile) -> bool {
+        let before = self.snapshot();
+        self.hardware = Some(profile.adaptations());
+        before != self.snapshot()
     }
 
     pub fn apply_compositor(&mut self, event: rmac_compositor::Event) -> bool {

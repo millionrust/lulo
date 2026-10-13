@@ -547,11 +547,15 @@ class SessionPackageTests(unittest.TestCase):
             session_config = root / "home/.config/rmac/niri/session.kdl"
             self.assertEqual(
                 session_config.read_text(encoding="utf-8"),
-                'include "config.kdl"\ninclude "shortcuts-generated.kdl"\n',
+                'include "config.kdl"\ninclude "shortcuts-generated.kdl"\n'
+                'include "hardware-generated.kdl"\n',
             )
             generated_shortcuts = root / "home/.config/rmac/niri/shortcuts-generated.kdl"
             self.assertEqual(generated_shortcuts.read_text(encoding="utf-8"), "")
             self.assertEqual(stat.S_IMODE(generated_shortcuts.stat().st_mode), 0o600)
+            generated_hardware = root / "home/.config/rmac/niri/hardware-generated.kdl"
+            self.assertEqual(generated_hardware.read_text(encoding="utf-8"), "")
+            self.assertEqual(stat.S_IMODE(generated_hardware.stat().st_mode), 0o600)
             cleanup = systemctl_capture.read_text(encoding="utf-8")
             self.assertIn("--user stop waybar.service", cleanup)
             for unit in (
@@ -594,7 +598,8 @@ class SessionPackageTests(unittest.TestCase):
             # Safe mode keeps the rmac entry point ready for --clear-safe-mode.
             self.assertEqual(
                 session_config.read_text(encoding="utf-8"),
-                'include "config.kdl"\ninclude "shortcuts-generated.kdl"\n',
+                'include "config.kdl"\ninclude "shortcuts-generated.kdl"\n'
+                'include "hardware-generated.kdl"\n',
             )
 
             capture = root / "after-safe"

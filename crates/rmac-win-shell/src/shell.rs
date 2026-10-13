@@ -278,6 +278,12 @@ pub fn run() -> i32 {
         return 3;
     };
     share::install(&share::install_dir());
+    // The first run after install detects the hardware, stores it in
+    // Lulo's settings and logs its summary (ADR 0027), on its own thread.
+    // The menu bar and Control Centre follow it from there.
+    if std::env::var_os("RMAC_SHELL_SCENE").is_none_or(|scene| scene != "1") {
+        rmac_hardware::start();
+    }
     let took_taskbar = std::env::var_os("LULO_KEEP_TASKBAR").is_none();
     let mut menu_host = Some(menu_host);
 

@@ -16,6 +16,8 @@ rmac-bluetooth.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-system.workspace = true
 rmac-focus-linux.workspace = true
+# What the PC has (ADR 0027): the battery item only with a battery.
+rmac-hardware.workspace = true
 rmac-focus-runtime.workspace = true
 rmac-network.workspace = true
 rmac-notifications.workspace = true

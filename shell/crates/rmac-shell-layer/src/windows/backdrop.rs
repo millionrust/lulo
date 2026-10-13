@@ -36,6 +36,9 @@ struct Blurred {
     output: Uuid,
     /// BGRA, as GPUI draws images, a quarter of the screen's size.
     pixels: image::RgbaImage,
+    /// Reduce Transparency (a low-spec PC): the material is this solid
+    /// colour (BGR), drawn as a plain fill rather than an image.
+    solid: Option<[u8; 3]>,
 }
 
 static WALLPAPERS: RwLock<Vec<Arc<Blurred>>> = RwLock::new(Vec::new());
@@ -45,15 +48,68 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 /// `height` physical pixels. Called off the UI thread; the views pick the
 /// new copy up on their next frame.
 pub fn set_wallpaper(output: Uuid, width: u32, height: u32, bgra: &[u8]) {
-    let Some(pixels) = blur(width, height, bgra) else {
+    let reduce = reduce_transparency();
+    let pixels = if reduce {
+        flat(width, height, bgra)
+    } else {
+        blur(width, height, bgra)
+    };
+    let Some(pixels) = pixels else {
         return;
     };
-    let blurred = Arc::new(Blurred { output, pixels });
+    let solid = reduce.then(|| {
+        let [b, g, r, _] = pixels.get_pixel(0, 0).0;
+        [b, g, r]
+    });
+    let blurred = Arc::new(Blurred {
+        output,
+        pixels,
+        solid,
+    });
     if let Ok(mut wallpapers) = WALLPAPERS.write() {
         wallpapers.retain(|wallpaper| wallpaper.output != output);
         wallpapers.push(blurred);
     }
     GENERATION.fetch_add(1, Ordering::AcqRel);
+}
+
+/// A low-spec PC (ADR 0027) gets a solid material instead of the blur,
+/// as macOS's Reduce Transparency draws it: no blur passes, no copy to
+/// keep. The fixed shell scenes keep the blur on every machine.
+fn reduce_transparency() -> bool {
+    if std::env::var_os("RMAC_SHELL_SCENE").is_some_and(|value| value == "1") {
+        return false;
+    }
+    // Called off the UI thread; at start-up the shell's own detection may
+    // not have finished yet.
+    rmac_hardware::current()
+        .unwrap_or_else(rmac_hardware::detect)
+        .adaptations()
+        .reduce_transparency
+}
+
+/// The wallpaper's average colour as a one-pixel image, which the crop
+/// below stretches into a solid material.
+fn flat(width: u32, height: u32, bgra: &[u8]) -> Option<image::RgbaImage> {
+    if width == 0 || height == 0 || bgra.len() != (width as usize) * (height as usize) * 4 {
+        return None;
+    }
+    let mut sum = [0u64; 3];
+    // Every 16th pixel is plenty for an average.
+    let samples = bgra.chunks_exact(4).step_by(16);
+    let mut count = 0u64;
+    for pixel in samples {
+        for (total, value) in sum.iter_mut().zip(pixel) {
+            *total += u64::from(*value);
+        }
+        count += 1;
+    }
+    let average = |channel: usize| (sum[channel] / count.max(1)) as u8;
+    Some(image::RgbaImage::from_pixel(
+        1,
+        1,
+        image::Rgba([average(0), average(1), average(2), 255]),
+    ))
 }
 
 fn blur(width: u32, height: u32, bgra: &[u8]) -> Option<image::RgbaImage> {
@@ -149,6 +205,18 @@ pub fn element(window: &Window, cx: &App, radius: f32) -> Option<AnyElement> {
         .iter()
         .find(|wallpaper| wallpaper.output == output)?
         .clone();
+    if let Some([b, g, r]) = wallpaper.solid {
+        let colour = (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b);
+        return Some(
+            gpui::div()
+                .absolute()
+                .inset_0()
+                .size_full()
+                .rounded(px(radius))
+                .bg(gpui::rgb(colour))
+                .into_any_element(),
+        );
+    }
     let generation = GENERATION.load(Ordering::Acquire);
     let scale = window.scale_factor();
     let screen = display.bounds();
@@ -229,5 +297,16 @@ mod tests {
     #[test]
     fn the_wrong_buffer_size_is_refused() {
         assert!(blur(4, 4, &[0; 10]).is_none());
+        assert!(flat(4, 4, &[0; 10]).is_none());
+    }
+
+    #[test]
+    fn the_reduced_material_is_the_wallpaper_s_average() {
+        let bgra: Vec<u8> = std::iter::repeat_n([40u8, 80, 120, 255], 64 * 32)
+            .flatten()
+            .collect();
+        let solid = flat(64, 32, &bgra).expect("flat");
+        assert_eq!(solid.dimensions(), (1, 1));
+        assert_eq!(solid.get_pixel(0, 0).0, [40, 80, 120, 255]);
     }
 }

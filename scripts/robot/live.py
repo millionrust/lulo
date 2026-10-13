@@ -332,10 +332,49 @@ def activate(env: dict[str, str], bus: str, action: str) -> Optional[str]:
 STATE_GLOBS = (
     ".config/rmac/*.json",
     ".local/state/rmac/*.json",
-    ".local/state/rmac/windows/*.json",
-    ".local/state/rmac/system-settings/*.json",
+    ".local/state/rmac/windows/*",
+    ".local/state/rmac/system-settings/*",
     ".local/share/recently-used.xbel",
 )
+# The Dock keeps its recent-apps section in memory and only rewrites this
+# file, so it is put back by relaunching apps (Robot.restore_dock_recents),
+# never by writing the file.
+DOCK_RECENTS = ".local/state/rmac/dock-recents"
+
+
+def dock_recents(home: Path) -> list[str]:
+    try:
+        return [line.strip() for line in (home / DOCK_RECENTS).read_text().splitlines() if line.strip()]
+    except OSError:
+        return []
+
+
+def recents_launch_order(original: list[str], current: list[str]) -> list[str]:
+    """Apps to launch, one at a time, to turn the Dock's recent-apps list
+    back into `original` (rmac_dock::recents::advance: a launched app joins
+    at the end unless already listed, and the oldest is dropped past
+    three). Replays `original` until the simulated list matches; empty if
+    no replay can (then the robot reports it instead)."""
+
+    if original == current:
+        return []
+    state = list(current)
+    order: list[str] = []
+    for app in original * 3:
+        state = simulate_recent_launch(state, app)
+        order.append(app)
+        if state == original:
+            return order
+    return []
+
+
+def simulate_recent_launch(state: list[str], app: str, limit: int = 3) -> list[str]:
+    if app in state:
+        return list(state)
+    state = [*state, app]
+    while len(state) > limit:
+        state.pop(0)
+    return state
 
 
 def snapshot_state(home: Path) -> dict[str, Optional[bytes]]:

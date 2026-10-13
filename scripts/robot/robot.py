@@ -33,6 +33,7 @@ import datetime as dt
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 import traceback
@@ -211,6 +212,10 @@ class Robot:
         self.brightness_start = live.brightness()
         self.scheme_start = live.color_scheme(self.env)
         self.state_snapshot = live.snapshot_state(self.home)
+        self.recents_start = live.dock_recents(self.home)
+        if self.args.dock_recents:
+            # The list as the owner left it, when an earlier run changed it.
+            self.recents_start = [d for d in self.args.dock_recents.split(",") if d]
         self.log(f"baseline: shell {self.shell_pids}, D-Bus names {self.bus_start}, windows {sorted(self.windows_start)}, "
                  f"volume {self.volume_start!r}, brightness {self.brightness_start}, scheme {self.scheme_start}")
         if any(pid is None for pid in self.shell_pids.values()):
@@ -241,6 +246,7 @@ class Robot:
                 except OSError:
                     pass
         time.sleep(1.0)
+        self.restore_dock_recents()
         touched = live.restore_state(self.home, self.state_snapshot)
         if touched:
             self.log(f"restored state files: {touched}")
@@ -262,6 +268,46 @@ class Robot:
                          f"{self.bus_start} -> {bus_end}")
         self.scan_journal()
         self.write_report()
+
+    def restore_dock_recents(self) -> None:
+        """Launching apps changes the Dock's recent-apps section. Put it
+        back by relaunching the original apps in order (the Dock only reads
+        its state file at start), unless the owner is back."""
+
+        current = live.dock_recents(self.home)
+        if current == self.recents_start:
+            return
+        order = live.recents_launch_order(self.recents_start, current)
+        if not order or live.owner_input_count() != self.owner_count or self.input is None:
+            self.finding("medium", "shell", "state", "Dock recent apps changed and were not restored",
+                         f"{self.recents_start} -> {current}")
+            return
+        self.log(f"restoring the Dock's recent apps {self.recents_start} by launching {order}")
+        by_desktop = {plan["app_id"] + ".desktop": plan for plan in APPS.values()}
+        for desktop in order:
+            plan = by_desktop.get(desktop)
+            if plan is None:
+                self.finding("medium", "shell", "state", f"cannot relaunch {desktop} to restore Dock recents")
+                return
+            known = {w["id"] for w in self.niri.windows()}
+            self.niri.spawn([plan["exec"][0]])
+            window = self.wait_window(plan["app_id"], known)
+            if window is None:
+                continue
+            time.sleep(0.8)
+            self.focus(window)
+            pid = window.get("pid")
+            self.input.key("cmd-w" if plan["bin"] == "rmac-files" else "cmd-q", 0.8)
+            end = time.monotonic() + 5
+            while pid and Path(f"/proc/{pid}").exists() and time.monotonic() < end:
+                time.sleep(0.2)
+            if pid and Path(f"/proc/{pid}").exists():
+                os.kill(pid, signal.SIGTERM)
+            time.sleep(1.0)
+        final = live.dock_recents(self.home)
+        if final != self.recents_start:
+            self.finding("medium", "shell", "state", "Dock recent apps could not be restored",
+                         f"{self.recents_start} -> {final}")
 
     def scan_journal(self) -> None:
         lines = live.journal_since(self.env, self.started_wall)
@@ -338,16 +384,20 @@ class Robot:
         time.sleep(1.0)
         self.focus(window)
         self.window_shot(name, "open", window)
+        self.window_pid = window.get("pid")
+        phases: list[Callable[[], None]] = [
+            lambda: self.walk_menus(name, window),
+            lambda: self.activate_items(name, window),
+            lambda: self.press_keys(name, window, plan.get("keys", [])),
+        ]
+        if plan.get("notes_flow"):
+            phases.append(lambda: self.notes_flow(window))
+        phases.append(lambda: self.resize(name, window))
         try:
-            self.walk_menus(name, window)
-            if not self.over_time():
-                self.activate_items(name, window)
-            if not self.over_time():
-                self.press_keys(name, window, plan.get("keys", []))
-            if plan.get("notes_flow") and not self.over_time():
-                self.notes_flow(window)
-            if not self.over_time():
-                self.resize(name, window)
+            for phase in phases:
+                if self.over_time() or not self.alive(name, window):
+                    break
+                phase()
         finally:
             self.quit_app(name, plan, window)
         bus_after = live.bus_count(self.env)
@@ -430,8 +480,16 @@ class Robot:
     def check_hang(self, name: str, bus: Optional[str], when: str) -> None:
         if not bus:
             return
-        result, elapsed = live.read_layout(self.env, bus, timeout=10)
-        if result is None or elapsed > HANG_S:
+        pid = getattr(self, "window_pid", None)
+        if pid and not Path(f"/proc/{pid}").exists():
+            return  # gone, not hung: `alive` reports it
+        try:
+            result, elapsed = live.read_layout(self.env, bus, timeout=10)
+        except subprocess.TimeoutExpired:
+            result, elapsed = None, 10.0
+        if pid and not Path(f"/proc/{pid}").exists():
+            return
+        if (result is None and elapsed > HANG_S) or elapsed > HANG_S:
             path, _ = self.shot(f"{name}-hang")
             self.finding("critical", name, "hang", f"app did not answer within {HANG_S:.0f} s {when}",
                          f"Layout took {elapsed:.2f} s", path)
@@ -702,6 +760,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--apps", default="", help="comma-separated app names, or 'all'")
     parser.add_argument("--shell", action="store_true", help="also tour the shell")
     parser.add_argument("--max-seconds", type=float, default=540)
+    parser.add_argument("--dock-recents", default="",
+                        help="comma-separated desktop IDs the Dock's recent apps should end as "
+                             "(default: as found at the start)")
     parser.add_argument("--idle-seconds", type=float, default=120)
     parser.add_argument("--idle-give-up", type=float, default=900)
     args = parser.parse_args(argv)

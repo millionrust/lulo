@@ -41,6 +41,9 @@ DENY_WORDS = (
     "airdrop", "icloud", "server", "add to", "favourite", "favorite",
     "location", "default", "reveal", "show in", "enclosing", "lap",
     "start", "stop", "set ", "keep",
+    # Window commands that take the robot's own window away (it closes the
+    # app's last window, which quits a single-window app, or parks it).
+    "close", "minimise", "minimize", "full screen", "tile", "move window",
 )
 
 # Action identifiers refused regardless of label (exact or prefix match).

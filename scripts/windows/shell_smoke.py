@@ -1710,7 +1710,10 @@ def check_memory_after_use(log: Log, shell_pid: int, measurements: dict, failure
         time.sleep(0.6)
         type_text("notes")
         time.sleep(0.8)
+        # The first Escape clears the query, the second closes Spotlight.
         tap(VK_ESCAPE)
+        if log.wait_for(r"^layer rmac-launcher closed", 1.0, after=mark) is None:
+            tap(VK_ESCAPE)
     title = log.last(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$")
     if title is not None:
         time.sleep(0.5)

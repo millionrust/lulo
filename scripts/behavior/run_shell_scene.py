@@ -58,6 +58,20 @@ SCENE_PINS = [
     "org.rmac.Weather",
     "org.rmac.Preview",
 ]
+# rmac-shell-settings' DEFAULT_PINNED_APPS, and the pins among them whose
+# app Lulo on Windows does not ship yet.
+DEFAULT_PINS = [
+    "org.rmac.Files",
+    "org.rmac.AppDrawer",
+    "org.rmac.Notes",
+    "org.rmac.TextEditor",
+    "org.rmac.Terminal",
+    "org.rmac.SystemSettings",
+    "org.rmac.Weather",
+    "org.rmac.Calculator",
+    "org.rmac.Mail",
+]
+NOT_ON_WINDOWS = {"org.rmac.Mail"}
 HICOLOR_INDEX = (
     "[Icon Theme]\nName=Hicolor\nComment=Fallback icon theme\nDirectories=scalable/apps\n\n"
     "[scalable/apps]\nSize=64\nMinSize=8\nMaxSize=1024\nContext=Applications\nType=Scalable\n"
@@ -92,7 +106,12 @@ def prepare_profile(home: Path, default_dock: bool = False) -> None:
     settings = home / ".config/rmac"
     settings.mkdir(parents=True, exist_ok=True)
     if default_dock:
-        (settings / "shell.json").write_text('{"version": 3, "settings": {}}\n')
+        # A fresh profile's own pins (`DEFAULT_PINNED_APPS`) less the ones
+        # whose app does not build for Windows yet: the Windows Dock leaves
+        # an uninstalled pin out (rmac-dock, ADR 0023), while Lulo OS always
+        # has every Lulo app installed and draws them all.
+        pins = ",".join(f'"{app}"' for app in DEFAULT_PINS if app not in NOT_ON_WINDOWS)
+        (settings / "shell.json").write_text(f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n')
     else:
         pins = ",".join(f'"{app}"' for app in SCENE_PINS)
         (settings / "shell.json").write_text(f'{{"version": 3, "settings": {{"pinned_apps": [{pins}]}}}}\n')

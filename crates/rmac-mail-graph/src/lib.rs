@@ -105,6 +105,28 @@ impl GraphFactory {
     }
 }
 
+/// Production wiring on Windows: verified HTTPS and the access token Lulo's
+/// own account store keeps (refreshed with the stored refresh token).
+#[cfg(windows)]
+impl GraphFactory {
+    pub fn windows(data_root: PathBuf) -> Self {
+        Self::new(
+            Arc::new(UreqTransport::new()),
+            Arc::new(|account: &Account| account_token(&account.path)),
+            data_root,
+        )
+    }
+}
+
+/// The current access token for a Windows account-store path (`win:<id>`).
+#[cfg(windows)]
+pub fn account_token(path: &str) -> Result<Secret, Error> {
+    use rmac_accounts_linux::GoaApi;
+    rmac_accounts_linux::winstore::WinAccounts::session()
+        .and_then(|store| store.access_token(path))
+        .map_err(|_| Error::Account)
+}
+
 /// The current GOA access token for an `ms_graph` account object path.
 #[cfg(target_os = "linux")]
 pub fn goa_token(path: &str) -> Result<Secret, Error> {

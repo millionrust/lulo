@@ -15,7 +15,16 @@ publish = false
 bzip2 = { workspace = true }
 chrono.workspace = true
 flate2.workspace = true
-libc.workspace = true
 lzma-rs = { workspace = true }
 tar = { workspace = true }
 zip = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+# Windows: free space and the no-replace rename (ADR 0023 phase 2f).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+] }

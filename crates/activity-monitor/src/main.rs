@@ -22,6 +22,8 @@ mod signal_picker;
 mod storage;
 mod view;
 mod view_filter;
+#[cfg(windows)]
+mod windows_host;
 
 use view::MonitorView;
 

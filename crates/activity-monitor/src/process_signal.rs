@@ -17,7 +17,7 @@ pub(crate) enum SignalKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SignalOutcome {
     Delivered,
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
     Missing,
     Unsupported,
     Rejected,
@@ -31,6 +31,8 @@ pub(crate) enum SignalOutcome {
 pub(crate) struct ProcessHandle {
     #[cfg(target_os = "linux")]
     pidfd: OwnedFd,
+    #[cfg(windows)]
+    process: crate::windows_host::OwnedProcess,
 }
 
 impl ProcessHandle {
@@ -50,7 +52,14 @@ impl ProcessHandle {
         Ok(Self { pidfd })
     }
 
-    #[cfg(not(target_os = "linux"))]
+    /// Windows: a process handle opened now stays bound to this process, so
+    /// a recycled PID can never be retargeted (the pidfd's guarantee).
+    #[cfg(windows)]
+    pub(crate) fn open(pid: u32) -> Result<Self, SignalOutcome> {
+        crate::windows_host::OwnedProcess::open(pid).map(|process| Self { process })
+    }
+
+    #[cfg(not(any(target_os = "linux", windows)))]
     pub(crate) fn open(_pid: u32) -> Result<Self, SignalOutcome> {
         Ok(Self {})
     }
@@ -85,7 +94,23 @@ impl ProcessHandle {
         }
     }
 
-    #[cfg(not(target_os = "linux"))]
+    /// Quit asks the process's windows to close (`WM_CLOSE`, like the Close
+    /// button); Force Quit is `TerminateProcess`. Windows has no other
+    /// signals, so the Named ones are never offered there.
+    #[cfg(windows)]
+    pub(crate) fn send(
+        self,
+        kind: SignalKind,
+        _fallback: impl FnOnce() -> Option<bool>,
+    ) -> SignalOutcome {
+        match kind {
+            SignalKind::Terminate => self.process.close_windows(),
+            SignalKind::Kill => self.process.terminate(),
+            SignalKind::Named(_) => SignalOutcome::Unsupported,
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", windows)))]
     pub(crate) fn send(
         self,
         _kind: SignalKind,
@@ -110,9 +135,10 @@ fn classify_pidfd_error(error: std::io::Error) -> SignalOutcome {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(windows))]
     use super::*;
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", windows)))]
     #[test]
     fn development_fallback_preserves_every_sysinfo_result() {
         assert_eq!(

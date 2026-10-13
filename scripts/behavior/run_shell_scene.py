@@ -59,7 +59,7 @@ SCENE_PINS = [
     "org.rmac.Preview",
 ]
 # rmac-shell-settings' DEFAULT_PINNED_APPS, and the pins among them whose
-# app Lulo on Windows does not ship yet.
+# app Lulo on Windows does not ship (none now: Mail ships there too).
 DEFAULT_PINS = [
     "org.rmac.Files",
     "org.rmac.AppDrawer",
@@ -71,7 +71,7 @@ DEFAULT_PINS = [
     "org.rmac.Calculator",
     "org.rmac.Mail",
 ]
-NOT_ON_WINDOWS = {"org.rmac.Mail"}
+NOT_ON_WINDOWS: set[str] = set()
 HICOLOR_INDEX = (
     "[Icon Theme]\nName=Hicolor\nComment=Fallback icon theme\nDirectories=scalable/apps\n\n"
     "[scalable/apps]\nSize=64\nMinSize=8\nMaxSize=1024\nContext=Applications\nType=Scalable\n"

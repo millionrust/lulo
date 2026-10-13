@@ -113,7 +113,14 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
     }
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| PlayerView::new(list, window, cx));
+        let view = cx.new(|cx| {
+            rmac_ui::track_key_window(window, cx);
+            // Per-file windows share no saved geometry, so the in-window menu
+            // strip (ADR 0023) is given here rather than by
+            // `observe_window_state`; without it Alt opened nothing.
+            rmac_ui::register_menu_strip_window(window);
+            PlayerView::new(list, window, cx)
+        });
         let focus = view.read(cx).focus.clone();
         window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))

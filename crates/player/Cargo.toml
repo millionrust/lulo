@@ -26,3 +26,6 @@ rust-embed.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 rmac-apps.workspace = true
 zbus.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+rmac-windows-resource-build.workspace = true

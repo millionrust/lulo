@@ -1,6 +1,7 @@
 //! Host-wide figures Activity Monitor's bottom panel shows that `sysinfo`
 //! does not expose: the thread count (CPU tab) and the page cache (Memory
-//! tab's "Cached Files"). Both come from `/proc` on Linux; elsewhere they are
+//! tab's "Cached Files"). Both come from `/proc` on Linux and from the
+//! Windows performance counters (`windows_host`) there; elsewhere they are
 //! unavailable and the panel omits the row rather than inventing a value.
 
 /// Every kernel task (thread) on the host, from `/proc/loadavg`'s
@@ -11,7 +12,12 @@ pub(crate) fn thread_count() -> Option<u64> {
     parse_loadavg_threads(&contents)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+pub(crate) fn thread_count() -> Option<u64> {
+    crate::windows_host::performance_info().map(|info| u64::from(info.ThreadCount))
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn thread_count() -> Option<u64> {
     None
 }
@@ -23,7 +29,13 @@ pub(crate) fn cached_bytes() -> Option<u64> {
     parse_meminfo_cached(&contents)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+pub(crate) fn cached_bytes() -> Option<u64> {
+    crate::windows_host::performance_info()
+        .map(|info| (info.SystemCache as u64).saturating_mul(info.PageSize as u64))
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn cached_bytes() -> Option<u64> {
     None
 }
@@ -50,7 +62,12 @@ pub(crate) fn disk_totals() -> Option<DiskTotals> {
     }))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+pub(crate) fn disk_totals() -> Option<DiskTotals> {
+    crate::windows_host::disk_totals()
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(crate) fn disk_totals() -> Option<DiskTotals> {
     None
 }

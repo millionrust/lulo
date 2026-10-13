@@ -16,6 +16,8 @@ pub mod upcoming;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(windows)]
+pub mod windows;
 
 use std::io;
 use std::path::PathBuf;
@@ -60,7 +62,29 @@ pub fn ensure_enabled() -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: run the agent once so it re-arms the reminder task for the
+/// calendars as they are now. The agent sits beside Calendar's executable; a
+/// build without it (a plain `cargo run`) just has no reminders.
+#[cfg(windows)]
+pub fn ensure_enabled() -> io::Result<()> {
+    use std::os::windows::process::CommandExt as _;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let agent = std::env::current_exe()?.with_file_name("rmac-calendar-agent.exe");
+    if !agent.is_file() {
+        return Ok(());
+    }
+    std::process::Command::new(agent)
+        .arg("--check")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map(|_| ())
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn ensure_enabled() -> io::Result<()> {
     Ok(())
 }

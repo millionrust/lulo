@@ -169,6 +169,7 @@ rmac-shell-status = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-statu
 rmac-shell-status-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-status-linux" }
 rmac-shell-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-runtime" }
 rmac-sound = { version = "=0.9.0-beta.1", path = "crates/rmac-sound" }
+rmac-win-toast = { version = "=0.9.0-beta.1", path = "crates/rmac-win-toast" }
 rmac-shortcuts = { version = "=0.9.0-beta.1", path = "crates/rmac-shortcuts" }
 rmac-sharing = { version = "=0.9.0-beta.1", path = "crates/rmac-sharing" }
 rmac-sharing-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-sharing-linux" }

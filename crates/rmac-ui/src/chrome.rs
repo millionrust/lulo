@@ -389,8 +389,49 @@ pub async fn windowed_process_ids() -> Option<Vec<u32>> {
     )
 }
 
-/// Windows has no niri session; Windowed Processes then shows nothing.
-#[cfg(not(unix))]
+/// Windows: the processes that own a visible, titled, un-owned top-level
+/// window (the ones Alt+Tab and the taskbar list), from `EnumWindows`.
+#[cfg(windows)]
+pub async fn windowed_process_ids() -> Option<Vec<u32>> {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindow, GetWindowLongW, GetWindowTextLengthW, GetWindowThreadProcessId,
+        IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
+    };
+
+    unsafe extern "system" fn visit(window: HWND, param: LPARAM) -> BOOL {
+        // SAFETY: `param` is the `Vec` passed to EnumWindows below.
+        let pids = unsafe { &mut *(param.0 as *mut Vec<u32>) };
+        // SAFETY: plain calls on the window handle EnumWindows hands us.
+        unsafe {
+            let tool = GetWindowLongW(window, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 != 0;
+            let owned = GetWindow(window, GW_OWNER).is_ok_and(|owner| !owner.is_invalid());
+            if IsWindowVisible(window).as_bool()
+                && !tool
+                && !owned
+                && GetWindowTextLengthW(window) > 0
+            {
+                let mut pid = 0u32;
+                GetWindowThreadProcessId(window, Some(&mut pid));
+                if pid != 0 {
+                    pids.push(pid);
+                }
+            }
+        }
+        BOOL(1)
+    }
+
+    let mut pids: Vec<u32> = Vec::new();
+    // SAFETY: the callback only touches `pids`, which outlives the call.
+    unsafe { EnumWindows(Some(visit), LPARAM(&mut pids as *mut Vec<u32> as isize)) }.ok()?;
+    pids.sort_unstable();
+    pids.dedup();
+    Some(pids)
+}
+
+/// Neither niri nor Windows: Windowed Processes then shows nothing.
+#[cfg(not(any(unix, windows)))]
 pub async fn windowed_process_ids() -> Option<Vec<u32>> {
     None
 }

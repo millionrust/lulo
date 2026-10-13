@@ -30,3 +30,8 @@ serde_json.workspace = true
 rmac-dbus.workspace = true
 rustix = { workspace = true, features = ["time"] }
 zbus.workspace = true
+
+# Windows: reminders are toasts and a sound, scheduled by Task Scheduler.
+[target.'cfg(windows)'.dependencies]
+rmac-sound.workspace = true
+rmac-win-toast.workspace = true

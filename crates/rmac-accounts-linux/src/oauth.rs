@@ -217,7 +217,7 @@ impl OAuthAttempt {
         &self.authorization_url
     }
 
-    #[cfg(any(target_os = "linux", test))]
+    #[cfg(any(target_os = "linux", windows, test))]
     fn accepts_callback(&self, client_id: &str, uri: &str) -> bool {
         self.flow.clone().browser_return(client_id, uri).is_ok()
     }
@@ -291,12 +291,88 @@ impl OAuthAttempt {
     }
 }
 
+/// A new access token from a stored refresh token (the refresh grant). The
+/// provider may rotate the refresh token, in which case it is returned too.
+pub fn refresh_access_token(provider: Provider, refresh_token: &Secret) -> Result<Tokens, Error> {
+    let config = provider.info().oauth.ok_or(Error::InvalidResponse)?;
+    if Url::parse(config.token_uri)
+        .map_err(|_| Error::InvalidResponse)?
+        .scheme()
+        != "https"
+    {
+        return Err(Error::InvalidResponse);
+    }
+    let response = https_agent(Duration::from_secs(15))
+        .post(config.token_uri)
+        .send_form([
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token.expose()),
+            ("client_id", config.client_id),
+            ("client_secret", config.client_secret),
+            ("scope", config.scopes),
+        ])
+        .map_err(|_| Error::SignInFailed)?;
+    let value = bounded_json(response)?;
+    let access = value
+        .get("access_token")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or(Error::InvalidResponse)?;
+    let expires_in = value
+        .get("expires_in")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0 && *value <= 86_400 * 365)
+        .ok_or(Error::InvalidResponse)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| Error::InvalidResponse)?;
+    Ok(Tokens {
+        access_token: Secret::new(access.to_owned()),
+        refresh_token: value
+            .get("refresh_token")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(|value| Secret::new(value.to_owned())),
+        expires_at: (now.as_micros() as i64).saturating_add(expires_in.saturating_mul(1_000_000)),
+        identity: String::new(),
+        presentation_identity: String::new(),
+    })
+}
+
 fn random_secret() -> Result<Secret, Error> {
     let mut bytes = [0_u8; 32];
+    #[cfg(windows)]
+    getrandom::fill(&mut bytes).map_err(|_| Error::Unavailable)?;
+    #[cfg(not(windows))]
     std::fs::File::open("/dev/urandom")
         .and_then(|mut file| file.read_exact(&mut bytes))
         .map_err(|_| Error::Unavailable)?;
     Ok(Secret::new(URL_SAFE_NO_PAD.encode(bytes)))
+}
+
+/// The provider's OAuth client id, which a browser return must carry.
+impl OAuthAttempt {
+    #[cfg(windows)]
+    fn client_id(&self) -> &'static str {
+        self.provider
+            .info()
+            .oauth
+            .map_or("", |config| config.client_id)
+    }
+
+    #[cfg(windows)]
+    pub fn redirect_scheme(&self) -> Option<String> {
+        let config = self.provider.info().oauth?;
+        redirect_scheme(config.redirect_uri)
+    }
+}
+
+/// `"goa-oauth2://localhost/x"` -> `"goa-oauth2"`.
+#[cfg(any(windows, test))]
+pub fn redirect_scheme(redirect_uri: &str) -> Option<String> {
+    Url::parse(redirect_uri)
+        .ok()
+        .map(|url| url.scheme().to_owned())
 }
 
 /// The UI starts here on a worker task. The callback name is owned before
@@ -398,6 +474,197 @@ pub mod callback {
     impl Drop for OAuthReceiver {
         fn drop(&mut self) {
             let _ = self.connection.release_name(NAME);
+        }
+    }
+}
+
+/// Windows has no D-Bus callback name. The provider redirects the browser to
+/// a custom URL scheme (`goa-oauth2:` for Microsoft, Google's reversed client
+/// id for Google); Lulo registers that scheme for the current user, so Windows
+/// starts `rmac-mail.exe <url>`, which hands the URL to the running Mail
+/// (its single-instance pipe) and ends up in [`callback::deliver`].
+#[cfg(windows)]
+pub mod callback {
+    use std::path::Path;
+    use std::sync::mpsc::{self, Receiver, Sender};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_WRITE,
+        REG_OPTION_NON_VOLATILE, REG_SZ,
+    };
+
+    use crate::{oauth::OAuthAttempt, Error};
+
+    static PENDING: Mutex<Option<Sender<(String, String)>>> = Mutex::new(None);
+
+    pub struct OAuthReceiver {
+        receiver: Receiver<(String, String)>,
+        cancel_sender: Sender<(String, String)>,
+    }
+
+    impl OAuthReceiver {
+        pub fn begin() -> Result<Self, Error> {
+            let (sender, receiver) = mpsc::channel();
+            *PENDING.lock().map_err(|_| Error::Unavailable)? = Some(sender.clone());
+            Ok(Self {
+                receiver,
+                cancel_sender: sender,
+            })
+        }
+
+        /// Wakes a pending sign-in when its sheet closes.
+        pub fn cancel_sender(&self) -> Sender<(String, String)> {
+            self.cancel_sender.clone()
+        }
+
+        /// Waits without polling and discards returns with a wrong redirect or
+        /// state, up to five minutes.
+        pub fn receive_for(&self, attempt: &OAuthAttempt) -> Result<(String, String), Error> {
+            let deadline = Instant::now() + Duration::from_secs(300);
+            for _ in 0..16 {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                let (_, uri) = self
+                    .receiver
+                    .recv_timeout(remaining)
+                    .map_err(|_| Error::SignInFailed)?;
+                if uri.is_empty() {
+                    return Err(Error::SignInFailed);
+                }
+                let client = attempt.client_id();
+                if attempt.accepts_callback(client, &uri) {
+                    return Ok((client.to_owned(), uri));
+                }
+            }
+            Err(Error::InvalidResponse)
+        }
+    }
+
+    impl Drop for OAuthReceiver {
+        fn drop(&mut self) {
+            if let Ok(mut pending) = PENDING.lock() {
+                *pending = None;
+            }
+        }
+    }
+
+    /// Hand a URL the browser was redirected to to the sign-in waiting for
+    /// it. False when none is waiting.
+    pub fn deliver(uri: &str) -> bool {
+        PENDING
+            .lock()
+            .ok()
+            .and_then(|pending| {
+                pending
+                    .as_ref()
+                    .map(|sender| sender.send((String::new(), uri.to_owned())))
+            })
+            .is_some_and(|sent| sent.is_ok())
+    }
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(Some(0)).collect()
+    }
+
+    fn set_value(key: HKEY, name: &str, value: &str) -> Result<(), Error> {
+        let name = wide(name);
+        let data: Vec<u8> = wide(value)
+            .iter()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect();
+        // SAFETY: `name` is NUL-terminated and `data` outlives the call.
+        let status = unsafe {
+            RegSetValueExW(
+                key,
+                if name.len() == 1 {
+                    PCWSTR::null()
+                } else {
+                    PCWSTR(name.as_ptr())
+                },
+                None,
+                REG_SZ,
+                Some(&data),
+            )
+        };
+        if status.0 == 0 {
+            Ok(())
+        } else {
+            Err(Error::Unavailable)
+        }
+    }
+
+    fn write_key(path: &str, values: &[(&str, &str)]) -> Result<(), Error> {
+        let path = wide(path);
+        let mut key = HKEY::default();
+        // SAFETY: `path` is NUL-terminated; `key` receives a handle closed below.
+        let status = unsafe {
+            RegCreateKeyExW(
+                HKEY_CURRENT_USER,
+                PCWSTR(path.as_ptr()),
+                None,
+                PCWSTR::null(),
+                REG_OPTION_NON_VOLATILE,
+                KEY_WRITE,
+                None,
+                &mut key,
+                None,
+            )
+        };
+        if status.0 != 0 {
+            return Err(Error::Unavailable);
+        }
+        let result = values
+            .iter()
+            .try_for_each(|(name, value)| set_value(key, name, value));
+        // SAFETY: opened above, closed once.
+        let _ = unsafe { RegCloseKey(key) };
+        result
+    }
+
+    /// Register `scheme:` for the current user so a redirect to it starts
+    /// `exe <url>`. Per-user (HKCU), so it needs no administrator, and
+    /// idempotent.
+    pub fn register_scheme(scheme: &str, exe: &Path) -> Result<(), Error> {
+        let valid = !scheme.is_empty()
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'));
+        let exe = exe.to_str().ok_or(Error::Unavailable)?;
+        if !valid || exe.contains('"') {
+            return Err(Error::InvalidResponse);
+        }
+        let root = format!("Software\\Classes\\{scheme}");
+        write_key(
+            &root,
+            &[("", &format!("URL:{scheme}")), ("URL Protocol", "")],
+        )?;
+        write_key(
+            &format!("{root}\\shell\\open\\command"),
+            &[("", &format!("\"{exe}\" \"%1\""))],
+        )
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_delivered_url_reaches_only_the_waiting_sign_in() {
+            assert!(!deliver("goa-oauth2://localhost/x?code=1"));
+            let receiver = OAuthReceiver::begin().unwrap();
+            assert!(deliver("goa-oauth2://localhost/x?code=1&state=2"));
+            let (_, uri) = receiver.receiver.recv().unwrap();
+            assert_eq!(uri, "goa-oauth2://localhost/x?code=1&state=2");
+            drop(receiver);
+            assert!(!deliver("goa-oauth2://localhost/x"));
+        }
+
+        #[test]
+        fn a_scheme_with_odd_characters_is_refused() {
+            assert!(register_scheme("bad scheme", Path::new("C:\\x.exe")).is_err());
+            assert!(register_scheme("", Path::new("C:\\x.exe")).is_err());
         }
     }
 }

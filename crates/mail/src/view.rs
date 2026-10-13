@@ -144,7 +144,7 @@ impl MailView {
     /// snapshot or new-mail event (`main.rs`'s background event loop, which
     /// only exists on Linux: GOA and the sync runtime are Linux session
     /// services).
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub fn refresh_live(
         &mut self,
         mailboxes: Vec<Mailbox>,
@@ -161,7 +161,14 @@ impl MailView {
     /// pair — `rmac_mail_runtime`'s `NewMail`/`OpenMessage` events only
     /// carry the account and the storage row id, not Mail's own composite
     /// id string.
-    #[cfg(target_os = "linux")]
+    /// Windows: the account list changed (added or removed in Settings).
+    #[cfg(windows)]
+    pub fn set_accounts(&mut self, accounts: Vec<ComposeAccount>, cx: &mut Context<Self>) {
+        self.accounts = accounts;
+        cx.notify();
+    }
+
+    #[cfg(any(target_os = "linux", windows))]
     pub fn message_id_for_row(&self, account: uuid::Uuid, row_id: i64) -> Option<String> {
         self.state
             .messages
@@ -175,7 +182,7 @@ impl MailView {
 
     /// Selects `id` (for example from a clicked new-mail notification),
     /// opening its mailbox first if needed.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub fn open_message(&mut self, id: &str, cx: &mut Context<Self>) {
         if let Some(message) = self.state.messages.iter().find(|message| message.id == id) {
             self.state.mailbox = message.mailbox.clone();
@@ -1276,6 +1283,11 @@ impl MailView {
                             .text_size(px(13.0))
                             .child("Add Account…")
                             .on_click(cx.listener(|_, _: &ClickEvent, _, cx| {
+                                // Windows has no Internet Accounts: Mail's
+                                // own Settings ▸ Accounts adds the account.
+                                #[cfg(windows)]
+                                crate::settings_view::show_accounts(cx);
+                                #[cfg(not(windows))]
                                 cx.spawn(async move |_, _| {
                                     if let Err(error) =
                                         std::process::Command::new("rmac-system-settings")

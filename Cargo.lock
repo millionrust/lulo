@@ -6031,14 +6031,18 @@ name = "rmac-accounts-linux"
 version = "0.9.0-beta.1"
 dependencies = [
  "base64 0.22.1",
+ "getrandom 0.4.3",
  "libc",
  "rmac-accounts",
  "rmac-portal",
+ "rmac-storage",
  "rustls",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "ureq",
  "url",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -6065,7 +6069,9 @@ dependencies = [
  "rmac-print-linux",
  "rmac-storage",
  "rmac-ui",
+ "rmac-windows-resource-build",
  "sysinfo 0.33.1",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -6155,6 +6161,7 @@ dependencies = [
  "libc",
  "lzma-rs",
  "tar",
+ "windows 0.61.3",
  "zip",
 ]
 
@@ -6168,6 +6175,7 @@ dependencies = [
  "gpui-component-assets",
  "rmac-archive",
  "rmac-ui",
+ "rmac-windows-resource-build",
  "rust-embed",
 ]
 
@@ -6230,6 +6238,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-storage",
  "rmac-ui",
+ "rmac-windows-resource-build",
  "serde",
  "serde_json",
 ]
@@ -6244,7 +6253,9 @@ dependencies = [
  "rmac-calendar-runtime",
  "rmac-calendar-store",
  "rmac-dbus",
+ "rmac-sound",
  "rmac-storage",
+ "rmac-win-toast",
  "rustix 1.1.4",
  "serde",
  "serde_json",
@@ -6274,7 +6285,10 @@ version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "rmac-storage",
  "rrule",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6851,12 +6865,14 @@ name = "rmac-mail"
 version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
+ "async-io",
  "chrono",
  "gpui",
  "rmac-accounts",
  "rmac-accounts-linux",
  "rmac-editor",
  "rmac-mail-graph",
+ "rmac-mail-imap",
  "rmac-mail-mime",
  "rmac-mail-runtime",
  "rmac-mail-smtp",
@@ -6864,6 +6880,7 @@ dependencies = [
  "rmac-portal",
  "rmac-storage",
  "rmac-ui",
+ "rmac-windows-resource-build",
  "rmac-writing-tools",
  "serde",
  "serde_json",
@@ -6920,6 +6937,7 @@ dependencies = [
  "rmac-mail-imap",
  "rmac-mail-mime",
  "rmac-mail-storage",
+ "rmac-win-toast",
  "rustls",
  "sha2 0.10.9",
  "uuid",
@@ -7194,6 +7212,7 @@ dependencies = [
  "rmac-apps",
  "rmac-portal",
  "rmac-ui",
+ "rmac-windows-resource-build",
  "rust-embed",
  "zbus",
 ]
@@ -7217,6 +7236,7 @@ name = "rmac-portal"
 version = "0.9.0-beta.1"
 dependencies = [
  "ashpd 0.12.3",
+ "async-channel",
  "url",
  "windows 0.61.3",
 ]
@@ -8200,6 +8220,13 @@ dependencies = [
  "rmac-wallpaper-image",
  "rmac-wallpaper-system",
  "rmac-windows-resource-build",
+ "windows 0.61.3",
+]
+
+[[package]]
+name = "rmac-win-toast"
+version = "0.9.0-beta.1"
+dependencies = [
  "windows 0.61.3",
 ]
 

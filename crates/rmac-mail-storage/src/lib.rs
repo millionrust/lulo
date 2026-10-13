@@ -679,6 +679,10 @@ impl MailStorage {
             file.write_all(bytes)?;
             file.sync_all()?;
             fs::rename(&temporary, &destination)?;
+            // Making the rename durable needs a directory handle, which
+            // Windows does not hand out to `File::open` (NTFS journals the
+            // rename itself).
+            #[cfg(unix)]
             File::open(&self.blobs)?.sync_all()?;
             Ok(())
         })();

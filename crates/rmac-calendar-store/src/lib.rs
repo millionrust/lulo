@@ -7,6 +7,7 @@
 
 mod ical;
 mod layout;
+pub mod local;
 mod recurrence;
 
 pub use ical::{Calendar, CalendarError, Event, TimeValue, Zone};

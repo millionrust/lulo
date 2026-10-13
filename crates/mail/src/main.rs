@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod accounts_win;
 mod compose_window;
 mod delivery;
 mod live;
@@ -62,15 +64,19 @@ type ViewHandle = Rc<RefCell<Option<WeakEntity<MailView>>>>;
 /// an `async_channel` a GPUI task can `.await` on the foreground thread.
 /// Returns the runtime so organise actions can wake the right account's
 /// worker right after queuing a journal entry (`view.rs::dispatch_persist`).
-#[cfg(target_os = "linux")]
-fn start_live_sync(
+/// Bridges the sync runtime's events into the window: a plain
+/// `std::sync::mpsc` sink is drained on its own thread and forwarded into an
+/// `async_channel` a GPUI task can `.await` on the foreground thread.
+#[cfg(any(target_os = "linux", windows))]
+fn forward_events(
     accounts: Vec<delivery::ComposeAccount>,
     view_handle: ViewHandle,
     cx: &mut App,
-) -> Option<Arc<rmac_mail_runtime::Runtime>> {
-    use rmac_mail_runtime::linux::{self, DesktopSink, UiEvent};
+) -> std::sync::mpsc::Sender<rmac_mail_runtime::UiEvent> {
+    use rmac_mail_runtime::UiEvent;
 
-    let root = delivery::data_root()?;
+    #[cfg(windows)]
+    let _ = &accounts;
     let (std_tx, std_rx) = std::sync::mpsc::channel::<UiEvent>();
     let (async_tx, async_rx) = async_channel::unbounded();
     std::thread::spawn(move || {
@@ -80,19 +86,6 @@ fn start_live_sync(
             }
         }
     });
-    let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(DesktopSink::new(Some(std_tx)));
-    // GOA `ms_graph` accounts (Microsoft 365, Outlook.com) sync through
-    // Microsoft Graph (MAIL-9); `linux::resolve_goa` routes them here.
-    let factory = Arc::new(linux::ProviderFactory {
-        imap: rmac_mail_runtime::ImapFactory::goa(),
-        graph: Arc::new(rmac_mail_graph::GraphFactory::goa(root.clone())),
-    });
-    let runtime = Arc::new(rmac_mail_runtime::Runtime::new(root, factory, sink));
-    // Seeds every mail-capable GOA account already configured (`watch`
-    // emits `Added` for each on the first call), then reacts to Internet
-    // Accounts changes for as long as Mail runs.
-    linux::watch_goa(Arc::clone(&runtime));
-    linux::watch_connectivity(Arc::clone(&runtime));
     cx.spawn(async move |cx| loop {
         let Ok(event) = async_rx.recv().await else {
             break;
@@ -102,10 +95,17 @@ fn start_live_sync(
         };
         match event {
             UiEvent::Snapshot(_) | UiEvent::NewMail(_) | UiEvent::AccountRemoved(_) => {
+                // Windows lets accounts come and go while Mail runs, so each
+                // reload asks the store again.
+                #[cfg(not(windows))]
                 let accounts = accounts.clone();
                 let (mailboxes, messages) = cx
                     .background_executor()
-                    .spawn(async move { live::load(&accounts) })
+                    .spawn(async move {
+                        #[cfg(windows)]
+                        let accounts = delivery::accounts();
+                        live::load(&accounts)
+                    })
                     .await;
                 let _ = handle.update(cx, |view, cx| {
                     view.refresh_live(mailboxes, messages, cx);
@@ -125,21 +125,147 @@ fn start_live_sync(
         }
     })
     .detach();
+    std_tx
+}
+
+/// Starts GOA account discovery and per-account IMAP sync (MAIL-4) and
+/// bridges its snapshot/new-mail/open-message events into the window.
+/// Returns the runtime so organise actions can wake the right account's
+/// worker right after queuing a journal entry (`view.rs::dispatch_persist`).
+#[cfg(target_os = "linux")]
+fn start_live_sync(
+    accounts: Vec<delivery::ComposeAccount>,
+    view_handle: ViewHandle,
+    cx: &mut App,
+) -> Option<Arc<rmac_mail_runtime::Runtime>> {
+    use rmac_mail_runtime::linux::{self, DesktopSink};
+
+    let root = delivery::data_root()?;
+    let std_tx = forward_events(accounts, view_handle, cx);
+    let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(DesktopSink::new(Some(std_tx)));
+    // GOA `ms_graph` accounts (Microsoft 365, Outlook.com) sync through
+    // Microsoft Graph (MAIL-9); `linux::resolve_goa` routes them here.
+    let factory = Arc::new(linux::ProviderFactory {
+        imap: rmac_mail_runtime::ImapFactory::goa(),
+        graph: Arc::new(rmac_mail_graph::GraphFactory::goa(root.clone())),
+    });
+    let runtime = Arc::new(rmac_mail_runtime::Runtime::new(root, factory, sink));
+    // Seeds every mail-capable GOA account already configured (`watch`
+    // emits `Added` for each on the first call), then reacts to Internet
+    // Accounts changes for as long as Mail runs.
+    linux::watch_goa(Arc::clone(&runtime));
+    linux::watch_connectivity(Arc::clone(&runtime));
     Some(runtime)
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the accounts in Lulo's own store (secrets in the Credential
+/// Manager) sync through the same runtime; new messages arrive as toasts.
+#[cfg(windows)]
+fn start_live_sync(
+    accounts: Vec<delivery::ComposeAccount>,
+    view_handle: ViewHandle,
+    cx: &mut App,
+) -> Option<Arc<rmac_mail_runtime::Runtime>> {
+    use rmac_mail_runtime::windows::{self, ToastSink};
+
+    let root = delivery::data_root()?;
+    let std_tx = forward_events(accounts, view_handle, cx);
+    let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(ToastSink::new(Some(std_tx)));
+    let factory = Arc::new(rmac_mail_runtime::ProviderFactory {
+        imap: windows::imap_factory(),
+        graph: Arc::new(rmac_mail_graph::GraphFactory::windows(root.clone())),
+    });
+    let runtime = Arc::new(rmac_mail_runtime::Runtime::new(root, factory, sink));
+    let seeded = Arc::clone(&runtime);
+    std::thread::spawn(move || windows::seed_accounts(&seeded));
+    Some(runtime)
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn start_live_sync(
     _accounts: Vec<delivery::ComposeAccount>,
     _view_handle: ViewHandle,
     _cx: &mut App,
 ) -> Option<Arc<rmac_mail_runtime::Runtime>> {
-    // GOA and the sync runtime are Linux session services; Lulo OS only
-    // ships on Linux, but CI's macOS clippy pass still compiles this crate.
+    // GOA and the sync runtime are session services of Lulo OS and the
+    // Windows account store; CI's macOS clippy pass still compiles this crate.
     None
 }
 
+/// A later launch of Mail on Windows (a `mailto:` link, or the browser coming
+/// back from a Google or Microsoft sign-in) reaches the running Mail here.
+#[cfg(windows)]
+fn handle_launch(arguments: Vec<String>, cx: &mut App) {
+    if let Some(first) = arguments.first() {
+        if let Some(draft) = rmac_mail::mailto::parse(first) {
+            compose_window::open(
+                ComposeKind::New,
+                None,
+                Some(draft),
+                delivery::accounts(),
+                Vec::new(),
+                cx,
+            );
+        } else if !first.starts_with("--") {
+            let _ = rmac_accounts_linux::oauth::callback::deliver(first);
+        }
+    }
+    rmac_ui::activate_app_window(cx);
+}
+
+/// Windows: when accounts are added or removed in Settings, start or stop
+/// their sync workers and show the new list.
+#[cfg(windows)]
+fn watch_account_changes(
+    view_handle: ViewHandle,
+    runtime: Option<Arc<rmac_mail_runtime::Runtime>>,
+) {
+    use std::collections::HashSet;
+
+    let known: Rc<RefCell<HashSet<String>>> = Rc::new(RefCell::new(
+        delivery::accounts()
+            .into_iter()
+            .map(|account| account.path)
+            .collect(),
+    ));
+    accounts_win::set_on_change(move |cx| {
+        let accounts = delivery::accounts();
+        let paths: HashSet<String> = accounts
+            .iter()
+            .map(|account| account.path.clone())
+            .collect();
+        if let Some(runtime) = &runtime {
+            for gone in known.borrow().difference(&paths) {
+                runtime.remove_account(gone);
+            }
+            let runtime = Arc::clone(runtime);
+            std::thread::spawn(move || rmac_mail_runtime::windows::seed_accounts(&runtime));
+        }
+        *known.borrow_mut() = paths;
+        let Some(handle) = view_handle.borrow().clone() else {
+            return;
+        };
+        let shown = accounts.clone();
+        let _ = handle.update(cx, |view, cx| view.set_accounts(shown, cx));
+        cx.spawn(async move |cx| {
+            let (mailboxes, messages) = cx
+                .background_executor()
+                .spawn(async move { live::load(&accounts) })
+                .await;
+            let _ = handle.update(cx, |view, cx| view.refresh_live(mailboxes, messages, cx));
+        })
+        .detach();
+    });
+}
+
 fn main() {
+    // One Mail per user on Windows: a later launch hands its `mailto:` link
+    // (or sign-in return) to the running one instead of opening a second.
+    #[cfg(windows)]
+    if rmac_ui::hand_off_to_running_instance(MAIL, &[std::env::args().skip(1).collect()]) {
+        rmac_ui::focus_running_app(MAIL);
+        return;
+    }
     let fixture_mode = std::env::var(FIXTURE_ENV).is_ok_and(|value| value == "1");
     let accounts = if fixture_mode {
         vec![
@@ -207,6 +333,9 @@ fn main() {
                 KeyBinding::new("alt-cmd-w", rmac_ui::RequestClose, Some("Mail")),
                 KeyBinding::new("cmd-,", ShowSettings, Some("Mail")),
             ]);
+            #[cfg(windows)]
+            rmac_ui::install_app_instance(MAIL, handle_launch, cx);
+            #[cfg(not(windows))]
             rmac_ui::install_app_menu(MAIL, cx);
             // Edit ▸ Writing Tools in compose windows; hidden until Lulo
             // Intelligence is known to be on with its model present.
@@ -250,6 +379,8 @@ fn main() {
             } else {
                 start_live_sync(sync_accounts, Rc::clone(&view_handle), cx)
             };
+            #[cfg(windows)]
+            watch_account_changes(Rc::clone(&view_handle), runtime.clone());
             let view_handle_for_window = Rc::clone(&view_handle);
             let runtime_for_window = runtime.clone();
             let opened = cx.open_window(options, move |window, cx| {

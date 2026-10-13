@@ -128,10 +128,12 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      # The Dock leaves out a pinned app that is not installed, so the apps
+      # it pins by default (Weather, Calculator and Mail) are built too.
       - name: Build the Lulo layer
         run: |
           cargo build --locked -p rmac-win-shell -p rmac-system-settings \
-            -p rmac-calculator -p rmac-text-editor --bins
+            -p rmac-calculator -p rmac-text-editor -p rmac-weather -p rmac-mail --bins
       - name: Draw the scenes
         run: |
           # The Lulo wallpaper's packaged artwork beside the executables, as

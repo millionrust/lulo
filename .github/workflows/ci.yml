@@ -39,6 +39,11 @@ env:
     -p rmac-app-menu -p rmac-win-shell -p rmac-compositor-system
     -p rmac-shell-runtime -p rmac-launcher-app -p rmac-quick-settings-app -p rmac-osd
     -p rmac-app-drawer -p rmac-hardware
+    -p rmac-activity-monitor -p rmac-player -p rmac-archive-utility
+    -p rmac-mail -p rmac-mail-runtime -p rmac-mail-graph -p rmac-mail-storage
+    -p rmac-mail-smtp -p rmac-mail-imap -p rmac-mail-mime
+    -p rmac-accounts-linux -p rmac-win-toast
+    -p rmac-calendar -p rmac-calendar-agent -p rmac-calendar-store
 
 jobs:
   # Only `docs/**/*.md` changed: the Rust, Windows and macOS jobs are
@@ -497,7 +502,9 @@ jobs:
         run: |
           cargo build --locked -p rmac-calculator -p rmac-notes -p rmac-text-editor \
             -p rmac-preview -p rmac-clock -p rmac-weather -p rmac-terminal \
-            -p rmac-finder -p rmac-system-settings -p rmac-win-shell -p rmac-hardware --bins
+            -p rmac-finder -p rmac-system-settings -p rmac-win-shell -p rmac-hardware \
+            -p rmac-activity-monitor -p rmac-mail -p rmac-calendar \
+            -p rmac-calendar-agent -p rmac-player -p rmac-archive-utility --bins
 
       - name: Upload the apps
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -532,6 +539,16 @@ jobs:
             launch: --foreground-check rmac-calculator
             gate: ""
             expect: rmac-weather rmac-terminal rmac-files rmac-system-settings
+          # ADR 0023 phase 2f. Archive Utility has no window (as on the
+          # Mac): the launch script expands a fixture zip with it instead,
+          # so it is checked but has no idle reading. Every app here stays
+          # under 400 MB private at idle.
+          - part: apps 3
+            artifact: windows-app-screens-3
+            apps: rmac-system-monitor rmac-mail rmac-calendar rmac-player rmac-archive-utility
+            launch: ""
+            gate: --app-private-mb 400
+            expect: rmac-system-monitor rmac-mail rmac-calendar rmac-player
           - part: Lulo layer
             artifact: windows-shell-screens
             apps: ""

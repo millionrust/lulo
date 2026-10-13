@@ -18,14 +18,28 @@
     "app_id": "org.rmac.TextEditor",
     "display_name": "Text Editor",
     "bin": "rmac-text-editor",
-    "extensions": ["txt", "md", "rtf"]
+    "extensions": [
+      "txt",
+      "md",
+      "rtf"
+    ]
   },
   {
     "id": "preview",
     "app_id": "org.rmac.Preview",
     "display_name": "Preview",
     "bin": "rmac-preview",
-    "extensions": ["pdf", "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp"]
+    "extensions": [
+      "pdf",
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "bmp",
+      "tiff",
+      "tif",
+      "webp"
+    ]
   },
   {
     "id": "clock",
@@ -61,6 +75,69 @@
     "display_name": "System Settings",
     "bin": "rmac-system-settings",
     "extensions": []
+  },
+  {
+    "id": "system-monitor",
+    "app_id": "org.rmac.SystemMonitor",
+    "display_name": "System Monitor",
+    "bin": "rmac-system-monitor",
+    "extensions": []
+  },
+  {
+    "id": "mail",
+    "app_id": "org.rmac.Mail",
+    "display_name": "Mail",
+    "bin": "rmac-mail",
+    "extensions": []
+  },
+  {
+    "id": "calendar",
+    "app_id": "org.rmac.Calendar",
+    "display_name": "Calendar",
+    "bin": "rmac-calendar",
+    "extensions": []
+  },
+  {
+    "id": "lulo-calendar-agent",
+    "display_name": "Calendar Reminders",
+    "bin": "rmac-calendar-agent",
+    "extensions": [],
+    "shortcut": false
+  },
+  {
+    "id": "player",
+    "app_id": "org.rmac.Player",
+    "display_name": "Player",
+    "bin": "rmac-player",
+    "extensions": [
+      "mp3",
+      "m4a",
+      "wav",
+      "flac",
+      "ogg",
+      "opus",
+      "mp4",
+      "m4v",
+      "mov",
+      "mkv",
+      "webm"
+    ]
+  },
+  {
+    "id": "archive-utility",
+    "app_id": "org.rmac.ArchiveUtility",
+    "display_name": "Archive Utility",
+    "bin": "rmac-archive-utility",
+    "extensions": [
+      "zip",
+      "tar",
+      "gz",
+      "tgz",
+      "bz2",
+      "tbz2",
+      "xz",
+      "txz"
+    ]
   },
   {
     "id": "lulo-session",

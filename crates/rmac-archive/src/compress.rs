@@ -1,8 +1,7 @@
 //! Finder's File ▸ Compress: one item → "name.zip", several → "Archive.zip".
 
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::SystemTime;
@@ -53,11 +52,7 @@ pub fn compress(
     }
 
     let mut scratch = Scratch::file(&parent, Path::new(&name), "compressing")?;
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o644)
-        .open(&scratch.path)?;
+    let file = crate::platform::create_new_file(&scratch.path, 0o644)?;
     let mut writer = zip::ZipWriter::new(file);
     let mut meter = Meter::new(cancel, progress, total);
     let mut buffer = vec![0_u8; CHUNK];
@@ -80,10 +75,7 @@ pub fn compress(
                 writer
                     .start_file(entry.name, options.large_file(size >= ZIP64_THRESHOLD))
                     .map_err(write_error)?;
-                let mut input = OpenOptions::new()
-                    .read(true)
-                    .custom_flags(libc::O_NOFOLLOW)
-                    .open(&entry.path)?;
+                let mut input = crate::platform::open_for_reading(&entry.path)?;
                 loop {
                     meter.check()?;
                     let read = input.read(&mut buffer)?;
@@ -113,7 +105,7 @@ fn plan_item(
         return Err(Error::Cancelled);
     }
     let metadata = fs::symlink_metadata(path)?;
-    let mode = metadata.permissions().mode() & 0o7777;
+    let mode = crate::platform::mode_of(&metadata);
     let modified = metadata.modified().ok();
     let file_type = metadata.file_type();
     if file_type.is_symlink() {

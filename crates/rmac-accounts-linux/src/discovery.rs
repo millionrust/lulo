@@ -125,7 +125,56 @@ fn mx_hosts(domain: &str) -> Result<Vec<String>, Error> {
     parse_mx_response(&answer[..size as usize])
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows: the system resolver's MX records through `DnsQuery_W`.
+#[cfg(windows)]
+fn mx_hosts(domain: &str) -> Result<Vec<String>, Error> {
+    use windows::core::PCWSTR;
+    use windows::Win32::NetworkManagement::Dns::{
+        DnsFree, DnsFreeRecordList, DnsQuery_W, DNS_QUERY_STANDARD, DNS_RECORDA, DNS_TYPE_MX,
+    };
+
+    let name: Vec<u16> = domain.encode_utf16().chain(Some(0)).collect();
+    let mut records: *mut DNS_RECORDA = std::ptr::null_mut();
+    // SAFETY: `name` is NUL-terminated; `records` receives a list freed below.
+    let status = unsafe {
+        DnsQuery_W(
+            PCWSTR(name.as_ptr()),
+            DNS_TYPE_MX,
+            DNS_QUERY_STANDARD,
+            None,
+            &mut records,
+            None,
+        )
+    };
+    if status.0 != 0 {
+        return Err(Error::Network);
+    }
+    let mut hosts = Vec::new();
+    let mut cursor = records;
+    // SAFETY: a successful query returns a valid singly linked list; the
+    // MX union member is read only for records of type MX.
+    unsafe {
+        while !cursor.is_null() {
+            let record = &*cursor;
+            if record.wType == DNS_TYPE_MX.0 {
+                let exchange = record.Data.MX.pNameExchange;
+                if !exchange.is_null() {
+                    if let Ok(host) = exchange.to_string() {
+                        let host = host.trim_end_matches('.').to_ascii_lowercase();
+                        if !host.is_empty() {
+                            hosts.push(host);
+                        }
+                    }
+                }
+            }
+            cursor = record.pNext;
+        }
+        DnsFree(Some(records.cast()), DnsFreeRecordList);
+    }
+    Ok(hosts)
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 fn mx_hosts(_domain: &str) -> Result<Vec<String>, Error> {
     Err(Error::Unavailable)
 }

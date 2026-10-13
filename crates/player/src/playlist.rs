@@ -117,14 +117,32 @@ impl Playlist {
     }
 }
 
+/// A decoded `file://` path as a native path. On Windows the URI is
+/// `file:///C:/Users/..`, so the slash before the drive letter goes.
+#[cfg(unix)]
+fn path_from_bytes(decoded: Vec<u8>) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStringExt as _;
+    Some(PathBuf::from(std::ffi::OsString::from_vec(decoded)))
+}
+
+#[cfg(not(unix))]
+fn path_from_bytes(decoded: Vec<u8>) -> Option<PathBuf> {
+    let text = String::from_utf8(decoded).ok()?;
+    let drive = text.as_bytes();
+    let text = if drive.len() > 2 && drive[0] == b'/' && drive[2] == b':' {
+        &text[1..]
+    } else {
+        &text
+    };
+    Some(PathBuf::from(text))
+}
+
 /// The local file an MPRIS `OpenUri` names, or `None` when the request is not
 /// one Media Player plays. MPRIS peers include sandboxed apps, so only a
 /// bounded `file:///` URI with no host, whose decoded path is absolute, has
 /// no `..`, has a playable extension and is an existing regular file, is
 /// accepted.
 pub fn path_from_open_uri(uri: &str) -> Option<PathBuf> {
-    use std::os::unix::ffi::OsStringExt as _;
-
     if uri.len() > MAX_URI_BYTES {
         return None;
     }
@@ -136,7 +154,7 @@ pub fn path_from_open_uri(uri: &str) -> Option<PathBuf> {
     if decoded.contains(&0) {
         return None;
     }
-    let path = PathBuf::from(std::ffi::OsString::from_vec(decoded));
+    let path = path_from_bytes(decoded)?;
     let plain = path.is_absolute()
         && path
             .components()
@@ -249,6 +267,7 @@ mod tests {
         assert_eq!(percent_decode("/%E2%9C%93"), "/\u{2713}".as_bytes());
     }
 
+    #[cfg(unix)]
     #[test]
     fn open_uri_accepts_only_bounded_existing_local_media() {
         let directory =

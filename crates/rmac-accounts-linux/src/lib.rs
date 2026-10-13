@@ -7,6 +7,11 @@ pub mod oauth;
 #[cfg(target_os = "linux")]
 pub mod goa;
 
+#[cfg(windows)]
+pub mod wincred;
+#[cfg(windows)]
+pub mod winstore;
+
 use rmac_accounts::{
     autoconfig::MailConfig,
     model::{Service, Services},

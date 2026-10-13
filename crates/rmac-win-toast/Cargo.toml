@@ -1,0 +1,20 @@
+[package]
+name = "rmac-win-toast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# One Windows toast notification for a Lulo app (Mail's new messages,
+# Calendar's reminders; ADR 0023 phase 2f). Windows only; elsewhere `show`
+# reports that nothing was shown.
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Data_Xml_Dom",
+    "Foundation",
+    "UI_Notifications",
+    "Win32_System_Com",
+    "Win32_System_WinRT",
+] }

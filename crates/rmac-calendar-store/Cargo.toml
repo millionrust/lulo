@@ -10,3 +10,6 @@ publish = false
 chrono.workspace = true
 chrono-tz.workspace = true
 rrule.workspace = true
+rmac-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true

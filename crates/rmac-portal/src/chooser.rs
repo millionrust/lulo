@@ -128,7 +128,22 @@ pub async fn choose_preview_documents() -> Result<Vec<PathBuf>, Error> {
             })
             .collect()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        use crate::windows_dialog::{open_files, Filter};
+        static FILTERS: [Filter; 2] = [
+            Filter {
+                name: "Images and PDF documents",
+                patterns: "*.pdf;*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.tif;*.tiff",
+            },
+            Filter {
+                name: "All Files",
+                patterns: "*.*",
+            },
+        ];
+        open_files("Open", &FILTERS, true).await
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         Err(Error {
             operation: Operation::Choose,
@@ -195,7 +210,19 @@ pub async fn choose_media_files() -> Result<Vec<PathBuf>, Error> {
             })
             .collect()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        use crate::windows_dialog::{open_files, Filter};
+        static FILTERS: [Filter; 2] = [
+            Filter {
+                name: "Movies and Audio",
+                patterns: "*.mp3;*.m4a;*.aac;*.flac;*.ogg;*.opus;*.wav;*.mp4;*.m4v;*.mov;*.mkv;*.webm;*.avi;*.mpg;*.mpeg",
+            },
+            Filter { name: "All Files", patterns: "*.*" },
+        ];
+        open_files("Open", &FILTERS, true).await
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         Err(Error {
             operation: Operation::Choose,
@@ -241,7 +268,16 @@ pub async fn choose_mail_attachments() -> Result<Vec<PathBuf>, Error> {
             })
             .collect()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        use crate::windows_dialog::{open_files, Filter};
+        static FILTERS: [Filter; 1] = [Filter {
+            name: "All Files",
+            patterns: "*.*",
+        }];
+        open_files("Attach File", &FILTERS, true).await
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         Err(Error {
             operation: Operation::Choose,

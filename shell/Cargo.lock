@@ -5565,6 +5565,7 @@ dependencies = [
  "libc",
  "lzma-rs",
  "tar",
+ "windows 0.61.3",
  "zip",
 ]
 
@@ -5605,7 +5606,9 @@ dependencies = [
  "rmac-calendar-runtime",
  "rmac-calendar-store",
  "rmac-dbus",
+ "rmac-sound",
  "rmac-storage",
+ "rmac-win-toast",
  "rustix 1.1.4",
  "serde",
  "serde_json",
@@ -5635,7 +5638,10 @@ version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "rmac-storage",
  "rrule",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5980,6 +5986,7 @@ name = "rmac-portal"
 version = "0.9.0-beta.1"
 dependencies = [
  "ashpd 0.12.3",
+ "async-channel",
  "url",
  "windows 0.61.3",
 ]
@@ -6607,6 +6614,13 @@ dependencies = [
  "rmac-windows-resource-build",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rmac-win-toast"
+version = "0.9.0-beta.1"
+dependencies = [
+ "windows 0.61.3",
 ]
 
 [[package]]

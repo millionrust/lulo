@@ -3,7 +3,6 @@
 
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -37,7 +36,7 @@ impl Scratch {
 
     pub(crate) fn directory(parent: &Path, archive: &Path, role: &str) -> io::Result<Self> {
         let path = parent.join(Self::name(archive, role));
-        fs::DirBuilder::new().mode(0o700).create(&path)?;
+        crate::platform::create_private_dir(&path)?;
         Ok(Self {
             path,
             directory: true,
@@ -63,7 +62,7 @@ impl Scratch {
             let name = display_name(&child);
             return place(&child, parent, &name);
         }
-        fs::set_permissions(&self.path, fs::Permissions::from_mode(0o755))?;
+        crate::platform::publish_dir(&self.path)?;
         let placed = place(&self.path, parent, stem)?;
         self.kept = true;
         Ok(placed)
@@ -141,11 +140,42 @@ fn rename_noreplace(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`, which fails with
+/// "already exists" instead of replacing (std's `rename` replaces).
+#[cfg(windows)]
+fn rename_noreplace(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS};
+
+    let wide =
+        |path: &Path| -> Vec<u16> { path.as_os_str().encode_wide().chain(Some(0)).collect() };
+    let (from, to) = (wide(from), wide(to));
+    // SAFETY: both are NUL-terminated and outlive the call.
+    unsafe {
+        MoveFileExW(
+            PCWSTR(from.as_ptr()),
+            PCWSTR(to.as_ptr()),
+            MOVE_FILE_FLAGS(0),
+        )
+    }
+    .map_err(|error| {
+        let code = error.code().0 & 0xffff;
+        // ERROR_ALREADY_EXISTS (183) and ERROR_FILE_EXISTS (80).
+        if code == 183 || code == 80 {
+            io::Error::from(io::ErrorKind::AlreadyExists)
+        } else {
+            io::Error::from_raw_os_error(code)
+        }
+    })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn rename_noreplace(from: &Path, to: &Path) -> io::Result<()> {
     rename_checked(from, to)
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn rename_checked(from: &Path, to: &Path) -> io::Result<()> {
     if fs::symlink_metadata(to).is_ok() {
         return Err(io::Error::from(io::ErrorKind::AlreadyExists));

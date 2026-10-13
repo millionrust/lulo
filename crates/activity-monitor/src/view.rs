@@ -147,7 +147,7 @@ impl MonitorView {
         // An inactive window has no graph to update and no timer to run.
         cx.observe_window_activation(window, move |view, window, cx| {
             let _ = wake.try_send(());
-            if window.is_window_active() {
+            if refreshing(window) {
                 view.refresh(cx);
                 cx.notify();
             }
@@ -156,7 +156,7 @@ impl MonitorView {
         cx.spawn_in(window, async move |this, cx| loop {
             let (active, seconds) = this
                 .update_in(cx, |view, window, _| {
-                    (window.is_window_active(), view.refresh_seconds)
+                    (refreshing(window), view.refresh_seconds)
                 })
                 .unwrap_or((false, REFRESH_SECS as u64));
             let timer_expired = futures_lite::future::race(
@@ -178,7 +178,7 @@ impl MonitorView {
             .await;
             if this
                 .update_in(cx, |view, window, cx| {
-                    if timer_expired && window.is_window_active() {
+                    if timer_expired && refreshing(window) {
                         view.refresh(cx);
                         cx.notify();
                     }
@@ -271,6 +271,8 @@ impl MonitorView {
             },
             cx,
         );
+        #[cfg(windows)]
+        hide_linux_only_commands(cx);
         let has_selection = self.selected_proc(cx).is_some();
         rmac_ui::set_menu_enabled("activity_monitor::QuitProcess", has_selection, cx);
         rmac_ui::set_menu_enabled("activity_monitor::InspectProcess", has_selection, cx);
@@ -1031,4 +1033,83 @@ impl MonitorView {
         })
         .detach();
     }
+}
+
+/// Commands that need a Linux kernel service, left out of the menus on
+/// Windows rather than shown greyed out or doing nothing: signals other than
+/// quit and force quit, stack sampling, DRM graphics clients and the
+/// `/proc`-only columns, the Dock's tile, GPU history and printing.
+#[cfg(windows)]
+fn hide_linux_only_commands(cx: &mut gpui::App) {
+    for action in [
+        "activity_monitor::SendSignalToProcess",
+        "activity_monitor::SampleProcess",
+        "activity_monitor::ShowGpuProcesses",
+        "activity_monitor::ShowGpuHistoryWindow",
+        "activity_monitor::PrintProcesses",
+        "activity_monitor::DockIconMenu",
+    ] {
+        rmac_ui::set_menu_hidden(action, true, cx);
+    }
+    for (action, column) in [
+        ("activity_monitor::ToggleFootprintColumn", ColKey::Footprint),
+        (
+            "activity_monitor::ToggleRealPrivateColumn",
+            ColKey::RealPrivate,
+        ),
+        (
+            "activity_monitor::ToggleRealSharedColumn",
+            ColKey::RealShared,
+        ),
+        (
+            "activity_monitor::ToggleCompressedColumn",
+            ColKey::Compressed,
+        ),
+        ("activity_monitor::ToggleKindColumn", ColKey::Kind),
+        ("activity_monitor::ToggleSandboxColumn", ColKey::Sandbox),
+        (
+            "activity_monitor::ToggleIdleWakeUpsColumn",
+            ColKey::IdleWakeUps,
+        ),
+        (
+            "activity_monitor::ToggleGpuPercentColumn",
+            ColKey::GpuPercent,
+        ),
+        ("activity_monitor::ToggleGpuTimeColumn", ColKey::GpuTime),
+        ("activity_monitor::TogglePortsColumn", ColKey::Ports),
+        (
+            "activity_monitor::TogglePreventingSleepColumn",
+            ColKey::PreventingSleep,
+        ),
+    ] {
+        rmac_ui::set_menu_hidden(action, !column.available(), cx);
+    }
+}
+
+/// Whether this window is one to keep fresh: the active window, and on Windows
+/// also not minimised (a minimised window stays the thread's "active" window,
+/// yet nobody can see what a refresh would draw).
+fn refreshing(window: &Window) -> bool {
+    window.is_window_active() && !window_is_minimised(window)
+}
+
+#[cfg(windows)]
+fn window_is_minimised(window: &Window) -> bool {
+    use raw_window_handle::RawWindowHandle;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::IsIconic;
+
+    let Ok(handle) = raw_window_handle::HasWindowHandle::window_handle(window) else {
+        return false;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return false;
+    };
+    // SAFETY: a plain query on this process's own window handle.
+    unsafe { IsIconic(HWND(handle.hwnd.get() as *mut _)) }.as_bool()
+}
+
+#[cfg(not(windows))]
+fn window_is_minimised(_window: &Window) -> bool {
+    false
 }

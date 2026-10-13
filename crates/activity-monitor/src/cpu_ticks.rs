@@ -92,7 +92,14 @@ fn parse_linux_cpu_ticks(contents: &str) -> Option<[u64; 4]> {
     ])
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// `GetSystemTimes`: cumulative 100 ns ticks across all cores. Kernel time
+/// includes idle time, so System is kernel less idle; Windows has no nice.
+#[cfg(windows)]
+pub fn read() -> Option<[u64; 4]> {
+    crate::windows_host::cpu_times()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 pub fn read() -> Option<[u64; 4]> {
     None
 }

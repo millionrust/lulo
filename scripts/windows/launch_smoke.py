@@ -377,6 +377,47 @@ def measure_idle_cpu(
     return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100, trace, threads
 
 
+class _ProcessMemory(ctypes.Structure):
+    _fields_ = [
+        ("cb", wintypes.DWORD),
+        ("PageFaultCount", wintypes.DWORD),
+        ("PeakWorkingSetSize", ctypes.c_size_t),
+        ("WorkingSetSize", ctypes.c_size_t),
+        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+        ("PagefileUsage", ctypes.c_size_t),
+        ("PeakPagefileUsage", ctypes.c_size_t),
+        ("PrivateUsage", ctypes.c_size_t),
+    ]
+
+
+def process_memory_mb(pid: int) -> dict[str, float] | None:
+    """Working set and private bytes of `pid`, in MB (None if unreadable)."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel32.OpenProcess(0x1000 | 0x0010, False, pid)
+    if not handle:
+        return None
+    try:
+        counters = _ProcessMemory()
+        counters.cb = ctypes.sizeof(counters)
+        if not kernel32.K32GetProcessMemoryInfo(
+            wintypes.HANDLE(handle), ctypes.byref(counters), counters.cb
+        ):
+            return None
+        return {
+            "working_set_mb": round(counters.WorkingSetSize / 1048576, 1),
+            "private_mb": round(counters.PrivateUsage / 1048576, 1),
+        }
+    finally:
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+
+# Apps whose window redraws on a timer while it is active (and only then).
+LIVE_APPS = ("rmac-system-monitor",)
+
 # Per app: launch time, idle ticks and wake-ups, start-up phases; written
 # with --results for `idle_gate.py` and the job summary.
 MEASUREMENTS: dict[str, dict] = {}
@@ -1184,6 +1225,29 @@ def launch(
         measurement: dict = {"launch_ms": round(launch_ms), "startup": phases}
         MEASUREMENTS[app] = measurement
         idle = measure_idle_cpu(process.pid, log=log)
+        if app in LIVE_APPS and idle is not None:
+            # A process monitor redraws on its refresh timer while its window
+            # is the active one (that is its job), and parks the moment the
+            # window is not: nothing is shown, so nothing is sampled. The
+            # reading above is what watching it costs; the gate's idle
+            # reading is taken with the window minimised.
+            active_ticks = idle[0]
+            measurement["active_ticks"] = round(active_ticks, 3)
+            print(f"{app}: CPU over {IDLE_WINDOW_SECONDS:.0f} s while it is the active window = {active_ticks:.2f} ticks")
+            ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+            # Longer than its slowest refresh period (5 s), so a refresh that
+            # was already due when the window went away has run.
+            time.sleep(7)
+            idle = measure_idle_cpu(process.pid, log=log)
+            ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        memory = process_memory_mb(process.pid)
+        if memory is not None:
+            measurement["idle_working_set_mb"] = memory["working_set_mb"]
+            measurement["idle_private_mb"] = memory["private_mb"]
+            print(
+                f"{app}: memory at idle: working set {memory['working_set_mb']} MB, "
+                f"private {memory['private_mb']} MB"
+            )
         if idle is None:
             print(f"{app}: idle CPU skipped (could not read its CPU time)")
         else:
@@ -1563,6 +1627,61 @@ def measure_world_tick(bin_dir: Path, screenshots: Path | None) -> str | None:
                 process.wait(timeout=30)
 
 
+def write_silent_wav(path: Path) -> None:
+    """A quarter second of 8 kHz mono silence."""
+    import wave
+
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(1)
+        output.setframerate(8000)
+        output.writeframes(b"\x80" * 2000)
+
+
+def check_archive_utility(binary: Path) -> str | None:
+    """Archive Utility has no main window (as on the Mac): handed a zip it
+    expands it beside the archive and exits; handed nothing it exits at once.
+    Print how long the expansion took."""
+    import zipfile
+
+    with tempfile.TemporaryDirectory(prefix="rmac-archive-check-", ignore_cleanup_errors=True) as directory:
+        root = Path(directory)
+        profile = root / "profile"
+        for folder in ("Roaming", "Local"):
+            (profile / folder).mkdir(parents=True)
+        environment = dict(os.environ)
+        environment["APPDATA"] = str(profile / "Roaming")
+        environment["LOCALAPPDATA"] = str(profile / "Local")
+        archive = root / "Fixture.zip"
+        with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr("Fixture/one.txt", "one")
+            bundle.writestr("Fixture/two/two.txt", "two")
+            bundle.writestr("Fixture/CON", "refused: a Windows device name")
+        started = time.monotonic()
+        result = subprocess.run(
+            [str(binary), str(archive)],
+            env=environment,
+            capture_output=True,
+            timeout=60,
+        )
+        elapsed_ms = (time.monotonic() - started) * 1000
+        print(f"rmac-archive-utility: expanded a zip and exited {result.returncode} in {elapsed_ms:.0f} ms")
+        if result.returncode != 0:
+            return f"exited {result.returncode} expanding a zip: {result.stderr.decode(errors='replace')[-400:]}"
+        expanded = root / "Fixture"
+        one = expanded / "one.txt"
+        if not one.exists() or one.read_text() != "one":
+            return "the archive was not expanded beside itself"
+        if not (expanded / "two" / "two.txt").exists():
+            return "a nested entry was not expanded"
+        if (expanded / "CON").exists():
+            return "a Windows device name was written"
+        empty = subprocess.run([str(binary)], env=environment, capture_output=True, timeout=60)
+        if empty.returncode != 0:
+            return f"exited {empty.returncode} with nothing to expand"
+    return None
+
+
 def main() -> int:
     # Menu labels carry "…" and other characters the runner's console code
     # page cannot print.
@@ -1613,12 +1732,24 @@ def main() -> int:
     failures = 0
     for app in arguments.apps:
         binary = arguments.bin_dir / f"{app}.exe"
+        if app == "rmac-archive-utility":
+            error = check_archive_utility(binary)
+            if error is not None:
+                failures += 1
+                print(f"{app}: FAIL: {error}")
+            continue
         with tempfile.TemporaryDirectory(prefix=f"{app}-") as directory:
             profile = Path(directory)
             app_arguments: list[str] = []
             if app == "rmac-preview":
                 fixture = profile / "fixture.pdf"
                 write_minimal_pdf(fixture)
+                app_arguments = [str(fixture)]
+            if app == "rmac-player":
+                # Player has no window until it has a file (it asks for one
+                # first); a quarter second of silence gives it one.
+                fixture = profile / "fixture.wav"
+                write_silent_wav(fixture)
                 app_arguments = [str(fixture)]
             error = launch(binary, profile, arguments.screenshots, app_arguments)
             log = profile / "output.log"

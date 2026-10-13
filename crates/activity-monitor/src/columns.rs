@@ -207,6 +207,14 @@ impl ColKey {
         )
     }
 
+    /// False for the columns that only Linux's `/proc` can fill. Windows
+    /// offers neither the menu items nor the chooser rows for them (and
+    /// ignores them in an old preferences file) rather than showing a column
+    /// of dashes.
+    pub(crate) fn available(self) -> bool {
+        !(cfg!(windows) && self.needs_extra())
+    }
+
     /// The Process Name column is the human anchor and cannot be hidden.
     pub(crate) fn required(self) -> bool {
         matches!(self, Self::Name)
@@ -363,7 +371,7 @@ pub(crate) fn default_visible_for(tab: Tab) -> Vec<ColKey> {
     };
     ColKey::ALL
         .into_iter()
-        .filter(|key| wanted.contains(key))
+        .filter(|key| key.available() && wanted.contains(key))
         .collect()
 }
 
@@ -389,7 +397,7 @@ fn parse(content: &str) -> Result<Vec<ColKey>, String> {
     // the canonical table order, even if an older file used another order.
     Ok(ColKey::ALL
         .into_iter()
-        .filter(|key| key.required() || selected.contains(key))
+        .filter(|key| key.required() || (key.available() && selected.contains(key)))
         .collect())
 }
 
@@ -468,6 +476,7 @@ mod tests {
         assert!(disk.contains(&ColKey::BytesRead) && disk.contains(&ColKey::BytesWritten));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn extra_columns_have_mac_titles_and_round_trip() {
         let expected = vec![
@@ -504,6 +513,7 @@ mod tests {
         assert!(ColKey::Footprint.needs_extra() && !ColKey::Mem.needs_extra());
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn ports_and_preventing_sleep_columns_round_trip_with_mac_titles() {
         let expected = vec![ColKey::Name, ColKey::Ports, ColKey::PreventingSleep];
@@ -532,5 +542,19 @@ mod tests {
         assert_eq!(ColKey::CpuTime.title(), "CPU Time");
         assert_eq!(ColKey::BytesRead.title(), "Bytes Read");
         assert_eq!(ColKey::BytesWritten.title(), "Bytes Written");
+    }
+
+    /// Windows has no `/proc`: the columns only it can fill are neither
+    /// offered nor restored from an old preferences file.
+    #[cfg(windows)]
+    #[test]
+    fn proc_only_columns_are_not_available_on_windows() {
+        for key in ColKey::ALL {
+            assert_eq!(key.available(), !key.needs_extra());
+        }
+        assert_eq!(
+            parse("name,footprint,ports,cpu").unwrap(),
+            vec![ColKey::Name, ColKey::Cpu]
+        );
     }
 }

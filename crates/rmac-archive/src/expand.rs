@@ -1,14 +1,12 @@
 //! Expanding an archive next to itself.
 
-use std::ffi::CString;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, BufReader, Read, Write};
-use std::os::unix::ffi::OsStrExt as _;
-use std::os::unix::fs::{symlink, OpenOptionsExt as _};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::naming::{archive_stem, format_of, Format};
+use crate::platform;
 use crate::staging::{Counted, Meter, Scratch};
 use crate::{Error, Progress};
 
@@ -104,7 +102,7 @@ fn expand_zip(file: Counted<'_, File>, staging: &Path, limit: u64) -> Result<(),
         let Some(relative) = entry.enclosed_name() else {
             continue;
         };
-        if skipped(&relative) {
+        if skipped(&relative) || unsafe_path(&relative) {
             continue;
         }
         let entry_size = entry.size();
@@ -127,12 +125,7 @@ fn expand_zip(file: Counted<'_, File>, staging: &Path, limit: u64) -> Result<(),
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
-        let output = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode.map_or(0o644, |mode| mode & 0o777))
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&target)?;
+        let output = platform::create_new_file(&target, mode.map_or(0o644, |mode| mode & 0o777))?;
         io::copy(&mut entry, &mut LimitedWriter::new(output, entry_size)).map_err(data_error)?;
     }
     // Links last, so no file entry can be written through one. A link can
@@ -141,7 +134,7 @@ fn expand_zip(file: Counted<'_, File>, staging: &Path, limit: u64) -> Result<(),
     // inside the staging folder, never followed through a link.
     for (target, link) in links {
         real_parent_folders(staging, &target)?;
-        symlink(link, target)?;
+        platform::symlink(&link, &target)?;
     }
     Ok(())
 }
@@ -196,7 +189,7 @@ fn expand_tar<R: Read>(reader: R, staging: &Path, limit: u64) -> Result<(), Erro
             .path()
             .map_err(|error| tar_error(error, false))?
             .into_owned();
-        if skipped(&path) {
+        if skipped(&path) || unsafe_path(&path) {
             continue;
         }
         let size = entry
@@ -230,11 +223,7 @@ fn expand_tar_xz(
             File::open(archive)?,
             Meter::new(cancel, progress, length.saturating_mul(2)),
         ));
-        let mut output = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&payload.path)?;
+        let mut output = platform::create_new_file(&payload.path, 0o600)?;
         lzma_rs::xz_decompress(&mut input, &mut LimitedWriter::new(&mut output, limit))
             .map_err(xz_error)?;
     }
@@ -256,12 +245,7 @@ fn decompress_single(
     target: &Path,
     limit: u64,
 ) -> Result<(), Error> {
-    let output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o644)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(target)?;
+    let output = platform::create_new_file(target, 0o644)?;
     let mut input = BufReader::new(file);
     let mut output = LimitedWriter::new(output, limit);
     match format {
@@ -282,15 +266,7 @@ fn decompress_single(
 /// 16 GiB. tar.xz also needs a decoded tar scratch file while extracting, so
 /// each of those two files gets half the available budget.
 fn expansion_budget(parent: &Path, format: Format) -> Result<u64, Error> {
-    let path = CString::new(parent.as_os_str().as_bytes())
-        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-    // SAFETY: `path` is NUL-terminated and `space` is valid writable storage.
-    let mut space: libc::statvfs = unsafe { std::mem::zeroed() };
-    // SAFETY: both pointers remain valid for the duration of the call.
-    if unsafe { libc::statvfs(path.as_ptr(), &mut space) } != 0 {
-        return Err(io::Error::last_os_error().into());
-    }
-    let available = (space.f_bavail as u64).saturating_mul(space.f_frsize as u64);
+    let available = platform::available_space(parent)?;
     let after_reserve = available.saturating_sub(DISK_RESERVE_BYTES);
     let budget = if format == Format::TarXz {
         (after_reserve / 2).min(MAX_EXPANDED_BYTES / 2)
@@ -339,6 +315,15 @@ impl<W: Write> Write for LimitedWriter<W> {
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
+}
+
+/// True when some component of an entry's path is a name Windows treats
+/// specially (see `platform`); never true elsewhere.
+fn unsafe_path(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(name) => platform::unsafe_component(name),
+        _ => false,
+    })
 }
 
 /// Leftovers the Mac writes into zips for its own resource forks.
@@ -642,6 +627,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_link_is_never_created_through_an_earlier_link() {
         let root = scratch("link-through-link");
@@ -674,6 +660,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn links_inside_real_folders_still_expand() {
         let root = scratch("nested-link");
@@ -693,6 +680,35 @@ mod tests {
             fs::read_to_string(placed.join("links/deep/readme")).unwrap(),
             "hi"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Windows: link entries are left out (making one needs a privilege), and
+    /// entry names Windows treats specially are never written.
+    #[cfg(windows)]
+    #[test]
+    fn links_and_special_windows_names_are_left_out() {
+        let root = scratch("windows-skips");
+        let archive = root.join("Bundle.zip");
+        {
+            let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            for name in [
+                "keep.txt",
+                "CON",
+                "aux.txt",
+                "stream.txt:evil",
+                "dir./x.txt",
+            ] {
+                writer.start_file(name, options).unwrap();
+                writer.write_all(b"x").unwrap();
+            }
+            writer.add_symlink("link", "keep.txt", options).unwrap();
+            writer.finish().unwrap();
+        }
+        let placed = run(&archive).unwrap();
+        assert_eq!(placed, root.join("keep.txt"));
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
         fs::remove_dir_all(root).unwrap();
     }
 

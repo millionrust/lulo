@@ -63,12 +63,14 @@ jobs:
           cargo build --locked --release -p rmac-calculator -p rmac-notes \
             -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
             -p rmac-terminal -p rmac-finder -p rmac-system-settings \
+            -p rmac-activity-monitor -p rmac-mail -p rmac-calendar \
+            -p rmac-calendar-agent -p rmac-player -p rmac-archive-utility \
             -p rmac-win-shell --bins
 
       - name: Collect the built exes
         run: |
           mkdir -p exes
-          for app in calculator notes text-editor preview clock weather terminal files system-settings; do
+          for app in calculator notes text-editor preview clock weather terminal files system-settings system-monitor mail calendar calendar-agent player archive-utility; do
             cp "target/release/rmac-$app.exe" exes/
           done
           cp target/release/lulo-session.exe target/release/lulo-shell.exe exes/

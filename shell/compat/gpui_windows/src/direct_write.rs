@@ -833,7 +833,9 @@ impl DirectWriteState {
         let glyph_id = u16::try_from(params.glyph_id.0).ok()?;
         let offset = Vector::new(
             params.subpixel_variant.x as f32 / SUBPIXEL_VARIANTS_X as f32 / params.scale_factor,
-            params.subpixel_variant.y as f32 / gpui::SUBPIXEL_VARIANTS_Y as f32 / params.scale_factor,
+            params.subpixel_variant.y as f32
+                / gpui::SUBPIXEL_VARIANTS_Y as f32
+                / params.scale_factor,
         );
         let mut context = self.swash_context.lock();
         let mut scaler = context

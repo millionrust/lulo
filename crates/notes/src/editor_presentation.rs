@@ -246,6 +246,7 @@ impl NotesView {
                         .h_full()
                         .appearance(false)
                         .disabled(!editable)
+                        .context_menu(rmac_writing_tools::text_menu(self.body.clone(), editable))
                         .text_size(rmac_ui::text_px(body_size))
                         .line_height(px(body_line))
                         .px_0()

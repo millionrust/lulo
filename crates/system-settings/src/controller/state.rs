@@ -186,6 +186,11 @@ pub(super) struct Settings {
     pub(super) focused_once: bool,
     /// The sidebar and detail-pane views, made on the first render (SPEED-02).
     pub(super) views: Option<views::SettingsViews>,
+    /// The master/detail split the root drew this frame. The sidebar view
+    /// reads it instead of the window's width, so a live resize that leaves
+    /// the sidebar column alone reuses its last frame (SPEED-12, ADR 0026);
+    /// a change of split resizes the column, which re-renders it.
+    pub(super) rendered_layout: Option<crate::responsive_layout::SettingsLayout>,
     /// The window-wide error banner the last frame drew, so a load that
     /// repaints only when its pane is showing still adds or removes it.
     pub(super) rendered_banner: Option<SharedString>,

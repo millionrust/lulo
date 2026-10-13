@@ -11,13 +11,15 @@ description = "Lulo Intelligence (ADR 0024): closed task list, typed intents, pr
 default = []
 # The org.rmac.Intelligence1 session-bus client (zbus). Types-only users such
 # as rmac-launcher leave it off.
-client = ["dep:zbus", "dep:rmac-dbus"]
+client = ["dep:zbus", "dep:rmac-dbus", "dep:async-channel", "dep:futures-util"]
 
 [[bin]]
 name = "rmac-intelligence-fetch"
 path = "src/bin/rmac-intelligence-fetch.rs"
 
 [dependencies]
+async-channel = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 rmac-dbus = { workspace = true, optional = true }
 rmac-storage.workspace = true
 serde.workspace = true

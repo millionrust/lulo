@@ -255,10 +255,22 @@ fn open_popover(
         service.next_token
     });
     let mut popover = None;
+    // Read the backlight before the surface exists so it opens at its real
+    // height: the Display row would otherwise arrive after the first frame
+    // and the surface kept its first height, cutting Sound off (CC-18). One
+    // sysfs read, no D-Bus.
+    let brightness = rmac_osd::brightness().ok();
+    let bounds = if cfg!(target_os = "linux") {
+        let height = px(crate::view::initial_surface_height(brightness.is_some()));
+        Bounds::new(bounds.origin, size(bounds.size.width, height))
+    } else {
+        bounds
+    };
     let handle = cx.open_window(popover_options(bounds), |window, cx| {
         window.set_window_title("Quick Settings");
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| QuickSettingsView::new(token, previous_window, window, cx));
+        let view =
+            cx.new(|cx| QuickSettingsView::new(token, previous_window, brightness, window, cx));
         popover = Some(view.downgrade());
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });

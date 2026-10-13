@@ -844,6 +844,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &CutItems, _, cx| this.cut(cx)))
             .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
             .on_action(cx.listener(|this, _: &UndoOperation, _, cx| this.start_undo(cx)))
+            .on_action(cx.listener(|this, _: &RedoOperation, _, cx| this.start_redo(cx)))
             .on_action(cx.listener(|this, _: &MakeAlias, _, cx| this.make_alias(cx)))
             .on_action(cx.listener(|this, _: &ShowOriginal, _, cx| this.show_original(cx)))
             .on_action(cx.listener(|this, _: &TagRed, _, cx| this.set_selected_tag("red", cx)))
@@ -1075,6 +1076,9 @@ impl FinderView {
             .on_action(
                 cx.listener(|this, _: &GoToFolder, window, cx| this.open_go_to_folder(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &ConnectToServer, window, cx| {
+                this.open_connect_to_server(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &EmptyTrash, _, cx| this.request_empty_trash(cx)))
             .on_action(cx.listener(|this, _: &EmptyTrashImmediately, _, cx| {
                 this.request_empty_trash_immediately(cx)

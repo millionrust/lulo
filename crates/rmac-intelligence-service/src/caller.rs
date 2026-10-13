@@ -16,10 +16,23 @@
 
 use std::path::{Path, PathBuf};
 
-/// The programs that call the service, by file name: Spotlight's "Lulo can
-/// do this" rows and System Settings ▸ Lulo Intelligence (Prepare and
-/// Calibrate).
+/// What a caller asks for. Each has its own list of programs: Spotlight
+/// cannot rewrite text, and Notes cannot run Spotlight's intents.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Purpose {
+    /// `Run("intent")`, `Prepare` and `Calibrate`.
+    Assist,
+    /// `Write` (Writing Tools) and `Cancel`.
+    Writing,
+}
+
+/// The programs that call the service for [`Purpose::Assist`], by file
+/// name: Spotlight's "Lulo can do this" rows and System Settings ▸ Lulo
+/// Intelligence (Prepare and Calibrate).
 pub const CALLERS: &[&str] = &["rmac-launcher", "rmac-system-settings"];
+
+/// The programs with Writing Tools ([`Purpose::Writing`]).
+pub const WRITING_CALLERS: &[&str] = &["rmac-notes", "rmac-text-editor", "rmac-mail"];
 
 /// Measures the service on the reference laptop. Not packaged, so trusted
 /// only beside the service itself.
@@ -31,22 +44,33 @@ const INSTALLED_CALLERS: &[&str] = &[
     "/usr/bin/rmac-system-settings",
 ];
 
-/// The exact programs allowed to call: the installed ones, and the same
-/// names beside this service (development installs under
+/// Where the package installs [`WRITING_CALLERS`].
+const INSTALLED_WRITING_CALLERS: &[&str] = &[
+    "/usr/bin/rmac-notes",
+    "/usr/bin/rmac-text-editor",
+    "/usr/bin/rmac-mail",
+];
+
+/// The exact programs allowed to call for `purpose`: the installed ones,
+/// and the same names beside this service (development installs under
 /// `~/.local/libexec/rmac`, and the private test sessions, keep every
 /// program side by side). Nothing else in `/usr/bin` or anywhere else.
-pub fn trusted_programs() -> Vec<PathBuf> {
+pub fn trusted_programs(purpose: Purpose) -> Vec<PathBuf> {
     let own = std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf));
-    trusted_programs_beside(own.as_deref())
+    trusted_programs_beside(own.as_deref(), purpose)
 }
 
 /// [`trusted_programs`] for a service installed in `own`.
-pub fn trusted_programs_beside(own: Option<&Path>) -> Vec<PathBuf> {
-    let mut programs: Vec<PathBuf> = INSTALLED_CALLERS.iter().map(PathBuf::from).collect();
+pub fn trusted_programs_beside(own: Option<&Path>, purpose: Purpose) -> Vec<PathBuf> {
+    let (installed, names) = match purpose {
+        Purpose::Assist => (INSTALLED_CALLERS, CALLERS),
+        Purpose::Writing => (INSTALLED_WRITING_CALLERS, WRITING_CALLERS),
+    };
+    let mut programs: Vec<PathBuf> = installed.iter().map(PathBuf::from).collect();
     if let Some(own) = own {
-        for name in CALLERS.iter().chain(DEVELOPMENT_CALLERS) {
+        for name in names.iter().chain(DEVELOPMENT_CALLERS) {
             let path = own.join(name);
             if !programs.contains(&path) {
                 programs.push(path);
@@ -187,7 +211,10 @@ mod tests {
 
     #[test]
     fn only_the_listed_lulo_programs_are_trusted() {
-        let trusted = trusted_programs_beside(Some(Path::new("/home/u/.local/libexec/rmac")));
+        let trusted = trusted_programs_beside(
+            Some(Path::new("/home/u/.local/libexec/rmac")),
+            Purpose::Assist,
+        );
         for allowed in [
             "/usr/libexec/rmac/rmac-launcher",
             "/usr/bin/rmac-system-settings",
@@ -220,6 +247,9 @@ mod tests {
             "/usr/libexec/rmac/rmac-launcher.bak",
             "/usr/libexec/rmac/rmac-launcher (deleted) (deleted)",
             "rmac-launcher",
+            // Writing Tools apps never run Spotlight's tasks.
+            "/usr/bin/rmac-notes",
+            "/home/u/.local/libexec/rmac/rmac-text-editor",
         ] {
             assert!(
                 !executable_allowed(Path::new(refused), &trusted),
@@ -230,7 +260,8 @@ mod tests {
 
     #[test]
     fn a_packaged_service_trusts_only_the_package_paths() {
-        let trusted = trusted_programs_beside(Some(Path::new("/usr/libexec/rmac")));
+        let trusted =
+            trusted_programs_beside(Some(Path::new("/usr/libexec/rmac")), Purpose::Assist);
         assert_eq!(
             trusted,
             [
@@ -241,6 +272,57 @@ mod tests {
             ]
             .map(PathBuf::from)
         );
+        let writing =
+            trusted_programs_beside(Some(Path::new("/usr/libexec/rmac")), Purpose::Writing);
+        assert_eq!(
+            writing,
+            [
+                "/usr/bin/rmac-notes",
+                "/usr/bin/rmac-text-editor",
+                "/usr/bin/rmac-mail",
+                "/usr/libexec/rmac/rmac-notes",
+                "/usr/libexec/rmac/rmac-text-editor",
+                "/usr/libexec/rmac/rmac-mail",
+                "/usr/libexec/rmac/rmac-intelligence-bench",
+            ]
+            .map(PathBuf::from)
+        );
+    }
+
+    #[test]
+    fn only_notes_text_editor_and_mail_have_writing_tools() {
+        let trusted = trusted_programs_beside(
+            Some(Path::new("/home/u/.local/libexec/rmac")),
+            Purpose::Writing,
+        );
+        for allowed in [
+            "/usr/bin/rmac-notes",
+            "/usr/bin/rmac-text-editor",
+            "/usr/bin/rmac-mail",
+            "/usr/bin/rmac-mail (deleted)",
+            "/home/u/.local/libexec/rmac/rmac-notes",
+            "/home/u/.local/libexec/rmac/rmac-intelligence-bench",
+        ] {
+            assert!(
+                executable_allowed(Path::new(allowed), &trusted),
+                "{allowed}"
+            );
+        }
+        for refused in [
+            "/usr/libexec/rmac/rmac-launcher",
+            "/usr/bin/rmac-system-settings",
+            "/usr/bin/rmac-terminal",
+            "/usr/bin/python3",
+            "/usr/bin/gdbus",
+            "/tmp/rmac-notes",
+            "/usr/libexec/rmac/rmac-notes",
+            "/usr/bin/rmac-notes.bak",
+        ] {
+            assert!(
+                !executable_allowed(Path::new(refused), &trusted),
+                "{refused}"
+            );
+        }
     }
 
     #[test]
@@ -316,7 +398,12 @@ mod tests {
                 Ok(exe.clone())
             );
             assert!(matches!(
-                check(own, Some(me), Some(pidfd.as_fd()), &trusted_programs()),
+                check(
+                    own,
+                    Some(me),
+                    Some(pidfd.as_fd()),
+                    &trusted_programs(Purpose::Assist)
+                ),
                 Err(Refusal::NotLulo { .. })
             ));
             assert_eq!(

@@ -16,6 +16,7 @@ mod model;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 pub(crate) mod linux_wayland {
+    use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
     use std::rc::Rc;
@@ -33,7 +34,7 @@ pub(crate) mod linux_wayland {
     use uuid::Uuid;
 
     use crate::force_quit_window::{self, ForceQuitView};
-    use crate::model::{self, Command, Layout, Recency, RunningApp, Session};
+    use crate::model::{self, Command, Layout, OptimisticPlan, Recency, RunningApp, Session};
 
     /// A quick ⌘Tab tap switches without flashing the panel, as on macOS:
     /// the surface takes the keyboard at once but stays 1 × 1 until it knows
@@ -80,6 +81,70 @@ pub(crate) mod linux_wayland {
     struct Item {
         name: String,
         icon: Option<PathBuf>,
+    }
+
+    /// An optimistic switch in flight or done (SPEED-11, `model::optimistic_plan`).
+    struct Optimistic {
+        plan: OptimisticPlan,
+        /// Closed once niri has answered every focus request.
+        done: async_channel::Receiver<()>,
+        /// `Some(true)` once every request was handled, `Some(false)` if one
+        /// failed.
+        outcome: Rc<Cell<Option<bool>>>,
+    }
+
+    impl Optimistic {
+        /// Focus the plan's application now, in parallel with mapping the
+        /// switcher surface.
+        fn start(plan: OptimisticPlan, cx: &mut App) -> Self {
+            let (done_tx, done) = async_channel::bounded::<()>(1);
+            let outcome = Rc::new(Cell::new(None));
+            let result = outcome.clone();
+            let actions = plan.actions.clone();
+            gpui_linux::trace_mark("switcher_optimistic");
+            cx.spawn(async move |_cx: &mut AsyncApp| {
+                let mut handled = true;
+                for action in &actions {
+                    if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                        eprintln!("app switcher could not switch ahead: {error:?}");
+                        handled = false;
+                        break;
+                    }
+                }
+                gpui_linux::trace_mark("switcher_optimistic_done");
+                result.set(Some(handled));
+                drop(done_tx);
+            })
+            .detach();
+            Self {
+                plan,
+                done,
+                outcome,
+            }
+        }
+
+        /// Undo the switch after a cancel: once the optimistic requests have
+        /// landed, focus the window that was frontmost before ⌘Tab. The
+        /// returned channel closes once niri has answered, or `None` when
+        /// there is nothing to restore.
+        fn restore(
+            self,
+            snapshot: rmac_compositor::Snapshot,
+            cx: &mut App,
+        ) -> Option<async_channel::Receiver<()>> {
+            let action = model::restore_action(&snapshot, self.plan.original)?;
+            let (restored_tx, restored) = async_channel::bounded::<()>(1);
+            cx.spawn(async move |_cx: &mut AsyncApp| {
+                let _ = self.done.recv().await;
+                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                    eprintln!("app switcher could not restore focus: {error:?}");
+                }
+                gpui_linux::trace_mark("switcher_restored");
+                drop(restored_tx);
+            })
+            .detach();
+            Some(restored)
+        }
     }
 
     pub(crate) struct Service {
@@ -273,6 +338,14 @@ pub(crate) mod linux_wayland {
         /// Counts opens of this (kept) surface; timers of an earlier open
         /// do nothing.
         generation: u64,
+        /// The switch to make ahead of knowing whether ⌘ is held, once this
+        /// surface has the keyboard.
+        plan: Option<OptimisticPlan>,
+        /// That switch, once started.
+        optimistic: Option<Optimistic>,
+        /// A commit waiting for the optimistic switch to land before it gives
+        /// the keyboard back.
+        committing: bool,
     }
 
     impl SwitcherView {
@@ -281,6 +354,7 @@ pub(crate) mod linux_wayland {
             session: Session,
             items: BTreeMap<String, Item>,
             display_width: f32,
+            plan: Option<OptimisticPlan>,
             window: &mut Window,
             cx: &mut Context<Self>,
         ) -> Self {
@@ -290,6 +364,15 @@ pub(crate) mod linux_wayland {
                 if window.is_window_active() {
                     if !this.was_active {
                         this.was_active = true;
+                        // SPEED-11: switch now that this surface holds the
+                        // keyboard. niri moves its focus to the next app but
+                        // cannot hand that app the keyboard while the
+                        // switcher holds it, so the app never shows active,
+                        // then inactive, then active again; when the switcher
+                        // closes the keyboard goes straight to it.
+                        if let Some(plan) = this.plan.take() {
+                            this.optimistic = Some(Optimistic::start(plan, cx));
+                        }
                         if window.modifiers().platform {
                             // ⌘ is still held: show the panel now.
                             this.saw_command = true;
@@ -319,6 +402,9 @@ pub(crate) mod linux_wayland {
                 pending_quit: false,
                 display_id: window.display(cx).map(|display| display.id()),
                 generation: 0,
+                plan,
+                optimistic: None,
+                committing: false,
             };
             view.start(window, cx);
             view
@@ -355,9 +441,13 @@ pub(crate) mod linux_wayland {
             session: Session,
             items: BTreeMap<String, Item>,
             display_width: f32,
+            plan: Option<OptimisticPlan>,
             window: &mut Window,
             cx: &mut Context<Self>,
         ) {
+            self.plan = plan;
+            self.optimistic = None;
+            self.committing = false;
             self.layout = model::layout(session.apps.len(), display_width);
             self.session = session;
             self.items = items;
@@ -446,7 +536,34 @@ pub(crate) mod linux_wayland {
                 return;
             }
             self.closing = true;
+            self.plan = None;
+            // Closing without a commit cancels (Esc, ⌘., another surface
+            // taking the keyboard): put back the app that was frontmost.
+            let restored = self.optimistic.take().and_then(|optimistic| {
+                let snapshot = self.snapshot(cx)?;
+                optimistic.restore(snapshot, cx)
+            });
             let _ = self.service.update(cx, |service, cx| service.closed(cx));
+            let Some(restored) = restored else {
+                self.hide(window, cx);
+                return;
+            };
+            // Hand the keyboard back only once niri has focused that app
+            // again, so the app switched to ahead never shows active.
+            let generation = self.generation;
+            cx.spawn_in(window, async move |this, cx| {
+                let _ = restored.recv().await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.generation == generation && this.closing {
+                        this.hide(window, cx);
+                    }
+                });
+            })
+            .detach();
+        }
+
+        /// Unmap the surface and keep it for the next ⌘Tab.
+        fn hide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             // Keep the surface, unmapped, for the next ⌘Tab: it takes no
             // input or focus and draws nothing until mapped again.
             // Its swapchain was allocated at the panel's size when it opened
@@ -488,7 +605,7 @@ pub(crate) mod linux_wayland {
         }
 
         fn commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-            if self.closing {
+            if self.closing || self.committing {
                 return;
             }
             gpui_linux::trace_mark("switcher_commit");
@@ -497,9 +614,63 @@ pub(crate) mod linux_wayland {
                 .service
                 .upgrade()
                 .map(|service| service.read(cx).compositor.snapshot());
+            let Some(app) = selected else {
+                self.close(window, cx);
+                return;
+            };
+            let needs_activation = model::commit_needs_activation(
+                self.optimistic
+                    .as_ref()
+                    .map(|optimistic| optimistic.plan.app_id.as_str()),
+                self.optimistic
+                    .as_ref()
+                    .and_then(|optimistic| optimistic.outcome.get()),
+                &app,
+            );
+            if !needs_activation {
+                if let Some(done) = self
+                    .optimistic
+                    .as_ref()
+                    .filter(|optimistic| optimistic.outcome.get().is_none())
+                    .map(|optimistic| optimistic.done.clone())
+                {
+                    // Give the keyboard back only once niri has moved its
+                    // focus, so it goes to the chosen app and never to the
+                    // one that was frontmost on the way.
+                    self.committing = true;
+                    let generation = self.generation;
+                    cx.spawn_in(window, async move |this, cx| {
+                        let _ = done.recv().await;
+                        let _ = this.update_in(cx, |this, window, cx| {
+                            if this.generation == generation && this.committing {
+                                this.committing = false;
+                                this.commit(window, cx);
+                            }
+                        });
+                    })
+                    .detach();
+                    return;
+                }
+            }
+            let optimistic = self.optimistic.take();
             self.close(window, cx);
-            if let (Some(app), Some(snapshot)) = (selected, snapshot) {
-                activate(app, snapshot, cx);
+            let needs_activation = model::commit_needs_activation(
+                optimistic
+                    .as_ref()
+                    .map(|optimistic| optimistic.plan.app_id.as_str()),
+                optimistic
+                    .as_ref()
+                    .and_then(|optimistic| optimistic.outcome.get()),
+                &app,
+            );
+            if !needs_activation {
+                // The optimistic switch already focused this app.
+                gpui_linux::trace_mark("switcher_kept_optimistic");
+                return;
+            }
+            if let Some(snapshot) = snapshot {
+                let after = optimistic.map(|optimistic| optimistic.done);
+                activate(app, snapshot, after, cx);
             }
         }
 
@@ -836,8 +1007,19 @@ pub(crate) mod linux_wayland {
 
     /// Bring the chosen application forward (see
     /// [`model::activation_actions`]). Restored windows leave the parking set.
-    fn activate(app: RunningApp, snapshot: rmac_compositor::Snapshot, cx: &mut App) {
+    ///
+    /// `after` is an optimistic switch still in flight: its requests land
+    /// first, so niri never applies them over this choice.
+    fn activate(
+        app: RunningApp,
+        snapshot: rmac_compositor::Snapshot,
+        after: Option<async_channel::Receiver<()>>,
+        cx: &mut App,
+    ) {
         cx.spawn(async move |_cx: &mut AsyncApp| {
+            if let Some(after) = after {
+                let _ = after.recv().await;
+            }
             let mut store = rmac_compositor::ParkingStore::load_default();
             store.prune(&snapshot);
             let actions = model::activation_actions(&snapshot, &app, |window| store.origin(window));
@@ -923,21 +1105,36 @@ pub(crate) mod linux_wayland {
         service.update(cx, |service, _| service.force_quit = handle);
     }
 
+    /// `RMAC_APP_SWITCHER_OPTIMISTIC=0` turns the optimistic switch off, so
+    /// one build can be measured both ways (docs/perf/speed-round-12).
+    fn optimistic_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var_os("RMAC_APP_SWITCHER_OPTIMISTIC").is_none_or(|value| value != "0")
+        })
+    }
+
     fn open_switcher(service: &Entity<Service>, backwards: bool, cx: &mut App) {
-        let (session, items, output) = {
+        let (session, items, output, plan) = {
             let state = service.read(cx);
             let snapshot = state.compositor.snapshot();
             let Some(session) = Session::open(state.recency.applications(&snapshot), backwards)
             else {
                 return;
             };
+            let plan = model::optimistic_plan(&snapshot, &session);
             let items = session
                 .apps
                 .iter()
                 .map(|app| (app.app_id.clone(), state.item(app)))
                 .collect::<BTreeMap<_, _>>();
-            (session, items, state.focused_output())
+            (session, items, state.focused_output(), plan)
         };
+        // SPEED-11: the switcher focuses this app as soon as it holds the
+        // keyboard (`SwitcherView::new`). A quick tap then only closes the
+        // surface; a browse shows the panel as before and focuses its final
+        // choice.
+        let mut plan = plan.filter(|_| optimistic_enabled());
         let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
         let display = output
             .and_then(|uuid| displays.get(&uuid).cloned())
@@ -952,13 +1149,22 @@ pub(crate) mod linux_wayland {
                 && gpui_linux::set_layer_window_mapped(handle.into(), true)
             {
                 gpui_linux::trace_mark("switcher_reshown");
+                let mut moved = plan.take();
                 let reopened = handle.update(cx, |view, window, cx| {
-                    view.reopen(session.clone(), items.clone(), display_width, window, cx)
+                    view.reopen(
+                        session.clone(),
+                        items.clone(),
+                        display_width,
+                        moved.take(),
+                        window,
+                        cx,
+                    )
                 });
                 if reopened.is_ok() {
                     service.update(cx, |service, _| service.open = Some(handle));
                     return;
                 }
+                plan = moved;
             }
             let _ = handle.update(cx, |_, window, _| window.remove_window());
         }
@@ -988,7 +1194,7 @@ pub(crate) mod linux_wayland {
             ..Default::default()
         };
         match cx.open_window(options, move |window, cx| {
-            cx.new(|cx| SwitcherView::new(weak, session, items, display_width, window, cx))
+            cx.new(|cx| SwitcherView::new(weak, session, items, display_width, plan, window, cx))
         }) {
             Ok(handle) => {
                 // Allocate the swapchain at the widest panel this display can

@@ -12,6 +12,6 @@ pub mod rtf;
 pub use editor::{RichTextEditor, RichTextEvent};
 pub use model::{
     Alignment, CharStyle, Document, DocumentAttributes, DocumentProperties, Ligatures, ListKind,
-    Paragraph, ParagraphStyle, Rgb, StyledRun, BASELINE_STEP, DEFAULT_RICH_SIZE, KERN_STEP,
-    MAX_LIST_LEVEL,
+    Paragraph, ParagraphStyle, Rgb, StyledRun, WritingDirection, BASELINE_STEP, DEFAULT_RICH_SIZE,
+    KERN_STEP, MAX_LIST_LEVEL,
 };

@@ -2189,16 +2189,29 @@ impl Element for TextElement {
         );
 
         self.state.update(cx, |state, cx| {
+            // rmac (SPEED-12, ADR 0026): notify only when this paint changed
+            // what the input remembers. An unconditional notify from paint
+            // marked the input, and every cached view around it, dirty for
+            // the next frame, so a view holding a text field (Settings'
+            // sidebar search) could never reuse its last frame.
+            let unchanged = state.last_bounds == Some(bounds)
+                && state.input_bounds == input_bounds
+                && state.last_cursor == Some(state.cursor())
+                && state.last_selected_range == Some(selected_range)
+                && state.scroll_size == prepaint.scroll_size
+                && state.deferred_scroll_offset.is_none();
             state.last_layout = Some(prepaint.last_layout.clone());
             state.last_bounds = Some(bounds);
             state.last_cursor = Some(state.cursor());
             state.set_input_bounds(input_bounds, cx);
             state.last_selected_range = Some(selected_range);
             state.scroll_size = prepaint.scroll_size;
-            state.update_scroll_offset(Some(prepaint.cursor_scroll_offset), cx);
+            let scrolled = state.clamp_scroll_offset(Some(prepaint.cursor_scroll_offset));
             state.deferred_scroll_offset = None;
 
-            cx.notify();
+            if scrolled || !unchanged {
+                cx.notify();
+            }
         });
 
         if let Some(hitbox) = prepaint.hover_definition_hitbox.as_ref() {

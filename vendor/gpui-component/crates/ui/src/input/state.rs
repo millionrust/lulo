@@ -104,6 +104,7 @@ actions!(
         Copy,
         Cut,
         Paste,
+        Yank,
         Undo,
         Redo,
         MoveToStartOfLine,
@@ -128,6 +129,28 @@ pub enum InputEvent {
 }
 
 pub(super) const CONTEXT: &str = "Input";
+
+/// The Emacs kill ring Cocoa text fields share (⌃K kills to the end of the
+/// line, ⌃Y yanks it back): the text the last ⌃K removed, process-wide so a
+/// line killed in one field can be yanked into another, as on the Mac.
+static KILL_RING: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+fn set_kill_ring(text: &str) {
+    if !text.is_empty() {
+        let mut ring = KILL_RING
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        ring.clear();
+        ring.push_str(text);
+    }
+}
+
+fn kill_ring() -> String {
+    KILL_RING
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
+}
 
 pub(crate) fn init(cx: &mut App) {
     cx.bind_keys([
@@ -1564,6 +1587,7 @@ impl InputState {
         if offset == self.cursor() {
             offset = (offset + 1).clamp(0, self.text.len());
         }
+        set_kill_ring(&self.text.slice(self.cursor()..offset).to_string());
         self.replace_text_in_range_silent(
             Some(self.range_to_utf16(&(self.cursor()..offset))),
             "",
@@ -1906,6 +1930,14 @@ impl InputState {
         offset: Option<Point<Pixels>>,
         cx: &mut Context<Self>,
     ) {
+        self.clamp_scroll_offset(offset);
+        cx.notify();
+    }
+
+    /// Clamp `offset` (or the current one) into the scrollable range and
+    /// apply it; true when the offset changed.
+    pub(super) fn clamp_scroll_offset(&mut self, offset: Option<Point<Pixels>>) -> bool {
+        let previous = self.scroll_handle.offset();
         let mut offset = offset.unwrap_or(self.scroll_handle.offset());
         // In addition to left alignment, a cursor position will be reserved on the right side
         let safe_x_offset = if self.text_align == TextAlign::Left {
@@ -1926,7 +1958,7 @@ impl InputState {
         };
         offset.x = offset.x.clamp(safe_x_range.start, safe_x_range.end);
         self.scroll_handle.set_offset(offset);
-        cx.notify();
+        offset != previous
     }
 
     /// Scroll to make the given offset visible.
@@ -2059,6 +2091,19 @@ impl InputState {
             self.replace_text_in_range_silent(None, &new_text, window, cx);
             self.scroll_to(self.cursor(), None, cx);
         }
+    }
+
+    /// ⌃Y: insert the text ⌃K last killed at the cursor.
+    pub(super) fn yank(&mut self, _: &Yank, window: &mut Window, cx: &mut Context<Self>) {
+        let mut text = kill_ring();
+        if !self.mode.is_multi_line() {
+            text = text.replace('\n', "");
+        }
+        if text.is_empty() {
+            return;
+        }
+        self.replace_text_in_range_silent(None, &text, window, cx);
+        self.scroll_to(self.cursor(), None, cx);
     }
 
     fn push_history(&mut self, text: &Rope, range: &Range<usize>, new_text: &str) {

@@ -1014,6 +1014,94 @@ class Run:
         back_to_grid("Sound Settings\u2026", "Sound")
         self.close_everything()
 
+    def control_centre_first_open_and_grow(self) -> None:
+        """CC-18 and CC-10, with real pointer input.
+
+        CC-18: the surface opens at its real height. The Display row used to
+        arrive after the first frame and the surface kept its first height,
+        cutting Sound off, so the panel's painted bottom edge, measured
+        against an empty-desktop capture, must be the same just after it
+        opens and once everything has settled, and tall enough for every row.
+
+        CC-10: a real click on the Sound title grows the Sound view out of
+        its tile: frames grabbed right after the press differ from the
+        settled view, the settled view stays pixel-identical, and the
+        quick-settings process burns no CPU while the finished view sits
+        idle (no frames are requested once the motion ends)."""
+
+        namespace = "rmac-quick-settings"
+        box = (OUTPUT_W - 420, 30, OUTPUT_W, 540)
+
+        def bottom(image: Image.Image, baseline: Image.Image) -> int:
+            difference = ImageChops.difference(image.crop(box), baseline.crop(box)).convert("L")
+            mask = difference.point(lambda value: 255 if value > 60 else 0)
+            region = mask.getbbox()
+            return box[1] + region[3] if region else 0
+
+        def cpu_ticks(pid: int) -> int:
+            fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+            return int(fields[11]) + int(fields[12])
+
+        self.close_everything()
+        time.sleep(0.5)
+        baseline = self.capture("control-centre-first-open-baseline")
+        self.dispatch("quick-settings")
+        if not self.check("Control Centre first open: opens",
+                          self.wait_for(lambda: self.has_layer(namespace), 10, 0.02)):
+            return
+        # The first painted frame, however soon it arrives.
+        early = self.capture("control-centre-first-open-early")
+        for _ in range(60):
+            if bottom(early, baseline):
+                break
+            early = self.capture("control-centre-first-open-early")
+        sound = self.wait_for(lambda: self.find_button("Sound details"), 10)
+        time.sleep(1.0)
+        late = self.capture("control-centre-first-open-settled")
+        self.keep_capture("control-centre-first-open-settled")
+        early_bottom, late_bottom = bottom(early, baseline), bottom(late, baseline)
+        # 5 rows (Now Playing always shown, Display present) = 392 pt tall,
+        # 35 below the top.
+        self.check("Control Centre first open: the surface does not change height after opening",
+                   abs(early_bottom - late_bottom) <= 3,
+                   f"early={early_bottom}, settled={late_bottom}")
+        self.check("Control Centre first open: Sound is not cut off",
+                   late_bottom >= CONTROL_CENTRE_TOP + 392 - 4, f"bottom={late_bottom}")
+        if sound is None:
+            return
+        box_sound = self.extents(sound)
+        if box_sound is None:
+            self.check("Control Centre grow-out: the Sound module has screen extents", False)
+            return
+        x, y, _, _ = box_sound
+        x += OUTPUT_W - CONTROL_CENTRE_RIGHT - CONTROL_CENTRE_WIDTH
+        y += CONTROL_CENTRE_TOP
+        self.keys.move(x + 30, y + 23, OUTPUT_W, OUTPUT_H)
+        time.sleep(0.4)
+        self.keys.button(True)
+        time.sleep(0.03)
+        self.keys.button(False)
+        frames = [self.capture(f"control-centre-grow-{index}") for index in range(3)]
+        settled = self.wait_for(lambda: self.find_node(
+            ("push button", "button", "menu item", "list item", "label"),
+            lambda name: name == "Sound Settings\u2026"), 10)
+        time.sleep(0.6)
+        final = self.capture("control-centre-grow-final")
+        self.keep_capture("control-centre-grow-final")
+        again = self.capture("control-centre-grow-final-again")
+        self.check("Control Centre grow-out: the click opens the Sound view", settled)
+        self.check("Control Centre grow-out: the view is drawn growing, not instantly",
+                   self.changed_pixels(frames[0], final, box) > 400,
+                   f"first-frame-vs-final={self.changed_pixels(frames[0], final, box)}")
+        self.check("Control Centre grow-out: the finished view is still",
+                   self.changed_pixels(final, again, box) == 0)
+        pid = self.quick_settings.pid
+        before = cpu_ticks(pid)
+        time.sleep(2.0)
+        self.check("Control Centre grow-out: no frames are drawn once the motion ends",
+                   cpu_ticks(pid) - before <= 6, f"ticks={cpu_ticks(pid) - before}")
+        self.close_everything()
+
     def control_centre_sound_outputs(self) -> None:
         """Control Centre's Sound view with 1, 0 and 2 outputs, opened with
         real pointer clicks, as on macOS 26: the title, the module's empty
@@ -1609,6 +1697,8 @@ class Run:
                 self.control_centre_detail_panels()
             elif self.args.only == "control-centre-sound":
                 self.control_centre_sound_outputs()
+            elif self.args.only == "control-centre-grow":
+                self.control_centre_first_open_and_grow()
             elif self.args.only == "appearance":
                 self.desktop_menu_appearance()
             elif self.args.only == "fake-hardware":
@@ -1654,6 +1744,7 @@ class Run:
             self.layer_popover_dismissal(shortcut, namespace)
         self.control_centre_detail_escape()
         self.control_centre_detail_panels()
+        self.control_centre_first_open_and_grow()
         self.control_centre_sound_outputs()
         self.desktop_menu_appearance()
         self.fake_hardware_shows_real_data()
@@ -1764,6 +1855,7 @@ def main() -> int:
                                            "launcher", "app-drawer", "notification-center",
                                            "combined", "control-centre-list",
                                            "control-centre-detail", "control-centre-sound",
+                                           "control-centre-grow",
                                            "appearance", "fake-hardware",
                                            "focus-return", "option-alternate",
                                            "notification-center-shrink", "launcher-expanded"))

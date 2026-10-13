@@ -305,6 +305,9 @@ pub(crate) fn run() {
                 },
                 cx,
             );
+            // After the menus exist: Writing Tools stay hidden until Lulo
+            // Intelligence is known to be on with its model present.
+            rmac_writing_tools::init(cx);
             open_requested_windows(request, cx);
             cx.activate(true);
         });

@@ -1257,6 +1257,66 @@
       "label": "New notes start with:",
       "match": "exact",
       "reason": "Deliberately not offered (NOTES-13, docs/parity.md). Notes keeps the title in its own field rather than the Mac's single first line, so porting this control would have to visibly insert a Markdown heading marker into a brand-new note's body, which two real attempts both showed breaks the empty-body invariant several behaviour scenarios depend on; a stored-but-inert control was tried too and rejected under the project's no-stub rule. See crates/notes/src/settings_window.rs's file header."
+    },
+    {
+      "app": "*",
+      "label": "Writing Tools",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Show Writing Tools",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Proofread",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Rewrite",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Make Friendly",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Make Professional",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Make Concise",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Summarise",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Create Key Points",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
+    },
+    {
+      "app": "*",
+      "label": "Make List",
+      "match": "exact",
+      "reason": "Lulo Intelligence Writing Tools (ADR 0024 phase 2): the macOS equivalent is Apple Intelligence, which was turned off on the Mac the inventory was captured from."
     }
   ]
 }

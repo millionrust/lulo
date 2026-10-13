@@ -83,6 +83,27 @@ pub fn has_image_extension(name: &str) -> bool {
     )
 }
 
+/// PDF files, by extension.
+pub fn has_pdf_extension(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("pdf"))
+}
+
+/// The files among `dropped` that Preview can show: PDFs and the images it
+/// opens, by extension (the content is sniffed when the file is loaded), in
+/// the order they were dropped.
+pub fn openable_dropped(dropped: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    dropped
+        .iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| has_pdf_extension(name) || has_image_extension(name))
+        })
+        .cloned()
+        .collect()
+}
+
 /// Finder's name order: case-insensitive, with runs of digits compared by
 /// value so "img2" sorts before "img10".
 pub fn natural_cmp(left: &str, right: &str) -> Ordering {
@@ -232,6 +253,36 @@ pub fn display_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_pdfs_and_images_are_taken_from_a_drop() {
+        let dropped: Vec<std::path::PathBuf> = [
+            "/home/u/report.PDF",
+            "/home/u/notes.txt",
+            "/home/u/photo.JPeG",
+            "/home/u/folder",
+            "/home/u/scan.tiff",
+            "/home/u/.pdf-backup",
+            "/home/u/archive.zip",
+        ]
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+        let taken: Vec<_> = openable_dropped(&dropped)
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            taken,
+            [
+                "/home/u/report.PDF",
+                "/home/u/photo.JPeG",
+                "/home/u/scan.tiff"
+            ]
+        );
+        assert!(openable_dropped(&[]).is_empty());
+        assert!(has_pdf_extension("a.pdf") && !has_pdf_extension("pdf"));
+    }
 
     #[test]
     fn sniffs_documents_by_content() {

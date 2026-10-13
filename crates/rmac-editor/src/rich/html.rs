@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 
-use super::model::{Alignment, CharStyle, Document, ListKind};
+use super::model::{Alignment, CharStyle, Document, ListKind, WritingDirection};
 
 fn push_escaped(out: &mut String, text: &str) {
     for character in text.chars() {
@@ -104,9 +104,16 @@ pub fn write(document: &Document) -> String {
             Alignment::Right => "right",
             Alignment::Justified => "justify",
         };
+        // `dir` follows the paragraph's Writing Direction; Default is left
+        // to the browser's own first-strong-letter rule (`dir="auto"`).
+        let dir = match style.direction {
+            WritingDirection::Default => "auto",
+            WritingDirection::LeftToRight => "ltr",
+            WritingDirection::RightToLeft => "rtl",
+        };
         let _ = write!(
             out,
-            " style=\"margin:0;white-space:pre-wrap;text-align:{align};line-height:{}\">",
+            " dir=\"{dir}\" style=\"margin:0;white-space:pre-wrap;text-align:{align};line-height:{}\">",
             style.line_spacing
         );
         if paragraph.is_empty() {
@@ -175,5 +182,20 @@ mod tests {
         // The nested item opens a second list inside the first.
         assert_eq!(html.matches("<ol").count(), 2);
         assert_eq!(html.matches("</ol>").count(), 2);
+    }
+
+    #[test]
+    fn writing_direction_becomes_the_dir_attribute() {
+        let mut document = Document::from_plain_text("a\nb\nc", &CharStyle::default());
+        document.update_paragraph_style(2..3, |style| {
+            style.direction = WritingDirection::RightToLeft;
+        });
+        document.update_paragraph_style(4..5, |style| {
+            style.direction = WritingDirection::LeftToRight;
+        });
+        let html = write(&document);
+        assert_eq!(html.matches("dir=\"auto\"").count(), 1, "{html}");
+        assert_eq!(html.matches("dir=\"rtl\"").count(), 1, "{html}");
+        assert_eq!(html.matches("dir=\"ltr\"").count(), 1, "{html}");
     }
 }

@@ -13,7 +13,7 @@ use gpui::{
     WindowControlArea,
 };
 use notify::Watcher as _;
-use rmac_clock::alarms::{Alarm, Days};
+use rmac_clock::alarms::{Alarm, AlarmSound, Days};
 use rmac_clock::changes::Change;
 use rmac_clock::cities::{self, City};
 use rmac_clock::countdown::{self, Entry, Field};
@@ -25,7 +25,10 @@ use rmac_clock::stopwatch::{self, LapMark, Phase};
 use rmac_clock::store::{self, State};
 use rmac_clock::tz::{self, Zone};
 use rmac_clock::{now_millis, schedule};
-use rmac_ui::{mac, InputEvent, InputState, SearchField, StyledExt as _, TextField, Toggle};
+use rmac_ui::{
+    mac, InputEvent, InputState, PopUpButton, PopupMenuItem, SearchField, StyledExt as _,
+    TextField, Toggle,
+};
 
 use crate::{
     CheckDocumentNow, CloseWindow, LapReset, NewItem, NoRecentTimers, ShowAlarms,
@@ -1016,10 +1019,27 @@ impl ClockView {
                 (sun_line("Sunset", set), rgb(m::CARD_SECONDARY).into()),
             ];
             let name = city.name.to_owned();
+            let drag_label = SharedString::from(city.name);
+            let onto = name.clone();
             cards.push(
                 div()
                     .id(SharedString::from(format!("clock-card-{index}")))
                     .group("card")
+                    // Dragging a card onto another reorders the World Clock.
+                    .on_drag(DraggedCity(name.clone()), move |_, _, _, cx| {
+                        let label = drag_label.clone();
+                        cx.new(|_| CityDragPreview { label })
+                    })
+                    .drag_over::<DraggedCity>(|style, _, _, _| style.opacity(0.7))
+                    .on_drop(cx.listener(move |this, dragged: &DraggedCity, _, cx| {
+                        this.change(
+                            Change::MoveCity {
+                                name: dragged.0.clone(),
+                                onto: onto.clone(),
+                            },
+                            cx,
+                        );
+                    }))
                     .relative()
                     .flex_none()
                     .w(px(m::CARD_WIDTH))
@@ -1423,6 +1443,32 @@ impl ClockView {
                             "Label",
                             TextField::new(&editor.label).small().w(px(200.0)),
                         ))
+                        .child(labelled("Sound", {
+                            let view = cx.entity();
+                            let current = alarm.sound;
+                            PopUpButton::new("clock-editor-sound", current.label()).dropdown_menu(
+                                move |menu, _, _| {
+                                    AlarmSound::ALL.iter().fold(menu, |menu, &sound| {
+                                        let view = view.clone();
+                                        menu.item(
+                                            PopupMenuItem::new(sound.label())
+                                                .checked(sound == current)
+                                                .on_click(move |_, _, cx| {
+                                                    // Choosing a sound plays it, as the
+                                                    // Mac's pop-up does.
+                                                    let _ = rmac_sound::play(sound.cue());
+                                                    view.update(cx, |this, cx| {
+                                                        if let Some(editor) = this.editor.as_mut() {
+                                                            editor.alarm.sound = sound;
+                                                            cx.notify();
+                                                        }
+                                                    });
+                                                }),
+                                        )
+                                    })
+                                },
+                            )
+                        }))
                         .child(labelled(
                             "Snooze",
                             Toggle::new("clock-editor-snooze")
@@ -2221,6 +2267,27 @@ fn ring(diameter: f32, fraction: f32) -> impl IntoElement {
     .top_0()
     .left_0()
     .size_full()
+}
+
+/// A World Clock card being dragged to a new place in the list.
+struct DraggedCity(String);
+
+/// What follows the pointer while a card is dragged: the city's name.
+struct CityDragPreview {
+    label: SharedString,
+}
+
+impl Render for CityDragPreview {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(12.0))
+            .py(px(6.0))
+            .rounded(px(8.0))
+            .bg(rgb(m::CARD_FILL))
+            .text_size(px(m::CARD_TEXT_SIZE))
+            .text_color(rgb(m::TEXT_PRIMARY))
+            .child(self.label.clone())
+    }
 }
 
 impl Render for ClockView {

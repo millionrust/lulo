@@ -29,7 +29,7 @@ use rmac_ui::input_actions as input;
 use super::layout::{layout_paragraph, LayoutParams, ParagraphLayout};
 use super::model::{
     clamp_size, normalize_newlines, Alignment, CharStyle, Document, DocumentAttributes, Ligatures,
-    ListKind, ParagraphStyle, Rgb, MAX_LIST_LEVEL,
+    ListKind, ParagraphStyle, Rgb, WritingDirection, MAX_LIST_LEVEL,
 };
 
 /// Undo steps kept per editor.
@@ -477,6 +477,12 @@ impl RichTextEditor {
 
     pub fn set_alignment(&mut self, alignment: Alignment, cx: &mut Context<Self>) {
         self.change_paragraph_style(cx, move |style| style.alignment = alignment);
+    }
+
+    /// Format ▸ Text ▸ Writing Direction: the direction of every paragraph
+    /// the selection touches.
+    pub fn set_writing_direction(&mut self, direction: WritingDirection, cx: &mut Context<Self>) {
+        self.change_paragraph_style(cx, move |style| style.direction = direction);
     }
 
     pub fn set_list(&mut self, list: Option<ListKind>, cx: &mut Context<Self>) {

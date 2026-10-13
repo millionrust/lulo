@@ -1109,7 +1109,9 @@ def main() -> int:
         stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("bin_dir", type=Path)
-    parser.add_argument("apps", nargs="+")
+    # None with --shell: the Lulo layer job checks only lulo-session and
+    # lulo-shell (the apps it opens come from bin_dir).
+    parser.add_argument("apps", nargs="*")
     parser.add_argument("--screenshots", type=Path)
     parser.add_argument(
         "--foreground-check",
@@ -1139,6 +1141,8 @@ def main() -> int:
         help="Write each app's launch time, idle ticks and wake-ups here as JSON.",
     )
     arguments = parser.parse_args()
+    if not arguments.apps and not arguments.shell:
+        parser.error("name at least one app, or pass --shell")
     if sys.platform != "win32":
         print("launch_smoke.py runs only on Windows", file=sys.stderr)
         return 2

@@ -247,7 +247,12 @@ pub(super) fn print_lines(document: &rich::Document) -> Vec<rmac_print::RichLine
     let mut lines = Vec::new();
     for (index, paragraph) in document.paragraphs().iter().enumerate() {
         let style = paragraph.style();
+        // Left and Right are the leading and trailing edge, so a right-to-left
+        // paragraph prints them the other way round, as it shows on screen.
+        let rtl = paragraph.is_rtl();
         let align = match style.alignment {
+            rich::Alignment::Left if rtl => rmac_print::RichAlign::Right,
+            rich::Alignment::Right if rtl => rmac_print::RichAlign::Left,
             rich::Alignment::Left => rmac_print::RichAlign::Left,
             rich::Alignment::Center => rmac_print::RichAlign::Center,
             rich::Alignment::Right => rmac_print::RichAlign::Right,

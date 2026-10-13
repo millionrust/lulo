@@ -79,7 +79,9 @@ pub fn message_for(error: &VoiceError) -> Option<&'static str> {
         VoiceError::NotDownloaded => {
             "Download the voice model in System Settings ▸ Lulo Intelligence."
         }
-        VoiceError::NoRuntime => "Talk to Lulo needs ONNX Runtime (libonnxruntime) installed.",
+        VoiceError::NoRuntime => {
+            "Download the voice model again in System Settings ▸ Lulo Intelligence."
+        }
         VoiceError::NoMicrophone => "Lulo could not open the microphone.",
         VoiceError::Busy => "Lulo is already listening.",
         VoiceError::LowMemory => "Not enough free memory right now.",

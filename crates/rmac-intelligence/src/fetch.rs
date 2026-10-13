@@ -91,7 +91,8 @@ impl<F: FnMut(&str, u64) -> Result<std::process::Child, FetchError>> Source for 
     }
 }
 
-fn curl(url: &str, offset: u64) -> Result<std::process::Child, FetchError> {
+/// The system `curl`, HTTPS only, from `offset`.
+pub fn curl(url: &str, offset: u64) -> Result<std::process::Child, FetchError> {
     let mut command = Command::new("curl");
     command
         .args([
@@ -253,6 +254,12 @@ impl ChildOutput for std::process::Child {
 pub fn remove(model: &(impl Pinned + ?Sized)) -> io::Result<()> {
     let models = paths::models_dir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no data directory"))?;
+    remove_in(&models, model)
+}
+
+/// [`remove`] in a given models folder.
+pub fn remove_in(models: &Path, model: &(impl Pinned + ?Sized)) -> io::Result<()> {
+    let models = models.to_path_buf();
     for path in [
         paths::model_file(&models, model),
         paths::partial_file(&models, model),

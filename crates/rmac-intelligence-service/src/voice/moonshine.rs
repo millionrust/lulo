@@ -8,8 +8,10 @@
 //! linked because its build downloads prebuilt static archives that also
 //! carry espeak-ng (GPL-3.0) for its TTS, which Lulo's MIT binaries must
 //! not link, and because a package build may not download anything. ONNX
-//! Runtime is the system library (Ubuntu's `libonnxruntime1.23`, MIT),
-//! loaded with `dlopen` only when a capture starts, so nothing native is
+//! Runtime (MIT) is Microsoft's release library that Settings downloads
+//! with the voice model, pinned by checksum, or else the system's
+//! (Ubuntu's `libonnxruntime1.23`), loaded with `dlopen` only when a
+//! capture starts, so nothing native is
 //! compiled into Lulo and no build-host path can end up in the binary.
 
 use std::path::{Path, PathBuf};
@@ -37,8 +39,10 @@ const LIBRARY_DIRECTORIES: &[&str] = &[
 const MINIMUM_MINOR: u32 = 23;
 
 /// Find ONNX Runtime: `ORT_DYLIB_PATH` if set (measurements with a library
-/// unpacked outside the system), otherwise the newest
-/// `libonnxruntime.so.1.<minor>[.<patch>]` the system has.
+/// unpacked outside the system); otherwise the checksum-verified copy that
+/// came with the voice model (`rmac_intelligence::voice::runtime`);
+/// otherwise the newest `libonnxruntime.so.1.<minor>[.<patch>]` the system
+/// has (Ubuntu's `libonnxruntime1.23`).
 pub fn find_onnxruntime() -> Result<PathBuf, VoiceEngineError> {
     if let Some(path) = std::env::var_os("ORT_DYLIB_PATH").map(PathBuf::from) {
         return if path.is_file() {
@@ -49,6 +53,12 @@ pub fn find_onnxruntime() -> Result<PathBuf, VoiceEngineError> {
                 path.display()
             )))
         };
+    }
+    // The pinned copy Settings downloaded with the voice model.
+    if let Some(path) = rmac_intelligence::paths::models_dir()
+        .and_then(|models| rmac_intelligence::voice::runtime::verified(&models))
+    {
+        return Ok(path);
     }
     let mut best: Option<(Vec<u32>, PathBuf)> = None;
     for directory in LIBRARY_DIRECTORIES {

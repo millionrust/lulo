@@ -154,7 +154,7 @@ impl Settings {
         view: &Entity<Settings>,
     ) -> AnyElement {
         let pane = &self.intelligence;
-        let size = megabytes(voice.size());
+        let size = megabytes(voice.download_size());
         let (status, button): (String, AnyElement) = if let Some(download) = &pane.voice_download {
             let percent = download.done * 100 / download.total.max(1);
             let cancel_view = view.clone();
@@ -183,7 +183,7 @@ impl Settings {
                 (
                     format!(
                         "Download paused at {}% of {size}",
-                        pane.voice_downloaded * 100 / voice.size().max(1)
+                        pane.voice_downloaded * 100 / voice.download_size().max(1)
                     ),
                     "Resume",
                 )

@@ -24,6 +24,7 @@ pub mod audio;
 #[cfg(feature = "client")]
 pub mod client;
 pub mod handoff;
+pub mod runtime;
 pub mod tokens;
 pub mod wer;
 
@@ -254,7 +255,31 @@ impl VoiceModel {
                     crate::fetch::partial_bytes(file)
                 }
             })
-            .sum()
+            .sum::<u64>()
+            + runtime::for_this_cpu()
+                .map(|library| {
+                    if verify::is_present(models, library) {
+                        library.archive_size
+                    } else {
+                        crate::fetch::partial_bytes(&runtime::Archive(library))
+                    }
+                })
+                .unwrap_or(0)
+    }
+
+    /// What "Download" fetches: the model's files and, where Lulo has a
+    /// pinned build for this CPU, ONNX Runtime ([`runtime`]).
+    pub fn download_size(&self) -> u64 {
+        self.size()
+            + runtime::for_this_cpu()
+                .map(|library| library.archive_size)
+                .unwrap_or(0)
+    }
+
+    /// Whether everything the talk key needs is on disk and verified.
+    pub fn download_complete(&self, models: &Path) -> bool {
+        self.is_present(models)
+            && (runtime::for_this_cpu().is_none() || runtime::is_present(models))
     }
 }
 
@@ -295,7 +320,7 @@ pub fn availability(config: &Config, facts: &Facts, models: Option<&Path>) -> Av
         return Availability::NotOffered(reason);
     }
     let model = config.tier(facts).unwrap_or(Tier::Tiny).voice_model();
-    if models.is_some_and(|models| model.is_present(models)) {
+    if models.is_some_and(|models| model.download_complete(models)) {
         Availability::Ready(model)
     } else {
         Availability::NotDownloaded(model)

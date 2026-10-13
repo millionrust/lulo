@@ -93,7 +93,7 @@ fn load() -> Loaded {
     let voice = config.tier(&facts).unwrap_or(Tier::Tiny).voice_model();
     let voice_present = models
         .as_deref()
-        .is_some_and(|models| voice.is_present(models));
+        .is_some_and(|models| voice.download_complete(models));
     let voice_downloaded = models
         .as_deref()
         .map(|models| voice.downloaded_bytes(models))
@@ -237,7 +237,12 @@ impl Settings {
                 model
                     .files
                     .iter()
-                    .try_for_each(rmac_intelligence::fetch::remove)
+                    .try_for_each(rmac_intelligence::fetch::remove)?;
+                // The ONNX Runtime library that came with it.
+                match rmac_intelligence::voice::runtime::for_this_cpu() {
+                    Some(library) => rmac_intelligence::fetch::remove(library),
+                    None => Ok(()),
+                }
             })
             .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -280,7 +285,7 @@ impl Settings {
         let (done, total, argument) = if voice {
             (
                 self.intelligence.voice_downloaded,
-                tier.voice_model().size(),
+                tier.voice_model().download_size(),
                 format!("voice-{}", tier.as_str()),
             )
         } else {

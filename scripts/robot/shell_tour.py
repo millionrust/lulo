@@ -24,19 +24,31 @@ DOCK_BAND = 90  # logical px from the bottom edge
 
 
 def find_clusters(image, band: tuple[int, int, int, int], min_gap: int = 6, threshold: int = 40,
-                  min_width: int = 6) -> list[tuple[int, int]]:
+                  min_width: int = 6, glyph: Optional[str] = None) -> list[tuple[int, int]]:
     """Horizontal runs of columns in `band` (image pixels) that hold
     something other than the band's background: the status icons in the
-    top bar, or the icons in the Dock. Returns (left, right) spans."""
+    top bar, or the icons in the Dock. Returns (left, right) spans.
 
-    crop = image.crop(band).convert("L")
+    The top bar is translucent over the wallpaper, whose bright streaks are
+    not icons: `glyph="light"` or `"dark"` counts only near-neutral pixels
+    of the bar's label colour (Dark or Light appearance) instead."""
+
+    rgb = image.crop(band).convert("RGB")
+    crop = rgb.convert("L")
     width, height = crop.size
     hist = crop.histogram()
     background = max(range(256), key=lambda v: hist[v])
+
+    def ink(x: int, y: int) -> bool:
+        if glyph is None:
+            return abs(crop.getpixel((x, y)) - background) > threshold
+        r, g, b = rgb.getpixel((x, y))
+        neutral = max(r, g, b) - min(r, g, b) < 40
+        return neutral and (min(r, g, b) > 200 if glyph == "light" else max(r, g, b) < 60)
+
     busy = []
     for x in range(width):
-        column = [crop.getpixel((x, y)) for y in range(0, height, 2)]
-        busy.append(sum(1 for v in column if abs(v - background) > threshold) >= 2)
+        busy.append(sum(1 for y in range(0, height, 2) if ink(x, y)) >= 2)
     spans: list[tuple[int, int]] = []
     start: Optional[int] = None
     gap = 0
@@ -130,7 +142,8 @@ def status_menus(robot) -> None:
     _, image = robot.shot("shell-top-bar")
     width = image.size[0]
     band = (width // 2, 2, width - 2, int(TOP_BAR_H * SCALE) - 2)
-    spans = find_clusters(image, band, min_gap=12)
+    glyph = "light" if "dark" in robot.scheme_start else "dark"
+    spans = [s for s in find_clusters(image, band, min_gap=12, glyph=glyph) if s[1] - s[0] >= 10]
     robot.step("shell", "status items", spans=spans)
     if not spans:
         robot.finding("medium", "shell", "robot", "found no status items in the top bar")
@@ -153,16 +166,28 @@ def spotlight(robot) -> None:
         open_and_dismiss(robot, f"spotlight-{query}", type_query, settle=0.3)
 
 
+DOCK_ITEMS = 12  # pinned apps, recent apps and the Bin; extra presses wrap
+
+
 def dock_menus(robot) -> None:
+    """Every Dock item's menu, reached the keyboard way (⌃F3, Right to the
+    item, Up opens its menu: `rmac_dock::keyboard`), since the Dock's
+    translucent material makes its icons hard to find on a screenshot.
+    The first item also gets a real right-click."""
+
+    for index in range(DOCK_ITEMS):
+        def open_menu(index=index):
+            robot.key("ctrl-f3", 0.5)
+            for _ in range(index):
+                robot.key("right", 0.12)
+            robot.key("up", 0.3)
+        open_and_dismiss(robot, f"dock-menu-{index}", open_menu, settle=0.5)
+        robot.key("escape", 0.3)  # leave the Dock's keyboard mode
     _, image = robot.shot("shell-dock")
     width, height = image.size
-    band = (0, height - int(DOCK_BAND * SCALE), width, height - 4)
-    spans = [s for s in find_clusters(image, band, min_gap=4) if 20 * SCALE <= s[1] - s[0] <= 90 * SCALE]
-    robot.step("shell", "dock icons", spans=spans)
+    x = width / 2 / SCALE
     y = (height - int(DOCK_BAND * SCALE) / 2) / SCALE
-    for index, (left, right) in enumerate(spans[:16]):
-        x = (left + right) / 2 / SCALE
-        open_and_dismiss(robot, f"dock-menu-{index}", lambda x=x: robot.input.click(x, y, button="right"), settle=0.6)
+    open_and_dismiss(robot, "dock-right-click", lambda: robot.input.click(x, y, button="right"), settle=0.6)
 
 
 def desktop_menu(robot) -> None:
@@ -186,7 +211,7 @@ def apps_grid(robot) -> None:
 
 def tour(robot) -> None:
     robot.current_app = "shell"
-    for part in (lulo_menu, status_menus, spotlight, notification_and_cc_placeholder, apps_grid, dock_menus,
+    for part in (lulo_menu, status_menus, spotlight, control_centre_panels, apps_grid, dock_menus,
                  desktop_menu):
         if robot.over_time():
             robot.log("time budget used up in the shell tour")
@@ -194,8 +219,49 @@ def tour(robot) -> None:
         part(robot)
 
 
-def notification_and_cc_placeholder(robot) -> None:
-    """Notification Centre and Control Centre open as status items above;
-    this hook is where their inner panels (Display, Sound) are walked."""
+# Control Centre's Display and Sound modules open their detail panels from
+# the round button at the right end of each module, measured from the
+# panel's own top-right corner (image pixels, 1.25x) on the reference
+# laptop's build. The click only happens if that spot really is the light
+# round button, never a slider (which would change brightness or volume).
+CC_PANEL_BUTTONS = (("display", 59, 256), ("sound", 59, 351))
+QUICK_SETTINGS = ["/usr/libexec/rmac/rmac-shortcut-dispatch", "quick-settings"]
 
-    return None
+
+def control_centre_panels(robot) -> None:
+    for name, from_right, from_top in CC_PANEL_BUTTONS:
+        robot.check_session()
+        _, before = robot.shot(f"shell-before-cc-{name}")
+        robot.niri.spawn(QUICK_SETTINGS)
+        time.sleep(1.0)
+        _, opened = robot.shot(f"shell-cc-for-{name}")
+        box = vision.changed_box(before, opened)
+        if box is None:
+            robot.finding("high", "shell", "did-not-open", "Control Centre did not open", "")
+            return
+        x, y = box[2] - from_right, box[1] + from_top
+        luma = opened.convert("L")
+        # The button: a white glyph on a light, translucent disc. A slider
+        # end or the sun/speaker icon has darker module material beside it.
+        centre, left, right = (luma.getpixel((x + dx, y)) for dx in (0, -10, 10))
+        if centre < 230 or not (130 <= left <= 235 and 130 <= right <= 235):
+            robot.step("shell", "cc panel button not found", panel=name, luma=(centre, left, right), at=(x, y))
+            robot.key("escape", 0.5)
+            continue
+        volume, brightness = live.volume(robot.env), live.brightness()
+        robot.input.click(x / SCALE, y / SCALE)
+        time.sleep(0.8)
+        path, panel = robot.shot(f"shell-cc-{name}-panel")
+        changed = vision.changed_fraction(opened, panel, box)
+        robot.step("shell", "cc panel", panel=name, changed=round(changed, 4))
+        if changed < 0.01:
+            robot.finding("high", "shell", "no-effect", f"Control Centre {name} button opened nothing", "", path)
+        for problem in vision.low_contrast(panel, box) + vision.edge_ink(panel, box):
+            robot.finding("low", "shell", problem["kind"], f"Control Centre {name}: {problem['kind']}",
+                          problem["detail"], path)
+        robot.key("escape", 0.5)
+        if any(n.startswith("rmac-quick-settings") for n in layer_names(robot)):
+            robot.key("escape", 0.5)
+        if live.volume(robot.env) != volume or live.brightness() != brightness:
+            robot.finding("high", "shell", "state", f"opening Control Centre {name} changed volume or brightness",
+                          f"{volume}/{brightness} -> {live.volume(robot.env)}/{live.brightness()}", path)

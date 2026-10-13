@@ -107,12 +107,14 @@ function Keys {
     param([int[]]$k)
     Guard
     $fg = $R::PidOf($R::Foreground())
-    if (-not (Is-Lulo $fg)) { $script:skippedInput++; Write-Host "robot: keys $($k -join '+') skipped: '$($R::ProcessName($fg))' is in front"; return }
+    if (-not ($fg -eq (Shell-Pid) -or $script:launched.Contains([int]$fg))) { $script:skippedInput++; Write-Host "robot: keys $($k -join '+') skipped: '$($R::ProcessName($fg))' is in front"; return }
     $R::Chord($k); Mark
 }
+# Only the Lulo layer and the processes the robot started itself: a Lulo app
+# the PC's user has open (showing their own files) is theirs, not the robot's.
 function Target-Ok($x, $y) {
     $id = $R::PidAt([int]$x, [int]$y)
-    if (Is-Lulo $id) { return $true }
+    if ($id -eq (Shell-Pid) -or $script:launched.Contains([int]$id)) { return $true }
     $script:skippedInput++
     Write-Host "robot: click at ($x, $y) skipped: '$($R::ProcessName($id))' is there"
     return $false

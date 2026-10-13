@@ -83,9 +83,17 @@ The robot is written for a PC that belongs to someone else.
 
 - It starts only after 2 minutes without input, and stops as soon as input
   arrives that it did not send itself.
-- It touches only Lulo's apps, the Lulo layer and the scratch folder; the
-  user's Desktop icons are never clicked (the folder double-click happens
-  in Files, in the scratch folder).
+- It touches only the Lulo layer, the app windows it started itself and the
+  scratch folder: a click lands only where one of those windows is on top,
+  and keys go only to one of them in front; anything else is skipped and
+  counted (`skipped_input`). A Lulo app the user has open is theirs and is
+  never clicked, nor are the user's Desktop icons (the folder double-click
+  happens in Files, in the scratch folder).
+- Alt+Space may belong to another app (the ChatGPT app on the first test
+  PC): the robot uses the fallback Lulo recorded (`SpotlightHotkeyNotice`)
+  and closes any other app's window a hotkey opened.
+- Its clean-up ends only the processes it started (`launched.txt`), never
+  an app the user opened while it waited.
 - Menu items, buttons and keys that look destructive or outward (delete,
   Bin, empty, quit, close, send, share, print, erase, shut down, restart,
   sleep, log out, lock, wallpaper, desktop picture, rename, move, uninstall,

@@ -95,6 +95,8 @@ impl Pinned for RuntimeLibrary {
 /// The release archive, while it downloads.
 pub struct Archive(pub &'static RuntimeLibrary);
 
+// The archive's own URL, size and hash: deliberately not the library's.
+#[allow(clippy::misnamed_getters)]
 impl Pinned for Archive {
     fn url(&self) -> &str {
         self.0.archive_url

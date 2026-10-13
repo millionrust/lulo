@@ -1727,13 +1727,15 @@ do not change what Lulo OS draws:
 
 ### Proof: the same scene on both
 
-`.github/workflows/shell-scenes.yml` draws three fixed scenes on Lulo OS (headless sway,
+`.github/workflows/shell-scenes.yml` draws four fixed scenes on Lulo OS (headless sway,
 nested niri at scale 1, `scripts/behavior/run_shell_scene.py`) and on `windows-latest`
 (`scripts/windows/shell_scene.py`), both 1024 × 768 at 100 %: the built-in wallpaper, the
 clock at Thursday 8 October 9:41 AM, fixed status readings (`RMAC_SHELL_SCENE`), the nine
 Lulo apps that build for Windows pinned, nothing running, an empty Desktop and Recycle Bin;
-then the same with Spotlight open on "text editor", and with Control Centre open
-(`RMAC_SHELL_SCENE_OPEN`). `scripts/compare_shell_scenes.py` blurs both screens slightly
+then the same with Spotlight open on "text editor", with Control Centre open
+(`RMAC_SHELL_SCENE_OPEN`), and with Apps open over a fresh profile's own Dock pins
+(`--default-dock`: Files, Apps, Notes, Text Editor, Terminal, System Settings). Run
+38387396326 (Apps scene): screen 1.56 mean, 0.09 % changed; Dock 1.01, 0.41 %. `scripts/compare_shell_scenes.py` blurs both screens slightly
 (σ 1.5, so sub-pixel text rendering does not count), compares luminance per region (screen,
 menu bar, Dock, desktop) and fails above a mean difference of 6 or 3 % of pixels changed by
 more than 32; the `shell-scene-diff` artifact holds both screens, a marked diff image and a

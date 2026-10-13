@@ -94,6 +94,33 @@ class FixtureTests(unittest.TestCase):
             self.assertEqual(len(list(folder.iterdir())), 25)
 
 
+class SwitchFlickerTests(unittest.TestCase):
+    def test_focus_path_folds_repeats(self) -> None:
+        self.assertEqual(si.focus_path([1, 1, 2, 2, None, None, 2]), [1, 2, None, 2])
+
+    def test_one_move_to_the_target_is_clean(self) -> None:
+        self.assertFalse(si.switch_flickered([2], original=1, target=2))
+        self.assertFalse(si.switch_flickered([2, None, 2], original=1, target=2))
+        self.assertFalse(si.switch_flickered([1, 2], original=1, target=2))
+
+    def test_keyboard_taken_back_flickers(self) -> None:
+        self.assertFalse(si.keyboard_flickered([("focus_in", 1), ("present", 2)]))
+        self.assertTrue(si.keyboard_flickered(
+            [("focus_in", 1), ("present", 2), ("focus_out", 3), ("focus_in", 4)]))
+
+    def test_settled_switch_is_the_frame_after_the_last_enter(self) -> None:
+        events = [("monotonic_origin", 10_000_000), ("present", 5_000),
+                  ("focus_in", 20_000), ("present", 25_000), ("focus_out", 30_000),
+                  ("focus_in", 90_000), ("configure", 91_000), ("present", 99_000)]
+        self.assertAlmostEqual(si.settled_switch_ms(events, 2, start=10.0), 99.0, places=3)
+        self.assertIsNone(si.settled_switch_ms(events[:2], 2, start=10.0))
+
+    def test_any_detour_or_repeat_flickers(self) -> None:
+        self.assertTrue(si.switch_flickered([2, 1, 2], original=1, target=2))
+        self.assertTrue(si.switch_flickered([3, 2], original=1, target=2))
+        self.assertTrue(si.switch_flickered([], original=1, target=2))
+
+
 class SweepWiringTests(unittest.TestCase):
     def test_every_scenario_has_a_method(self) -> None:
         for name, method in si.SCENARIOS.items():

@@ -327,84 +327,88 @@ mod bar {
             // on Windows' thread pool, so a burst of updates woke the idle
             // shell once per update at the next minute.
             type ClockTick = std::pin::Pin<Box<futures_util::future::Fuse<gpui::Task<()>>>>;
-            let mut clock: Option<(bool, ClockTick)> = None;
-            cx.spawn(async move |this, cx| loop {
-                let show_seconds = this
-                    .read_with(cx, |this, _| this.update.snapshot.status.clock.show_seconds)
-                    .unwrap_or(false);
-                if clock
-                    .as_ref()
-                    .is_none_or(|(seconds, _)| *seconds != show_seconds)
-                {
-                    let epoch_millis = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis();
-                    let timer = cx
-                        .background_executor()
-                        .timer(delay_until_next_clock_tick(epoch_millis, show_seconds))
-                        .fuse();
-                    clock = Some((show_seconds, Box::pin(timer)));
-                }
-                let Some((_, tick)) = clock.as_mut() else {
-                    break;
-                };
-                let update = receiver.recv().fuse();
-                futures_util::pin_mut!(update);
-                futures_util::select! {
-                    update = update => {
-                        let Ok(update) = update else { break };
-                        let visible = update.visible;
-                        if this.update(cx, |this, cx| {
-                            let focused_app = update.snapshot.status.focused.app_id.clone();
-                            // The compositor projection can momentarily report no
-                            // focused window during unrelated events; keep the
-                            // last known app's menus rather than clearing them.
-                            // The Open/Save panel is a real, separate window
-                            // with its own app id, but on the Mac it is a
-                            // sheet or panel of the app that opened it, never
-                            // a frontmost application in its own right — so
-                            // it taking niri's focus must not switch (and
-                            // clear) the menu bar away from that app either
-                            // (OTHER-04, docs/parity.md).
-                            if let Some(app_id) = focused_app
-                                .filter(|app_id| Some(app_id) != this.menu_app_id.as_ref())
-                                .filter(|app_id| !rmac_apps::identity::is_transient_panel(app_id))
-                            {
-                                this.menu_app_id = Some(app_id.clone());
-                                this.menus = static_fallback_menus(&app_id);
-                                this.menus_live = false;
-                                this.menu_generation = this.menu_generation.saturating_add(1);
-                                if rmac_app_menu::bus_name(&app_id).is_some() {
-                                    request_app_menus(app_id, this.menu_generation, cx);
-                                }
-                            } else if this.menu_app_id.is_none() {
-                                this.show_desktop_menus(cx);
-                            }
-                            this.update = update;
-                            // One process serves every display, so each
-                            // low-battery level is announced exactly once.
-                            if let Some(battery) = this.update.snapshot.status.battery {
-                                if let Some(level) = this
-                                    .low_battery
-                                    .observe(battery.percentage, battery.on_battery)
-                                {
-                                    let (summary, body) =
-                                        menu_model::low_battery_copy(level, battery.percentage);
-                                    post_system_notice(summary, body, cx);
-                                }
-                            }
-                            if visible {
-                                cx.notify();
-                            }
-                        }).is_err() {
-                            break;
-                        }
+            cx.spawn(async move |this, cx| {
+                let mut clock: Option<(bool, ClockTick)> = None;
+                loop {
+                    let show_seconds = this
+                        .read_with(cx, |this, _| this.update.snapshot.status.clock.show_seconds)
+                        .unwrap_or(false);
+                    if clock
+                        .as_ref()
+                        .is_none_or(|(seconds, _)| *seconds != show_seconds)
+                    {
+                        let epoch_millis = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis();
+                        let timer = cx
+                            .background_executor()
+                            .timer(delay_until_next_clock_tick(epoch_millis, show_seconds))
+                            .fuse();
+                        clock = Some((show_seconds, Box::pin(timer)));
                     }
-                    _ = tick => {
-                        clock = None;
-                        if this.update(cx, |_, cx| cx.notify()).is_err() {
-                            break;
+                    let Some((_, tick)) = clock.as_mut() else {
+                        break;
+                    };
+                    let update = receiver.recv().fuse();
+                    futures_util::pin_mut!(update);
+                    futures_util::select! {
+                        update = update => {
+                            let Ok(update) = update else { break };
+                            let visible = update.visible;
+                            if this.update(cx, |this, cx| {
+                                let focused_app = update.snapshot.status.focused.app_id.clone();
+                                // The compositor projection can momentarily report no
+                                // focused window during unrelated events; keep the
+                                // last known app's menus rather than clearing them.
+                                // The Open/Save panel is a real, separate window
+                                // with its own app id, but on the Mac it is a
+                                // sheet or panel of the app that opened it, never
+                                // a frontmost application in its own right — so
+                                // it taking niri's focus must not switch (and
+                                // clear) the menu bar away from that app either
+                                // (OTHER-04, docs/parity.md).
+                                if let Some(app_id) = focused_app
+                                    .filter(|app_id| Some(app_id) != this.menu_app_id.as_ref())
+                                    .filter(|app_id| {
+                                        !rmac_apps::identity::is_transient_panel(app_id)
+                                    })
+                                {
+                                    this.menu_app_id = Some(app_id.clone());
+                                    this.menus = static_fallback_menus(&app_id);
+                                    this.menus_live = false;
+                                    this.menu_generation = this.menu_generation.saturating_add(1);
+                                    if rmac_app_menu::bus_name(&app_id).is_some() {
+                                        request_app_menus(app_id, this.menu_generation, cx);
+                                    }
+                                } else if this.menu_app_id.is_none() {
+                                    this.show_desktop_menus(cx);
+                                }
+                                this.update = update;
+                                // One process serves every display, so each
+                                // low-battery level is announced exactly once.
+                                if let Some(battery) = this.update.snapshot.status.battery {
+                                    if let Some(level) = this
+                                        .low_battery
+                                        .observe(battery.percentage, battery.on_battery)
+                                    {
+                                        let (summary, body) =
+                                            menu_model::low_battery_copy(level, battery.percentage);
+                                        post_system_notice(summary, body, cx);
+                                    }
+                                }
+                                if visible {
+                                    cx.notify();
+                                }
+                            }).is_err() {
+                                break;
+                            }
+                        }
+                        _ = tick => {
+                            clock = None;
+                            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                                break;
+                            }
                         }
                     }
                 }

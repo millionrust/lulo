@@ -327,7 +327,14 @@ fn open_popover(
     #[cfg(not(target_os = "linux"))]
     let brightness = None;
     let bounds = if cfg!(target_os = "linux") {
-        let height = px(crate::view::initial_surface_height(brightness.is_some()));
+        let height = crate::view::initial_surface_height(brightness.is_some());
+        // Cost nothing without RMAC_FRAME_TRACE: what the surface opened at,
+        // so a run that sees it change afterwards can say why.
+        rmac_ui::trace_mark(&format!(
+            "quick_settings_open:height={height}:display={}",
+            brightness.is_some()
+        ));
+        let height = px(height);
         Bounds::new(bounds.origin, size(bounds.size.width, height))
     } else {
         bounds

@@ -458,7 +458,7 @@ pub fn detect(roots: &Roots) -> HardwareProfile {
             && (roots.root.join("usr/libexec/fprintd").exists()
                 || roots
                     .root
-                    .join("usr/share/dbus-1/system-services/net.reactivated.Fprint.service")
+                    .join("usr/share/dbus-1/system-services/net.reactivated.Fprint.service") // wording: internal
                     .exists()),
     };
 

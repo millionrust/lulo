@@ -279,6 +279,8 @@ async fn wait_or_closed<T>(sender: &Sender<T>, duration: std::time::Duration) {
     }
 }
 
+// One receiver per source; a struct would only rename them.
+#[allow(clippy::too_many_arguments)]
 async fn consume(
     sender: Sender<Update>,
     compositor: async_channel::Receiver<rmac_compositor::Event>,

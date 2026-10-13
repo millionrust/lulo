@@ -40,11 +40,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
     IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, TranslateMessage,
     ASFW_ANY, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
-    EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
-    EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
-    MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
-    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT, WM_CLOSE, WS_EX_APPWINDOW,
-    WS_EX_TOOLWINDOW,
+    EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND,
+    EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT,
+    GWL_EXSTYLE, GW_OWNER, MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS,
+    SWP_NOACTIVATE, SWP_NOZORDER, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT,
+    WM_CLOSE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
 /// The workspace holding minimised windows (`rmac_compositor::PARKING_WORKSPACE`).
@@ -335,16 +335,82 @@ unsafe extern "system" fn on_event(
     if own && event != EVENT_SYSTEM_FOREGROUND {
         return;
     }
+    // Only a change to an app's window (or the foreground) can change the
+    // window list. Every process's tooltips, IME, hidden helper and
+    // console windows come and go all the time; reading the list again for
+    // them woke every watcher of an idle shell for nothing.
+    let key = hwnd.0 as isize;
+    let known = KNOWN.lock().is_ok_and(|known| known.contains(&key));
+    let reading = READING.load(Ordering::Acquire);
+    let kind = event_kind(event);
+    let app_window = matches!(kind, EventKind::Appeared)
+        && !known
+        && !reading
+        // SAFETY: no arguments.
+        && is_app_window(hwnd, unsafe { GetCurrentProcessId() });
+    let relevant = relevant(kind, known, app_window, reading);
     if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
+        let pid = process_id(hwnd);
         eprintln!(
-            "lulo-shell: window event {event:#x} from pid {}",
-            process_id(hwnd)
+            "lulo-shell: window event {event:#x} from pid {pid} ({}) class {}: {}",
+            rmac_apps::windows_apps::exe_key(&process_path(pid)),
+            class_name(hwnd),
+            if relevant { "read" } else { "ignored" }
         );
     }
-    if matches!(event, EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED) {
+    if !relevant {
+        return;
+    }
+    if matches!(
+        event,
+        EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED | EVENT_OBJECT_NAMECHANGE
+    ) {
         bring_launch_forward(hwnd);
     }
     notify_watchers();
+}
+
+/// The app windows in the last reading, by handle: a window going away,
+/// hiding, moving or minimising changes the list only if it was in it.
+static KNOWN: Mutex<Vec<isize>> = Mutex::new(Vec::new());
+/// Set while the list is read, when a window can change between being
+/// listed and `KNOWN` being updated: every event then counts.
+static READING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What a WinEvent says about its window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EventKind {
+    /// Another window came to the front.
+    Foreground,
+    /// The window may have become one Alt+Tab lists (shown, uncloaked,
+    /// renamed: some apps show a window before giving it a title).
+    Appeared,
+    /// A change only a listed window can make to the list (destroyed,
+    /// hidden, cloaked, minimised or restored, moved or resized).
+    Changed,
+}
+
+fn event_kind(event: u32) -> EventKind {
+    match event {
+        EVENT_SYSTEM_FOREGROUND => EventKind::Foreground,
+        EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED | EVENT_OBJECT_NAMECHANGE => EventKind::Appeared,
+        _ => EventKind::Changed,
+    }
+}
+
+/// Whether an event can change the window list: the foreground always
+/// can; a window the last reading listed always can (except being
+/// renamed, which the list does not follow); a window that was not listed
+/// only by becoming an app window. While a reading is under way every
+/// event counts, since `KNOWN` is not yet up to date.
+fn relevant(kind: EventKind, known: bool, app_window: bool, reading: bool) -> bool {
+    match kind {
+        EventKind::Foreground => true,
+        _ if reading => true,
+        EventKind::Appeared if known => false,
+        EventKind::Appeared => app_window,
+        EventKind::Changed => known,
+    }
 }
 
 /// Apps the user just started (a Dock tile, Spotlight, a desktop icon),
@@ -398,6 +464,7 @@ fn start_hooks() -> Result<(), String> {
                 (EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND),
                 (EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE),
                 (EVENT_OBJECT_CLOAKED, EVENT_OBJECT_UNCLOAKED),
+                (EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE),
             ];
             let mut installed = 0;
             for (first, last) in ranges {
@@ -835,6 +902,7 @@ fn read_snapshot() -> domain::Snapshot {
     if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
         eprintln!("lulo-shell: window list read {reads}");
     }
+    READING.store(true, Ordering::Release);
     // SAFETY: no arguments.
     let own_pid = unsafe { GetCurrentProcessId() };
     let monitors = monitors();
@@ -901,6 +969,10 @@ fn read_snapshot() -> domain::Snapshot {
     }
     prune_caches(&alive_pids, &windows);
     prune_identities(&alive_windows);
+    if let Ok(mut known) = KNOWN.lock() {
+        *known = alive_windows.iter().map(|(hwnd, _)| *hwnd).collect();
+    }
+    READING.store(false, Ordering::Release);
 
     let outputs = monitors
         .iter()
@@ -1256,4 +1328,55 @@ fn place_frame(hwnd: HWND, target: RECT) {
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
         )
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{event_kind, relevant, EventKind};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MOVESIZEEND,
+    };
+
+    #[test]
+    fn other_processes_helper_windows_do_not_wake_the_watchers() {
+        // A tooltip, IME or helper window that was never listed comes and goes.
+        for event in [EVENT_OBJECT_SHOW, EVENT_OBJECT_HIDE, EVENT_OBJECT_DESTROY] {
+            assert!(!relevant(event_kind(event), false, false, false));
+        }
+        // A listed window being renamed changes nothing the list follows.
+        assert!(!relevant(
+            event_kind(EVENT_OBJECT_NAMECHANGE),
+            true,
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn app_windows_and_the_foreground_are_read() {
+        assert!(relevant(EventKind::Foreground, false, false, false));
+        assert!(relevant(event_kind(EVENT_OBJECT_SHOW), false, true, false));
+        // A window shown untitled and then named joins the list.
+        assert!(relevant(
+            event_kind(EVENT_OBJECT_NAMECHANGE),
+            false,
+            true,
+            false
+        ));
+        for event in [
+            EVENT_OBJECT_HIDE,
+            EVENT_OBJECT_DESTROY,
+            EVENT_SYSTEM_MOVESIZEEND,
+        ] {
+            assert!(relevant(event_kind(event), true, false, false));
+        }
+        // While a reading is under way nothing is known for sure.
+        assert!(relevant(
+            event_kind(EVENT_OBJECT_DESTROY),
+            false,
+            false,
+            true
+        ));
+    }
 }

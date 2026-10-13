@@ -641,7 +641,15 @@ pub(super) fn minimized_items(
                 window: window.id,
                 app_id: window.app_id.clone(),
                 title: window.title.clone(),
-                icon: application.and_then(|application| application.icon.clone()),
+                // A Windows app without a desktop entry: its program's icon.
+                icon: application
+                    .and_then(|application| application.icon.clone())
+                    .or_else(|| {
+                        window
+                            .app_id
+                            .as_deref()
+                            .and_then(rmac_apps::windows_apps::icon_for)
+                    }),
                 thumbnail: rmac_compositor::ParkingStore::current_thumbnail(window.id),
             }
         })

@@ -197,6 +197,29 @@ pub fn normalise_peak(samples: &[f32], peak: f32, max_gain: f32) -> Vec<f32> {
     samples.iter().map(|sample| sample * gain).collect()
 }
 
+/// Quiet put back around the speech (see [`prepare_for_recognition`]).
+pub const SPEECH_PADDING: usize = (SAMPLE_RATE / 5) as usize;
+
+/// A capture as Moonshine reads it best: raised to one level, cut to the
+/// speech, with [`SPEECH_PADDING`] of silence on each side. Measured on the
+/// reference laptop's 30-clip set (ADR 0024 "Phase 3 (Voice) results"):
+/// unpadded speech, or speech after half a second of quiet, often decoded
+/// to nothing. Empty when there is under 0.1 s of speech.
+pub fn prepare_for_recognition(samples: &[f32]) -> Vec<f32> {
+    let level = normalise_peak(samples, 0.9, 30.0);
+    let speech = trim_silence(&level, 0);
+    if speech.len() < (SAMPLE_RATE / 10) as usize
+        || (speech.len() == level.len() && rms(speech) < 0.01)
+    {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(speech.len() + 2 * SPEECH_PADDING);
+    out.resize(SPEECH_PADDING, 0.0);
+    out.extend_from_slice(speech);
+    out.resize(out.len() + SPEECH_PADDING, 0.0);
+    out
+}
+
 /// The HUD's meter, 0 to 1: loudness from -55 dBFS (silence) to -10 dBFS
 /// (a raised voice close to the microphone), as the Mac's level meter
 /// moves with speech rather than with peaks.
@@ -334,6 +357,21 @@ mod tests {
         assert_eq!(trim_silence(&quiet, 1_600).len(), quiet.len());
         assert_eq!(trim_silence(&speech, 1_600).len(), speech.len());
         assert!(trim_silence(&[], 1_600).is_empty());
+    }
+
+    #[test]
+    fn recognition_gets_level_speech_between_fixed_pauses() {
+        let quiet = vec![0.0005f32; STEP_SAMPLES * 12];
+        let speech = tone(0.5, 0.05);
+        let clip: Vec<f32> = quiet.iter().chain(&speech).chain(&quiet).copied().collect();
+        let prepared = prepare_for_recognition(&clip);
+        assert_eq!(prepared.len(), speech.len() + 2 * SPEECH_PADDING);
+        assert!(prepared[..SPEECH_PADDING].iter().all(|sample| *sample == 0.0));
+        let peak = prepared.iter().fold(0.0f32, |top, sample| top.max(sample.abs()));
+        assert!((peak - 0.9).abs() < 1e-3, "{peak}");
+        // Under 0.1 s of speech, or none: nothing to recognise.
+        assert!(prepare_for_recognition(&tone(0.05, 0.2)).is_empty());
+        assert!(prepare_for_recognition(&[0.0; 16_000]).is_empty());
     }
 
     #[test]

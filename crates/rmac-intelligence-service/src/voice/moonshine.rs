@@ -181,15 +181,12 @@ fn best_token(logits: &DynValue) -> Result<i32, VoiceEngineError> {
 impl Transcriber for Moonshine {
     fn transcribe(&mut self, samples: &[f32]) -> Result<(String, Steps), VoiceEngineError> {
         let mut steps = Steps::default();
-        // The pause before the first word and after the last, cut to 0.1 s.
-        let samples = audio::trim_silence(samples, 1_600);
-        if samples.len() < 1_600 {
-            // Under 0.1 s: nothing was said.
+        let level = audio::prepare_for_recognition(samples);
+        if level.is_empty() {
+            // No speech: nothing was said.
             return Ok((String::new(), steps));
         }
         let started = Instant::now();
-        // One level for every microphone: Moonshine ends early on quiet input.
-        let level = audio::normalise_peak(samples, 0.9, 30.0);
         let audio =
             Tensor::from_array((vec![1i64, level.len() as i64], level)).map_err(failed)?;
         let mut features = run(&mut self.preprocess, vec![SessionInputValue::from(audio)])?;

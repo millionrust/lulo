@@ -10,11 +10,11 @@ use std::sync::Arc;
 
 use gpui::{
     canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, App,
-    AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _,
-    FontWeight, Image, ImageFormat, InteractiveElement as _, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, PathBuilder,
-    PathPromptOptions, Render, RenderImage, Role, ScrollHandle, ScrollWheelEvent, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
+    AppContext as _, ClickEvent, ClipboardItem, Context, Entity, ExternalPaths, FocusHandle,
+    Focusable as _, FontWeight, Image, ImageFormat, InteractiveElement as _, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
+    PathBuilder, PathPromptOptions, Render, RenderImage, Role, ScrollHandle, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
 use rmac_preview::document::{self, ImageKind, Kind};
 use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
@@ -7724,6 +7724,14 @@ impl Render for PreviewView {
             .id("preview")
             .track_focus(&self.focus)
             .key_context("Preview")
+            // Files dragged in from Files (or any file manager) open in a
+            // new Preview window, as a drop on the Mac's Preview does.
+            .on_drop(cx.listener(|_, dropped: &ExternalPaths, _, cx| {
+                let paths = document::openable_dropped(dropped.paths());
+                if !paths.is_empty() {
+                    crate::open_window(paths, cx);
+                }
+            }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 this.on_key_down(event, window, cx);
             }))

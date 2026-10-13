@@ -28,7 +28,8 @@ use std::sync::Arc;
 
 use super::model::{
     clamp_size, Alignment, CharStyle, Document, DocumentAttributes, DocumentProperties, Ligatures,
-    ListKind, Paragraph, ParagraphStyle, Rgb, StyledRun, DEFAULT_RICH_SIZE, MAX_LIST_LEVEL,
+    ListKind, Paragraph, ParagraphStyle, Rgb, StyledRun, WritingDirection, DEFAULT_RICH_SIZE,
+    MAX_LIST_LEVEL,
 };
 
 /// The family TextEdit's documents default to; read back as the document's
@@ -571,6 +572,7 @@ impl RunState {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct ParagraphState {
     alignment: Alignment,
+    direction: WritingDirection,
     list_override: i32,
     list_level: u8,
     line_spacing_twips: i32,
@@ -581,6 +583,7 @@ impl Default for ParagraphState {
     fn default() -> Self {
         Self {
             alignment: Alignment::Left,
+            direction: WritingDirection::Default,
             list_override: 0,
             list_level: 0,
             line_spacing_twips: 0,
@@ -772,6 +775,7 @@ impl<'a> Parser<'a> {
             };
         let style = ParagraphStyle {
             alignment: self.paragraph.alignment,
+            direction: self.paragraph.direction,
             list,
             list_level: if list.is_some() { level } else { 0 },
             line_spacing,
@@ -894,6 +898,9 @@ impl<'a> Parser<'a> {
             "qc" => self.paragraph.alignment = Alignment::Center,
             "qr" => self.paragraph.alignment = Alignment::Right,
             "qj" => self.paragraph.alignment = Alignment::Justified,
+            "ltrpar" => self.paragraph.direction = WritingDirection::LeftToRight,
+            "rtlpar" => self.paragraph.direction = WritingDirection::RightToLeft,
+            "pardirnatural" => self.paragraph.direction = WritingDirection::Default,
             "ls" => self.paragraph.list_override = param.unwrap_or(0),
             "ilvl" => {
                 self.paragraph.list_level =
@@ -1325,7 +1332,12 @@ pub fn write(document: &Document) -> Vec<u8> {
                 720 * (level + 1)
             );
         }
-        out.push_str("\\pardirnatural\\partightenfactor0");
+        out.push_str(match style.direction {
+            WritingDirection::Default => "\\pardirnatural",
+            WritingDirection::LeftToRight => "\\ltrpar",
+            WritingDirection::RightToLeft => "\\rtlpar",
+        });
+        out.push_str("\\partightenfactor0");
         out.push_str(match style.alignment {
             Alignment::Left => "",
             Alignment::Center => "\\qc",
@@ -1619,6 +1631,35 @@ mod tests {
         assert_eq!(read.attributes(), document.attributes());
         assert_eq!(&read, document);
         read
+    }
+
+    #[test]
+    fn writing_direction_round_trips_and_only_explicit_choices_are_written() {
+        let mut document = plain("natural\nforced rtl\nforced ltr");
+        document.update_paragraph_style(8..9, |style| {
+            style.direction = WritingDirection::RightToLeft;
+        });
+        document.update_paragraph_style(20..21, |style| {
+            style.direction = WritingDirection::LeftToRight;
+        });
+        let text = String::from_utf8(write(&document)).unwrap();
+        assert_eq!(text.matches("\\rtlpar").count(), 1, "{text}");
+        assert_eq!(text.matches("\\ltrpar").count(), 1, "{text}");
+        // The natural paragraph keeps TextEdit's own marker.
+        assert_eq!(text.matches("\\pardirnatural").count(), 1, "{text}");
+        let read = assert_round_trips(&document);
+        assert_eq!(
+            read.paragraph(0).style().direction,
+            WritingDirection::Default
+        );
+        assert_eq!(
+            read.paragraph(1).style().direction,
+            WritingDirection::RightToLeft
+        );
+        assert_eq!(
+            read.paragraph(2).style().direction,
+            WritingDirection::LeftToRight
+        );
     }
 
     #[test]

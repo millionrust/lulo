@@ -157,6 +157,62 @@ pub enum Alignment {
     Justified,
 }
 
+/// Format ▸ Text ▸ Writing Direction ▸ Default / Left to Right / Right to
+/// Left: the direction a paragraph reads and aligns in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum WritingDirection {
+    /// Natural: follows the first strongly directional letter of the
+    /// paragraph, as AppKit's `NSWritingDirectionNatural` does.
+    #[default]
+    Default,
+    LeftToRight,
+    RightToLeft,
+}
+
+impl WritingDirection {
+    /// Whether a paragraph with this direction and `text` reads right to
+    /// left. Default looks at the first letter that has a direction.
+    pub fn is_rtl(self, text: &str) -> bool {
+        match self {
+            Self::LeftToRight => false,
+            Self::RightToLeft => true,
+            Self::Default => text
+                .chars()
+                .find(|character| character.is_alphabetic())
+                .is_some_and(is_rtl_letter),
+        }
+    }
+}
+
+/// Hebrew, Arabic, Syriac, Thaana, N'Ko, Samaritan and Mandaic letters and
+/// their presentation forms.
+fn is_rtl_letter(character: char) -> bool {
+    matches!(
+        u32::from(character),
+        0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF
+    )
+}
+
+/// Where a line's free space goes: the share of it placed before the line,
+/// 0 for flush left, 1 for flush right. Left and Right mean the leading and
+/// trailing edge, so a right-to-left paragraph swaps them; Justified fills a
+/// full line and ends a last or forced-break line at the leading edge.
+pub fn line_start_share(alignment: Alignment, rtl: bool, line_is_justified: bool) -> f32 {
+    match (alignment, rtl) {
+        (Alignment::Center, _) => 0.5,
+        (Alignment::Left, false) | (Alignment::Right, true) => 0.0,
+        (Alignment::Left, true) | (Alignment::Right, false) => 1.0,
+        (Alignment::Justified, false) => 0.0,
+        (Alignment::Justified, true) => {
+            if line_is_justified {
+                0.0
+            } else {
+                1.0
+            }
+        }
+    }
+}
+
 /// A list's marker (Format ▸ List…'s Bullet pop-up), as NSTextList's
 /// marker formats name them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -314,6 +370,8 @@ pub const MAX_LIST_LEVEL: u8 = 8;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ParagraphStyle {
     pub alignment: Alignment,
+    /// Format ▸ Text ▸ Writing Direction.
+    pub direction: WritingDirection,
     pub list: Option<ListKind>,
     /// A list item's nesting level (0 is outermost); Tab and ⇧Tab at an
     /// item's start move it in and out.
@@ -326,6 +384,7 @@ impl Default for ParagraphStyle {
     fn default() -> Self {
         Self {
             alignment: Alignment::Left,
+            direction: WritingDirection::Default,
             list: None,
             list_level: 0,
             line_spacing: 1.0,
@@ -429,6 +488,12 @@ impl Paragraph {
 
     pub fn style(&self) -> ParagraphStyle {
         self.style
+    }
+
+    /// Whether this paragraph reads right to left (its Writing Direction,
+    /// or for Default its first directional letter).
+    pub fn is_rtl(&self) -> bool {
+        self.style.direction.is_rtl(&self.text)
     }
 
     pub fn version(&self) -> u64 {
@@ -1172,6 +1237,47 @@ pub fn normalize_newlines(text: &str) -> std::borrow::Cow<'_, str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_direction_follows_the_first_directional_letter() {
+        let natural = WritingDirection::Default;
+        assert!(!natural.is_rtl("Hello"));
+        assert!(natural.is_rtl("שלום"));
+        assert!(natural.is_rtl("مرحبا"));
+        // Digits, spaces and punctuation have no direction of their own.
+        assert!(natural.is_rtl("1. שלום"));
+        assert!(!natural.is_rtl("\u{201c}Hi\u{201d} שלום"));
+        assert!(!natural.is_rtl(""));
+        // An explicit choice wins over the text.
+        assert!(WritingDirection::RightToLeft.is_rtl("Hello"));
+        assert!(!WritingDirection::LeftToRight.is_rtl("שלום"));
+    }
+
+    #[test]
+    fn right_to_left_swaps_the_leading_and_trailing_edges() {
+        use Alignment::{Center, Justified, Left, Right};
+        assert_eq!(line_start_share(Left, false, false), 0.0);
+        assert_eq!(line_start_share(Right, false, false), 1.0);
+        assert_eq!(line_start_share(Left, true, false), 1.0);
+        assert_eq!(line_start_share(Right, true, false), 0.0);
+        assert_eq!(line_start_share(Center, true, false), 0.5);
+        // A justified line is stretched edge to edge; its last line ends at
+        // the leading edge, which is the right in a right-to-left paragraph.
+        assert_eq!(line_start_share(Justified, false, false), 0.0);
+        assert_eq!(line_start_share(Justified, true, true), 0.0);
+        assert_eq!(line_start_share(Justified, true, false), 1.0);
+    }
+
+    #[test]
+    fn a_paragraph_reports_its_resolved_direction() {
+        let rtl = ParagraphStyle {
+            direction: WritingDirection::RightToLeft,
+            ..ParagraphStyle::default()
+        };
+        assert!(Paragraph::new("abc".into(), Vec::new(), rtl).is_rtl());
+        assert!(!Paragraph::new("abc".into(), Vec::new(), ParagraphStyle::default()).is_rtl());
+        assert!(Paragraph::new("אבג".into(), Vec::new(), ParagraphStyle::default()).is_rtl());
+    }
 
     fn bold() -> CharStyle {
         CharStyle {

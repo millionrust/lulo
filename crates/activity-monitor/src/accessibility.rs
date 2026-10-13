@@ -43,10 +43,14 @@ pub enum ProcessColumn {
     GpuPercent,
     /// Total graphics-engine busy time (MON-MENU-004).
     GpuTime,
+    /// Open descriptors, the Mac's "# Ports" (MON-MENU-002).
+    Ports,
+    /// Holds a sleep or idle inhibitor (MON-MENU-008).
+    PreventingSleep,
 }
 
 impl ProcessColumn {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 26] = [
         Self::Pid,
         Self::Name,
         Self::Cpu,
@@ -71,6 +75,8 @@ impl ProcessColumn {
         Self::IdleWakeUps,
         Self::GpuPercent,
         Self::GpuTime,
+        Self::Ports,
+        Self::PreventingSleep,
     ];
 
     pub const fn title(self) -> &'static str {
@@ -102,6 +108,8 @@ impl ProcessColumn {
             Self::IdleWakeUps => "Idle Wake Ups",
             Self::GpuPercent => "% GPU",
             Self::GpuTime => "GPU Time",
+            Self::Ports => "# Ports",
+            Self::PreventingSleep => "Preventing Sleep",
         }
     }
 }

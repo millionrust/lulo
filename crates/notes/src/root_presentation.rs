@@ -95,6 +95,11 @@ impl NotesView {
 
         let root = div()
             .key_context("Notes")
+            .on_drop(
+                cx.listener(|this, dropped: &gpui::ExternalPaths, window, cx| {
+                    this.attach_dropped_files(dropped.paths(), window, cx);
+                }),
+            )
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let key = &event.keystroke;
                 if key.key != "f"

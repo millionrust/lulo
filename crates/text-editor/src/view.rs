@@ -327,6 +327,11 @@ struct EditorView {
     _subscriptions: Vec<Subscription>,
     /// Edit ▸ Spelling and Grammar / Substitutions for the document.
     text_assist: rmac_ui::text_assist::TextAssistSettings,
+    /// Settings ▸ New Document's "...in rich text documents only" scopes
+    /// (TXT-SETTINGS-001/003), taken when the window opens like the other
+    /// defaults.
+    spelling_rich_text_only: bool,
+    smart_quotes_rich_text_only: bool,
     spell_checker: Arc<rmac_spelling::HunspellChecker>,
     /// Edit ▸ Substitutions ▸ Data Detectors: checked, persisted for this
     /// session, with no live effect wired yet (see docs/parity.md TE-07).

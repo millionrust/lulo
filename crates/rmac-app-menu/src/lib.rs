@@ -856,6 +856,27 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                     item!("Centre", "text_editor::AlignCentre", "⌘|"),
                     item!("Justify", "text_editor::AlignJustify", ""),
                     item!("Align Right", "text_editor::AlignRight", "⌘}"),
+                    // TXT-MENU-002/004/005/006: the paragraph's direction,
+                    // which also decides which edge Align Left and Align
+                    // Right mean.
+                    submenu!(
+                        "Writing Direction",
+                        "text_editor::WritingDirectionMenu",
+                        [
+                            item!("Default", "text_editor::WritingDirectionDefault", ""),
+                            item!(
+                                "Left to Right",
+                                "text_editor::WritingDirectionLeftToRight",
+                                ""
+                            ),
+                            item!(
+                                "Right to Left",
+                                "text_editor::WritingDirectionRightToLeft",
+                                ""
+                            ),
+                        ],
+                        separator
+                    ),
                     item!("Show Ruler", "text_editor::ShowRuler", "⌘R", separator),
                     item!("Copy Ruler", "text_editor::CopyRuler", "⌃⌘C"),
                     item!("Paste Ruler", "text_editor::PasteRuler", "⌃⌘V"),
@@ -1911,6 +1932,15 @@ const MONITOR_MENUS: &[MenuSpec] = &[
                     // reports them.
                     item!("% GPU", "activity_monitor::ToggleGpuPercentColumn", ""),
                     item!("GPU Time", "activity_monitor::ToggleGpuTimeColumn", ""),
+                    // MON-MENU-002/008: open descriptors (the Linux
+                    // counterpart of Mach ports) and logind sleep/idle
+                    // inhibitors, filled only while shown.
+                    item!("# Ports", "activity_monitor::TogglePortsColumn", ""),
+                    item!(
+                        "Preventing Sleep",
+                        "activity_monitor::TogglePreventingSleepColumn",
+                        ""
+                    ),
                 ]
             ),
             submenu!(

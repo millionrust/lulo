@@ -788,7 +788,9 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     assert!(fallback.contains("Mod+Space repeat=false"));
     assert!(fallback.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));
     assert!(fallback.contains("Mod+Ctrl+N repeat=false"));
-    assert_eq!(fallback.matches("{ spawn ").count(), 3);
+    // Hold ⌥Space to talk to Lulo (ADR 0024 §8).
+    assert!(fallback.contains("Alt+Space repeat=false"));
+    assert_eq!(fallback.matches("{ spawn ").count(), 4);
 }
 
 #[test]

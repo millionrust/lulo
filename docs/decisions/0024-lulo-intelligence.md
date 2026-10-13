@@ -1262,8 +1262,22 @@ features: no download, no TLS) opens the system ONNX Runtime, Ubuntu's `libonnxr
 (MIT, universe), with `dlopen` when a capture starts. Nothing native is compiled into Lulo, so
 no build-host path can reach the binary (the `-ffile-prefix-map` lesson needs no new flags),
 and cargo-deny sees only permissive crates (`ort`, `ort-sys`, `libloading` 0.9, `ndarray`,
-`matrixmultiply`, `rawpointer`). `rmac-session` *recommends* `libonnxruntime1.23`; without it
-the pill says so. ONNX Runtime's worker threads are told not to spin between runs.
+`matrixmultiply`, `rawpointer`). ONNX Runtime's worker threads are told not to spin between
+runs.
+
+Where the library comes from: Settings' voice download also fetches Microsoft's official
+ONNX Runtime 1.23.2 release (`onnxruntime-linux-{x64,aarch64}-1.23.2.tgz`, MIT, a tagged
+GitHub release asset pinned by the archive's SHA-256), unpacks the one library with the
+system `tar`, checks it against its own pinned SHA-256 (22,326,072 bytes on x86-64) and keeps
+only `<sha256>.so` in the models folder, 0600, like the model files; the archive is deleted.
+The service loads that verified copy first, then the system's (`libonnxruntime1.23`, which
+`rmac-session` still recommends and `install-native-candidate.sh`'s `apt-get install` pulls
+in with apt's default `Install-Recommends`), so Talk to Lulo never depends on a package being
+installed by hand, on a PackageKit update adding a new Recommends, or on the distribution.
+The voice download is 132 MB on x86-64 (the Tiny model's 124 MB plus the 8.3 MB archive).
+Checked on the reference laptop with no system ONNX Runtime at all: the fetcher downloaded and
+verified everything, and the reference clip transcribed word for word (6.6 s of audio in
+497 ms; Microsoft's build is also quieter than Ubuntu's, which logs ONNX schema warnings).
 Moonshine v2 (2026-02-27) was not used: its sherpa-onnx archives carry a 14 KB licence rather
 than the 1 KB MIT text, and would need checking first.
 
@@ -1276,8 +1290,8 @@ both) agree.
 
 ### Measurements on the reference laptop
 
-i5-5300U, 2 cores, Ubuntu's ONNX Runtime 1.23.2 unpacked into a private folder (installing it
-needs the owner), Moonshine Tiny int8 downloaded by the fetcher (123,967,539 bytes, all five
+i5-5300U, 2 cores, Ubuntu's ONNX Runtime 1.23.2 unpacked into a private folder (these runs came
+before the pinned download above), Moonshine Tiny int8 downloaded by the fetcher (123,967,539 bytes, all five
 checksums verified), 2 threads. There is no microphone to speak into, so the evaluation is 30
 recorded clips: 12 from espeak-ng (US, British, RP, Scottish, Caribbean voices, run from its
 Ubuntu package unpacked privately), 8 from macOS `say` (US, British, Australian, Irish) and 10

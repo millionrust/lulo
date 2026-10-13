@@ -723,6 +723,12 @@ def check_window_frame(app: str, hwnd: int, screenshots: Path | None) -> str | N
                 )
             if backdrop_share(filled_colour) is not None:
                 errors.append(f"its {name} corner is clear inside a {radius_pt} pt arc ({filled_colour})")
+        # The window's own top row beside the corner: clear too (no line of
+        # DWM's frame along the top edge).
+        top_row = at(left + outside, top)
+        print(f"{app}: top row beside the corner: {top_row}")
+        if backdrop_share(top_row) is None:
+            errors.append(f"its top edge shows a line beside the corner ({top_row})")
         diagonal_colours = [at(left + step, top + step) for step in range(0, int(diagonal) + 4)]
         print(f"{app}: top-left diagonal {diagonal_colours}")
         # The shadow beside a side edge (the right one, or the left one if

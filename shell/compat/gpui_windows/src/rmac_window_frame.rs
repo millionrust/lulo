@@ -21,8 +21,11 @@
 //!   per size, radius, scale and active state (`UpdateLayeredWindow`), from
 //!   a cached nine-slice of the shadow, and only moved otherwise.
 //! - **DWM's own frame is off** for these windows: no 1 px frame extension
-//!   (which turned DWM's shadow on), no Windows 11 rounding and no DWM
-//!   border, so nothing doubles up. Non-client rendering stays on.
+//!   (which turned DWM's shadow on), no Windows 11 rounding, no DWM border,
+//!   and no non-client rendering at all, so nothing doubles up. (With only
+//!   the extension gone, DWM drew a light 1 px line along the top edge, the
+//!   top frame GPUI's caption-less window folds into its client area.) The
+//!   window has no redirection bitmap, so nothing paints the frame instead.
 //! - **Maximised, full-screen and snapped** windows (`IsWindowArranged`)
 //!   have square corners and no shadow, as tiled windows on Lulo OS.
 //!
@@ -37,9 +40,10 @@ use std::sync::{Once, OnceLock};
 use gpui::{Rgba, WindowFrameStyle};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Dwm::{
-    DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
-    DWMWA_TRANSITIONS_FORCEDISABLED, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
-    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+    DWM_WINDOW_CORNER_PREFERENCE, DWMNCRENDERINGPOLICY, DWMNCRP_DISABLED, DWMWA_BORDER_COLOR,
+    DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY, DWMWA_TRANSITIONS_FORCEDISABLED,
+    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DwmExtendFrameIntoClientArea,
+    DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION, ClientToScreen,
@@ -312,6 +316,13 @@ fn turn_off_dwm_frame(hwnd: HWND) {
             DWMWA_WINDOW_CORNER_PREFERENCE,
             &corner as *const _ as *const core::ffi::c_void,
             std::mem::size_of_val(&corner) as u32,
+        );
+        let policy: DWMNCRENDERINGPOLICY = DWMNCRP_DISABLED;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_NCRENDERING_POLICY,
+            &policy as *const _ as *const core::ffi::c_void,
+            std::mem::size_of_val(&policy) as u32,
         );
     }
     set_dwm_border(hwnd, COLORREF(DWMWA_COLOR_NONE));

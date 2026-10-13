@@ -1836,7 +1836,11 @@ and are left out, as before. In `shell/compat/gpui_windows/src/rmac_window_frame
   The key window gets the deeper shadow, as on the Mac.
 - **DWM's frame off.** For these windows the 1 px frame extension that turned DWM's shadow
   on is removed, Windows 11's rounding is `DWMWCP_DONOTROUND` and DWM's border is
-  `DWMWA_COLOR_NONE`, so the frame does not double up. Non-client rendering stays on.
+  `DWMWA_COLOR_NONE`, and DWM's non-client rendering is off (`DWMNCRP_DISABLED`), so the
+  frame does not double up. With only the extension removed, the first CI run showed a light
+  1 px line along each window's top edge, DWM's top frame, which GPUI folds into the client
+  area of its caption-less windows; with no redirection bitmap nothing else paints the
+  frame. `launch_smoke.py` checks that top row beside the corner is clear.
 - **Maximised, full-screen and snapped.** These windows have square corners and no shadow,
   as tiled windows on Lulo OS: `IsZoomed`, GPUI's full-screen state and `IsWindowArranged`
   (Snap layouts, Win+arrows, a drag to a screen edge; looked up at run time, since older

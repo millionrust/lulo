@@ -26,8 +26,7 @@ and, for Lulo mode (ADR 0023 "Lulo mode", WIN-OS-41 on):
   icons are hidden while Lulo runs, and the user's Desktop folder shows as
   Lulo icons that open (a folder in Files), rename, drag, show a context
   menu and follow new files;
-- a Lulo app window has a shadow (pixels just outside its edge darken) and
-  DWM non-client rendering;
+- a Lulo app window has a shadow (pixels just outside its edge darken);
 - Spotlight opens as the search bar alone, in the upper third, and grows
   with results;
 - an app opened from the Dock or Spotlight comes to the front over a
@@ -1427,8 +1426,9 @@ def check_window_shadow(hwnd: int, name: str, screenshots: Path | None, failures
         f"just outside its edges the window darkens the screen by {darker} (luminance)"
     )
     save(screenshots, "window-shadow")
-    if rendering is False:
-        failures.append(f"{name}'s window has DWM non-client rendering off: no shadow")
+    # Lulo app windows draw their own frame and shadow (ADR 0023 "Window
+    # chrome: Lulo's own corners and shadow"), with DWM's non-client
+    # rendering off; the darkening below is what counts.
     # Windows Server's DWM shadow is fainter than a PC's; any clear
     # darkening just outside the edge is the shadow.
     if max(darker) < 1.5:

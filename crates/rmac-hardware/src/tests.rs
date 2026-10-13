@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::linux::{self, Bits, Roots};
+use crate::linux::{self, Bits};
 use crate::windows::{self as win, Adapter, Device, Facts, Interface};
 use crate::{Display, GpuVendor, HardwareProfile, SpecClass};
 
@@ -26,6 +26,7 @@ impl Tree {
         self
     }
 
+    #[cfg(unix)]
     fn bytes(&self, relative: &str, contents: &[u8]) -> &Self {
         let path = self.0.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -33,6 +34,7 @@ impl Tree {
         self
     }
 
+    #[cfg(unix)]
     /// An input event device with the given sysfs capability bitmaps.
     fn input(
         &self,
@@ -56,8 +58,9 @@ impl Tree {
         self
     }
 
-    fn roots(&self) -> Roots {
-        Roots {
+    #[cfg(unix)]
+    fn roots(&self) -> linux::Roots {
+        linux::Roots {
             sys: self.0.join("sys"),
             proc_dir: self.0.join("proc"),
             root: self.0.join("root"),
@@ -92,6 +95,7 @@ fn edid() -> Vec<u8> {
 }
 
 /// The reference laptop, an EliteBook 840 G2, as its sysfs reads.
+#[cfg(unix)]
 fn elitebook(tree: &Tree) {
     tree.write("sys/class/power_supply/AC/type", "Mains")
         .write("sys/class/power_supply/BAT0/type", "Battery")
@@ -221,6 +225,8 @@ fn edid_gives_refresh_and_size() {
     assert_eq!(linux::edid_timing(&[0; 10]), (None, None));
 }
 
+// sysfs names (`hci0:256`, `hp::hddprotect`) are not Windows file names.
+#[cfg(unix)]
 #[test]
 fn the_elitebook_is_detected_from_sysfs() {
     let tree = Tree::new("elitebook");
@@ -266,6 +272,8 @@ fn the_elitebook_is_detected_from_sysfs() {
     assert!(adapt.reduce_transparency && adapt.reduce_motion);
 }
 
+// sysfs names (`hci0:256`, `hp::hddprotect`) are not Windows file names.
+#[cfg(unix)]
 #[test]
 fn a_desktop_without_radios_shows_none_of_them() {
     let tree = Tree::new("desktop");
@@ -304,6 +312,8 @@ fn a_desktop_without_radios_shows_none_of_them() {
     assert!(!adapt.nearby_sharing && !adapt.reduce_motion);
 }
 
+// sysfs names (`hci0:256`, `hp::hddprotect`) are not Windows file names.
+#[cfg(unix)]
 #[test]
 fn a_convertible_with_pen_and_sensors() {
     let tree = Tree::new("convertible");
@@ -353,6 +363,8 @@ fn a_convertible_with_pen_and_sensors() {
     );
 }
 
+// sysfs names (`hci0:256`, `hp::hddprotect`) are not Windows file names.
+#[cfg(unix)]
 #[test]
 fn an_empty_tree_is_an_empty_profile() {
     let tree = Tree::new("empty");

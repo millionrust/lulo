@@ -381,7 +381,15 @@ impl<V: View> Element for ViewElement<V> {
 
                         if let Some(mut element_state) = element_state
                             && element_state.cache_key.bounds == bounds
-                            && element_state.cache_key.content_mask == content_mask
+                            // rmac (ADR 0026): compare the clip only where
+                            // the view draws. With no clipping parent the
+                            // mask is the whole window, which a resize
+                            // changes for every view.
+                            && element_state
+                                .cache_key
+                                .content_mask
+                                .intersect(&ContentMask { bounds })
+                                == content_mask.intersect(&ContentMask { bounds })
                             && element_state.cache_key.text_style == text_style
                             && !window.dirty_views.contains(&entity_id)
                             && !window.refreshing

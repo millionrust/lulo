@@ -153,8 +153,12 @@ pub fn sync(applications: &Path, entries: &BTreeMap<String, String>) -> std::io:
         if entries.contains_key(&name) || !name.ends_with(".desktop") {
             continue;
         }
-        let ours = std::fs::read_to_string(existing.path())
-            .is_ok_and(|contents| contents.lines().any(|line| line.trim() == MARKER));
+        // (Earlier builds also wrote entries for running apps.)
+        let ours = std::fs::read_to_string(existing.path()).is_ok_and(|contents| {
+            contents
+                .lines()
+                .any(|line| line.trim() == MARKER || line.trim() == "X-Lulo-Windows-Running=true")
+        });
         if ours {
             let _ = std::fs::remove_file(existing.path());
         }

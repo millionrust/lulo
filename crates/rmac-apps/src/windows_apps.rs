@@ -218,6 +218,33 @@ pub fn register_display_name(app_id: &str, name: &str) {
     }
 }
 
+static ICONS: std::sync::RwLock<Option<std::collections::HashMap<String, std::path::PathBuf>>> =
+    std::sync::RwLock::new(None);
+static ICONS_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Remember the picture of a running Windows app's icon (an app without a
+/// desktop entry), so the Dock shows it. Nothing is written to the app
+/// catalogue, which several watchers follow.
+pub fn register_icon(app_id: &str, icon: std::path::PathBuf) {
+    if let Ok(mut icons) = ICONS.write() {
+        icons
+            .get_or_insert_with(std::collections::HashMap::new)
+            .insert(app_id.to_owned(), icon);
+    }
+    ICONS_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+}
+
+/// The icon [`register_icon`] recorded for `app_id`.
+pub fn icon_for(app_id: &str) -> Option<std::path::PathBuf> {
+    ICONS.read().ok()?.as_ref()?.get(app_id).cloned()
+}
+
+/// Changes whenever an icon is registered (the window list publishes
+/// again so the Dock picks it up).
+pub fn icons_generation() -> u64 {
+    ICONS_GENERATION.load(std::sync::atomic::Ordering::Acquire)
+}
+
 /// The name [`register_display_name`] recorded for `app_id`.
 pub fn display_name_for(app_id: &str) -> Option<String> {
     DISPLAY_NAMES.read().ok()?.as_ref()?.get(app_id).cloned()

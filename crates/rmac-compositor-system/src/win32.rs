@@ -161,6 +161,7 @@ pub async fn watch(sender: Sender<domain::Event>) -> Result<(), Error> {
         return Ok(());
     }
     let mut published: Option<domain::Snapshot> = None;
+    let mut icons = rmac_apps::windows_apps::icons_generation();
     loop {
         // Every watcher wakes on the same change; only the first one reads
         // (on the window-list thread), the others take its reading here
@@ -169,7 +170,10 @@ pub async fn watch(sender: Sender<domain::Event>) -> Result<(), Error> {
             Some(snapshot) => snapshot,
             None => blocking::unblock(read_shared).await,
         };
-        if published.as_ref() != Some(&snapshot) {
+        // A running app's icon arriving publishes again, unchanged.
+        let icons_now = rmac_apps::windows_apps::icons_generation();
+        if published.as_ref() != Some(&snapshot) || icons_now != icons {
+            icons = icons_now;
             published = Some(snapshot.clone());
             if sender
                 .send(domain::Event::Snapshot { snapshot })

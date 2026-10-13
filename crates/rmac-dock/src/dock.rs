@@ -726,7 +726,9 @@ pub(super) fn build_item(
             .map(|application| application.name.clone())
             .or_else(|| rmac_apps::windows_apps::display_name_for(source_id))
             .unwrap_or_else(|| fallback_name(source_id)),
-        icon: application.and_then(|application| application.icon.clone()),
+        icon: application
+            .and_then(|application| application.icon.clone())
+            .or_else(|| rmac_apps::windows_apps::icon_for(source_id)),
         pinned,
         running,
         active: windows.iter().any(|window| window.focused),

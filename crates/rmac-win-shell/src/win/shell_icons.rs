@@ -1,7 +1,7 @@
 //! Windows' own icons as picture files, for the shared views (ADR 0023,
 //! "Phase 3 revised: shared shell views"): a desktop shortcut's target
 //! (`rmac_shell_layer::system::file_icons`) and the Dock's running Windows
-//! apps (desktop entries written by [`watch_running`]).
+//! apps ([`watch_running`]).
 //!
 //! Each icon is read by a one-shot `lulo-shell --save-icon` process, as the
 //! icon helper reads them (WIN-OS-53): the shell libraries and icon
@@ -76,47 +76,31 @@ pub fn icon(source: &Path) -> Option<PathBuf> {
     (status.success() && out.is_file()).then_some(out)
 }
 
-/// Marks the entries [`ensure_running_entry`] writes.
-const RUNNING_MARKER: &str = "X-Lulo-Windows-Running=true";
-
-/// A desktop entry for a running Windows app `app_id` (an executable's
-/// file name) that has none, with its program's icon, so the Dock names
-/// and shows it (and can keep it). Blocking.
-pub fn ensure_running_entry(app_id: &str, exe_path: &str) {
+/// The icon of a running Windows app `app_id` (an executable's file name)
+/// without a desktop entry, read from its program and registered for the
+/// Dock (`rmac_apps::windows_apps::register_icon`). Blocking.
+pub fn ensure_running_icon(app_id: &str, exe_path: &str) {
     if !app_id.ends_with(".exe")
         || exe_path.is_empty()
         || rmac_apps::windows_apps::app_for_exe(app_id).is_some()
-        || app_id.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+        || rmac_apps::windows_apps::icon_for(app_id).is_some()
     {
         return;
     }
-    let Some(applications) =
-        rmac_apps::windows_apps::data_home().map(|home| home.join("applications"))
-    else {
-        return;
-    };
-    let file = applications.join(format!("{app_id}.desktop"));
-    if file.is_file() {
+    let has_entry = rmac_apps::windows_apps::data_home()
+        .is_some_and(|home| home.join("applications").join(format!("{app_id}.desktop")).is_file());
+    if has_entry {
         return;
     }
-    let name = rmac_apps::windows_apps::display_name_for(app_id)
-        .unwrap_or_else(|| rmac_apps::windows_apps::name_from_exe(exe_path));
-    let icon = icon(Path::new(exe_path));
-    let program = exe_path.replace('\\', "/").replace('"', "");
-    let mut entry = format!(
-        "[Desktop Entry]\nType=Application\nName={}\nExec=\"{program}\"\n{RUNNING_MARKER}\n",
-        name.replace(['\r', '\n'], " ")
-    );
-    if let Some(icon) = icon {
-        entry.push_str(&format!("Icon={}\n", icon.display()));
-    }
-    if std::fs::create_dir_all(&applications).is_ok() && std::fs::write(&file, entry).is_ok() {
-        super::trace(|| format!("windows apps: running {app_id} gets an entry"));
+    if let Some(icon) = icon(Path::new(exe_path)) {
+        rmac_apps::windows_apps::register_icon(app_id, icon);
+        rmac_compositor_system::refresh();
+        super::trace(|| format!("windows apps: running {app_id} shows its icon"));
     }
 }
 
-/// Give every running Windows app without a desktop entry one, as its
-/// windows appear (the window list's own events; nothing polls).
+/// Give every running Windows app without a desktop entry its icon, as
+/// its windows appear (the window list's own events; nothing polls).
 pub fn watch_running(cx: &mut gpui::App) {
     let (sender, receiver) = async_channel::bounded::<rmac_compositor::Event>(16);
     cx.background_executor()
@@ -146,7 +130,7 @@ pub fn watch_running(cx: &mut gpui::App) {
                 }
                 blocking::unblock(move || {
                     for (app_id, pid) in fresh {
-                        ensure_running_entry(&app_id, &super::process_path(pid));
+                        ensure_running_icon(&app_id, &super::process_path(pid));
                     }
                 })
                 .await;

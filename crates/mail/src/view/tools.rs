@@ -248,7 +248,7 @@ impl MailView {
 
     pub(super) fn close_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.find_open = false;
-        self.focus.focus(window, cx);
+        window.focus(&self.focus, cx);
         self.sync_menu(cx);
         cx.notify();
     }
@@ -308,6 +308,8 @@ impl MailView {
                 .child(glyph)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.step_find(step, cx)))
         };
+        let previous = step_button("mail-find-previous", "‹", "Previous", -1);
+        let next = step_button("mail-find-next", "›", "Next", 1);
         div()
             .id("mail-find-bar")
             .role(Role::Toolbar)
@@ -339,8 +341,8 @@ impl MailView {
                             .small(),
                     ),
             )
-            .child(step_button("mail-find-previous", "‹", "Previous", -1))
-            .child(step_button("mail-find-next", "›", "Next", 1))
+            .child(previous)
+            .child(next)
             .child(
                 div()
                     .id("mail-find-status")

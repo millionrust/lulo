@@ -431,8 +431,6 @@ fn watch_account_changes(runtime: Option<Arc<rmac_mail_runtime::Runtime>>) {
     use std::collections::HashSet;
     use std::rc::Rc;
 
-    use gpui::AppContext as _;
-
     let known: Rc<RefCell<HashSet<String>>> = Rc::new(RefCell::new(
         delivery::accounts()
             .into_iter()

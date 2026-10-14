@@ -302,6 +302,17 @@ const DOCK_PLACEMENT_OPTIONS: [DockOption; 3] = [
         DockChange::Placement(rmac_shell_settings::DockPlacement::Right),
     ),
 ];
+const DOCK_MINIMIZE_EFFECT_OPTIONS: [DockOption; 2] = [
+    (
+        "Genie Effect",
+        DockChange::MinimizeEffect(rmac_shell_settings::DockMinimizeEffect::Genie),
+    ),
+    (
+        "Scale Effect",
+        DockChange::MinimizeEffect(rmac_shell_settings::DockMinimizeEffect::Scale),
+    ),
+];
+
 const DOCK_REPEATED_CLICK_OPTIONS: [DockOption; 2] = [
     (
         "Cycle Windows",

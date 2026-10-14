@@ -32,6 +32,7 @@ impl Settings {
         let output_balance = Self::audio_balance_slider(cx, 0.0);
         // Replaced once the initial backlight read lands (start_snapshot_loads).
         let brightness_slider = Self::brightness_slider(cx, 0.0);
+        let keyboard_brightness_slider = Self::keyboard_brightness_slider(cx, 0.0);
         // Replaced once the first shell-settings snapshot lands, and again
         // whenever it changes from elsewhere (e.g. the Dock's own
         // separator drag, DOCK-03).
@@ -158,6 +159,9 @@ impl Settings {
             brightness_slider,
             brightness_generation: 0,
             brightness_error: None,
+            keyboard_brightness: None,
+            keyboard_brightness_slider,
+            keyboard_brightness_generation: 0,
             dock_size_slider,
             dock_magnification_slider,
             network: rmac_network::NetworkSnapshot::default(),

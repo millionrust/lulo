@@ -6004,6 +6004,7 @@ dependencies = [
  "async-io",
  "futures-util",
  "rmac-dbus",
+ "rmac-storage",
  "windows 0.61.3",
  "zbus",
 ]
@@ -6470,6 +6471,7 @@ dependencies = [
  "futures-util",
  "libc",
  "rmac-dbus",
+ "rmac-power",
  "rmac-storage",
  "serde",
  "serde_json",

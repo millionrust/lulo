@@ -90,6 +90,11 @@ pub(super) struct Settings {
     pub(super) brightness_slider: Entity<SliderState>,
     pub(super) brightness_generation: u32,
     pub(super) brightness_error: Option<SharedString>,
+    /// The keyboard backlight (Keyboard ▸ Keyboard brightness); None when
+    /// the computer has none Lulo can drive.
+    pub(super) keyboard_brightness: Option<u8>,
+    pub(super) keyboard_brightness_slider: Entity<SliderState>,
+    pub(super) keyboard_brightness_generation: u32,
     /// Desktop & Dock's Size slider (DOCK-01).
     pub(super) dock_size_slider: Entity<SliderState>,
     /// Desktop & Dock's Magnification slider (DOCK-07).

@@ -70,10 +70,10 @@ pub(crate) fn score(query: &str, result: &SearchResult, learned: u16) -> Option<
         match_quality(query, &title)
             .or_else(|| secondary_quality(query, &subtitle).map(|score| score.saturating_sub(80)))
             .or_else(|| {
-                // Settings panes and apps are found by their keywords too
-                // ("dark mode" is Appearance), which the provider matched
-                // and the result does not carry: rank them below any title
-                // or subtitle match rather than drop them (ROBOT-12).
+                // Settings panes are found by their keywords too ("dark
+                // mode" is Appearance), which the provider matched and the
+                // result does not carry: rank them below any title or
+                // subtitle match rather than drop them (ROBOT-12).
                 result
                     .category
                     .matched_by_provider_keywords()

@@ -196,6 +196,33 @@ implements the core's `PlatformWindow::set_frame_style`: a rounded
 again on resize and after a device loss) and an owned, layered, click-through tool window
 for the shadow and hairline, updated from `WM_WINDOWPOSCHANGED` and `WM_ACTIVATE` only.
 
+### Smooth scrolling
+
+`src/rmac_smooth_scroll.rs` (WIN-OS-95). Upstream handed every `WM_MOUSEWHEEL`
+to GPUI as `ScrollDelta::Lines` the moment it arrived: a mouse notch jumped
+three lines in one frame, and a precision touchpad's legacy wheel messages
+(small deltas at about 125 Hz) landed two in one 60 Hz frame and three in
+another, so the scroll stepped unevenly and stopped dead when the fingers
+lifted. Wheel input is now queued in logical pixels (24 px a line) and handed
+out once per frame, timed by the vblank that woke it:
+
+- a notch eases out over about 120 ms (time constant 37 ms); a notch the other
+  way cancels the rest;
+- a stream of high-resolution deltas is handed out at its own velocity over
+  the last 100 ms, with a slow correction toward one frame of backlog, and
+  glides on when it stops with `gpui_linux`'s momentum (decay 325 ms, from the
+  last 60 ms of motion; ADR 0013). A click or a new Direct Manipulation
+  contact stops a glide.
+
+Direct Manipulation's pixel pan and system inertia (upstream's
+`direct_manipulation.rs`) are unchanged. While a glide runs the window keeps
+its vblanks; it parks as before when it ends. `RMAC_GPUI_SCROLL_TRACE=1`
+prints every wheel message and frame; `RMAC_GPUI_SMOOTH_SCROLL=0` restores
+upstream's behaviour for measurements. `scripts/windows/scroll_smoke.py`
+(run by `launch_smoke.py` with Text Editor) injects a touchpad-like stream and
+three notches and checks that the scroll moves on every frame, without frame
+gaps above 1.5 vsync intervals, and keeps moving after the input stops.
+
 ## Results
 
 CI `windows-latest`, debug builds, 20 s idle window after a 10 s settle.

@@ -14,6 +14,7 @@ mod keyboard;
 mod platform;
 mod rmac_frame_loop;
 mod rmac_input_region;
+mod rmac_smooth_scroll;
 mod rmac_trace;
 mod rmac_window_frame;
 mod system_settings;

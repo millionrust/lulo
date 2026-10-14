@@ -207,6 +207,7 @@ mod tests {
             places: vec![place("", 1.0), place("Ok", 1.0), place("Bad", 95.0)],
             selected: 9,
             fahrenheit: None,
+            units: Default::default(),
         }
         .normalized();
         assert_eq!(settings.places.len(), 1);

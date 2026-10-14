@@ -457,24 +457,24 @@ mod tests {
         }
         assert!(!shown.contains(&"Lulo Laptop".to_owned()));
 
-        let mut settings = defaults;
+        let mut settings = defaults.clone();
         settings.sidebar.show_connected_servers = false;
         assert!(!all(&settings).contains(&"Docs".to_owned()));
-        let mut settings = defaults;
+        let mut settings = defaults.clone();
         settings.sidebar.show_cloud_storage = false;
         assert!(!all(&settings).contains(&"Drive".to_owned()));
-        let mut settings = defaults;
+        let mut settings = defaults.clone();
         settings.sidebar.show_cds_dvds_and_ios_devices = false;
         let shown = all(&settings);
         assert!(!shown.contains(&"Pixel".to_owned()));
         assert!(!shown.contains(&"Film".to_owned()));
         assert!(shown.contains(&"USB".to_owned()));
-        let mut settings = defaults;
+        let mut settings = defaults.clone();
         settings.sidebar.show_external_disks = false;
         let shown = all(&settings);
         assert!(!shown.contains(&"USB".to_owned()));
         assert!(shown.contains(&"Docs".to_owned()));
-        let mut settings = defaults;
+        let mut settings = defaults.clone();
         settings.sidebar.show_computer = true;
         settings.sidebar.show_home = true;
         let shown = all(&settings);

@@ -65,6 +65,8 @@ fn device_order_prefers_connected_then_paired() {
             paired: false,
             trusted: false,
             connected: false,
+            can_connect: false,
+            battery: None,
         },
         Device {
             id: "paired".into(),
@@ -74,6 +76,8 @@ fn device_order_prefers_connected_then_paired() {
             paired: true,
             trusted: true,
             connected: false,
+            can_connect: false,
+            battery: None,
         },
         Device {
             id: "connected".into(),
@@ -83,6 +87,8 @@ fn device_order_prefers_connected_then_paired() {
             paired: true,
             trusted: true,
             connected: true,
+            can_connect: false,
+            battery: None,
         },
     ];
 

@@ -229,6 +229,8 @@ mod tests {
             paired,
             trusted: paired,
             connected,
+            can_connect: paired,
+            battery: None,
         }
     }
 

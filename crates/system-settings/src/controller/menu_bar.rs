@@ -78,8 +78,8 @@ impl Settings {
             ));
         }
         // Each control only where the bar can show its item: on Windows
-        // the Lulo bar reads Wi-Fi, sound and the battery from Windows;
-        // VPN, Bluetooth, Focus and Notifications are Lulo OS services.
+        // the Lulo bar reads Wi-Fi, Bluetooth, sound and the battery from
+        // Windows; VPN, Focus and Notifications are Lulo OS services.
         if crate::navigation::platform_supports("VPN") {
             controls.push(control(
                 "menu-bar-vpn",
@@ -90,7 +90,7 @@ impl Settings {
                 MenuBarChange::Vpn,
             ));
         }
-        if self.hardware.has_bluetooth && cfg!(not(windows)) {
+        if self.hardware.has_bluetooth {
             controls.push(control(
                 "menu-bar-bluetooth",
                 "icons/bluetooth.svg",

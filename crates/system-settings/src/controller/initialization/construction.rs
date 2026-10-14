@@ -33,6 +33,7 @@ impl Settings {
         // Replaced once the initial backlight read lands (start_snapshot_loads).
         let brightness_slider = Self::brightness_slider(cx, 0.0);
         let keyboard_brightness_slider = Self::keyboard_brightness_slider(cx, 0.0);
+        let night_shift_slider = Self::night_shift_slider(cx, 50.0);
         // Replaced once the first shell-settings snapshot lands, and again
         // whenever it changes from elsewhere (e.g. the Dock's own
         // separator drag, DOCK-03).
@@ -331,6 +332,7 @@ impl Settings {
             wifi_forgetting: None,
             wifi_forget_confirmation: None,
             wifi_password_prompt: None,
+            wifi_other_prompt: None,
             wifi_enterprise_prompt: None,
             wifi_cancellation: None,
             wifi_on: false,
@@ -349,6 +351,7 @@ impl Settings {
             bluetooth_adapter_name: None,
             bluetooth_on: false,
             bt_discoverable: false,
+            bt_discoverable_for_pane: false,
             bt_devices: Vec::new(),
             bluetooth_pairing: None,
             bluetooth_forget_confirmation: None,
@@ -405,6 +408,12 @@ impl Settings {
             battery_history_long: false,
             battery_health_sheet: false,
             hot_corners_sheet: false,
+            night_shift_sheet: false,
+            night_shift_policy: rmac_shortcuts::night_shift::Policy::default(),
+            night_shift_available: false,
+            night_shift_slider,
+            night_shift_error: None,
+            night_shift_generation: 0,
 
             display_loading: true,
             display_busy: false,

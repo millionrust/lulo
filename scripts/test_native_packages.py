@@ -349,8 +349,8 @@ class NativePackageContractTests(unittest.TestCase):
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 15)
-        self.assertEqual(len(contract.SESSION_BINARIES), 33)
-        self.assertEqual(len(contract.ALL_BINARIES), 46)
+        self.assertEqual(len(contract.SESSION_BINARIES), 34)
+        self.assertEqual(len(contract.ALL_BINARIES), 47)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),
@@ -471,7 +471,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("Package: rmac-session\n", control)
         self.assertIn("Architecture: arm64\n", control)
         self.assertIn(
-            "Recommends: gdm3, keyd, libonnxruntime1.23, pkexec, qt6-gtk-platformtheme\n",
+            "Recommends: gdm3, keyd, libonnxruntime1.23, pkexec, qt6-gtk-platformtheme, wlsunset\n",
             control,
         )
         self.assertTrue(control.endswith("\n"))

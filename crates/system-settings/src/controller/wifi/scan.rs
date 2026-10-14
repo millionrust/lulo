@@ -79,6 +79,7 @@ impl Settings {
             self.wifi_pane_scan_task = None;
         }
         self.wifi_pane_was_visible = visible;
+        self.sync_bluetooth_discoverable_on_navigation(cx);
     }
 
     /// Ask NetworkManager to scan and re-read the Wi-Fi snapshot, unless a

@@ -20,6 +20,7 @@ pub mod lock_settings;
 #[cfg(windows)]
 mod lock_windows;
 mod model;
+pub mod night_shift;
 mod portal;
 pub mod power_key;
 #[cfg(test)]

@@ -90,22 +90,31 @@ pub(in crate::controller) fn bluetooth_device_row(
                         }),
                     )
                 })
+                // The Mac's ⓘ: the device's options, here Forget This
+                // Device….
                 .when(device.paired, |actions| {
                     actions.child(
-                        push_button(
-                            SharedString::from(format!("bluetooth-device-forget-{forget_id}")),
-                            "Forget…",
+                        PopUpButton::new(
+                            SharedString::from(format!("bluetooth-device-detail-{forget_id}")),
+                            "Show Detail",
                         )
-                        .busy(forgetting)
-                        .disabled(busy)
-                        .on_click(move |_, _, cx| {
-                            forget_view.update(cx, |settings, cx| {
-                                settings.request_bluetooth_forget(
-                                    forget_id.clone(),
-                                    forget_name.clone(),
-                                    cx,
-                                );
-                            });
+                        .menu_button("icons/info.svg", 17.0)
+                        .disabled(busy || forgetting)
+                        .dropdown_menu(move |menu, _, _| {
+                            let forget_view = forget_view.clone();
+                            let forget_id = forget_id.clone();
+                            let forget_name = forget_name.clone();
+                            menu.item(PopupMenuItem::new("Forget This Device…").on_click(
+                                move |_, _, cx| {
+                                    forget_view.update(cx, |settings, cx| {
+                                        settings.request_bluetooth_forget(
+                                            forget_id.clone(),
+                                            forget_name.clone(),
+                                            cx,
+                                        );
+                                    });
+                                },
+                            ))
                         }),
                     )
                 }),

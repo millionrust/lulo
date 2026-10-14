@@ -101,6 +101,27 @@ pub fn connect_with_password(
     SystemWifiService.connect_with_password(network, password, cancellation)
 }
 
+/// Join a network that does not broadcast its name (Wi-Fi ▸ Other…): open
+/// (`password` None) or Wi-Fi Personal. Lulo OS only.
+pub fn join_hidden(
+    network: &WifiNetworkId,
+    password: Option<WifiPassword>,
+    cancellation: &WifiCancellation,
+) -> Result<WifiSnapshot, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        linux_join_hidden_wifi(network, password, cancellation)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (network, password, cancellation);
+        Err(Error::new(
+            "join the Wi-Fi network",
+            "joining a hidden network is not available here",
+        ))
+    }
+}
+
 pub fn connect_enterprise(
     network: &WifiNetworkId,
     credentials: WifiEnterpriseCredentials,

@@ -71,7 +71,7 @@ use crate::appearance::{
 use crate::connectivity::{
     wifi_join_action, BluetoothForgetPrompt, BluetoothPairingDisplay, BluetoothPairingState,
     NetworkEditorState, VpnEditorState, WifiEnterprisePrompt, WifiForgetPrompt, WifiJoinAction,
-    WifiPasswordPrompt,
+    WifiOtherPrompt, WifiPasswordPrompt,
 };
 use crate::displays::{
     compositor_event_affects_displays, relative_display_position, DisplayChange,

@@ -131,6 +131,9 @@ impl Settings {
                     let forget_network = network.id.clone();
                     let forget_ssid = SharedString::from(network.ssid.clone());
                     let forget_view = view.clone();
+                    let details_view = view.clone();
+                    let details_interface =
+                        connected.then(|| self.wifi_interface.clone()).flatten();
                     row_base()
                         .min_h(px(NETWORK_ROW_HEIGHT))
                         .child(
@@ -148,21 +151,48 @@ impl Settings {
                             !security_is_open(&network.id.security()),
                             None,
                         ))
+                        // The Mac's circled ⋯: Forget This Network… and, for
+                        // the joined network, Network Settings….
                         .child(
-                            push_button(
-                                SharedString::from(format!("wifi-saved-forget-{index}")),
-                                "Forget…",
+                            PopUpButton::new(
+                                SharedString::from(format!("wifi-saved-more-{index}")),
+                                "Show Detail",
                             )
-                            .busy(forgetting)
-                            .disabled(self.wifi_busy)
-                            .on_click(move |_, _, cx| {
-                                forget_view.update(cx, |settings, cx| {
-                                    settings.request_wifi_forget(
-                                        forget_network.clone(),
-                                        forget_ssid.clone(),
-                                        cx,
-                                    )
-                                });
+                            .menu_button("icons/ellipsis.svg", 15.0)
+                            .disabled(self.wifi_busy || forgetting)
+                            .dropdown_menu(move |menu, _, _| {
+                                let forget_view = forget_view.clone();
+                                let forget_network = forget_network.clone();
+                                let forget_ssid = forget_ssid.clone();
+                                let mut menu =
+                                    menu.item(PopupMenuItem::new("Forget This Network…").on_click(
+                                        move |_, _, cx| {
+                                            forget_view.update(cx, |settings, cx| {
+                                                settings.request_wifi_forget(
+                                                    forget_network.clone(),
+                                                    forget_ssid.clone(),
+                                                    cx,
+                                                )
+                                            });
+                                        },
+                                    ));
+                                if let Some(interface) = details_interface.clone() {
+                                    let details_view = details_view.clone();
+                                    menu = menu.item(
+                                        PopupMenuItem::new("Network Settings…").on_click(
+                                            move |_, _, cx| {
+                                                let interface = interface.clone();
+                                                details_view.update(cx, |settings, cx| {
+                                                    settings.push(
+                                                        SubPage::NetworkService { interface },
+                                                        cx,
+                                                    )
+                                                });
+                                            },
+                                        ),
+                                    );
+                                }
+                                menu
                             }),
                         )
                         .into_any_element()
@@ -275,6 +305,17 @@ impl Settings {
                     .collect()
             };
             cards.push(card(rows));
+            // Other… joins a network that does not broadcast its name
+            // (NetworkManager on Lulo OS).
+            if cfg!(target_os = "linux") {
+                let other_view = view.clone();
+                cards.push(footer_buttons(vec![push_button("wifi-other", "Other…")
+                    .disabled(self.wifi_busy)
+                    .on_click(move |_, window, cx| {
+                        other_view.update(cx, |settings, cx| settings.open_wifi_other(window, cx));
+                    })
+                    .into_any_element()]));
+            }
             cards.push(footnote(if cfg!(windows) {
                 "New WPA Personal and SAE networks ask for their password. Enterprise networks open Windows' network list, which asks for their sign-in."
             } else {

@@ -321,6 +321,7 @@ pub(super) struct Settings {
     pub(super) wifi_forgetting: Option<rmac_network::WifiNetworkId>,
     pub(super) wifi_forget_confirmation: Option<WifiForgetPrompt>,
     pub(super) wifi_password_prompt: Option<WifiPasswordPrompt>,
+    pub(super) wifi_other_prompt: Option<WifiOtherPrompt>,
     pub(super) wifi_enterprise_prompt: Option<WifiEnterprisePrompt>,
     pub(super) wifi_cancellation: Option<rmac_network::WifiCancellation>,
     pub(super) wifi_on: bool,
@@ -353,6 +354,8 @@ pub(super) struct Settings {
     pub(super) bluetooth_adapter_name: Option<String>,
     pub(super) bluetooth_on: bool,
     pub(super) bt_discoverable: bool,
+    /// Settings made the computer discoverable for the open Bluetooth pane.
+    pub(super) bt_discoverable_for_pane: bool,
     pub(super) bt_devices: Vec<rmac_bluetooth::Device>,
     pub(super) bluetooth_pairing: Option<BluetoothPairingState>,
     pub(super) bluetooth_forget_confirmation: Option<BluetoothForgetPrompt>,
@@ -421,6 +424,13 @@ pub(super) struct Settings {
     pub(super) battery_history_long: bool,
     pub(super) battery_health_sheet: bool,
     pub(super) hot_corners_sheet: bool,
+    // Displays ▸ Night Shift…
+    pub(super) night_shift_sheet: bool,
+    pub(super) night_shift_policy: rmac_shortcuts::night_shift::Policy,
+    pub(super) night_shift_available: bool,
+    pub(super) night_shift_slider: Entity<SliderState>,
+    pub(super) night_shift_error: Option<SharedString>,
+    pub(super) night_shift_generation: u32,
 
     // Displays
     pub(super) display_loading: bool,

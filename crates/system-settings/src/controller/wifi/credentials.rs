@@ -263,4 +263,159 @@ impl Settings {
         })
         .detach();
     }
+
+    /// Wi-Fi ▸ Other…: the Mac's "Find and join a Wi-Fi network" dialog.
+    pub(in crate::controller) fn open_wifi_other(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.wifi_busy || !self.wifi_available || !self.wifi_on {
+            return;
+        }
+        let name = cx.new(|cx| {
+            InputState::new(window, cx)
+                .clean_on_escape()
+                .placeholder("Network Name")
+        });
+        let password = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .clean_on_escape()
+                .placeholder("Password")
+        });
+        let focus = name.read(cx).focus_handle(cx);
+        self.wifi_other_prompt = Some(WifiOtherPrompt {
+            name,
+            password,
+            secure: true,
+            validation_error: None,
+        });
+        window.focus(&focus, cx);
+        cx.notify();
+    }
+
+    pub(in crate::controller) fn set_wifi_other_secure(
+        &mut self,
+        secure: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(prompt) = &mut self.wifi_other_prompt {
+            prompt.secure = secure;
+            prompt.validation_error = None;
+            cx.notify();
+        }
+    }
+
+    pub(in crate::controller) fn cancel_wifi_other(&mut self, cx: &mut Context<Self>) {
+        if let Some(cancellation) = &self.wifi_cancellation {
+            cancellation.cancel();
+        } else {
+            self.wifi_other_prompt = None;
+        }
+        cx.notify();
+    }
+
+    pub(in crate::controller) fn submit_wifi_other(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.wifi_busy {
+            return;
+        }
+        let Some(prompt) = &self.wifi_other_prompt else {
+            return;
+        };
+        let name = prompt.name.read(cx).value().to_string();
+        let security = if prompt.secure {
+            rmac_network::WifiSecurity::Personal(rmac_network::WifiPersonalMode::Psk)
+        } else {
+            rmac_network::WifiSecurity::Open
+        };
+        let Some(network) = rmac_network::WifiNetworkId::from_bytes(name.into_bytes(), security)
+        else {
+            if let Some(prompt) = &mut self.wifi_other_prompt {
+                prompt.validation_error = Some("Enter a network name of 1 to 32 bytes.".into());
+            }
+            cx.notify();
+            return;
+        };
+        let password = if prompt.secure {
+            let value = prompt.password.read(cx).value().to_string();
+            match rmac_network::WifiPassword::new(value, &network) {
+                Ok(password) => Some(password),
+                Err(error) => {
+                    if let Some(prompt) = &mut self.wifi_other_prompt {
+                        prompt.validation_error = Some(error.to_string().into());
+                    }
+                    cx.notify();
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        // Drop the editor that held the secret as soon as it is owned by
+        // the zeroizing password type.
+        let empty = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .clean_on_escape()
+                .placeholder("Password")
+        });
+        if let Some(prompt) = &mut self.wifi_other_prompt {
+            prompt.password = empty;
+            prompt.validation_error = None;
+        }
+        let cancellation = rmac_network::WifiCancellation::new();
+        self.begin_wifi_mutation();
+        self.wifi_cancellation = Some(cancellation.clone());
+        self.wifi_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            // Blocking D-Bus I/O stays off GPUI's executor (LINUX-HW-07).
+            let (result, recovery_snapshot) = blocking::unblock(move || {
+                let result = rmac_network::join_hidden(&network, password, &cancellation);
+                let recovery_snapshot = result
+                    .is_err()
+                    .then(|| rmac_network::snapshot().ok())
+                    .flatten();
+                (result, recovery_snapshot)
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wifi_other_update(result, recovery_snapshot);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_wifi_other_update(
+        &mut self,
+        result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
+        recovery_snapshot: Option<rmac_network::WifiSnapshot>,
+    ) {
+        self.wifi_busy = false;
+        self.wifi_cancellation = None;
+        match result {
+            Ok(snapshot) => {
+                self.apply_wifi_snapshot(snapshot);
+                self.wifi_other_prompt = None;
+            }
+            Err(error) if error.is_cancelled() => {
+                self.wifi_other_prompt = None;
+            }
+            Err(error) => {
+                if let Some(snapshot) = recovery_snapshot {
+                    self.apply_wifi_snapshot(snapshot);
+                }
+                if let Some(prompt) = &mut self.wifi_other_prompt {
+                    prompt.validation_error =
+                        Some(format!("Could not join this network: {error}").into());
+                }
+            }
+        }
+    }
 }

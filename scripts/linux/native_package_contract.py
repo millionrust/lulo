@@ -130,6 +130,7 @@ SESSION_BINARIES = (
     "rmac-lock-provider",
     "rmac-lock-coordinator",
     "rmac-idle-locker",
+    "rmac-night-shift",
     "rmac-mac-keyboard",
     "rmac-setup-assistant",
     "rmac-calendar-agent",
@@ -247,6 +248,9 @@ PACKAGE_SPECS = (
             "libonnxruntime1.23",
             "pkexec",
             "qt6-gtk-platformtheme",
+            # wlsunset runs Settings ▸ Displays ▸ Night Shift through
+            # rmac-night-shift.service; without it Settings says so.
+            "wlsunset",
         ),
         summary="niri-based rmac Wayland desktop session",
         description=(

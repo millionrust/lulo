@@ -373,6 +373,7 @@ impl RenderOnce for Button {
 pub struct PopUpButton {
     id: ElementId,
     label: SharedString,
+    accessible_name: Option<SharedString>,
     disabled: bool,
     selected: bool,
     form: bool,
@@ -386,6 +387,7 @@ impl PopUpButton {
         Self {
             id: id.into(),
             label: label.into(),
+            accessible_name: None,
             disabled: false,
             selected: false,
             form: false,
@@ -419,6 +421,14 @@ impl PopUpButton {
 
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
+        self
+    }
+
+    /// The name assistive technology reads, when it differs from the
+    /// visible value (the Mac's "Dock position on screen" for a pop-up
+    /// showing "Bottom"). The value stays its `value`.
+    pub fn accessible_name(mut self, name: impl Into<SharedString>) -> Self {
+        self.accessible_name = Some(name.into());
         self
     }
 
@@ -488,6 +498,7 @@ struct PopUpButtonTrigger {
     focus_handle: gpui::FocusHandle,
     popover_state: Entity<PopUpButtonPopoverState>,
     value: SharedString,
+    accessible_name: Option<SharedString>,
     menu_button_icon: Option<(&'static str, f32)>,
     circle: f32,
     disabled: bool,
@@ -585,7 +596,7 @@ impl RenderOnce for PopUpButtonTrigger {
                 Role::ComboBox
             })
             .aria_expanded(open)
-            .aria_label(self.value.clone())
+            .aria_label(self.accessible_name.unwrap_or_else(|| self.value.clone()))
             .when(!menu_button_icon, |el| el.aria_value(self.value))
             .aria_disabled(disabled)
             .cursor_default()
@@ -669,6 +680,7 @@ impl RenderOnce for PopUpButton {
                 focus_handle: trigger_focus.clone(),
                 popover_state: popover_state.clone(),
                 value: self.label,
+                accessible_name: self.accessible_name,
                 menu_button_icon: self.menu_button_icon,
                 circle: metrics.popup_chevron,
                 disabled,
@@ -1652,6 +1664,10 @@ impl RenderOnce for Slider {
             SliderAxis::Vertical => ComponentSlider::new(&self.state).vertical(),
         }
         .disabled(self.disabled);
+        let slider = match &self.accessible_name {
+            Some(name) => slider.accessible_name(name.clone()),
+            None => slider,
+        };
         match self.accessible_name {
             Some(name) => div()
                 .id(("slider-label", self.state.entity_id()))

@@ -195,6 +195,21 @@ impl EditorView {
         cx.notify();
     }
 
+    /// Format ▸ Font in a plain document (MROBOT-12): TextEdit keeps the
+    /// rows enabled, so using one makes the document rich first, with the
+    /// selection kept, and the row's own handler then applies to it.
+    pub(super) fn make_rich_for_format(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.rich_text || self.editing_blocked() || self.recovery_loading {
+            return;
+        }
+        let selection = self.input.read(cx).selected_range();
+        self.toggle_rich_text(window, cx);
+        if self.rich_text {
+            self.rich
+                .update(cx, |editor, cx| editor.select_range(selection, cx));
+        }
+    }
+
     /// The confirmed Make Plain Text: the text stays, its formatting goes.
     /// An `.rtf` is never overwritten with plain text, so the document
     /// continues untitled, as Edit as Plain Text did.
@@ -464,10 +479,16 @@ impl EditorView {
     }
 
     pub(super) fn copy_style(&mut self, cx: &mut Context<Self>) {
-        if !self.rich_text {
-            return;
-        }
-        let style = self.rich.read(cx).style_at_selection();
+        // A plain document has one font: its family and size are the style.
+        let style = if self.rich_text {
+            self.rich.read(cx).style_at_selection()
+        } else {
+            let mut style = CharStyle::with_size(self.font_size);
+            if self.mono {
+                style.family = Some(std::sync::Arc::from(rmac_ui::MONO_FONT));
+            }
+            style
+        };
         if let Ok(mut clipboard) = style_clipboard().lock() {
             *clipboard = Some(style);
         }

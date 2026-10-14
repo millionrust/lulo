@@ -27,7 +27,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
 };
-use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::CoIncrementMTAUsage;
 use windows::Win32::System::Threading::{
     AttachThreadInput, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
     QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -643,12 +643,17 @@ fn process_path(pid: u32) -> String {
     })
 }
 
-thread_local! {
-    static COM_READY: bool = {
-        // SAFETY: joins this blocking thread to the multithreaded apartment
-        // for the shell's per-window property store; it is never left.
-        unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok()
-    };
+/// The multithreaded apartment for the shell's per-window property store,
+/// kept alive once for the process (`CoIncrementMTAUsage`). No thread joins
+/// it: a thread without COM uses it implicitly, so no apartment is left on
+/// a Windows thread-pool thread, where one kept the shell's Open dialog
+/// from showing (op/win-flakes).
+fn ensure_mta() {
+    static MTA: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    MTA.get_or_init(|| {
+        // SAFETY: a plain COM call; the cookie is kept for the process.
+        let _ = unsafe { CoIncrementMTAUsage() };
+    });
 }
 
 /// The AppUserModelID set on `hwnd` itself, as the taskbar reads it to
@@ -668,7 +673,7 @@ fn window_aumid(hwnd: HWND) -> Option<String> {
         pid: 5,
     };
     cached(&AUMIDS, hwnd.0 as isize, || {
-        COM_READY.with(|_| ());
+        ensure_mta();
         // SAFETY: reads a property of a live window through the shell's own
         // per-window property store; the string is freed after copying.
         unsafe {

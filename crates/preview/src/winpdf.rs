@@ -200,4 +200,23 @@ mod tests {
             .unwrap_err();
         assert!(error.contains("couldn’t be opened"), "{error}");
     }
+
+    /// A PDF call leaves its thread as it found it: the shell's Open dialog
+    /// stayed hidden while an apartment was left on a thread-pool thread
+    /// (op/win-flakes).
+    #[test]
+    fn a_pdf_call_leaves_no_apartment_on_its_thread() {
+        use windows::Win32::System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        };
+        std::thread::spawn(|| {
+            let _ = load_pdf_info(Path::new(r"C:\does\not\exist\rmac-preview-winpdf-test.pdf"));
+            // SAFETY: joins and leaves an apartment on this test thread.
+            let joined = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+            assert!(joined.is_ok(), "{joined:?}");
+            unsafe { CoUninitialize() };
+        })
+        .join()
+        .unwrap();
+    }
 }

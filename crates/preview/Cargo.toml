@@ -40,6 +40,7 @@ windows = { workspace = true, features = [
     "Storage",
     "Storage_Streams",
     "Foundation",
+    "Win32_System_Com",
     "Win32_System_WinRT",
 ] }
 

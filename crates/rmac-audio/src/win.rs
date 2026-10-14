@@ -22,7 +22,7 @@ use windows::Win32::Media::Audio::{
     AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE, DEVICE_STATE_ACTIVE,
 };
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
+    CoCreateInstance, CoIncrementMTAUsage, CoTaskMemFree, CLSCTX_ALL, STGM_READ,
 };
 
 use super::*;
@@ -497,10 +497,19 @@ impl IAudioEndpointVolumeCallback_Impl for LevelWatcher_Impl {
 }
 
 fn enumerator(operation: &'static str) -> Result<IMMDeviceEnumerator, Error> {
-    // SAFETY: joins (or keeps) this thread's COM apartment; an existing
-    // apartment of another kind still allows the calls below.
+    // No thread joins an apartment here: these calls run on the Windows
+    // thread pool, shared with Windows' own work in the process, where a
+    // leftover apartment kept the shell's Open dialog from showing
+    // (op/win-flakes). The process keeps the multithreaded apartment alive
+    // once, and a thread without COM uses it implicitly.
+    static MTA: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    MTA.get_or_init(|| {
+        // SAFETY: a plain COM call; the cookie is kept for the process.
+        let _ = unsafe { CoIncrementMTAUsage() };
+    });
+    // SAFETY: creates the device enumerator in the apartment above, or in
+    // the calling thread's own apartment if it has one.
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         CoCreateInstance(
             &MMDeviceEnumerator,
             None::<&windows::core::IUnknown>,

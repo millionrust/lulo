@@ -46,11 +46,7 @@ pub fn surface_descriptions(
     } else {
         base_thickness
     };
-    let exclusive_zone = if settings.reserve_space {
-        base_thickness
-    } else {
-        0.0
-    };
+    let exclusive_zone = reserved_thickness(settings);
     let reveal_edge_thickness = if settings.autohide {
         HIDDEN_EDGE_THICKNESS
     } else {
@@ -87,6 +83,56 @@ pub fn surface_descriptions(
         .collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.output.cmp(&right.output));
     Ok(surfaces)
+}
+
+/// The Dock's resting tile edge, clamped to the Size slider's range.
+fn resting_tile_size(tile_size: f32) -> f32 {
+    if tile_size.is_finite() {
+        tile_size.clamp(
+            rmac_shell_settings::MIN_DOCK_TILE_SIZE,
+            rmac_shell_settings::MAX_DOCK_TILE_SIZE,
+        )
+    } else {
+        rmac_shell_settings::DEFAULT_DOCK_TILE_SIZE
+    }
+}
+
+/// The work area the Dock reserves at its edge: its shelf (the tile plus
+/// 0.15625 of it on each side) and the shelf's margin to the screen edge
+/// (0.078125 of the tile), 89 pt at the default 64 pt tiles — the Dock
+/// surface's own `TileMetrics::exclusive_zone`. Nothing when the Dock hides
+/// (macOS gives the space back to windows then) or "Reserve screen space"
+/// is off.
+pub fn reserved_thickness(settings: &rmac_shell_settings::DockSettings) -> f32 {
+    if !settings.reserve_space || settings.autohide {
+        return 0.0;
+    }
+    resting_tile_size(settings.tile_size) * (1.0 + 2.0 * 0.15625 + 0.078125)
+}
+
+/// The visible-frame reservation (`rmac_compositor::placement`) for these
+/// Dock settings below a `menu_bar` tall menu bar.
+pub fn work_area_reservation(
+    settings: &rmac_shell_settings::DockSettings,
+    menu_bar: f64,
+) -> rmac_compositor::placement::Reservation {
+    use rmac_compositor::placement::{DockEdge, DockOutputs, Reservation};
+    Reservation {
+        menu_bar,
+        dock_edge: match settings.placement {
+            rmac_shell_settings::DockPlacement::Bottom => DockEdge::Bottom,
+            rmac_shell_settings::DockPlacement::Left => DockEdge::Left,
+            rmac_shell_settings::DockPlacement::Right => DockEdge::Right,
+        },
+        dock: f64::from(reserved_thickness(settings)),
+        dock_outputs: match &settings.outputs {
+            rmac_shell_settings::OutputScope::All => DockOutputs::All,
+            rmac_shell_settings::OutputScope::Primary => DockOutputs::Primary,
+            rmac_shell_settings::OutputScope::Named(name) => {
+                DockOutputs::Named(rmac_compositor::OutputId::from(name.as_str()))
+            }
+        },
+    }
 }
 
 fn renderable_logical_output(

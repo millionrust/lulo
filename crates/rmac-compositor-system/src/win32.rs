@@ -352,11 +352,14 @@ unsafe extern "system" fn on_event(
     let known = KNOWN.lock().is_ok_and(|known| known.contains(&key));
     let reading = READING.load(Ordering::Acquire);
     let kind = event_kind(event);
-    let app_window = matches!(kind, EventKind::Appeared)
+    // A window the last reading did not list becoming an app window; while a
+    // reading is under way every event counts anyway, but the new window
+    // must still be placed.
+    let fresh = matches!(kind, EventKind::Appeared)
         && !known
-        && !reading
         // SAFETY: no arguments.
         && is_app_window(hwnd, unsafe { GetCurrentProcessId() });
+    let app_window = fresh && !reading;
     let relevant = relevant(kind, known, app_window, reading);
     if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
         let pid = process_id(hwnd);
@@ -369,6 +372,12 @@ unsafe extern "system" fn on_event(
     }
     if !relevant {
         return;
+    }
+    if fresh {
+        // A window just shown: into the visible frame, as macOS does.
+        fit_new_window(hwnd);
+    } else if event == EVENT_SYSTEM_MOVESIZEEND && known {
+        keep_title_bar_below_bar(hwnd);
     }
     if matches!(
         event,
@@ -1285,6 +1294,118 @@ fn work_area(hwnd: HWND) -> Option<(RECT, f64)> {
     Some((info.rcWork, f64::from(dpi_x.max(1)) / 96.0))
 }
 
+/// The work area and the whole monitor `hwnd` is on, in physical pixels.
+fn monitor_areas(hwnd: HWND) -> Option<(RECT, RECT)> {
+    // SAFETY: reads the monitor a live window is on.
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: a MONITORINFO whose size field says so.
+    unsafe { GetMonitorInfoW(monitor, &mut info) }
+        .as_bool()
+        .then_some((info.rcWork, info.rcMonitor))
+}
+
+fn logical_rect(rect: RECT) -> domain::LogicalRect {
+    domain::LogicalRect {
+        x: f64::from(rect.left),
+        y: f64::from(rect.top),
+        width: f64::from(rect.right - rect.left),
+        height: f64::from(rect.bottom - rect.top),
+    }
+}
+
+fn win32_rect(rect: domain::LogicalRect) -> RECT {
+    let (left, top) = (rect.x.round() as i32, rect.y.round() as i32);
+    RECT {
+        left,
+        top,
+        right: left + rect.width.round() as i32,
+        bottom: top + rect.height.round() as i32,
+    }
+}
+
+/// A window drawn over the whole monitor (a borderless full-screen game,
+/// a browser's F11) keeps its frame, as a full-screen Mac window does.
+fn covers_monitor(frame: RECT, monitor: RECT) -> bool {
+    frame.left <= monitor.left
+        && frame.top <= monitor.top
+        && frame.right >= monitor.right
+        && frame.bottom >= monitor.bottom
+}
+
+/// The frame a newly shown window gets: macOS constrains every new window
+/// to the visible frame (`rmac_compositor::placement::constrain_new`), which
+/// on Windows is the work area the bar's and the Dock's AppBars leave.
+/// Windows itself only does that for windows that let it choose
+/// (`CW_USEDEFAULT`); an app that remembers 0,0 or a size from a bigger
+/// screen opened under the bar and the Dock. `None` leaves it alone.
+fn new_window_frame(frame: RECT, work: RECT, monitor: RECT) -> Option<RECT> {
+    if covers_monitor(frame, monitor) {
+        return None;
+    }
+    domain::placement::constrain_new(logical_rect(frame), logical_rect(work)).map(win32_rect)
+}
+
+/// After a drag, the title bar stays below the bar; the rest of the window
+/// may go under the Dock, as on the Mac.
+fn dragged_window_frame(frame: RECT, work: RECT, monitor: RECT) -> Option<RECT> {
+    if covers_monitor(frame, monitor) {
+        return None;
+    }
+    domain::placement::constrain_title_bar(logical_rect(frame), logical_rect(work)).map(win32_rect)
+}
+
+fn placeable(hwnd: HWND) -> Option<(RECT, RECT, RECT)> {
+    // SAFETY: reads properties of a live window.
+    if unsafe { IsZoomed(hwnd) }.as_bool() || unsafe { IsIconic(hwnd) }.as_bool() {
+        return None;
+    }
+    let (work, monitor) = monitor_areas(hwnd)?;
+    Some((frame_bounds(hwnd)?, work, monitor))
+}
+
+/// Runs on the hook thread when an app window appears.
+fn fit_new_window(hwnd: HWND) {
+    let Some((frame, work, monitor)) = placeable(hwnd) else {
+        return;
+    };
+    if let Some(target) = new_window_frame(frame, work, monitor) {
+        trace_placement(hwnd, "new window", frame, target);
+        place_frame(hwnd, target);
+    }
+}
+
+/// Runs on the hook thread when a move or resize ends.
+fn keep_title_bar_below_bar(hwnd: HWND) {
+    let Some((frame, work, monitor)) = placeable(hwnd) else {
+        return;
+    };
+    if let Some(target) = dragged_window_frame(frame, work, monitor) {
+        trace_placement(hwnd, "dragged window", frame, target);
+        place_frame(hwnd, target);
+    }
+}
+
+fn trace_placement(hwnd: HWND, what: &str, from: RECT, to: RECT) {
+    if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
+        eprintln!(
+            "lulo-shell: placed {what} {:#x} from {},{},{},{} to {},{},{},{}",
+            hwnd.0 as isize,
+            from.left,
+            from.top,
+            from.right,
+            from.bottom,
+            to.left,
+            to.top,
+            to.right,
+            to.bottom
+        );
+    }
+}
+
 /// Put `hwnd`'s visible frame at `percent` of its monitor's work area.
 fn frame_percent(
     hwnd: HWND,
@@ -1337,6 +1458,72 @@ fn place_frame(hwnd: HWND, target: RECT) {
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
         )
     };
+}
+
+#[cfg(test)]
+mod placement_tests {
+    use super::{dragged_window_frame, new_window_frame};
+    use windows::Win32::Foundation::RECT;
+
+    fn rect(left: i32, top: i32, right: i32, bottom: i32) -> RECT {
+        RECT {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    // Ruban's laptop: 1366 × 768 with the bar's and the Dock's AppBars.
+    const WORK: RECT = RECT {
+        left: 0,
+        top: 29,
+        right: 1366,
+        bottom: 650,
+    };
+    const MONITOR: RECT = RECT {
+        left: 0,
+        top: 0,
+        right: 1366,
+        bottom: 768,
+    };
+
+    #[test]
+    fn a_huge_window_at_the_origin_fills_the_work_area_instead() {
+        assert_eq!(
+            new_window_frame(rect(0, 0, 4000, 4000), WORK, MONITOR),
+            Some(WORK)
+        );
+    }
+
+    #[test]
+    fn windows_inside_and_full_screen_windows_are_left_alone() {
+        assert_eq!(
+            new_window_frame(rect(100, 100, 900, 600), WORK, MONITOR),
+            None
+        );
+        assert_eq!(new_window_frame(MONITOR, WORK, MONITOR), None);
+    }
+
+    #[test]
+    fn a_window_under_the_dock_moves_up_without_shrinking() {
+        assert_eq!(
+            new_window_frame(rect(200, 300, 1000, 700), WORK, MONITOR),
+            Some(rect(200, 250, 1000, 650))
+        );
+    }
+
+    #[test]
+    fn a_drag_keeps_only_the_title_bar_below_the_bar() {
+        assert_eq!(
+            dragged_window_frame(rect(200, 500, 1000, 900), WORK, MONITOR),
+            None
+        );
+        assert_eq!(
+            dragged_window_frame(rect(200, -40, 1000, 400), WORK, MONITOR),
+            Some(rect(200, 29, 1000, 469))
+        );
+    }
 }
 
 #[cfg(test)]

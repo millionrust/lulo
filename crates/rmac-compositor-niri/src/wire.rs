@@ -67,9 +67,11 @@ pub enum Action {
 }
 
 /// niri-ipc `SizeChange`; proportions are percentages of the working area
-/// ("50%" on the command line is `SetProportion(50.0)`).
+/// ("50%" on the command line is `SetProportion(50.0)`), fixed sizes are
+/// the window's own size in logical pixels.
 #[derive(Debug, Serialize)]
 pub enum SizeChange {
+    SetFixed(i32),
     SetProportion(f64),
 }
 

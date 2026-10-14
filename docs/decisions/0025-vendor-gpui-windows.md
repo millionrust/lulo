@@ -271,16 +271,6 @@ drew Inter's CFF outlines with its own hinting and antialiasing, where
   and icons a debug build does not embed).
 - `RMAC_TEXT_TRACE=1` reports on stderr which faces swash took over.
 
-## File dialogs (branch `op/win-flakes`)
-
-`prompt_for_paths` and `prompt_for_new_path` ran the common file dialog inside a
-foreground task, its modal loop nested in GPUI's executor on the UI thread and the app
-window as its owner. On the owner's laptop Preview's Ctrl+O then created the Open dialog,
-gave it the keyboard and disabled the app window, but never showed it (6 of 6 tries; on
-CI about one run in three): every later key went to the invisible dialog. Both now run
-the dialog on a thread of its own (`run_dialog`, its own STA), unowned, as the Mac's Open
-panel is a window of its own; the process holds the foreground, so the dialog takes it.
-
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_windows` and re-applying the

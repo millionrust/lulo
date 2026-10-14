@@ -310,6 +310,18 @@ impl WindowsPlatform {
         })
     }
 
+    fn find_current_active_window(&self) -> Option<HWND> {
+        let active_window_hwnd = unsafe { GetActiveWindow() };
+        if active_window_hwnd.is_invalid() {
+            return None;
+        }
+        self.raw_window_handles
+            .read()
+            .iter()
+            .find(|hwnd| hwnd.as_raw() == active_window_hwnd)
+            .map(|hwnd| hwnd.as_raw())
+    }
+
     fn begin_vsync_thread(&self) {
         let Some(directx_devices) = self.inner.state.directx_devices.borrow().clone() else {
             return;
@@ -628,11 +640,13 @@ impl Platform for WindowsPlatform {
         options: PathPromptOptions,
     ) -> Receiver<Result<Option<Vec<PathBuf>>>> {
         let (tx, rx) = oneshot::channel();
-        // rmac: the dialog runs on a thread of its own (`run_dialog`), not
-        // in a foreground task.
-        run_dialog(move || {
-            let _ = tx.send(file_open_dialog(options, None));
-        });
+        let window = self.find_current_active_window();
+        self.foreground_executor()
+            .spawn(async move {
+                let _ = tx.send(file_open_dialog(options, window));
+            })
+            .detach();
+
         rx
     }
 
@@ -644,9 +658,13 @@ impl Platform for WindowsPlatform {
         let directory = directory.to_owned();
         let suggested_name = suggested_name.map(|s| s.to_owned());
         let (tx, rx) = oneshot::channel();
-        run_dialog(move || {
-            let _ = tx.send(file_save_dialog(directory, suggested_name, None));
-        });
+        let window = self.find_current_active_window();
+        self.foreground_executor()
+            .spawn(async move {
+                let _ = tx.send(file_save_dialog(directory, suggested_name, window));
+            })
+            .detach();
+
         rx
     }
 
@@ -1242,35 +1260,6 @@ fn open_target_in_explorer(target: &Path) -> Result<()> {
             Err(anyhow::anyhow!("Can not open target path: {}", err))
         }
     })
-}
-
-/// rmac: show a common file dialog on a thread of its own, in its own COM
-/// apartment, without an owner window.
-///
-/// Upstream runs the dialog inside a foreground task, so its modal loop ran
-/// nested in GPUI's executor on the UI thread, with the app window as its
-/// owner. On a runner and on the owner's laptop the dialog was then created
-/// and given the keyboard but never shown (Preview's Ctrl+O, every time on
-/// the laptop): it stayed invisible, the app window disabled behind it, and
-/// every later key went to the hidden dialog. On its own thread nothing it
-/// waits for depends on GPUI's loop. Unowned, it is a window of its own, as
-/// the Mac's Open panel is; it takes the foreground because this process
-/// has it.
-fn run_dialog(show: impl FnOnce() + Send + 'static) {
-    let spawned = std::thread::Builder::new()
-        .name("rmac-file-dialog".into())
-        .spawn(move || {
-            // SAFETY: balanced with `CoUninitialize` below, on this thread.
-            let initialised = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
-            show();
-            if initialised {
-                // SAFETY: this thread initialised COM above.
-                unsafe { CoUninitialize() };
-            }
-        });
-    if let Err(error) = spawned {
-        log::error!("cannot start the file dialog's thread: {error}");
-    }
 }
 
 fn file_open_dialog(

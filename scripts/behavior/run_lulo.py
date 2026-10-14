@@ -1444,6 +1444,13 @@ class LuloRun:
                     (ox + end[0], oy + end[1]),
                     OUTPUT_W, OUTPUT_H,
                 )
+            elif "context_in_window" in step:
+                # A right-click at a window-relative point, for surfaces with
+                # no named accessible item under the pointer (a text body,
+                # an image).
+                x, y = step["context_in_window"]
+                ox, oy = self.window_origin()
+                self.nested.input.click(ox + x, oy + y, OUTPUT_W, OUTPUT_H, button="right")
             elif "capture" in step:
                 if self.capture_dir is not None:
                     self.capture_dir.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,15 @@
+{
+  "title": "Right-clicking a plain document's text shows the text menu instead of crashing (MROBOT-01)",
+  "app": "text-editor",
+  "lulo_only": true,
+  "setup": {"files": {"notes.txt": "Hello world"}},
+  "launch": {"file": "notes.txt"},
+  "steps": [
+    {"wait": 3},
+    {"context_in_window": [200, 200], "settle": 1.5},
+    {"observe": "menu", "facts": ["menu"]},
+    {"key": "escape", "settle": 0.5},
+    {"observe": "closed", "facts": ["menu"]}
+  ],
+  "tolerance": {"menu.menu.items": "subset"}
+}

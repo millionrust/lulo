@@ -1,0 +1,18 @@
+{
+  "title": "Format ▸ Font ▸ Bold stays enabled in a plain document and makes it rich, keeping the selection (MROBOT-12)",
+  "app": "text-editor",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "Hello world"}},
+  "launch": {"file": "report.txt"},
+  "steps": [
+    {"wait": 3},
+    {"key": "cmd-a"},
+    {"menu_action": "text_editor::ToggleBold", "settle": 1.2},
+    {"observe": "bold", "facts": ["focus"]},
+    {"key": "cmd-s", "settle": 2.0},
+    {"key": "return", "settle": 2.0},
+    {"observe": "saved", "facts": ["files"]}
+  ],
+  "omit": ["bold.focus.label", "bold.focus.role"],
+  "note": "TextEdit keeps every Format ▸ Font row enabled for plain text (tests/robot/mac/TextEdit.json, menu/Format/Font). Lulo makes the document rich before applying the row, so saving offers the .rtf name next to the .txt."
+}

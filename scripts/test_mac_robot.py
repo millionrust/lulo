@@ -6,28 +6,24 @@ import sys
 import unittest
 from pathlib import Path
 
-MAC_ROBOT = Path(__file__).resolve().parent / "robot" / "mac"
-sys.path.insert(0, str(MAC_ROBOT))
+import importlib.util
+
+ROBOT = Path(__file__).resolve().parent / "robot" / "mac"
+sys.path.insert(0, str(ROBOT))
 
 
-def _load(name: str, alias: str):
-    """Load MAC_ROBOT/<name>.py under a private name. `unittest discover`
-    runs every scripts/test_*.py in one process, and other tests import a
-    different `diff` (scripts/inventory/diff.py) first; a plain `import
-    diff` would get that cached module."""
-
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(alias, MAC_ROBOT / f"{name}.py")
-    assert spec is not None and spec.loader is not None
+def _load(name: str, file: str):
+    # Loaded by path under a unique name: scripts/inventory has its own
+    # `diff.py`, and the whole suite runs in one interpreter.
+    spec = importlib.util.spec_from_file_location(name, ROBOT / file)
     module = importlib.util.module_from_spec(spec)
-    sys.modules[alias] = module
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
 
-cm = _load("common", "mac_robot_common")
-diff = _load("diff", "mac_robot_diff")
+cm = _load("mac_robot_common", "common.py")
+diff = _load("mac_robot_diff", "diff.py")
 
 
 class ActivationTests(unittest.TestCase):

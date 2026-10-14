@@ -278,7 +278,10 @@ def run(bin_dir: Path, before: bool) -> tuple[list[str], dict]:
         if touchpad.get("frames", 0) < 10:
             failures.append(f"the touchpad stream moved on only {touchpad.get('frames', 0)} frames")
         else:
-            if touchpad["still_frames"]:
+            # On WARP a frame can land between two late deltas and move
+            # nothing; one such frame is WARP's timing, more is a stall.
+            still_allowed = 1 if software_display() else 0
+            if touchpad["still_frames"] > still_allowed:
                 failures.append(f"{touchpad['still_frames']} frames without movement mid-scroll")
             if touchpad["undrawn_frames"]:
                 failures.append(f"{touchpad['undrawn_frames']} scrolled frames drew nothing")

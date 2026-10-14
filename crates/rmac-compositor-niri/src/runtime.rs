@@ -271,11 +271,7 @@ pub(super) fn convert_action_sequence(
             width,
             height,
         } => Ok(floating_frame(*window, (x.0, y.0, width.0, height.0))),
-        domain::Action::ResizeWindow {
-            window,
-            width,
-            height,
-        } => Ok(vec![
+        domain::Action::ResizeWindow { window, height, .. } => Ok(vec![
             convert_action(action),
             wire::Action::SetWindowHeight {
                 id: Some(window.0),

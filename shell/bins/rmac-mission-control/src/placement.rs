@@ -22,7 +22,7 @@ const REVEAL_SETTLE: Duration = Duration::from_millis(1000);
 pub const MENU_BAR_HEIGHT: f64 = 29.0;
 
 pub enum Input {
-    Compositor(Event),
+    Compositor(Box<Event>),
     Dock(Reservation),
 }
 
@@ -67,7 +67,7 @@ pub async fn run(inputs: Receiver<Input>, reveal: RevealGuard) {
     while let Ok(input) = inputs.recv().await {
         let actions = match input {
             Input::Compositor(event) => {
-                state.apply(event.clone());
+                state.apply((*event).clone());
                 placer.on_event(&event, &state, reveal.active())
             }
             Input::Dock(reservation) => {
@@ -88,7 +88,11 @@ pub async fn run(inputs: Receiver<Input>, reveal: RevealGuard) {
 /// Forward the placer's own compositor event stream into its inputs.
 pub async fn forward(events: Receiver<Event>, inputs: Sender<Input>) {
     while let Ok(event) = events.recv().await {
-        if inputs.send(Input::Compositor(event)).await.is_err() {
+        if inputs
+            .send(Input::Compositor(Box::new(event)))
+            .await
+            .is_err()
+        {
             return;
         }
     }

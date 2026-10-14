@@ -1327,13 +1327,14 @@ fn win32_rect(rect: domain::LogicalRect) -> RECT {
     }
 }
 
-/// A window drawn over the whole monitor (a borderless full-screen game,
-/// a browser's F11) keeps its frame, as a full-screen Mac window does.
+/// A window drawn exactly over the monitor (a borderless full-screen game,
+/// a browser's F11) keeps its frame, as a full-screen Mac window does. A
+/// window merely bigger than the monitor is not full screen.
 fn covers_monitor(frame: RECT, monitor: RECT) -> bool {
-    frame.left <= monitor.left
-        && frame.top <= monitor.top
-        && frame.right >= monitor.right
-        && frame.bottom >= monitor.bottom
+    (frame.left - monitor.left).abs() <= 1
+        && (frame.top - monitor.top).abs() <= 1
+        && (frame.right - monitor.right).abs() <= 1
+        && (frame.bottom - monitor.bottom).abs() <= 1
 }
 
 /// The frame a newly shown window gets: macOS constrains every new window

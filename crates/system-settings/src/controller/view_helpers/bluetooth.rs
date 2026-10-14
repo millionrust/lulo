@@ -11,7 +11,12 @@ pub(in crate::controller) fn bluetooth_device_row(
     // The Mac shows only the connection state under a known device, and
     // the device kind under a nearby one.
     let subtitle: Option<SharedString> = if device.connected {
-        Some("Connected".into())
+        // The battery level where the device reports one, as the Mac shows
+        // it under a connected device.
+        Some(match device.battery {
+            Some(level) => format!("Connected · {level}%").into(),
+            None => "Connected".into(),
+        })
     } else if device.paired {
         Some("Not Connected".into())
     } else {
@@ -50,10 +55,10 @@ pub(in crate::controller) fn bluetooth_device_row(
                 .flex()
                 .items_center()
                 .gap_2()
-                // Windows connects a paired device's profiles itself and
-                // gives apps no connect or disconnect call, so a paired
-                // device there offers only Forget.
-                .when(!(device.paired && cfg!(windows)), |actions| {
+                // A paired device the platform cannot connect from an app
+                // (on Windows, anything but Bluetooth audio) offers only
+                // Forget.
+                .when(!device.paired || device.can_connect, |actions| {
                     actions.child(
                         push_button(
                             SharedString::from(format!("bluetooth-device-action-{connect_id}")),

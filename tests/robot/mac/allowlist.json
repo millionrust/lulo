@@ -1,0 +1,23 @@
+{
+  "_comment": "Mac states and labels the Mac-vs-Lulo robot (scripts/robot/mac/diff.py) never reports as gaps: Apple-account services and OS chrome Lulo deliberately leaves out. `path` is an fnmatch pattern over the state path; with `label` only that control or menu item is allowed. tests/inventory/allowlist.json labels apply too. Add rows only with a reason a reviewer can check.",
+  "entries": [
+    {"app": "System Settings", "path": "pane/Apple Account", "reason": "Apple Account sign-in is an Apple service; Lulo has local accounts (docs/parity.md, Settings Mac-only list)."},
+    {"app": "System Settings", "path": "pane/Family", "reason": "Family Sharing is an Apple Account service."},
+    {"app": "System Settings", "path": "pane/iCloud", "reason": "iCloud is an Apple service."},
+    {"app": "System Settings", "path": "pane/Game Center", "reason": "Game Center is an Apple service."},
+    {"app": "System Settings", "path": "pane/Wallet*", "reason": "Wallet and Apple Pay are Apple services with protected card storage."},
+    {"app": "System Settings", "path": "pane/General/AppleCare & Warranty", "reason": "AppleCare coverage is Apple's warranty service."},
+    {"app": "System Settings", "path": "pane/Touch ID & Password", "reason": "Lulo's equivalent is Login Password (fingerprint where the hardware has it); compared under SET rows, not by pane name."},
+    {"app": "System Settings", "path": "pane/Apple Intelligence & Siri", "reason": "Apple Intelligence and Siri are Apple services; Lulo Intelligence is its own pane, tracked separately."},
+    {"app": "*", "path": "item/@app/Accounts…", "reason": "Opens macOS Internet Accounts in System Settings (another app); Lulo routes accounts through Settings ▸ Internet Accounts."},
+    {"app": "*", "path": "item/View/Show All Tabs", "reason": "macOS window-tab overview (AppKit tabbing); Lulo windows have no system tab bar."},
+    {"app": "Calculator", "path": "item/View/Maths Notes…", "reason": "Opens the Notes app's Maths Notes on the Mac (another app); Lulo opens its own Maths Notes window, compared by hand."},
+    {"app": "Mail", "path": "*", "label": "Synchronise All Accounts", "reason": "iCloud/Exchange account synchronisation; Lulo syncs IMAP/Graph accounts automatically."},
+    {"app": "Shell", "path": "shell/app-switcher", "reason": "⌘Tab cannot be walked on Lulo's nested session (niri runs key binds only for physical keyboards); covered by run_lulo scenarios."},
+    {"app": "Shell", "path": "shell/dock-menu/Apps", "reason": "The Mac's Apps (Launchpad) Dock tile; Lulo's Apps grid is a separate surface, checked by run_menu_dismiss.py."},
+    {"app": "*", "path": "*", "label": "Services", "reason": "macOS Services submenu (system-wide app extensions); OS chrome."},
+    {"app": "*", "path": "*", "label": "Start Dictation…", "reason": "Apple Dictation service."},
+    {"app": "*", "path": "*", "label": "Emoji & Symbols", "reason": "Apple Character Viewer (a system process)."},
+    {"app": "*", "path": "*", "label": "Full-Screen Tile", "reason": "Split View tiling is tracked by WIN-01 (Partial)."}
+  ]
+}

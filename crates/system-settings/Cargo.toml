@@ -88,6 +88,8 @@ rmac-windows-resource-build.workspace = true
 # hardware facts, display modes, the output volume read-out and the
 # desktop wallpaper.
 [target.'cfg(windows)'.dependencies]
+# The hardware profile (ADR 0027) behind the Windows hardware panes.
+rmac-hardware.workspace = true
 windows = { workspace = true, features = [
     "Win32_Devices_Bluetooth",
     "Win32_Devices_Display",

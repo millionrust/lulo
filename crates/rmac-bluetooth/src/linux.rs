@@ -86,9 +86,17 @@ fn linux_snapshot_with_connection(
     let mut devices = objects
         .iter()
         .filter_map(|(path, interfaces)| {
-            let properties = interfaces.iter().find_map(|(interface, properties)| {
-                (interface.as_str() == "org.bluez.Device1").then_some(properties)
-            })?;
+            let interface = |name: &str| {
+                interfaces.iter().find_map(|(interface, properties)| {
+                    (interface.as_str() == name).then_some(properties)
+                })
+            };
+            let properties = interface("org.bluez.Device1")?;
+            // BlueZ adds Battery1 beside Device1 while a connected device
+            // reports its charge.
+            let battery = interface("org.bluez.Battery1")
+                .and_then(|battery| property::<u8>(battery, "Percentage"))
+                .filter(|percent| *percent <= 100);
             let paired = property::<bool>(properties, "Paired").unwrap_or(false);
             let trusted = property::<bool>(properties, "Trusted").unwrap_or(false);
             let connected = property::<bool>(properties, "Connected").unwrap_or(false);
@@ -103,6 +111,8 @@ fn linux_snapshot_with_connection(
                 paired,
                 trusted,
                 connected,
+                can_connect: paired,
+                battery,
             })
         })
         .collect::<Vec<_>>();

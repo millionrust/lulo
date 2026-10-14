@@ -204,6 +204,14 @@ class Run:
         time.sleep(1)
         self.touch = Touch()
         self.step(0.3)
+        # GNOME Shell opens its overview at start, and the overview takes
+        # every touch; close it the way the Activities button would.
+        overview = self.overview_active()
+        print(f"overview open at start: {overview}", flush=True)
+        if overview:
+            self.overview_active(False)
+            self.wait_for(lambda: self.overview_active() is False, 5)
+            time.sleep(0.5)
         # Mutter adds its virtual touchscreen, and the seat's touch
         # capability, on the first injected touch; the window binds wl_touch
         # only then, so the first few touches are lost. Tap until one lands.
@@ -225,6 +233,16 @@ class Run:
         print(f"touch reached the probe after {landed} tap(s)"
               f"{' and a pointer click' if landed > 10 else ''}", flush=True)
         time.sleep(0.6)
+
+    def overview_active(self, value: bool | None = None):
+        import dbus
+
+        shell = dbus.SessionBus().get_object("org.gnome.Shell", "/org/gnome/Shell")
+        props = dbus.Interface(shell, "org.freedesktop.DBus.Properties")
+        if value is None:
+            return bool(props.Get("org.gnome.Shell", "OverviewActive"))
+        props.Set("org.gnome.Shell", "OverviewActive", dbus.Boolean(value))
+        return value
 
     def run(self) -> int:
         try:

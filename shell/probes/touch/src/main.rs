@@ -141,7 +141,9 @@ impl Render for TouchProbe {
                 )
                 .on_click({
                     let log = log.clone();
-                    move |_: &ClickEvent, _, _| log.write(&format!("click target=small slop={slop}"))
+                    move |_: &ClickEvent, _, _| {
+                        log.write(&format!("click target=small slop={slop}"))
+                    }
                 })
                 .child(div().size(px(16.0)).rounded_full().bg(rgb(0xe53e3e))),
             )
@@ -159,12 +161,14 @@ impl Render for TouchProbe {
                         MouseButton::Left,
                         cx.listener(|this, event: &MouseDownEvent, _, _| {
                             this.sliding = true;
-                            this.log.write(&format!("slider-down x={}", x(event.position)));
+                            this.log
+                                .write(&format!("slider-down x={}", x(event.position)));
                         }),
                     )
                     .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, _| {
                         if this.sliding && event.pressed_button == Some(MouseButton::Left) {
-                            this.log.write(&format!("slider-move x={}", x(event.position)));
+                            this.log
+                                .write(&format!("slider-move x={}", x(event.position)));
                         }
                     }))
                     .on_mouse_up(
@@ -172,7 +176,8 @@ impl Render for TouchProbe {
                         cx.listener(|this, event: &MouseUpEvent, _, _| {
                             if this.sliding {
                                 this.sliding = false;
-                                this.log.write(&format!("slider-up x={}", x(event.position)));
+                                this.log
+                                    .write(&format!("slider-up x={}", x(event.position)));
                             }
                         }),
                     ),

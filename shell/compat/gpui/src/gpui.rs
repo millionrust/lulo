@@ -141,8 +141,8 @@ pub use platform::*;
 pub use profiler::*;
 #[cfg(any(target_os = "windows", target_os = "linux", target_family = "wasm"))]
 pub use queue::{PriorityQueueReceiver, PriorityQueueSender};
-pub use rmac_touch::*;
 pub use refineable::*;
+pub use rmac_touch::*;
 pub use scene::*;
 pub use shared_uri::*;
 use std::{any::Any, future::Future};

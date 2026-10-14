@@ -11,7 +11,7 @@
 
 use std::sync::OnceLock;
 
-use gpui::{Styled, px};
+use gpui::{px, Styled};
 
 /// How far a small target's hit box reaches past its drawn edge on touch.
 pub const TOUCH_SLOP: f32 = 6.0;
@@ -42,7 +42,11 @@ pub fn touch_targets() -> bool {
 
 /// The extra reach on each side right now: [`TOUCH_SLOP`] or nothing.
 pub fn touch_slop() -> f32 {
-    if touch_targets() { TOUCH_SLOP } else { 0.0 }
+    if touch_targets() {
+        TOUCH_SLOP
+    } else {
+        0.0
+    }
 }
 
 /// Size `element` to `width` x `height`, reaching `slop` further on each
@@ -68,7 +72,9 @@ mod tests {
         assert!(!touch_targets_for(true, || false));
         assert!(!touch_targets_for(false, || true));
         // The hardware is not even asked while a mouse is in use.
-        assert!(!touch_targets_for(false, || panic!("hardware read on mouse input")));
+        assert!(!touch_targets_for(false, || panic!(
+            "hardware read on mouse input"
+        )));
     }
 
     #[test]

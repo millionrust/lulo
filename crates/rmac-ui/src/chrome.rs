@@ -638,13 +638,13 @@ fn traffic_light(
         crate::touch::touch_slop().min(gap / 2.0),
     )
     .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .when_some(focus, |el, (handle, _)| {
-            el.track_focus(&handle.tab_stop(true).tab_index(0))
-        })
-        .child(circle)
+    .flex()
+    .items_center()
+    .justify_center()
+    .when_some(focus, |el, (handle, _)| {
+        el.track_focus(&handle.tab_stop(true).tab_index(0))
+    })
+    .child(circle)
 }
 
 /// Hover state behind the green button's Move & Resize menu.

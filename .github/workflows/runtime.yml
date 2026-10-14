@@ -155,7 +155,7 @@ jobs:
       fail-fast: false
       matrix:
         suites:
-          - idle-cpu power-dialogs spotlight-intents
+          - idle-cpu power-dialogs spotlight-intents foreign-windows
           - desktop-paint window-move 01-files 02-text-editor 09-menu-bar voice
           - menu-dismiss 03-settings 04-calculator 06-notes
           - 05-preview 07-terminal 08-shell 10-spotlight writing-tools intelligence-unit
@@ -218,6 +218,8 @@ jobs:
                 (exit $((menu_status || $?))) ;;
               power-dialogs) /usr/bin/python3 scripts/behavior/run_power_dialogs.py --niri "$niri" --bin-dir runtime-bin --capture-dir "$result/screenshots" ;;
               window-move) /usr/bin/python3 scripts/behavior/run_window_move.py --niri "$niri" --bin-dir runtime-bin ;;
+              # Third-party windows in the visible frame (crates/rmac-compositor/src/placement.rs).
+              foreign-windows) /usr/bin/python3 scripts/behavior/run_foreign_windows.py --niri "$niri" --bin-dir runtime-bin ;;
               # Desktop icons and img() loads paint on an idle, inactive surface with no input.
               # ADR 0024: "Lulo can do this" rows off/on, confirm, idle exit.
               spotlight-intents) /usr/bin/python3 scripts/behavior/run_spotlight_intents.py --niri "$niri" --bin-dir runtime-bin ;;

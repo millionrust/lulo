@@ -7,6 +7,7 @@ impl NotesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        self.window_narrow = narrow_window(window);
         if window.is_window_active() {
             self.publish_menu_state(window, cx);
         }
@@ -55,7 +56,7 @@ impl NotesView {
                     .size_full()
                     .flex()
                     .bg(window_frame())
-                    .when(self.folders_visible, |element| {
+                    .when(self.folders_shown(), |element| {
                         element.child(self.render_sidebar(cx))
                     })
                     .child(self.render_note_list(list_focused, window, cx))
@@ -430,8 +431,7 @@ impl NotesView {
                 }
             }))
             .on_action(cx.listener(|this, _: &ToggleFolders, _, cx| {
-                this.folders_visible = !this.folders_visible;
-                cx.notify();
+                this.toggle_folders(cx);
             }))
             .on_action(cx.listener(|this, _: &ToggleNoteCount, _, cx| {
                 this.show_note_count = !this.show_note_count;

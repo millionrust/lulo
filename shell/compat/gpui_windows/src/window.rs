@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     rc::{Rc, Weak},
     str::FromStr,
-    sync::{Arc, Once, atomic::AtomicBool},
+    sync::{atomic::AtomicBool, Arc, Once},
     time::{Duration, Instant},
 };
 
@@ -16,6 +16,7 @@ use gpui_util::ResultExt;
 use raw_window_handle as rwh;
 use smallvec::SmallVec;
 use windows::{
+    core::*,
     Win32::{
         Foundation::*,
         Graphics::Dwm::*,
@@ -25,7 +26,6 @@ use windows::{
         },
         UI::{Controls::*, HiDpi::*, Input::KeyboardAndMouse::*, Shell::*, WindowsAndMessaging::*},
     },
-    core::*,
 };
 
 use crate::direct_manipulation::DirectManipulationHandler;
@@ -661,6 +661,12 @@ impl PlatformWindow for WindowsWindow {
 
     fn resize(&mut self, size: Size<Pixels>) {
         let hwnd = self.0.hwnd;
+        // rmac: measure the frame now. The cached offset was taken when the
+        // window was made; a Lulo layer surface (`rmac-shell-layer`) drops
+        // the resize frame afterwards, and the stale 8 px a side made every
+        // resize 16 px wider than asked, past the right edge for Control
+        // Centre, which grows to its content after it is placed.
+        self.state.border_offset.update(hwnd).log_err();
         let bounds = gpui::bounds(self.bounds().origin, size).to_device_pixels(self.scale_factor());
         let rect = calculate_window_rect(bounds, &self.state.border_offset);
 
@@ -1814,9 +1820,9 @@ fn set_non_rude_hwnd(hwnd: HWND, non_rude: bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ClickState, RECT, fit_rect_to_work_area, screen_to_workspace, workspace_to_screen,
+        fit_rect_to_work_area, screen_to_workspace, workspace_to_screen, ClickState, RECT,
     };
-    use gpui::{DevicePixels, MouseButton, point};
+    use gpui::{point, DevicePixels, MouseButton};
     use std::time::Duration;
 
     #[test]

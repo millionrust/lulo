@@ -4029,6 +4029,20 @@ mod bar {
                 || self.revealed
                 || self.open_menu.is_some()
                 || self.status_menu.is_some();
+            // For shell_smoke's full-screen check: hidden over a
+            // full-screen window, shown at the top edge (ADR 0023).
+            #[cfg(windows)]
+            rmac_shell_layer::windows::trace::trace_changed("top bar", || {
+                format!(
+                    "top bar {}{}",
+                    if visible { "shown" } else { "hidden" },
+                    if self.fullscreen {
+                        " over full screen"
+                    } else {
+                        ""
+                    }
+                )
+            });
             let palette = menu_palette();
             let menu_top = BAR_HEIGHT + menu_model::MENU_TOP_GAP;
             // Menus are as wide as their widest item, as on macOS, and stay
@@ -5036,6 +5050,7 @@ mod bar {
                                 .cursor_pointer()
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("quick-settings", cx))
+                                .children(trace_probe("bar control centre"))
                                 .child(
                                     svg()
                                         .path(shell_icon_path("control-center.svg"))
@@ -5857,6 +5872,18 @@ mod bar {
                 }
                 #[cfg(target_os = "linux")]
                 cx.update(|cx| run_mission_control(word, cx));
+                return;
+            }
+            // Full-Screen Tile on Windows: the window takes that half and
+            // Windows' Snap Assist offers the other windows for the other
+            // half, as the Mac offers them.
+            #[cfg(windows)]
+            if let (WindowCommand::FullScreenTileSide(region), Some(window)) = (command, window_id)
+            {
+                let right = matches!(region, menu_model::WindowRegion::Right);
+                if let Err(error) = rmac_compositor_system::full_screen_tile(window, right).await {
+                    eprintln!("could not tile the window: {error:?}");
+                }
                 return;
             }
             let snapshot = match rmac_compositor_system::snapshot().await {

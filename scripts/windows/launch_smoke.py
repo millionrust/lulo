@@ -1184,6 +1184,102 @@ def check_title_area_button(app: str, hwnd: int) -> str | None:
     return None
 
 
+#: Every named UI Automation element of a window with its bounds, one per
+#: line: control type, name, left, top, right, bottom (the robot's
+#: `Check-Bounds`, scripts/robot/windows).
+UIA_ELEMENTS = r"""
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]HWND)
+$walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+$stack = New-Object System.Collections.Stack
+$stack.Push(@($root, 0))
+$seen = 0
+while ($stack.Count -gt 0 -and $seen -lt 800) {
+    $item = $stack.Pop(); $element = $item[0]; $depth = $item[1]; $seen++
+    try { $current = $element.Current } catch { continue }
+    $bounds = $current.BoundingRectangle
+    if ($depth -gt 0 -and $current.Name -and -not $current.IsOffscreen -and -not $bounds.IsEmpty) {
+        "{0}`t{1}`t{2}`t{3}`t{4}`t{5}" -f $current.ControlType.ProgrammaticName, $current.Name,
+            [int]$bounds.Left, [int]$bounds.Top, [int]$bounds.Right, [int]$bounds.Bottom
+    }
+    if ($depth -lt 14) {
+        $child = $walker.GetFirstChild($element)
+        while ($child -ne $null) { $stack.Push(@($child, ($depth + 1))); $child = $walker.GetNextSibling($child) }
+    }
+}
+"""
+
+
+def uia_elements(hwnd: int) -> list[tuple[str, str, int, int, int, int]]:
+    """The window's named UI Automation elements and their screen bounds."""
+    script = UIA_ELEMENTS.replace("HWND", str(hwnd))
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    elements = []
+    for line in result.stdout.splitlines():
+        fields = line.split("\t")
+        if len(fields) == 6:
+            kind, name, *bounds = fields
+            try:
+                left, top, right, bottom = (int(value) for value in bounds)
+            except ValueError:
+                continue
+            elements.append((kind.replace("ControlType.", ""), name, left, top, right, bottom))
+    return elements
+
+
+#: A half-screen window on a 1366 × 768 PC, where the robot found Notes'
+#: Search and More cut off at the window's edge.
+HALF_SCREEN = (683, 600)
+
+
+def check_notes_narrow(app: str, hwnd: int, screenshots: Path | None) -> str | None:
+    """In a half-screen window Notes' toolbar keeps every item inside the
+    window: the folder list gives way, Search collapses and the rest moves
+    into the » menu (More Toolbar Items), as the Mac's toolbars do."""
+    before = window_rect(hwnd)
+    scale = window_scale(hwnd)
+    width, height = (round(value * scale) for value in HALF_SCREEN)
+    user32().MoveWindow(wintypes.HWND(hwnd), before[0], before[1], width, height, True)
+    time.sleep(1.5)
+    try:
+        frame = window_rect(hwnd)
+        if screenshots is not None:
+            save(grab(frame), screenshots / f"{app}-half-screen.png")
+        elements = uia_elements(hwnd)
+        outside = [
+            f"{kind} {name!r} {left},{top},{right},{bottom}"
+            for kind, name, left, top, right, bottom in elements
+            if kind not in ("TitleBar", "MenuBar", "MenuItem", "ListItem", "TreeItem", "DataItem")
+            and bottom - top > 2
+            and (left < frame[0] - 2 or right > frame[2] + 2 or top < frame[1] - 2 or bottom > frame[3] + 2)
+        ]
+        names = {name for _, name, *_ in elements}
+        print(
+            f"{app}: half-screen window {frame}: {len(elements)} named elements, "
+            f"» menu {'shown' if 'More Toolbar Items' in names else 'missing'}, "
+            f"{len(outside)} outside the window"
+        )
+        for line in outside[:8]:
+            print(f"{app}:   outside: {line}")
+        if not elements:
+            return "UI Automation listed nothing in Notes' half-screen window"
+        if outside:
+            return f"{len(outside)} toolbar element(s) cut off in a half-screen window: {outside[:4]}"
+        if "More Toolbar Items" not in names:
+            return "a half-screen Notes window shows no » menu for the toolbar items it has no room for"
+        return None
+    finally:
+        user32().MoveWindow(
+            wintypes.HWND(hwnd), before[0], before[1], before[2] - before[0], before[3] - before[1], True
+        )
+        time.sleep(0.8)
+
+
 WM_CLOSE = 0x0010
 CONSOLE_HOSTS = ("conhost.exe", "openconsole.exe")
 TH32CS_SNAPPROCESS = 0x00000002
@@ -1434,6 +1530,10 @@ def launch(
                 errors.append(error)
         if app == "rmac-preview":
             error = check_open_panel(app, process, hwnd)
+            if error:
+                errors.append(error)
+        if app == "rmac-notes":
+            error = check_notes_narrow(app, hwnd, screenshots)
             if error:
                 errors.append(error)
         # After the checks above: it toggles full screen and minimises.

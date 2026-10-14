@@ -40,11 +40,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
     IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, TranslateMessage,
     ASFW_ANY, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
-    EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND,
-    EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT,
-    GWL_EXSTYLE, GW_OWNER, MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS,
-    SWP_NOACTIVATE, SWP_NOZORDER, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT,
-    WM_CLOSE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
+    EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
+    EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
+    MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
+    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CLOSE,
+    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
 /// The workspace holding minimised windows (`rmac_compositor::PARKING_WORKSPACE`).
@@ -203,6 +204,65 @@ pub fn refresh() {
     notify_watchers();
 }
 
+/// Window ▸ Full-Screen Tile ▸ Left/Right of Screen. The Mac puts the
+/// window on that half and offers the other windows for the other half;
+/// Windows' own Snap Assist is that picker, so the window is snapped the way
+/// Win+Left/Right snaps it, with the user's Snap settings. When the window
+/// cannot be brought to the front for the keys, it is tiled to that half
+/// without the picker.
+pub async fn full_screen_tile(
+    window: domain::WindowId,
+    right: bool,
+) -> Result<(), domain::ActionError> {
+    let result = blocking::unblock(move || {
+        let hwnd = handle(window);
+        activate(hwnd);
+        // The snap keys go to the foreground window: only ever this one.
+        let started = std::time::Instant::now();
+        // SAFETY: no arguments.
+        while unsafe { GetForegroundWindow() } != hwnd {
+            if started.elapsed() > std::time::Duration::from_millis(500) {
+                return frame_percent(hwnd, if right { 50.0 } else { 0.0 }, 0.0, 50.0, 100.0);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        snap_keys(right);
+        Ok(())
+    })
+    .await;
+    notify_watchers();
+    result
+}
+
+/// Win+Left or Win+Right, as the user would press them.
+fn snap_keys(right: bool) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_LEFT, VK_LWIN, VK_RIGHT,
+    };
+    let key = |vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: flags | KEYEVENTF_EXTENDEDKEY,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    let arrow = if right { VK_RIGHT } else { VK_LEFT };
+    let inputs = [
+        key(VK_LWIN, KEYBD_EVENT_FLAGS(0)),
+        key(arrow, KEYBD_EVENT_FLAGS(0)),
+        key(arrow, KEYEVENTF_KEYUP),
+        key(VK_LWIN, KEYEVENTF_KEYUP),
+    ];
+    // SAFETY: four fully initialised keyboard INPUTs of the right size.
+    let _ = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+}
+
 pub async fn execute(request: domain::ActionRequest) -> domain::ActionResult {
     let result = execute_action(&request.action).await;
     domain::ActionResult {
@@ -331,6 +391,17 @@ unsafe extern "system" fn on_event(
     if event != EVENT_SYSTEM_FOREGROUND && unsafe { GetAncestor(hwnd, GA_ROOT) } != hwnd {
         return;
     }
+    // A window entering or leaving full screen (F11 in an app, a video
+    // player) is only resized, which no other event reports. Moves are
+    // many while a window is dragged, so only the change in whether a
+    // listed window covers its whole monitor wakes the watchers: the bar
+    // and the Dock hide over a full-screen window, as on the Mac.
+    if event == EVENT_OBJECT_LOCATIONCHANGE {
+        if READING.load(Ordering::Acquire) || covering_changed(hwnd) {
+            notify_watchers();
+        }
+        return;
+    }
     // The shell's own surfaces opening and closing (menus, Spotlight, the
     // Dock's keyboard surface) are not apps' windows; only the foreground
     // coming to the shell matters.
@@ -377,6 +448,38 @@ unsafe extern "system" fn on_event(
         bring_launch_forward(hwnd);
     }
     notify_watchers();
+}
+
+/// The listed windows that covered their whole monitor (full screen) in
+/// the last reading, by handle.
+static COVERING: Mutex<Vec<isize>> = Mutex::new(Vec::new());
+
+/// Whether `hwnd`, a window the last reading listed, now covers its whole
+/// monitor where it did not then, or the other way round.
+fn covering_changed(hwnd: HWND) -> bool {
+    let key = hwnd.0 as isize;
+    if !KNOWN.lock().is_ok_and(|known| known.contains(&key)) {
+        return false;
+    }
+    let was = COVERING
+        .lock()
+        .is_ok_and(|covering| covering.contains(&key));
+    covers_monitor(hwnd) != was
+}
+
+/// Whether the window's visible frame is exactly its monitor's rectangle.
+fn covers_monitor(hwnd: HWND) -> bool {
+    let Some(frame) = frame_bounds(hwnd) else {
+        return false;
+    };
+    // SAFETY: reads the monitor a live window is on.
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: a MONITORINFO whose size field says so.
+    unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() && info.rcMonitor == frame
 }
 
 /// The app windows in the last reading, by handle: a window going away,
@@ -475,6 +578,20 @@ fn start_hooks() -> Result<(), String> {
                 (EVENT_OBJECT_CLOAKED, EVENT_OBJECT_UNCLOAKED),
                 (EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE),
             ];
+            // Every process's windows move often: this one skips the
+            // shell's own surfaces before they reach `on_event`.
+            // SAFETY: as below.
+            let _moved = unsafe {
+                SetWinEventHook(
+                    EVENT_OBJECT_LOCATIONCHANGE,
+                    EVENT_OBJECT_LOCATIONCHANGE,
+                    None,
+                    Some(on_event),
+                    0,
+                    0,
+                    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+                )
+            };
             let mut installed = 0;
             for (first, last) in ranges {
                 // SAFETY: an out-of-context hook whose callback only reads
@@ -927,6 +1044,7 @@ fn read_snapshot() -> domain::Snapshot {
     let mut windows = Vec::new();
     let mut alive_pids = Vec::new();
     let mut alive_windows = Vec::new();
+    let mut covering = Vec::new();
     for (rank, hwnd) in handles.into_iter().enumerate() {
         if !is_app_window(hwnd, own_pid) {
             continue;
@@ -943,6 +1061,9 @@ fn read_snapshot() -> domain::Snapshot {
             (monitors[index].rect.left, monitors[index].rect.top)
         });
         let frame = frame_bounds(hwnd).unwrap_or_default();
+        if monitor.is_some_and(|index| monitors[index].rect == frame) {
+            covering.push(hwnd.0 as isize);
+        }
         let width = (frame.right - frame.left).max(0);
         let height = (frame.bottom - frame.top).max(0);
         windows.push(domain::Window {
@@ -985,6 +1106,9 @@ fn read_snapshot() -> domain::Snapshot {
     prune_identities(&alive_windows);
     if let Ok(mut known) = KNOWN.lock() {
         *known = alive_windows.iter().map(|(hwnd, _)| *hwnd).collect();
+    }
+    if let Ok(mut full) = COVERING.lock() {
+        *full = covering;
     }
     READING.store(false, Ordering::Release);
 

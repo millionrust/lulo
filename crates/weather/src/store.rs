@@ -24,6 +24,8 @@ pub struct Settings {
     pub selected: usize,
     /// `None` follows the locale.
     pub fahrenheit: Option<bool>,
+    /// Settings ▸ General ▸ Other Units; each `None` follows the region.
+    pub units: crate::units::UnitChoices,
 }
 
 impl Settings {
@@ -205,6 +207,7 @@ mod tests {
             places: vec![place("", 1.0), place("Ok", 1.0), place("Bad", 95.0)],
             selected: 9,
             fahrenheit: None,
+            units: Default::default(),
         }
         .normalized();
         assert_eq!(settings.places.len(), 1);

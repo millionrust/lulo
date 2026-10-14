@@ -2,7 +2,8 @@
 //! editor's current text scale, plus the session-only preferences
 //! documented on `NotesView`'s own fields (`light_background_default`,
 //! `auto_sort_ticked_items`) and the locked-notes password
-//! (`view_model::LockDialog`).
+//! (`view_model::LockDialog`). The non-library choices are saved to
+//! `crate::settings_store` as they change, so they survive a relaunch.
 //!
 //! The Mac's "New notes start with: Title/Heading/Body" is deliberately
 //! not offered at all (see NOTES-13 in docs/parity.md): Notes keeps the
@@ -22,12 +23,16 @@ use gpui::{
     StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
 use rmac_notes_store::SortOrder;
-use rmac_ui::{Button, Checkbox, Root, Slider, SliderEvent, SliderState, StyledExt as _};
+use rmac_ui::{
+    Button, Checkbox, PopUpButton, PopupMenuItem, Root, Slider, SliderEvent, SliderState,
+    StyledExt as _,
+};
 
 use crate::{NotesView, ShowSettings};
 
-const WIDTH: f32 = 480.0;
-const HEIGHT: f32 = 600.0;
+// The Mac's Notes Settings window is 548 × 719 points.
+const WIDTH: f32 = 548.0;
+const HEIGHT: f32 = 719.0;
 
 thread_local! {
     static OPEN: std::cell::Cell<Option<WindowHandle<Root>>> = const { std::cell::Cell::new(None) };
@@ -105,6 +110,14 @@ impl SettingsView {
         }
     }
 
+    /// Saves the non-library Settings choices off the UI thread.
+    fn save(&self, cx: &mut Context<Self>) {
+        let prefs = crate::settings_store::NotesPrefs::of(self.main.read(cx));
+        cx.background_executor()
+            .spawn(async move { crate::settings_store::save(prefs) })
+            .detach();
+    }
+
     fn set_sort(&mut self, order: SortOrder, cx: &mut Context<Self>) {
         self.main.update(cx, |notes, cx| notes.set_sort(order, cx));
         cx.notify();
@@ -119,6 +132,7 @@ impl SettingsView {
         self.text_size_slider.update(cx, |slider, cx| {
             slider.set_value(f32::from(zoom), window, cx);
         });
+        self.save(cx);
         cx.notify();
     }
 
@@ -130,6 +144,7 @@ impl SettingsView {
             notes.note_zoom = zoom.clamp(-5, 12);
             cx.notify();
         });
+        self.save(cx);
         cx.notify();
     }
 
@@ -138,6 +153,7 @@ impl SettingsView {
             notes.group_notes_by_date = value;
             cx.notify();
         });
+        self.save(cx);
         cx.notify();
     }
 
@@ -147,6 +163,7 @@ impl SettingsView {
             notes.auto_sort_ticked_items = value;
             cx.notify();
         });
+        self.save(cx);
         cx.notify();
     }
 
@@ -157,6 +174,7 @@ impl SettingsView {
             notes.always_resume_quick_note = value;
             cx.notify();
         });
+        self.save(cx);
         cx.notify();
     }
 
@@ -168,6 +186,7 @@ impl SettingsView {
             notes.light_background_default = !checked;
             cx.notify();
         });
+        self.save(cx);
         cx.notify();
     }
 
@@ -214,6 +233,7 @@ impl Render for SettingsView {
         let auto_sort_ticked_items = notes.auto_sort_ticked_items;
         let dark_backgrounds = !notes.light_background_default;
         let always_resume_quick_note = notes.always_resume_quick_note;
+        let settings = cx.entity();
         div()
             .track_focus(&self.focus)
             .key_context("Notes")
@@ -245,23 +265,26 @@ impl Render for SettingsView {
                     .px_4()
                     .py_4()
                     .child(
+                        // A pop-up, as the Mac's "Sort notes by:".
                         div().v_flex().gap_2().child("Sort notes by:").child(
-                            div().flex().gap_2().children(
-                                [
-                                    ("Date Edited", SortOrder::Edited),
-                                    ("Date Created", SortOrder::Created),
-                                    ("Title", SortOrder::Title),
-                                ]
-                                .into_iter()
-                                .map(|(label, order)| {
-                                    Button::new(format!("notes-settings-sort-{label}"), label)
-                                        .small()
-                                        .selected(sort == order)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.set_sort(order, cx);
-                                        }))
+                            PopUpButton::new("notes-settings-sort", sort_label(sort))
+                                .w(px(200.0))
+                                .dropdown_menu(move |menu, _, _| {
+                                    [SortOrder::Edited, SortOrder::Created, SortOrder::Title]
+                                        .into_iter()
+                                        .fold(menu, |menu, order| {
+                                            let settings = settings.clone();
+                                            menu.item(
+                                                PopupMenuItem::new(sort_label(order))
+                                                    .checked(sort == order)
+                                                    .on_click(move |_, _, cx| {
+                                                        settings.update(cx, |this, cx| {
+                                                            this.set_sort(order, cx);
+                                                        });
+                                                    }),
+                                            )
+                                        })
                                 }),
-                            ),
                         ),
                     )
                     .child(
@@ -418,5 +441,13 @@ impl Render for SettingsView {
                             ),
                     ),
             )
+    }
+}
+
+fn sort_label(order: SortOrder) -> &'static str {
+    match order {
+        SortOrder::Edited => "Date Edited",
+        SortOrder::Created => "Date Created",
+        SortOrder::Title => "Title",
     }
 }

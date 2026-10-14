@@ -206,31 +206,85 @@ pub struct GeneralSettings {
     /// A calendar name; empty (or no longer present) falls back to the
     /// first calendar.
     pub default_calendar: String,
+    /// The pre-MROBOT-07 "Start Week On" switch, read from older files and
+    /// folded into [`Self::start_of_week`] by [`Self::normalized`].
+    #[serde(skip_serializing)]
     pub start_of_week_sunday: bool,
+    /// General ▸ Start week on: days after Monday (0 Monday … 6 Sunday).
+    pub start_of_week: u32,
+    /// General ▸ Days per week: 7, or 5 (Week view shows Monday to Friday).
+    pub days_per_week: u32,
+    /// General ▸ Scroll in week view by.
+    pub week_scroll: WeekScroll,
     pub day_starts_hour: u32,
     pub day_ends_hour: u32,
+    /// General ▸ Show N hours at a time: how many hours the Day and Week
+    /// grid fits in its height, from Day starts at.
+    pub hours_shown: u32,
+    /// General ▸ Default event duration, in minutes.
+    pub default_event_minutes: u32,
     pub time_zone_support: bool,
     /// An IANA zone name (`chrono_tz::Tz`); empty means "follow the system".
     pub time_zone: String,
     pub default_alerts: DefaultAlerts,
+    /// Advanced ▸ Show week numbers (Month view's row labels).
+    pub show_week_numbers: bool,
+    /// Advanced ▸ Show events in year view (the per-day event shading).
+    pub show_events_in_year_view: bool,
 }
+
+/// General ▸ Scroll in week view by: a scroll gesture in Week view moves a
+/// whole week, or one day at a time (the seven visible days roll).
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum WeekScroll {
+    #[default]
+    Week,
+    Day,
+}
+
+/// General ▸ Show N hours at a time choices.
+pub const HOURS_SHOWN_CHOICES: &[u32] = &[6, 8, 10, 12, 14, 16, 18, 24];
+
+/// General ▸ Default event duration choices, in minutes.
+pub const EVENT_DURATION_CHOICES: &[u32] = &[15, 30, 45, 60, 90, 120];
 
 impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
             default_calendar: String::new(),
             start_of_week_sunday: false,
+            start_of_week: 0,
+            days_per_week: 7,
+            week_scroll: WeekScroll::Week,
             day_starts_hour: 8,
             day_ends_hour: 20,
+            hours_shown: 12,
+            default_event_minutes: 60,
             time_zone_support: false,
             time_zone: String::new(),
             default_alerts: DefaultAlerts::default(),
+            show_week_numbers: false,
+            show_events_in_year_view: true,
         }
     }
 }
 
 impl GeneralSettings {
     pub fn normalized(mut self) -> Self {
+        if self.start_of_week_sunday {
+            self.start_of_week = 6;
+            self.start_of_week_sunday = false;
+        }
+        self.start_of_week = self.start_of_week.min(6);
+        if self.days_per_week != 5 {
+            self.days_per_week = 7;
+        }
+        if !HOURS_SHOWN_CHOICES.contains(&self.hours_shown) {
+            self.hours_shown = 12;
+        }
+        if !EVENT_DURATION_CHOICES.contains(&self.default_event_minutes) {
+            self.default_event_minutes = 60;
+        }
         self.day_starts_hour = self.day_starts_hour.min(23);
         if self.day_ends_hour <= self.day_starts_hour || self.day_ends_hour > 24 {
             self.day_ends_hour = (self.day_starts_hour + 1).min(24);
@@ -241,6 +295,26 @@ impl GeneralSettings {
         }
         self.default_calendar = bounded_name(&self.default_calendar);
         self
+    }
+
+    /// The weekday a week starts on.
+    pub fn first_weekday(&self) -> chrono::Weekday {
+        match self.start_of_week {
+            1 => chrono::Weekday::Tue,
+            2 => chrono::Weekday::Wed,
+            3 => chrono::Weekday::Thu,
+            4 => chrono::Weekday::Fri,
+            5 => chrono::Weekday::Sat,
+            6 => chrono::Weekday::Sun,
+            _ => chrono::Weekday::Mon,
+        }
+    }
+
+    /// The first hour the Day/Week grid shows and how many it fits: from
+    /// Day starts at, moved earlier when fewer hours are left in the day.
+    pub fn visible_hours(&self) -> (u32, u32) {
+        let shown = self.hours_shown.clamp(1, 24);
+        (self.day_starts_hour.min(24 - shown), shown)
     }
 }
 
@@ -374,6 +448,38 @@ mod tests {
         assert_eq!(settings.general.day_ends_hour, 24);
         assert!(!settings.general.time_zone_support);
         assert!(settings.general.time_zone.is_empty());
+    }
+
+    #[test]
+    fn general_view_settings_normalize_and_migrate() {
+        let old: GeneralSettings =
+            serde_json::from_str(r#"{"start_of_week_sunday":true}"#).unwrap();
+        let general = old.normalized();
+        assert_eq!(general.start_of_week, 6);
+        assert_eq!(general.first_weekday(), chrono::Weekday::Sun);
+        assert!(!serde_json::to_string(&general)
+            .unwrap()
+            .contains("start_of_week_sunday"));
+        let odd = GeneralSettings {
+            days_per_week: 3,
+            hours_shown: 7,
+            default_event_minutes: 61,
+            start_of_week: 9,
+            ..GeneralSettings::default()
+        }
+        .normalized();
+        assert_eq!(odd.days_per_week, 7);
+        assert_eq!(odd.hours_shown, 12);
+        assert_eq!(odd.default_event_minutes, 60);
+        assert_eq!(odd.start_of_week, 6);
+        let late = GeneralSettings {
+            day_starts_hour: 20,
+            day_ends_hour: 23,
+            hours_shown: 10,
+            ..GeneralSettings::default()
+        };
+        assert_eq!(late.visible_hours(), (14, 10));
+        assert_eq!(GeneralSettings::default().visible_hours(), (8, 12));
     }
 
     #[test]

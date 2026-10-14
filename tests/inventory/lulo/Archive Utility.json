@@ -1,0 +1,347 @@
+{
+  "app": "Archive Utility",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About Archive Utility",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Settings…",
+          "action": "archive_utility::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "action": "app::services",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Archive Utility",
+          "action": "app::hide",
+          "shortcut": "⌘H",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "action": "app::hide-others",
+          "shortcut": "⌥⌘H",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "action": "app::show-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit Archive Utility",
+          "action": "app::quit",
+          "shortcut": "⌘Q",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "Create Archive…",
+          "action": "archive_utility::CreateArchive",
+          "shortcut": "⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Expand Archive…",
+          "action": "archive_utility::ExpandArchive",
+          "shortcut": "⌘U",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "action": "window::minimise",
+          "shortcut": "⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "action": "app::minimise-all",
+          "shortcut": "⌥⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "action": "window::zoom",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "action": "window::zoom-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "action": "window::fill",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "action": "window::centre",
+          "shortcut": "⌃⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "action": "window::move-and-resize",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Halves",
+              "action": "window::heading-halves",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Left",
+              "action": "window::tile-left",
+              "shortcut": "⌃⌘←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "action": "window::tile-right",
+              "shortcut": "⌃⌘→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "action": "window::tile-top",
+              "shortcut": "⌃⌘↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "action": "window::tile-bottom",
+              "shortcut": "⌃⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "action": "window::heading-quarters",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "action": "window::tile-top-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "action": "window::tile-top-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "action": "window::tile-bottom-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "action": "window::tile-bottom-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Arrange",
+              "action": "window::heading-arrange",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "action": "window::combo-left-right",
+              "shortcut": "⌃⇧←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "action": "window::combo-left-quarters",
+              "shortcut": "⌃⌥⇧←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "action": "window::combo-right-left",
+              "shortcut": "⌃⇧→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "action": "window::combo-right-quarters",
+              "shortcut": "⌃⌥⇧→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "action": "window::combo-top-bottom",
+              "shortcut": "⌃⇧↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "action": "window::combo-top-quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "action": "window::combo-bottom-top",
+              "shortcut": "⌃⇧↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "action": "window::combo-bottom-quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "action": "window::restore-size",
+              "shortcut": "⌃⇧⌘R",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "action": "window::full-screen-tile",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Left of Screen",
+              "action": "window::full-screen-tile-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right of Screen",
+              "action": "window::full-screen-tile-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Remove Window from Set",
+          "action": "window::remove-from-set",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Close",
+          "action": "archive_utility::CloseWindow",
+          "shortcut": "⌘W",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "action": "window::bring-all-to-front",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "action": "window::arrange-in-front",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Archive Utility Help",
+          "action": "help::app-help",
+          "shortcut": "⌘?",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": false,
+    "extraction": "none",
+    "controls": []
+  },
+  "toolbar": {
+    "present": false,
+    "extraction": "none",
+    "groups": []
+  },
+  "context_menus": {}
+}

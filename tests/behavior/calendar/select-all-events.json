@@ -1,0 +1,11 @@
+{
+  "title": "Calendar: Edit ▸ Select All selects every event the week shows",
+  "app": "calendar",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "none", "facts": ["calendar_events"]},
+    {"menu_action": "calendar::SelectAllEvents", "settle": 1},
+    {"observe": "all", "facts": ["calendar_events"]}
+  ]
+}

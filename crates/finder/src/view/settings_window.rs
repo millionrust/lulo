@@ -140,6 +140,10 @@ struct SettingsView {
     file_words: rmac_locale::FileVocabulary,
     settings: FinderSettings,
     save_error: Option<SharedString>,
+    /// The Sidebar pane's Locations rows named after the home folder and
+    /// this computer, as the sidebar itself names them.
+    home_name: SharedString,
+    computer_name: SharedString,
 }
 
 impl SettingsView {
@@ -150,6 +154,15 @@ impl SettingsView {
             file_words: rmac_locale::FileVocabulary::from_environment(),
             settings: settings::current(),
             save_error: None,
+            home_name: std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .and_then(|home| {
+                    home.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| "Home".to_owned())
+                .into(),
+            computer_name: rmac_finder::places::computer_name().into(),
         }
     }
 
@@ -436,69 +449,177 @@ impl SettingsView {
         )
     }
 
+    /// The Mac's Sidebar pane (`settings/Sidebar`, 2026-10-13 robot
+    /// capture): the intro line at x 27, each group heading at x 39 and
+    /// every checkbox at x 40 on a 28 pt pitch, 10 pt between groups.
+    /// AirDrop, iCloud Drive and Bonjour computers are left out: Lulo has
+    /// no AirDrop, no iCloud, and no network browser to list computers
+    /// found on the network (iCloud Drive's row, when it syncs here, follows
+    /// Cloud Storage).
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let sidebar: SidebarSettings = self.settings.sidebar;
+        type Edit = fn(&mut SidebarSettings, bool);
+        let row = |cx: &mut Context<Self>,
+                   id: &'static str,
+                   label: SharedString,
+                   checked: bool,
+                   edit: Edit| {
+            div().pl(px(40.0)).h(px(28.0)).flex().items_center().child(
+                Checkbox::new(id).label(label).checked(checked).on_change({
+                    let on_change = sidebar_listener(cx, edit);
+                    move |value, window, cx| on_change(*value, window, cx)
+                }),
+            )
+        };
+        let heading = |text: &'static str| {
+            div()
+                .pl(px(39.0))
+                .pt(px(10.0))
+                .pb(px(1.0))
+                .text_size(rmac_ui::text_px(13.0))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rmac_ui::mac::text_secondary())
+                .child(text)
+        };
         div()
-            .child(section_label("Show these items in the sidebar:"))
-            .child(checkbox_row(
+            .pt(px(19.0))
+            .pb(px(12.0))
+            .child(
+                div()
+                    .pl(px(27.0))
+                    .pb(px(8.0))
+                    .text_size(rmac_ui::text_px(13.0))
+                    .text_color(rmac_ui::mac::text())
+                    .child("Show these items in the sidebar:"),
+            )
+            .child(row(
+                cx,
                 "settings-sidebar-recents",
-                "Recents",
+                "Recents".into(),
                 sidebar.show_recents,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_recents = value),
+                |s, v| s.show_recents = v,
             ))
-            .child(checkbox_row(
+            .child(row(
+                cx,
+                "settings-sidebar-shared",
+                "Shared".into(),
+                sidebar.show_shared,
+                |s, v| s.show_shared = v,
+            ))
+            .child(heading("Favourites"))
+            .child(row(
+                cx,
                 "settings-sidebar-applications",
-                "Applications",
+                "Applications".into(),
                 sidebar.show_applications,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_applications = value),
+                |s, v| s.show_applications = v,
             ))
-            .child(checkbox_row(
+            .child(row(
+                cx,
                 "settings-sidebar-desktop",
-                "Desktop",
+                "Desktop".into(),
                 sidebar.show_desktop,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_desktop = value),
+                |s, v| s.show_desktop = v,
             ))
-            .child(checkbox_row(
+            .child(row(
+                cx,
                 "settings-sidebar-documents",
-                "Documents",
+                "Documents".into(),
                 sidebar.show_documents,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_documents = value),
+                |s, v| s.show_documents = v,
             ))
-            .child(checkbox_row(
+            .child(row(
+                cx,
                 "settings-sidebar-downloads",
-                "Downloads",
+                "Downloads".into(),
                 sidebar.show_downloads,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_downloads = value),
+                |s, v| s.show_downloads = v,
             ))
-            .child(checkbox_row(
+            .child(row(
+                cx,
+                "settings-sidebar-movies",
+                "Movies".into(),
+                sidebar.show_movies,
+                |s, v| s.show_movies = v,
+            ))
+            .child(row(
+                cx,
+                "settings-sidebar-music",
+                "Music".into(),
+                sidebar.show_music,
+                |s, v| s.show_music = v,
+            ))
+            .child(row(
+                cx,
+                "settings-sidebar-pictures",
+                "Pictures".into(),
+                sidebar.show_pictures,
+                |s, v| s.show_pictures = v,
+            ))
+            .child(heading("Locations"))
+            .child(row(
+                cx,
+                "settings-sidebar-cloud-storage",
+                "Cloud Storage".into(),
+                sidebar.show_cloud_storage,
+                |s, v| s.show_cloud_storage = v,
+            ))
+            .child(row(
+                cx,
                 "settings-sidebar-home",
-                "Home",
+                self.home_name.clone(),
                 sidebar.show_home,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_home = value),
+                |s, v| s.show_home = v,
             ))
-            .child(checkbox_row(
-                "settings-sidebar-bin",
-                self.file_words.bin(),
-                sidebar.show_bin,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_bin = value),
+            .child(row(
+                cx,
+                "settings-sidebar-computer",
+                self.computer_name.clone(),
+                sidebar.show_computer,
+                |s, v| s.show_computer = v,
             ))
-            .child(checkbox_row(
+            .child(row(
+                cx,
                 "settings-sidebar-hard-disks",
-                "Hard disks",
+                "Hard disks".into(),
                 sidebar.show_hard_disks,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_hard_disks = value),
+                |s, v| s.show_hard_disks = v,
             ))
-            .child(checkbox_row(
+            .child(row(
+                cx,
                 "settings-sidebar-external-disks",
-                "External disks",
+                "External disks".into(),
                 sidebar.show_external_disks,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_external_disks = value),
+                |s, v| s.show_external_disks = v,
             ))
-            .child(checkbox_row(
+            .child(row(
+                cx,
+                "settings-sidebar-cds-dvds",
+                "CDs, DVDs and iOS Devices".into(),
+                sidebar.show_cds_dvds_and_ios_devices,
+                |s, v| s.show_cds_dvds_and_ios_devices = v,
+            ))
+            .child(row(
+                cx,
+                "settings-sidebar-servers",
+                "Connected servers".into(),
+                sidebar.show_connected_servers,
+                |s, v| s.show_connected_servers = v,
+            ))
+            .child(row(
+                cx,
+                "settings-sidebar-bin",
+                self.file_words.bin().to_owned().into(),
+                sidebar.show_bin,
+                |s, v| s.show_bin = v,
+            ))
+            .child(heading("Tags"))
+            .child(row(
+                cx,
                 "settings-sidebar-tags",
-                "Tags…",
+                "Recent Tags".into(),
                 sidebar.show_tags,
-                sidebar_listener(cx, |sidebar, value| sidebar.show_tags = value),
+                |s, v| s.show_tags = v,
             ))
     }
 

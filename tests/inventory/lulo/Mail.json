@@ -1,0 +1,1193 @@
+{
+  "app": "Mail",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About Mail",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Settings…",
+          "action": "mail::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Accounts…",
+          "action": "mail::ShowAccounts",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "action": "app::services",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Mail",
+          "action": "app::hide",
+          "shortcut": "⌘H",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "action": "app::hide-others",
+          "shortcut": "⌥⌘H",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "action": "app::show-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quit Mail",
+          "action": "app::quit",
+          "shortcut": "⌘Q",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "New Message",
+          "action": "mail::NewMessage",
+          "shortcut": "⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Open Messages",
+          "action": "mail::OpenMessage",
+          "shortcut": "⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close",
+          "action": "mail::CloseWindow",
+          "shortcut": "⌘W",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "action": "mail::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Save",
+          "action": "mail::SaveDraft",
+          "shortcut": "⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Save As…",
+          "action": "mail::SaveAs",
+          "shortcut": "⇧⌘S",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Attach Files…",
+          "action": "mail::AttachFile",
+          "shortcut": "⇧⌘A",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Save Attachments…",
+          "action": "mail::SaveAttachments",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Export as PDF…",
+          "action": "mail::ExportAsPdf",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Print…",
+          "action": "mail::PrintMessage",
+          "shortcut": "⌘P",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "action": "mail::Undo",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "action": "mail::Redo",
+          "shortcut": "⇧⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "input::Cut",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "action": "input::Copy",
+          "shortcut": "⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "action": "input::Paste",
+          "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Delete",
+          "action": "mail::Delete",
+          "shortcut": "⌘⌫",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "input::SelectAll",
+          "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste as Quotation",
+          "action": "mail::PasteAsQuotation",
+          "shortcut": "⇧⌘V",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Paste and Match Style",
+          "action": "rmac_ui::PasteAndMatchStyle",
+          "shortcut": "⌥⇧⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "action": "mail::FindMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Mailbox Search",
+              "action": "mail::Search",
+              "shortcut": "⌥⌘F",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Top",
+              "action": "mail::JumpToTop",
+              "shortcut": "⌃⌘T",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Transformations",
+          "action": "mail::TransformationsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Make Uppercase",
+              "action": "mail::TransformUppercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Lowercase",
+              "action": "mail::TransformLowercase",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Capitalise",
+              "action": "mail::TransformCapitalise",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Speech",
+          "action": "mail::SpeechMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Start Speaking",
+              "action": "mail::StartSpeaking",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Stop Speaking",
+              "action": "mail::StopSpeaking",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Writing Tools",
+          "action": "writing_tools::WritingToolsMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Show Writing Tools",
+              "action": "writing_tools::ShowWritingTools",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Proofread",
+              "action": "writing_tools::Proofread",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Rewrite",
+              "action": "writing_tools::Rewrite",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Friendly",
+              "action": "writing_tools::MakeFriendly",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Make Professional",
+              "action": "writing_tools::MakeProfessional",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make Concise",
+              "action": "writing_tools::MakeConcise",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Summarise",
+              "action": "writing_tools::Summarise",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Create Key Points",
+              "action": "writing_tools::CreateKeyPoints",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Make List",
+              "action": "writing_tools::MakeList",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Sort By",
+          "action": "mail::SortByMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Attachments",
+              "action": "mail::SortByAttachments",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Date",
+              "action": "mail::SortByDate",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Flags",
+              "action": "mail::SortByFlags",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "From",
+              "action": "mail::SortByFrom",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Subject",
+              "action": "mail::SortBySubject",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "To",
+              "action": "mail::SortByTo",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Unread",
+              "action": "mail::SortByUnread",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Oldest Message on Top",
+              "action": "mail::SortAscending",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Newest Message on Top",
+              "action": "mail::SortDescending",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Filter",
+          "action": "mail::FilterMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Enable Message Filter",
+              "action": "mail::ToggleMessageFilter",
+              "shortcut": "⌘L",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Unread",
+              "action": "mail::FilterUnread",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Flagged",
+              "action": "mail::FilterFlagged",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "To: Me",
+              "action": "mail::FilterToMe",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Cc: Me",
+              "action": "mail::FilterCcMe",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Only Mail with Attachments",
+              "action": "mail::FilterAttachments",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Use Column Layout",
+          "action": "mail::ToggleColumnLayout",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Show Bottom Preview",
+          "action": "mail::ToggleBottomPreview",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Date and Time",
+          "action": "mail::ToggleDateAndTime",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show To/Cc Label",
+          "action": "mail::ToggleToCcLabel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Contact Photo",
+          "action": "mail::ToggleContactPhoto",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Highlight Conversations",
+          "action": "mail::ToggleHighlightConversations",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Organise by Conversation",
+          "action": "mail::ToggleThreads",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Expand All Conversations",
+          "action": "mail::ExpandAllConversations",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Collapse All Conversations",
+          "action": "mail::CollapseAllConversations",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cc Address Field",
+          "action": "mail::ToggleCcField",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Bcc Address Field",
+          "action": "mail::ToggleBccField",
+          "shortcut": "⌥⌘B",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Message",
+          "action": "mail::ViewMessageMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Raw Source",
+              "action": "mail::ShowRawSource",
+              "shortcut": "⌥⌘U",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Hide Sidebar",
+          "action": "mail::ToggleSidebar",
+          "shortcut": "⌃⌘S",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Hide Toolbar",
+          "action": "mail::ToggleToolbar",
+          "shortcut": "⌥⌘T",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Mailbox",
+      "items": [
+        {
+          "label": "Get All New Mail",
+          "action": "mail::GetAllNewMail",
+          "shortcut": "⇧⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Mark All Messages as Read",
+          "action": "mail::MarkAllAsRead",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Get New Mail",
+          "action": "mail::GetNewMailMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Account",
+              "action": "mail::GetNewMail0",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Erase Deleted Items",
+          "action": "mail::EraseDeletedItemsMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "In All Accounts…",
+              "action": "mail::EraseDeletedItems",
+              "shortcut": "⇧⌘⌫",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "In All Accounts",
+              "action": "mail::EraseDeletedItemsNow",
+              "shortcut": "⌥⇧⌘⌫",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Account…",
+              "action": "mail::EraseDeletedItemsAccount0",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Erase Junk Mail",
+          "action": "mail::EraseJunkMail",
+          "shortcut": "⌥⌘J",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Go to Favourite Mailbox",
+          "action": "mail::GoToFavouriteMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "All Inboxes",
+              "action": "mail::GoToFavourite0",
+              "shortcut": "⌘1",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Flagged",
+              "action": "mail::GoToFavourite1",
+              "shortcut": "⌘2",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Drafts",
+              "action": "mail::GoToFavourite2",
+              "shortcut": "⌘3",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Sent",
+              "action": "mail::GoToFavourite3",
+              "shortcut": "⌘4",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Move to Favourite Mailbox",
+          "action": "mail::MoveToFavouriteMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "All Inboxes",
+              "action": "mail::MoveToFavourite0",
+              "shortcut": "⌃⌘1",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Drafts",
+              "action": "mail::MoveToFavourite2",
+              "shortcut": "⌃⌘3",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Sent",
+              "action": "mail::MoveToFavourite3",
+              "shortcut": "⌃⌘4",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Go to Previous Mailbox",
+          "action": "mail::PreviousMailbox",
+          "shortcut": "⌃⌘[",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Go to Previous Unread Mailbox",
+          "action": "mail::PreviousUnreadMailbox",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Go to Next Mailbox",
+          "action": "mail::NextMailbox",
+          "shortcut": "⌃⌘]",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Go to Next Unread Mailbox",
+          "action": "mail::NextUnreadMailbox",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Message",
+      "items": [
+        {
+          "label": "Send Again",
+          "action": "mail::SendMessage",
+          "shortcut": "⇧⌘D",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Reply",
+          "action": "mail::Reply",
+          "shortcut": "⌘R",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Reply All",
+          "action": "mail::ReplyAll",
+          "shortcut": "⇧⌘R",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Forward",
+          "action": "mail::Forward",
+          "shortcut": "⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Forward as Attachment",
+          "action": "mail::ForwardAsAttachment",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redirect",
+          "action": "mail::Redirect",
+          "shortcut": "⇧⌘E",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Mark as Unread",
+          "action": "mail::ToggleRead",
+          "shortcut": "⇧⌘U",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Move to Junk",
+          "action": "mail::Junk",
+          "shortcut": "⇧⌘J",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Flag",
+          "action": "mail::FlagMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Clear Flag",
+              "action": "mail::ClearFlag",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Toggle Flag",
+              "action": "mail::Flag",
+              "shortcut": "⇧⌘L",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Archive",
+          "action": "mail::Archive",
+          "shortcut": "⌃⌘A",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Move to",
+          "action": "mail::MoveToMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Mailbox",
+              "action": "mail::MoveToMailbox0",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Copy to",
+          "action": "mail::CopyToMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Mailbox",
+              "action": "mail::CopyToMailbox0",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Move Again",
+          "action": "mail::MoveAgain",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Format",
+      "items": [
+        {
+          "label": "Indentation",
+          "action": "mail::IndentationMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Increase",
+              "action": "mail::IncreaseIndentation",
+              "shortcut": "⌘]",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Decrease",
+              "action": "mail::DecreaseIndentation",
+              "shortcut": "⌘[",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Quote Level",
+          "action": "mail::QuoteLevelMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Increase",
+              "action": "mail::IncreaseQuoteLevel",
+              "shortcut": "⌘'",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Decrease",
+              "action": "mail::DecreaseQuoteLevel",
+              "shortcut": "⌥⌘'",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "action": "window::minimise",
+          "shortcut": "⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "action": "app::minimise-all",
+          "shortcut": "⌥⌘M",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "action": "window::zoom",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "action": "window::zoom-all",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "action": "window::fill",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "action": "window::centre",
+          "shortcut": "⌃⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "action": "window::move-and-resize",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Halves",
+              "action": "window::heading-halves",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Left",
+              "action": "window::tile-left",
+              "shortcut": "⌃⌘←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "action": "window::tile-right",
+              "shortcut": "⌃⌘→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "action": "window::tile-top",
+              "shortcut": "⌃⌘↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "action": "window::tile-bottom",
+              "shortcut": "⌃⌘↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "action": "window::heading-quarters",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "action": "window::tile-top-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "action": "window::tile-top-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "action": "window::tile-bottom-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "action": "window::tile-bottom-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Arrange",
+              "action": "window::heading-arrange",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "action": "window::combo-left-right",
+              "shortcut": "⌃⇧←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "action": "window::combo-left-quarters",
+              "shortcut": "⌃⌥⇧←",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "action": "window::combo-right-left",
+              "shortcut": "⌃⇧→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "action": "window::combo-right-quarters",
+              "shortcut": "⌃⌥⇧→",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "action": "window::combo-top-bottom",
+              "shortcut": "⌃⇧↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "action": "window::combo-top-quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "action": "window::combo-bottom-top",
+              "shortcut": "⌃⇧↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "action": "window::combo-bottom-quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "action": "window::restore-size",
+              "shortcut": "⌃⇧⌘R",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "action": "window::full-screen-tile",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Left of Screen",
+              "action": "window::full-screen-tile-left",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Right of Screen",
+              "action": "window::full-screen-tile-right",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Remove Window from Set",
+          "action": "window::remove-from-set",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Message Viewer",
+          "action": "mail::ShowMessageViewer",
+          "shortcut": "⌘0",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "action": "window::bring-all-to-front",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "action": "window::arrange-in-front",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Mail Help",
+          "action": "help::app-help",
+          "shortcut": "⌘?",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": false,
+    "extraction": "none",
+    "controls": []
+  },
+  "toolbar": {
+    "present": false,
+    "extraction": "none",
+    "groups": []
+  },
+  "context_menus": {}
+}

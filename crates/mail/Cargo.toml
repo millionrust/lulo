@@ -25,12 +25,18 @@ rmac-mail-graph.workspace = true
 rmac-accounts.workspace = true
 rmac-accounts-linux.workspace = true
 rmac-portal.workspace = true
+rmac-print.workspace = true
 rmac-storage.workspace = true
 async-channel.workspace = true
 uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
+
+# File ▸ Print… goes through the desktop Print portal.
+[target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle.workspace = true
+rmac-print-linux.workspace = true
 
 # Windows adds mail accounts from Mail's own Settings (`accounts_win`).
 [target.'cfg(windows)'.dependencies]

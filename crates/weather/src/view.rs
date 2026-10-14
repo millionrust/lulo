@@ -18,6 +18,7 @@ use rmac_weather::geocode::{self, Place};
 use rmac_weather::metrics as m;
 use rmac_weather::store::{self, Cached, Settings};
 use rmac_weather::summary::{self, Column, Unit};
+use rmac_weather::units::{RegionUnits, UnitChoices};
 
 use crate::{
     AddLocationToList, CloseWindow, FindCity, Refresh, ShowSettings, ToggleFullScreen,
@@ -48,6 +49,8 @@ pub(crate) struct WeatherView {
     pub(crate) focus: FocusHandle,
     settings: Settings,
     unit: Unit,
+    /// The region's default wind, rain, pressure and distance units.
+    region_units: RegionUnits,
     loaded: HashMap<String, Loaded>,
     status: HashMap<String, Status>,
     search: Entity<InputState>,
@@ -102,6 +105,7 @@ impl WeatherView {
             focus: cx.focus_handle(),
             settings,
             unit,
+            region_units: RegionUnits::from_environment(),
             loaded: HashMap::new(),
             status: HashMap::new(),
             search,
@@ -335,6 +339,30 @@ impl WeatherView {
 
     pub(crate) fn unit_preference(&self) -> Option<bool> {
         self.settings.fahrenheit
+    }
+
+    /// Settings ▸ General ▸ Other Units as saved (`None` follows the region).
+    pub(crate) fn unit_choices(&self) -> UnitChoices {
+        self.settings.units
+    }
+
+    /// The region's units, shown by each Other Units pop-up while it has no
+    /// choice of its own.
+    pub(crate) fn region_units(&self) -> RegionUnits {
+        self.region_units
+    }
+
+    pub(crate) fn set_unit_choices(&mut self, choices: UnitChoices, cx: &mut Context<Self>) {
+        self.settings.units = choices;
+        self.save(cx);
+        cx.notify();
+    }
+
+    /// Settings ▸ Default Units ▸ Restore Defaults: every unit, the
+    /// temperature included, back to the region's.
+    pub(crate) fn restore_default_units(&mut self, cx: &mut Context<Self>) {
+        self.settings.units = UnitChoices::default();
+        self.set_unit_preference(None, cx);
     }
 
     fn set_unit(&mut self, unit: Unit, cx: &mut Context<Self>) {
@@ -742,6 +770,7 @@ impl WeatherView {
         let forecast = &loaded.forecast;
         let current = &forecast.current;
         let unit = self.unit;
+        let units = self.settings.units.resolve(self.region_units);
         let panel_width = (width - left - 2.0 * m::PANEL_INSET).max(300.0);
         let header = div()
             .flex()
@@ -897,11 +926,7 @@ impl WeatherView {
             ),
             tile(
                 "WIND",
-                if current.wind_speed.is_finite() {
-                    summary::wind(current.wind_speed, unit)
-                } else {
-                    "--".into()
-                },
+                units.wind.format(current.wind_speed),
                 summary::compass(current.wind_direction).to_owned(),
             ),
         ];
@@ -911,11 +936,38 @@ impl WeatherView {
         if let Some((rise, set)) = sun {
             tiles.push(tile("SUNRISE", rise, set));
         }
-        if let Some(chance) = today.and_then(|day| day.precipitation_chance) {
-            tiles.push(tile(
+        let chance = today.and_then(|day| day.precipitation_chance);
+        match today.and_then(|day| day.precipitation_total) {
+            Some(total) => tiles.push(tile(
                 "PRECIPITATION",
-                format!("{chance:.0}%"),
-                "Chance today".into(),
+                units.precipitation.format(total),
+                match chance {
+                    Some(chance) => format!("Today · {chance:.0}% chance"),
+                    None => "Today".into(),
+                },
+            )),
+            None => {
+                if let Some(chance) = chance {
+                    tiles.push(tile(
+                        "PRECIPITATION",
+                        format!("{chance:.0}%"),
+                        "Chance today".into(),
+                    ));
+                }
+            }
+        }
+        if current.pressure.is_finite() {
+            tiles.push(tile(
+                "PRESSURE",
+                units.pressure.format(current.pressure),
+                String::new(),
+            ));
+        }
+        if current.visibility.is_finite() {
+            tiles.push(tile(
+                "VISIBILITY",
+                units.distance.format(current.visibility),
+                String::new(),
             ));
         }
         let status_line = match status {

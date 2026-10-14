@@ -8,15 +8,15 @@ use gpui::{
 use rmac_calendar::{
     current_date,
     editing::{self, Mutation},
-    events_on_day, invitations, is_weekend, month_grid_start, search_events, store,
+    events_on_day, invitations, is_weekend, month_grid_start_on, search_events, store,
     subscription_default_name, unique_calendar_name, validate_calendar_name,
-    validate_subscription_url, Calendar, CalendarColor, Navigator, SearchResult, View,
-    WeekSnapshot,
+    validate_subscription_url, weekday_columns, weekday_offset, Calendar, CalendarColor, Navigator,
+    SearchResult, View, WeekSnapshot,
 };
 use rmac_calendar_store::{TimeValue, Zone};
 use rmac_ui::{
-    dialog, dialog_button, mac, AccessibleTextInput as _, ContextMenu, ContextMenuState,
-    DialogButtonKind, InputEvent, InputState, StyledExt as _, TextField,
+    dialog, dialog_button, input_actions, mac, AccessibleTextInput as _, ContextMenu,
+    ContextMenuState, DialogButtonKind, InputEvent, InputState, StyledExt as _, TextField,
 };
 
 use crate::{
@@ -26,12 +26,11 @@ use crate::{
     ShowDay, ShowInspector, ShowInvitations, ShowMonth, ShowSettings, ShowWeek, ShowYear,
     ToggleSidebar, UndoEvent,
 };
+use crate::{CopyEvents, CutEvents, DuplicateEvent, EditEvent, PasteEvents, SelectAllEvents};
 
 const SIDEBAR: f32 = 220.0;
 const TOOLBAR: f32 = 52.0;
 const GUTTER: f32 = 52.0;
-const HOUR: f32 = 48.0;
-const START_HOUR: f32 = 8.0;
 
 /// Which stack a submitted [`Mutation`] belongs to. A fresh edit (`Do`) starts a new
 /// branch of history and clears any pending redos; undoing moves one step onto redo;
@@ -105,6 +104,18 @@ pub struct CalendarView {
     search_results: Vec<SearchResult>,
     search_selected: usize,
     selected: Option<String>,
+    /// Edit ▸ Select All's selection, beside `selected` (the event the
+    /// inspector and the arrow keys follow). Empty for a single selection.
+    multi: std::collections::HashSet<String>,
+    /// Edit ▸ Cut/Copy's events, each with the calendar it came from, for
+    /// Edit ▸ Paste. In-app: other apps get the plain-text summary.
+    event_clipboard: Vec<(usize, rmac_calendar_store::Event)>,
+    /// UIDs of events Paste or Duplicate just created, selected once the
+    /// reload that shows them lands.
+    select_after_load: Vec<String>,
+    /// A text field (the inspector's, search, a sheet's) has focus, so the
+    /// Edit menu's rows act on its text instead of on events.
+    text_focused: bool,
     editor: Option<Editor>,
     undo: Vec<Mutation>,
     redo: Vec<Mutation>,
@@ -166,6 +177,10 @@ impl CalendarView {
             search_results: Vec::new(),
             search_selected: 0,
             selected: None,
+            multi: std::collections::HashSet::new(),
+            event_clipboard: Vec::new(),
+            select_after_load: Vec::new(),
+            text_focused: false,
             editor: None,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -215,6 +230,7 @@ impl CalendarView {
             Ok(snapshot) => {
                 self.set_snapshot(snapshot);
                 self.error = None;
+                self.select_created();
             }
             Err(error) => {
                 // No EDS (or it failed before the first load): show an
@@ -661,7 +677,7 @@ impl CalendarView {
         };
         self.nav.view = View::Day;
         self.nav.selected = result.start.date_naive();
-        self.selected = Some(result.event_id);
+        self.set_selected(Some(result.event_id));
         self.search_open = false;
         self.sync_menu(cx);
         cx.notify();
@@ -727,7 +743,7 @@ impl CalendarView {
             .iter()
             .position(|option| *option == alert_offset)
             .unwrap_or(0);
-        self.selected = Some(event.id.clone());
+        self.set_selected(Some(event.id.clone()));
         self.editor = Some(Editor {
             original: (!fresh).then_some(event.clone()),
             draft,
@@ -752,7 +768,14 @@ impl CalendarView {
 
     fn new_event(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let now = Utc::now();
-        let hour = (now.hour() + 1).clamp(8, 19);
+        let general = &self.settings.general;
+        let hour = (now.hour() + 1).clamp(
+            general.day_starts_hour,
+            general
+                .day_ends_hour
+                .saturating_sub(1)
+                .max(general.day_starts_hour),
+        );
         self.create_event_at(self.nav.selected, hour, window, cx);
     }
 
@@ -769,9 +792,11 @@ impl CalendarView {
             cx.notify();
             return;
         };
-        let Some((start, end)) = editing::at_day(date, hour) else {
+        let Some((start, _)) = editing::at_day(date, hour) else {
             return;
         };
+        // Settings ▸ General ▸ Default event duration.
+        let end = start + Duration::minutes(i64::from(self.settings.general.default_event_minutes));
         let mut draft = editing::new_event(start, end, false);
         self.settings
             .general
@@ -1042,7 +1067,7 @@ impl CalendarView {
         // removing the event; keep focus on the main view rather than on
         // the sheet field that just stopped showing.
         self.editor = None;
-        self.selected = None;
+        self.set_selected(None);
         window.focus(&self.focus, cx);
         self.submit(
             Mutation::Delete {
@@ -1053,6 +1078,247 @@ impl CalendarView {
             Direction::Do,
             cx,
         );
+    }
+
+    fn set_selected(&mut self, id: Option<String>) {
+        self.selected = id;
+        self.multi.clear();
+    }
+
+    fn is_selected(&self, id: &str) -> bool {
+        self.selected.as_deref() == Some(id) || self.multi.contains(id)
+    }
+
+    /// The selected events (Select All's, or the one clicked), one per
+    /// stored event: several shown occurrences of one repeating series are
+    /// one event to copy or delete.
+    fn selected_events(&self) -> Vec<rmac_calendar::Event> {
+        // One pass over the snapshot, so a Select All over a year of events
+        // stays linear (this runs on every render, from `sync_menu`).
+        let mut seen = std::collections::HashSet::new();
+        self.snapshot
+            .events
+            .iter()
+            .filter(|event| self.is_selected(&event.id))
+            .filter(|event| {
+                event
+                    .ical
+                    .as_ref()
+                    .is_some_and(|ical| seen.insert((event.calendar, ical.uid.clone())))
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn source_of(&self, calendar: usize) -> Option<String> {
+        self.snapshot
+            .calendars
+            .get(calendar)
+            .and_then(|calendar| calendar.source_uid.clone())
+    }
+
+    /// Hands an Edit row's text twin to a focused text field. The menu
+    /// bar's command reaches Calendar's own handler even while a field has
+    /// focus, so the row acts on that field's text the way the Mac's does.
+    fn forward_to_text(
+        &self,
+        action: Box<dyn gpui::Action>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.text_field_focused(window, cx) {
+            return false;
+        }
+        window.dispatch_action(action, cx);
+        true
+    }
+
+    fn text_field_focused(&self, window: &Window, cx: &gpui::App) -> bool {
+        window
+            .focused(cx)
+            .is_some_and(|focused| focused != self.focus)
+    }
+
+    /// Edit ▸ Copy: the selected events onto Calendar's own clipboard, and
+    /// their title, time and place onto the system clipboard as text.
+    fn copy_events(&mut self, cx: &mut Context<Self>) -> bool {
+        let events = self.selected_events();
+        if events.is_empty() {
+            return false;
+        }
+        self.event_clipboard = events
+            .iter()
+            .filter_map(|event| Some((event.calendar, event.ical.clone()?)))
+            .collect();
+        let text = editing::clipboard_text(
+            &self
+                .event_clipboard
+                .iter()
+                .map(|(_, event)| event.clone())
+                .collect::<Vec<_>>(),
+        );
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        self.sync_menu(cx);
+        true
+    }
+
+    /// Edit ▸ Delete (and the second half of Cut) for a Select All
+    /// selection: every selected event in one undoable step. A single
+    /// selection keeps `delete_selected`'s repeat-scope confirmation.
+    fn delete_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.multi.is_empty() {
+            self.delete_selected(window, cx);
+            return;
+        }
+        if self.busy {
+            return;
+        }
+        let deletes = self
+            .selected_events()
+            .into_iter()
+            .filter(|event| {
+                self.snapshot
+                    .calendars
+                    .get(event.calendar)
+                    .is_some_and(|calendar| calendar.writable)
+            })
+            .filter_map(|event| {
+                Some(Mutation::Delete {
+                    source: self.source_of(event.calendar)?,
+                    event: event.ical?,
+                    scope: "all",
+                })
+            })
+            .collect();
+        let Some(change) = Mutation::batch(deletes) else {
+            return;
+        };
+        self.editor = None;
+        self.set_selected(None);
+        window.focus(&self.focus, cx);
+        self.submit(change, Direction::Do, cx);
+    }
+
+    /// Creates copies of `events` (calendar index, stored event) moved by
+    /// `days`, each in its own calendar when that one can be written and
+    /// in the default calendar otherwise, then selects them.
+    fn create_copies(
+        &mut self,
+        events: Vec<(usize, rmac_calendar_store::Event)>,
+        days: i64,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy {
+            return;
+        }
+        let fallback = self.default_writable_calendar();
+        let mut uids = Vec::new();
+        let creates = events
+            .into_iter()
+            .filter_map(|(calendar, event)| {
+                let writable = self
+                    .snapshot
+                    .calendars
+                    .get(calendar)
+                    .is_some_and(|entry| entry.writable && !entry.removed);
+                let calendar = if writable { calendar } else { fallback? };
+                let copy = editing::copy_of(&event, days);
+                let source = self.source_of(calendar)?;
+                uids.push(copy.uid.clone());
+                Some(Mutation::Create {
+                    source,
+                    event: copy,
+                })
+            })
+            .collect();
+        let Some(change) = Mutation::batch(creates) else {
+            self.error = Some("No writable calendar is available".into());
+            cx.notify();
+            return;
+        };
+        self.select_after_load = uids;
+        self.submit(change, Direction::Do, cx);
+    }
+
+    /// Edit ▸ Paste: the copied events on the selected day, each at its
+    /// own time of day.
+    fn paste_events(&mut self, cx: &mut Context<Self>) {
+        let events = self.event_clipboard.clone();
+        let offset = editing::paste_offset(
+            &events
+                .iter()
+                .map(|(_, event)| event.clone())
+                .collect::<Vec<_>>(),
+            self.nav.selected,
+        );
+        self.create_copies(events, offset, cx);
+    }
+
+    /// Edit ▸ Duplicate: a copy of each selected event at the same time.
+    fn duplicate_events(&mut self, cx: &mut Context<Self>) {
+        let events = self
+            .selected_events()
+            .into_iter()
+            .filter_map(|event| Some((event.calendar, event.ical?)))
+            .collect();
+        self.create_copies(events, 0, cx);
+    }
+
+    /// Edit ▸ Select All: every event the current view shows.
+    fn select_all_events(&mut self, cx: &mut Context<Self>) {
+        let ids = rmac_calendar::events_in_period(
+            &self.snapshot,
+            &self.visible_flags(),
+            self.nav.visible_period(),
+        );
+        self.selected = ids.first().cloned();
+        self.multi = ids.into_iter().collect();
+        self.sync_menu(cx);
+        cx.notify();
+    }
+
+    /// After Paste or Duplicate: select the new events once they show.
+    fn select_created(&mut self) {
+        if self.select_after_load.is_empty() {
+            return;
+        }
+        let uids = std::mem::take(&mut self.select_after_load);
+        let ids: Vec<String> = self
+            .snapshot
+            .events
+            .iter()
+            .filter(|event| {
+                event
+                    .ical
+                    .as_ref()
+                    .is_some_and(|ical| uids.contains(&ical.uid))
+            })
+            .map(|event| event.id.clone())
+            .collect();
+        self.selected = ids.first().cloned();
+        self.multi = if ids.len() > 1 {
+            ids.into_iter().collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+    }
+
+    /// Edit ▸ Edit Event: the selected event's inspector with its title
+    /// ready to type over. Get Info opens the same inspector to read,
+    /// leaving the keyboard on the calendar.
+    fn edit_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.inspect_selected(window, cx);
+        if self.editor.is_some() {
+            // `open_editor` focused the title; select its text there.
+            window.dispatch_action(Box::new(input_actions::SelectAll), cx);
+        }
+    }
+
+    fn get_info(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.inspect_selected(window, cx);
+        if self.editor.is_some() {
+            window.focus(&self.focus, cx);
+        }
     }
 
     fn undo(&mut self, cx: &mut Context<Self>) {
@@ -1080,8 +1346,16 @@ impl CalendarView {
         };
         self.scroll_accumulated += delta;
         if self.scroll_accumulated.abs() >= 80.0 {
-            self.nav
-                .step(if self.scroll_accumulated < 0.0 { 1 } else { -1 });
+            let direction = if self.scroll_accumulated < 0.0 { 1 } else { -1 };
+            // Settings ▸ General ▸ Scroll in week view by: Day rolls the
+            // visible days one at a time instead of turning the week.
+            if self.nav.view == View::Week
+                && self.settings.general.week_scroll == store::WeekScroll::Day
+            {
+                self.nav.roll_week(direction);
+            } else {
+                self.nav.step(direction);
+            }
             self.scroll_accumulated = 0.0;
             cx.notify();
         }
@@ -1098,10 +1372,27 @@ impl CalendarView {
         }
         rmac_ui::set_menu_checked("calendar::ToggleSidebar", self.sidebar_visible, cx);
         rmac_ui::set_menu_checked("calendar::ShowInvitations", self.invitations_open, cx);
-        rmac_ui::set_menu_enabled("calendar::UndoEvent", !self.undo.is_empty(), cx);
-        rmac_ui::set_menu_enabled("calendar::RedoEvent", !self.redo.is_empty(), cx);
-        rmac_ui::set_menu_enabled("calendar::ShowInspector", self.selected.is_some(), cx);
-        rmac_ui::set_menu_enabled("calendar::DeleteEvent", self.selected.is_some(), cx);
+        // With a text field focused the Edit rows act on its text, so they
+        // stay available; otherwise they need a selected event.
+        let text = self.text_focused;
+        let any = self.selected.is_some();
+        let stored = !self.selected_events().is_empty();
+        for (action, enabled) in [
+            ("calendar::UndoEvent", text || !self.undo.is_empty()),
+            ("calendar::RedoEvent", text || !self.redo.is_empty()),
+            ("calendar::CutEvents", text || stored),
+            ("calendar::CopyEvents", text || stored),
+            (
+                "calendar::PasteEvents",
+                text || !self.event_clipboard.is_empty(),
+            ),
+            ("calendar::DeleteEvent", text || any),
+            ("calendar::DuplicateEvent", !text && stored),
+            ("calendar::EditEvent", !text && any),
+            ("calendar::ShowInspector", !text && any),
+        ] {
+            rmac_ui::set_menu_enabled(action, enabled, cx);
+        }
     }
 
     fn color(color: CalendarColor) -> gpui::Hsla {
@@ -1310,7 +1601,7 @@ impl CalendarView {
     }
 
     fn mini_month(&self, cx: &mut Context<Self>) -> AnyElement {
-        let first = month_grid_start(self.nav.selected);
+        let first = month_grid_start_on(self.nav.selected, self.nav.first_weekday);
         let selected_month = self.nav.selected.month();
         let today = current_date();
         let mut grid = div()
@@ -1320,7 +1611,8 @@ impl CalendarView {
             .w_full()
             .role(Role::Table)
             .aria_label(self.nav.selected.format("%B %Y").to_string());
-        for title in ["M", "T", "W", "T", "F", "S", "S"] {
+        for weekday in weekday_columns(self.nav.first_weekday) {
+            let title = weekday_initial(weekday);
             grid = grid.child(
                 div()
                     .w(px(26.0))
@@ -1646,6 +1938,13 @@ impl CalendarView {
         let day_width = ((width - GUTTER) / days as f32).max(1.0);
         let grid_top = 60.0;
         let grid_height = (height - grid_top).max(0.0);
+        // Settings ▸ General: the grid fits "Show N hours at a time" from
+        // Day starts at; the hours after Day ends at are shaded.
+        let general = &self.settings.general;
+        let (first_hour, hours_shown) = general.visible_hours();
+        let start_hour = first_hour as f32;
+        let hour_height = (grid_height / hours_shown as f32).max(1.0);
+        let day_ends = general.day_ends_hour as f32;
         let mut week = div()
             .id(if days == 1 {
                 "calendar-day-grid"
@@ -1675,11 +1974,11 @@ impl CalendarView {
                         .clamp(0.0, (days as f32 - 1.0).max(0.0))
                         as i64;
                     let day = first + Duration::days(day_index);
-                    let hour_frac = START_HOUR + (local_y - grid_top) / HOUR;
+                    let hour_frac = start_hour + (local_y - grid_top) / hour_height;
                     let hour = (hour_frac.round() as i64).clamp(0, 23) as u32;
                     this.create_event_at(day, hour, window, cx);
                 } else {
-                    this.selected = None;
+                    this.set_selected(None);
                     cx.notify();
                 }
             }));
@@ -1731,6 +2030,17 @@ impl CalendarView {
                         .h(px(grid_height))
                         .bg(mac::row_alternate()),
                 );
+            } else if day_ends < start_hour + hours_shown as f32 {
+                let top = grid_top + (day_ends - start_hour).max(0.0) * hour_height;
+                week = week.child(
+                    div()
+                        .absolute()
+                        .left(px(x))
+                        .top(px(top))
+                        .w(px(day_width))
+                        .h(px((grid_top + grid_height - top).max(0.0)))
+                        .bg(mac::row_alternate()),
+                );
             }
             week = week.child(
                 div()
@@ -1766,6 +2076,9 @@ impl CalendarView {
                 week = week.child(
                     div()
                         .id(format!("calendar-allday-event-{}", event.id))
+                        .role(Role::Button)
+                        .aria_label(format!("{}, all day", event.title))
+                        .aria_selected(self.is_selected(&event.id))
                         .absolute()
                         .left(px(GUTTER + offset as f32 * day_width + 2.0))
                         .top(px(37.0))
@@ -1780,7 +2093,7 @@ impl CalendarView {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(event.title.clone())
                         .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
-                            this.selected = Some(event_id.clone());
+                            this.set_selected(Some(event_id.clone()));
                             if e.click_count() >= 2 {
                                 this.inspect_selected(window, cx);
                             }
@@ -1790,8 +2103,8 @@ impl CalendarView {
                 );
             }
         }
-        for hour in 8..=20 {
-            let y = grid_top + (hour as f32 - START_HOUR) * HOUR;
+        for hour in first_hour..=first_hour + hours_shown {
+            let y = grid_top + (hour as f32 - start_hour) * hour_height;
             week = week.child(
                 div()
                     .absolute()
@@ -1801,14 +2114,14 @@ impl CalendarView {
                     .h(px(1.0))
                     .bg(mac::separator()),
             );
-            if hour > 8 {
+            if hour > first_hour && hour < 24 {
                 // UIA-04: this always read "9:00" in 24-hour even with a
                 // 12-hour preference; the on-the-hour label now follows
                 // `self.twenty_four_hour` like the event times below.
                 let label = if self.twenty_four_hour {
                     format!("{hour}:00")
                 } else {
-                    NaiveTime::from_hms_opt(hour as u32, 0, 0)
+                    NaiveTime::from_hms_opt(hour, 0, 0)
                         .map(|time| time.format("%-I %p").to_string())
                         .unwrap_or_else(|| format!("{hour}:00"))
                 };
@@ -1839,10 +2152,12 @@ impl CalendarView {
             let columns = slot.columns.max(1) as f32;
             let width = (day_width - 3.0) / columns;
             let x = GUTTER + day as f32 * day_width + slot.column as f32 * width + 1.0;
-            let y = grid_top + (slot.start_second as f32 / 3600.0 - START_HOUR) * HOUR;
-            let h = ((slot.end_second - slot.start_second) as f32 / 3600.0 * HOUR - 2.0).max(18.0);
+            let y = grid_top + (slot.start_second as f32 / 3600.0 - start_hour) * hour_height;
+            let h = ((slot.end_second - slot.start_second) as f32 / 3600.0 * hour_height - 2.0)
+                .max(18.0);
             let color = Self::color(snapshot.calendars[event.calendar].color);
             let event_id = event.id.clone();
+            let selected = self.is_selected(&event.id);
             let accessible_name = if event.location.is_empty() {
                 format!(
                     "{}, {}",
@@ -1865,7 +2180,7 @@ impl CalendarView {
                     // it, focused or not.
                     .role(Role::Button)
                     .aria_label(accessible_name)
-                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
+                    .aria_selected(self.is_selected(&event.id))
                     .absolute()
                     .left(px(x))
                     .top(px(y))
@@ -1875,29 +2190,43 @@ impl CalendarView {
                     .overflow_hidden()
                     .pl(px(6.0))
                     .pt(px(2.0))
-                    .bg(color.opacity(if mac::window().l < 0.5 { 0.22 } else { 0.18 }))
+                    // A selected event fills with its calendar's colour, as
+                    // on the Mac, so Edit ▸ Select All shows what it took.
+                    .bg(if selected {
+                        color
+                    } else {
+                        color.opacity(if mac::window().l < 0.5 { 0.22 } else { 0.18 })
+                    })
                     .border_l_3()
                     .border_color(color)
                     .flex()
                     .flex_col()
                     .text_size(px(11.0))
-                    .text_color(mac::text())
+                    .text_color(if selected { mac::white() } else { mac::text() })
                     .child(
                         div()
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(event.title.clone()),
                     )
-                    .child(div().text_color(mac::text_secondary()).child(format!(
-                        "{}{}",
-                        event.start.format(self.time_format_str()),
-                        if event.location.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" · {}", event.location)
-                        }
-                    )))
+                    .child(
+                        div()
+                            .text_color(if selected {
+                                mac::white().opacity(0.85)
+                            } else {
+                                mac::text_secondary()
+                            })
+                            .child(format!(
+                                "{}{}",
+                                event.start.format(self.time_format_str()),
+                                if event.location.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" · {}", event.location)
+                                }
+                            )),
+                    )
                     .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
-                        this.selected = Some(event_id.clone());
+                        this.set_selected(Some(event_id.clone()));
                         if e.click_count() >= 2 {
                             this.inspect_selected(window, cx);
                         }
@@ -1911,8 +2240,8 @@ impl CalendarView {
         if (0..days as i64).contains(&day) {
             let now = chrono::Local::now();
             let hour = now.hour() as f32 + now.minute() as f32 / 60.0;
-            if (START_HOUR..=20.0).contains(&hour) {
-                let y = grid_top + (hour - START_HOUR) * HOUR;
+            if (start_hour..=start_hour + hours_shown as f32).contains(&hour) {
+                let y = grid_top + (hour - start_hour) * hour_height;
                 week = week.child(
                     div()
                         .absolute()
@@ -2008,7 +2337,7 @@ impl CalendarView {
                     // ACC-32: same fix as the grid's event blocks above.
                     .role(Role::Button)
                     .aria_label(accessible_name)
-                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
+                    .aria_selected(self.is_selected(&event.id))
                     .border_l_3()
                     .border_color(color)
                     .pl(px(9.0))
@@ -2038,7 +2367,7 @@ impl CalendarView {
                             }),
                     )
                     .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
-                        this.selected = Some(event_id.clone());
+                        this.set_selected(Some(event_id.clone()));
                         if e.click_count() >= 2 {
                             this.inspect_selected(window, cx);
                         }
@@ -2079,7 +2408,8 @@ impl CalendarView {
         height: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let first = month_grid_start(self.nav.selected);
+        let first = month_grid_start_on(self.nav.selected, self.nav.first_weekday);
+        let show_week_numbers = self.settings.general.show_week_numbers;
         let last = self
             .nav
             .selected
@@ -2098,7 +2428,8 @@ impl CalendarView {
             .size_full()
             .role(Role::Table)
             .aria_label(self.nav.selected.format("%B %Y").to_string());
-        for (index, name) in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        for (index, name) in weekday_columns(self.nav.first_weekday)
+            .map(weekday_short)
             .into_iter()
             .enumerate()
         {
@@ -2180,6 +2511,24 @@ impl CalendarView {
                         })
                         .child(day.day().to_string()),
                 );
+            if show_week_numbers && index % 7 == 0 {
+                // Advanced ▸ Show week numbers: the row's ISO week, read
+                // from its middle day so a Sunday-first row is not a week
+                // behind.
+                let week_number = (day + Duration::days(3)).iso_week().week();
+                cell = cell.child(
+                    div()
+                        .id(format!("calendar-week-number-{day}"))
+                        .role(Role::Label)
+                        .aria_label(format!("Week {week_number}"))
+                        .absolute()
+                        .left(px(6.0))
+                        .top(px(7.0))
+                        .text_size(px(10.0))
+                        .text_color(mac::text_secondary())
+                        .child(week_number.to_string()),
+                );
+            }
             for (line, event) in events.iter().take(3).enumerate() {
                 let color = Self::color(snapshot.calendars[event.calendar].color);
                 let event_id = event.id.clone();
@@ -2188,7 +2537,7 @@ impl CalendarView {
                     // ACC-32: same fix as the week/day grids' event blocks.
                     .role(Role::Button)
                     .aria_label(event.title.clone())
-                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
+                    .aria_selected(self.is_selected(&event.id))
                     .absolute()
                     .left(px(6.0))
                     .right(px(6.0))
@@ -2211,7 +2560,7 @@ impl CalendarView {
                 }
                 let item = item.child(event.title.clone()).on_click(cx.listener(
                     move |this, e: &ClickEvent, window, cx| {
-                        this.selected = Some(event_id.clone());
+                        this.set_selected(Some(event_id.clone()));
                         if e.click_count() >= 2 {
                             this.inspect_selected(window, cx);
                         }
@@ -2251,6 +2600,7 @@ impl CalendarView {
         let day_width = month_width / 7.0;
         let year = self.nav.selected.year();
         let visible = self.visible_flags();
+        let show_events = self.settings.general.show_events_in_year_view;
         let mut panel = div()
             .id("calendar-year")
             .relative()
@@ -2259,7 +2609,7 @@ impl CalendarView {
             .aria_label(year.to_string());
         for month_index in 0..12 {
             let first = NaiveDate::from_ymd_opt(year, month_index + 1, 1).expect("valid month");
-            let weekday_offset = first.weekday().num_days_from_monday() as usize;
+            let weekday_offset = weekday_offset(first.weekday(), self.nav.first_weekday) as usize;
             let mut card = div()
                 .absolute()
                 .left(px(16.0 + (month_index % 4) as f32 * (month_width + gap_x)))
@@ -2295,7 +2645,11 @@ impl CalendarView {
                             this.show(View::Month, cx);
                         })),
                 );
-            for (column, label) in ["M", "T", "W", "T", "F", "S", "S"].into_iter().enumerate() {
+            for (column, label) in weekday_columns(self.nav.first_weekday)
+                .map(weekday_initial)
+                .into_iter()
+                .enumerate()
+            {
                 card = card.child(
                     div()
                         .absolute()
@@ -2314,7 +2668,12 @@ impl CalendarView {
             let days = (next - first).num_days() as usize;
             for day_index in 0..days {
                 let date = first + Duration::days(day_index as i64);
-                let count = events_on_day(snapshot, &visible, date).len();
+                // Advanced ▸ Show events in year view.
+                let count = if show_events {
+                    events_on_day(snapshot, &visible, date).len()
+                } else {
+                    0
+                };
                 let position = weekday_offset + day_index;
                 let today = date == current_date();
                 card = card.child(
@@ -2997,6 +3356,28 @@ impl CalendarView {
     }
 }
 
+fn weekday_initial(day: chrono::Weekday) -> &'static str {
+    match day {
+        chrono::Weekday::Mon => "M",
+        chrono::Weekday::Tue | chrono::Weekday::Thu => "T",
+        chrono::Weekday::Wed => "W",
+        chrono::Weekday::Fri => "F",
+        chrono::Weekday::Sat | chrono::Weekday::Sun => "S",
+    }
+}
+
+fn weekday_short(day: chrono::Weekday) -> &'static str {
+    match day {
+        chrono::Weekday::Mon => "Mon",
+        chrono::Weekday::Tue => "Tue",
+        chrono::Weekday::Wed => "Wed",
+        chrono::Weekday::Thu => "Thu",
+        chrono::Weekday::Fri => "Fri",
+        chrono::Weekday::Sat => "Sat",
+        chrono::Weekday::Sun => "Sun",
+    }
+}
+
 fn labelled_field(label: &'static str, control: impl IntoElement) -> impl IntoElement {
     div()
         .flex()
@@ -3013,7 +3394,10 @@ fn labelled_field(label: &'static str, control: impl IntoElement) -> impl IntoEl
 
 impl Render for CalendarView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.text_focused = self.text_field_focused(window, cx);
         self.sync_menu(cx);
+        self.nav.first_weekday = self.settings.general.first_weekday();
+        self.nav.days_per_week = self.settings.general.days_per_week;
         let size = rmac_ui::window_content_size(window);
         let side = if self.sidebar_visible {
             SIDEBAR + 8.0
@@ -3024,7 +3408,7 @@ impl Render for CalendarView {
         let content_height = (f32::from(size.height) - TOOLBAR - 44.0).max(1.0);
         let origin_x = side;
         let origin_y = TOOLBAR + 44.0;
-        let week_start = self.nav.week_start();
+        let (week_start, week_days) = self.nav.week_columns();
         let snapshot = self.snapshot.clone();
         let body = div()
             .absolute()
@@ -3049,7 +3433,7 @@ impl Render for CalendarView {
                     content_width,
                     content_height,
                     week_start,
-                    7,
+                    week_days,
                     origin_x,
                     origin_y,
                     cx,
@@ -3113,16 +3497,52 @@ impl Render for CalendarView {
             }))
             .on_action(cx.listener(|this, _: &NewEvent, window, cx| this.new_event(window, cx)))
             .on_action(cx.listener(|this, _: &SaveEvent, _, cx| this.save_editor(cx)))
+            .on_action(cx.listener(|this, _: &DeleteEvent, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Delete), window, cx) {
+                    this.delete_events(window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &UndoEvent, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Undo), window, cx) {
+                    this.undo(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &RedoEvent, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Redo), window, cx) {
+                    this.redo(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &CutEvents, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Cut), window, cx)
+                    && this.copy_events(cx)
+                {
+                    this.delete_events(window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &CopyEvents, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Copy), window, cx) {
+                    this.copy_events(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &PasteEvents, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Paste), window, cx) {
+                    this.paste_events(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SelectAllEvents, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::SelectAll), window, cx) {
+                    this.select_all_events(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &DuplicateEvent, window, cx| {
+                if !this.text_field_focused(window, cx) {
+                    this.duplicate_events(cx);
+                }
+            }))
             .on_action(
-                cx.listener(|this, _: &DeleteEvent, window, cx| this.delete_selected(window, cx)),
+                cx.listener(|this, _: &EditEvent, window, cx| this.edit_selected(window, cx)),
             )
-            .on_action(cx.listener(|this, _: &UndoEvent, _, cx| this.undo(cx)))
-            .on_action(cx.listener(|this, _: &RedoEvent, _, cx| this.redo(cx)))
-            .on_action(
-                cx.listener(|this, _: &ShowInspector, window, cx| {
-                    this.inspect_selected(window, cx)
-                }),
-            )
+            .on_action(cx.listener(|this, _: &ShowInspector, window, cx| this.get_info(window, cx)))
             .on_action(
                 cx.listener(|this, _: &DismissInspector, window, cx| this.dismiss(window, cx)),
             )

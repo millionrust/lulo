@@ -156,6 +156,12 @@ pub struct Message {
     pub sender_address: String,
     pub initials: String,
     pub date: String,
+    /// When the message arrived, as Unix seconds: the key View ▸ Sort By ▸
+    /// Date orders by. `0` sorts as the oldest.
+    pub received_at: i64,
+    /// The full date and time, shown in place of `date` while View ▸ Show
+    /// Date and Time is on.
+    pub date_time: String,
     pub to: String,
     pub cc: String,
     pub to_addresses: String,
@@ -175,6 +181,75 @@ pub struct Message {
 pub enum SearchScope {
     AllMailboxes,
     CurrentMailbox,
+}
+
+/// View ▸ Sort By. Mail keeps no message size, sent date, reminder or
+/// send-later time, so those keys are left out.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SortKey {
+    Attachments,
+    #[default]
+    Date,
+    Flags,
+    From,
+    Subject,
+    To,
+    Unread,
+}
+
+impl SortKey {
+    pub const ALL: [SortKey; 7] = [
+        SortKey::Attachments,
+        SortKey::Date,
+        SortKey::Flags,
+        SortKey::From,
+        SortKey::Subject,
+        SortKey::To,
+        SortKey::Unread,
+    ];
+
+    /// The order Mail starts each key in, as the Mac does: newest, flagged,
+    /// unread and with-attachment messages on top, names from A.
+    const fn descending_by_default(self) -> bool {
+        matches!(
+            self,
+            SortKey::Date | SortKey::Flags | SortKey::Unread | SortKey::Attachments
+        )
+    }
+}
+
+/// View ▸ Filter: the message filter, and which messages it keeps while it
+/// is on. Within "Include:" and "Addressed:" a message needs any one ticked
+/// row; the groups and "Only Mail with Attachments" must all hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MessageFilter {
+    pub enabled: bool,
+    pub unread: bool,
+    pub flagged: bool,
+    pub to_me: bool,
+    pub cc_me: bool,
+    pub attachments: bool,
+}
+
+impl Default for MessageFilter {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            unread: true,
+            flagged: false,
+            to_me: false,
+            cc_me: false,
+            attachments: false,
+        }
+    }
+}
+
+/// Mailbox ▸ Erase Deleted Items / Erase Junk Mail: which special mailbox
+/// to empty, and in which account (`None` for every account).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Erase {
+    pub special: SpecialUse,
+    pub account: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -205,10 +280,13 @@ pub struct Persist {
 pub enum PersistChange {
     Flags(i64),
     Move(i64),
+    /// Erase: remove the message from the server for good.
+    Delete,
 }
 
 #[derive(Clone)]
 struct Undo {
+    action: OrganizeAction,
     original: Message,
     added_id: Option<String>,
     selection: Option<String>,
@@ -241,12 +319,24 @@ pub struct MailState {
     pub mailbox: Mailbox,
     pub selected: Option<String>,
     pub threads: bool,
-    pub unread_only: bool,
     pub search: SearchQuery,
     pub search_scope: SearchScope,
+    pub sort: SortKey,
+    /// Whether the sort runs from the highest value (newest, Z, flagged).
+    pub descending: bool,
+    pub filter: MessageFilter,
+    /// The addresses of this person's accounts, for Filter ▸ To: Me / Cc: Me.
+    pub my_addresses: Vec<String>,
+    /// Conversations shown message by message while Organise by
+    /// Conversation is on (View ▸ Expand All Conversations).
+    pub expanded: std::collections::HashSet<String>,
     undo: Option<Undo>,
+    /// The action Undo just reversed, for Edit ▸ Redo.
+    redo: Option<(OrganizeAction, String)>,
+    /// Where Message ▸ Move to last moved a message, for Move Again.
+    pub last_move: Option<Mailbox>,
     next_copy: u64,
-    last_persist: Option<Persist>,
+    last_persist: Vec<Persist>,
 }
 
 impl MailState {
@@ -260,12 +350,18 @@ impl MailState {
             mailbox: Mailbox::AllInboxes,
             selected: None,
             threads: true,
-            unread_only: false,
             search: SearchQuery::default(),
             search_scope: SearchScope::AllMailboxes,
+            sort: SortKey::Date,
+            descending: true,
+            filter: MessageFilter::default(),
+            my_addresses: Vec::new(),
+            expanded: std::collections::HashSet::new(),
             undo: None,
+            redo: None,
+            last_move: None,
             next_copy: 0,
-            last_persist: None,
+            last_persist: Vec::new(),
         };
         // Highlights the first row without marking it read: opening Mail
         // must never silently consume someone's unread count.
@@ -467,6 +563,28 @@ impl MailState {
                 )
             },
         ));
+        // Arrival times matching the date labels above (Monday 28 September
+        // to Today, 5 October 2026), so Sort By ▸ Date orders them the way
+        // the labels read.
+        const TODAY_0941: i64 = 1_791_193_260;
+        const HOUR: i64 = 3_600;
+        const DAY: i64 = 24 * HOUR;
+        for message in &mut messages {
+            let ago = match message.id.as_str() {
+                "anna" => 0,
+                "beta" => HOUR + 29 * 60,
+                "sam" => DAY + 2 * HOUR,
+                "northwind" => DAY + 5 * HOUR,
+                "grandma" => 4 * DAY,
+                "bank" => 5 * DAY,
+                "climbing" => 6 * DAY,
+                "sam-reply" => 6 * DAY + 3 * HOUR,
+                "sam-old" => 7 * DAY,
+                _ => 7 * DAY + 4 * HOUR,
+            };
+            message.received_at = TODAY_0941 - ago;
+            message.date_time = format_date_time(message.received_at);
+        }
         // Built directly rather than through `new()`/`select_mailbox()`,
         // which would mark the first message read as a side effect before
         // any test (or a person) ever opened it.
@@ -476,12 +594,18 @@ impl MailState {
             mailbox: Mailbox::AllInboxes,
             selected: Some("anna".to_owned()),
             threads: true,
-            unread_only: false,
             search: SearchQuery::default(),
             search_scope: SearchScope::AllMailboxes,
+            sort: SortKey::Date,
+            descending: true,
+            filter: MessageFilter::default(),
+            my_addresses: Vec::new(),
+            expanded: std::collections::HashSet::new(),
             undo: None,
+            redo: None,
+            last_move: None,
             next_copy: 0,
-            last_persist: None,
+            last_persist: Vec::new(),
         }
     }
 
@@ -497,7 +621,7 @@ impl MailState {
             .unwrap_or(Mailbox::AllInboxes);
         state.messages.extend((0..extra).map(|index| {
             let id = format!("bulk-{index}");
-            fixture_message(
+            let mut message = fixture_message(
                 &id,
                 inbox.clone(),
                 "Speed Sweep",
@@ -508,7 +632,10 @@ impl MailState {
                 index % 3 == 0,
                 index % 7 == 0,
                 &id,
-            )
+            );
+            // Older than every fixture message, one minute apart.
+            message.received_at = 1_790_000_000 - index as i64 * 60;
+            message
         }));
         state
     }
@@ -598,8 +725,8 @@ impl MailState {
     }
 
     pub fn visible(&self) -> Vec<usize> {
-        let mut seen = std::collections::HashSet::new();
-        self.messages
+        let mut shown: Vec<usize> = self
+            .messages
             .iter()
             .enumerate()
             .filter_map(|(index, message)| {
@@ -621,31 +748,116 @@ impl MailState {
                         &message.subject,
                         &format!("{} {}", message.preview, message.body.plain_text()),
                     );
-                if !in_mailbox
-                    || self.unread_only && !message.unread
-                    || !search_matches
-                    || self.threads
-                        && !seen.insert((mailbox_key(&message.mailbox), message.thread_id.as_str()))
-                {
-                    None
-                } else {
-                    Some(index)
-                }
+                (in_mailbox && search_matches && self.passes_filter(message)).then_some(index)
             })
-            .collect()
+            .collect();
+        self.sort_indices(&mut shown);
+        if self.threads {
+            // Each conversation shows as its first message in sort order,
+            // unless it is expanded.
+            let mut seen = std::collections::HashSet::new();
+            shown.retain(|&index| {
+                let message = &self.messages[index];
+                self.expanded.contains(&message.thread_id)
+                    || seen.insert((mailbox_key(&message.mailbox), message.thread_id.as_str()))
+            });
+        }
+        shown
+    }
+
+    /// Orders `indices` by View ▸ Sort By. A stable sort, so equal keys
+    /// keep the order the mailbox listed them in.
+    fn sort_indices(&self, indices: &mut [usize]) {
+        let messages = &self.messages;
+        let compare = |a: &usize, b: &usize| {
+            let (a, b) = (&messages[*a], &messages[*b]);
+            let order = match self.sort {
+                SortKey::Date => a.received_at.cmp(&b.received_at),
+                SortKey::Attachments => a.attachment.is_some().cmp(&b.attachment.is_some()),
+                SortKey::Flags => a.flagged.cmp(&b.flagged),
+                SortKey::Unread => a.unread.cmp(&b.unread),
+                SortKey::From => compare_text(&a.sender, &b.sender),
+                SortKey::Subject => compare_text(
+                    strip_reply_prefix(&a.subject),
+                    strip_reply_prefix(&b.subject),
+                ),
+                SortKey::To => compare_text(&a.to, &b.to),
+            };
+            // Within one value the newest message comes first, as on the Mac.
+            let order = if self.descending {
+                order.reverse()
+            } else {
+                order
+            };
+            order.then_with(|| b.received_at.cmp(&a.received_at))
+        };
+        indices.sort_by(compare);
+    }
+
+    /// View ▸ Sort By ▸ `key`, starting in that key's usual direction.
+    pub fn set_sort(&mut self, key: SortKey) {
+        if self.sort != key {
+            self.sort = key;
+            self.descending = key.descending_by_default();
+        }
+    }
+
+    /// View ▸ Message Filter: whether `message` passes the filter.
+    fn passes_filter(&self, message: &Message) -> bool {
+        let filter = self.filter;
+        if !filter.enabled {
+            return true;
+        }
+        let include = !(filter.unread || filter.flagged)
+            || filter.unread && message.unread
+            || filter.flagged && message.flagged;
+        let addressed = !(filter.to_me || filter.cc_me)
+            || filter.to_me && self.addressed_to_me(&message.to_addresses)
+            || filter.cc_me && self.addressed_to_me(&message.cc_addresses);
+        include && addressed && (!filter.attachments || message.attachment.is_some())
+    }
+
+    pub fn addressed_to_me(&self, addresses: &str) -> bool {
+        addresses.split([',', ';']).any(|address| {
+            let address = address
+                .rsplit_once('<')
+                .map_or(address, |(_, rest)| rest.trim_end_matches('>'))
+                .trim();
+            self.my_addresses
+                .iter()
+                .any(|mine| mine.eq_ignore_ascii_case(address))
+        })
+    }
+
+    /// View ▸ Expand All Conversations.
+    pub fn expand_all_conversations(&mut self) {
+        let mut counts = std::collections::HashMap::<&str, usize>::new();
+        for message in &self.messages {
+            *counts.entry(message.thread_id.as_str()).or_insert(0) += 1;
+        }
+        self.expanded = counts
+            .into_iter()
+            .filter(|(_, count)| *count > 1)
+            .map(|(thread, _)| thread.to_owned())
+            .collect();
+    }
+
+    /// View ▸ Collapse All Conversations.
+    pub fn collapse_all_conversations(&mut self) {
+        self.expanded.clear();
     }
 
     /// Selects `id`, marking it read. `take_persist` returns whatever
     /// needs replaying into storage as a result.
     pub fn select(&mut self, id: &str) {
         self.selected = Some(id.to_owned());
-        self.last_persist = None;
+        self.last_persist.clear();
         if let Some(message) = self.messages.iter_mut().find(|message| message.id == id) {
             if message.unread {
                 message.unread = false;
                 message.raw_flags |= rmac_mail_storage::FLAG_SEEN;
                 if let (Mailbox::Real(real), Some(row_id)) = (&message.mailbox, message.row_id) {
-                    self.last_persist = Some(Persist {
+                    self.last_persist.push(Persist {
                         account: real.account,
                         account_path: real.account_path.clone(),
                         row_id,
@@ -656,11 +868,11 @@ impl MailState {
         }
     }
 
-    /// Takes whatever `Persist` the last `select`/`apply`/`undo` call
-    /// produced. The caller (`MailView`) replays it on a background thread
-    /// and wakes that account's sync worker.
-    pub fn take_persist(&mut self) -> Option<Persist> {
-        self.last_persist.take()
+    /// Takes whatever `Persist`s the last `select`/`apply`/`undo`/erase
+    /// call produced. The caller (`MailView`) replays them on a background
+    /// thread and wakes each account's sync worker.
+    pub fn take_persists(&mut self) -> Vec<Persist> {
+        std::mem::take(&mut self.last_persist)
     }
 
     pub fn selected_message(&self) -> Option<&Message> {
@@ -694,7 +906,7 @@ impl MailState {
             self.select(&id);
         } else {
             self.selected = None;
-            self.last_persist = None;
+            self.last_persist.clear();
         }
     }
 
@@ -850,17 +1062,24 @@ impl MailState {
         let undo_persist = persist.as_ref().map(|forward| Persist {
             change: match forward.change {
                 PersistChange::Flags(_) => PersistChange::Flags(original.raw_flags),
-                PersistChange::Move(_) => PersistChange::Move(original_real.mailbox_id),
+                PersistChange::Move(_) | PersistChange::Delete => {
+                    PersistChange::Move(original_real.mailbox_id)
+                }
             },
             ..forward.clone()
         });
+        if let OrganizeAction::Move(target) = &action {
+            self.last_move = Some(target.clone());
+        }
+        self.redo = None;
         self.undo = Some(Undo {
+            action,
             original,
             added_id,
             selection,
             undo_persist,
         });
-        self.last_persist = persist;
+        self.last_persist = persist.into_iter().collect();
         true
     }
 
@@ -871,6 +1090,7 @@ impl MailState {
         if let Some(id) = undo.added_id {
             self.messages.retain(|message| message.id != id);
         }
+        self.redo = Some((undo.action, undo.original.id.clone()));
         if let Some(message) = self
             .messages
             .iter_mut()
@@ -879,12 +1099,199 @@ impl MailState {
             *message = undo.original;
         }
         self.selected = undo.selection;
-        self.last_persist = undo.undo_persist;
+        self.last_persist = undo.undo_persist.into_iter().collect();
         true
     }
 
     pub fn can_undo(&self) -> bool {
         self.undo.is_some()
+    }
+
+    /// Edit ▸ Redo: performs again the action Undo just reversed, on the
+    /// same message.
+    pub fn redo(&mut self) -> bool {
+        let Some((action, id)) = self.redo.take() else {
+            return false;
+        };
+        if !self.messages.iter().any(|message| message.id == id) {
+            return false;
+        }
+        self.selected = Some(id);
+        self.apply(action)
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.redo.is_some()
+    }
+
+    /// Message ▸ Move Again: the last Move to target, when the selected
+    /// message can go there (same account, not already in it).
+    pub fn move_again_target(&self) -> Option<Mailbox> {
+        let target = self.last_move.clone()?;
+        let message = self.selected_message()?;
+        (target.account() == message.mailbox.account() && target != message.mailbox)
+            .then_some(target)
+    }
+
+    /// Mailbox ▸ Mark All Messages as Read, for every message the list
+    /// shows now.
+    pub fn mark_all_read(&mut self) -> usize {
+        let mut marked = 0;
+        self.last_persist.clear();
+        for index in self.visible() {
+            let message = &mut self.messages[index];
+            if !message.unread {
+                continue;
+            }
+            message.unread = false;
+            message.raw_flags |= rmac_mail_storage::FLAG_SEEN;
+            marked += 1;
+            if let (Mailbox::Real(real), Some(row_id)) = (&message.mailbox, message.row_id) {
+                self.last_persist.push(Persist {
+                    account: real.account,
+                    account_path: real.account_path.clone(),
+                    row_id,
+                    change: PersistChange::Flags(message.raw_flags),
+                });
+            }
+        }
+        if marked > 0 {
+            // A read mark cannot be undone message by message here; the
+            // single-step undo would restore the wrong one.
+            self.undo = None;
+            self.redo = None;
+        }
+        marked
+    }
+
+    pub fn has_unread_visible(&self) -> bool {
+        self.visible()
+            .into_iter()
+            .any(|index| self.messages[index].unread)
+    }
+
+    /// The messages Mailbox ▸ Erase Deleted Items / Erase Junk Mail would
+    /// remove for `erase`.
+    pub fn erasable_count(&self, erase: Erase) -> usize {
+        self.messages
+            .iter()
+            .filter(|message| erases(message, erase))
+            .count()
+    }
+
+    /// Permanently removes every message in the chosen Bin or Junk
+    /// mailboxes, as Mail's Erase commands do. Not undoable, as on the Mac.
+    pub fn erase(&mut self, erase: Erase) -> usize {
+        self.last_persist.clear();
+        let before = self.messages.len();
+        let mut persists = Vec::new();
+        self.messages.retain(|message| {
+            if !erases(message, erase) {
+                return true;
+            }
+            if let (Mailbox::Real(real), Some(row_id)) = (&message.mailbox, message.row_id) {
+                persists.push(Persist {
+                    account: real.account,
+                    account_path: real.account_path.clone(),
+                    row_id,
+                    change: PersistChange::Delete,
+                });
+            }
+            false
+        });
+        let erased = before - self.messages.len();
+        if erased > 0 {
+            self.last_persist = persists;
+            self.undo = None;
+            self.redo = None;
+            if self.selected_message().is_none() {
+                self.selected = self
+                    .visible()
+                    .first()
+                    .map(|&index| self.messages[index].id.clone());
+            }
+        }
+        erased
+    }
+
+    /// The accounts with at least one real mailbox, in sidebar order: Get
+    /// New Mail ▸ and Erase Deleted Items ▸ list one row each.
+    pub fn accounts(&self) -> Vec<(Uuid, String, String)> {
+        let mut accounts: Vec<(Uuid, String, String)> = Vec::new();
+        for mailbox in &self.mailboxes {
+            if let Mailbox::Real(real) = mailbox {
+                if !accounts.iter().any(|(id, _, _)| *id == real.account) {
+                    accounts.push((
+                        real.account,
+                        real.account_label.clone(),
+                        real.account_path.clone(),
+                    ));
+                }
+            }
+        }
+        accounts
+    }
+
+    /// The favourite mailboxes Mailbox ▸ Go to Favourite Mailbox lists, in
+    /// sidebar order.
+    pub fn favourites(&self) -> Vec<Mailbox> {
+        self.mailboxes
+            .iter()
+            .filter(|mailbox| !mailbox.is_real())
+            .cloned()
+            .collect()
+    }
+
+    /// Mailbox ▸ Go to Previous/Next Mailbox: the sidebar row `step` away
+    /// from the current one, or with `unread_only` the nearest one in that
+    /// direction holding an unread message.
+    pub fn adjacent_mailbox(&self, step: i32, unread_only: bool) -> Option<Mailbox> {
+        let current = self
+            .mailboxes
+            .iter()
+            .position(|mailbox| *mailbox == self.mailbox)?;
+        let mut index = current as i64;
+        loop {
+            index += i64::from(step);
+            let mailbox = self.mailboxes.get(usize::try_from(index).ok()?)?;
+            if !unread_only || self.unread_count(mailbox) > 0 {
+                return Some(mailbox.clone());
+            }
+        }
+    }
+
+    /// Mailbox ▸ Move to Favourite Mailbox: where the selected message
+    /// would land for a favourite — its own account's Inbox, Drafts or Sent.
+    /// Flagged is a view, not a place, so it has no target.
+    pub fn favourite_target(&self, favourite: &Mailbox) -> Option<Mailbox> {
+        let Mailbox::Real(real) = &self.selected_message()?.mailbox else {
+            return None;
+        };
+        let special = match favourite {
+            Mailbox::AllInboxes => SpecialUse::Inbox,
+            Mailbox::Drafts => SpecialUse::Drafts,
+            Mailbox::Sent => SpecialUse::Sent,
+            Mailbox::Flagged | Mailbox::Real(_) => return None,
+        };
+        self.find_special(real.account, special)
+            .filter(|target| target.special_use() != real.special_use)
+    }
+
+    /// The real mailboxes Message ▸ Move to ▸ / Copy to ▸ offer for the
+    /// selected message: the others in its own account.
+    pub fn destinations(&self) -> Vec<Mailbox> {
+        let Some(message) = self.selected_message() else {
+            return Vec::new();
+        };
+        self.mailboxes
+            .iter()
+            .filter(|mailbox| {
+                mailbox.is_real()
+                    && mailbox.account() == message.mailbox.account()
+                    && **mailbox != message.mailbox
+            })
+            .cloned()
+            .collect()
     }
 
     pub fn thread_count(&self, thread_id: &str) -> usize {
@@ -899,6 +1306,118 @@ impl MailState {
             .iter()
             .filter(|message| message.unread && self.in_mailbox(message, mailbox))
             .count()
+    }
+}
+
+fn erases(message: &Message, erase: Erase) -> bool {
+    matches!(&message.mailbox, Mailbox::Real(real)
+        if real.special_use == Some(erase.special)
+            && erase.account.is_none_or(|account| account == real.account))
+}
+
+/// Case-insensitive, as Mail sorts names and subjects.
+fn compare_text(a: &str, b: &str) -> std::cmp::Ordering {
+    a.to_lowercase().cmp(&b.to_lowercase())
+}
+
+/// "Re: Lunch" sorts with "Lunch", as Mail's subject sort ignores reply and
+/// forward prefixes.
+fn strip_reply_prefix(subject: &str) -> &str {
+    let mut subject = subject.trim();
+    loop {
+        let lower = subject.get(..4).map(str::to_ascii_lowercase);
+        match lower.as_deref() {
+            Some("re: ") => subject = subject[4..].trim_start(),
+            Some("fwd:") => subject = subject[4..].trim_start(),
+            _ => return subject,
+        }
+    }
+}
+
+/// `"14 October 2026 at 09:41"`: View ▸ Show Date and Time's long form.
+pub fn format_date_time(received_at: i64) -> String {
+    use chrono::TimeZone as _;
+    chrono::Local
+        .timestamp_opt(received_at, 0)
+        .single()
+        .map(|when| when.format("%-d %B %Y at %H:%M").to_string())
+        .unwrap_or_default()
+}
+
+/// An RFC 5322 rendering of what Mail shows for `message`, for a message
+/// whose original source is not cached (fixture data, or synced header
+/// only): File ▸ Save As…, Message ▸ Forward as Attachment and View ▸
+/// Message ▸ Raw Source use the real source whenever it is.
+pub fn message_source(message: &Message) -> String {
+    use chrono::TimeZone as _;
+    let mut source = String::new();
+    let from = if message.sender_address.is_empty() || message.sender_address == message.sender {
+        message.sender.clone()
+    } else {
+        format!("{} <{}>", message.sender, message.sender_address)
+    };
+    source.push_str(&format!("From: {from}\r\n"));
+    if !message.to_addresses.is_empty() {
+        source.push_str(&format!("To: {}\r\n", message.to_addresses));
+    }
+    if !message.cc_addresses.is_empty() {
+        source.push_str(&format!("Cc: {}\r\n", message.cc_addresses));
+    }
+    source.push_str(&format!("Subject: {}\r\n", message.subject));
+    if let Some(when) = chrono::Local.timestamp_opt(message.received_at, 0).single() {
+        source.push_str(&format!("Date: {}\r\n", when.to_rfc2822()));
+    }
+    source.push_str("MIME-Version: 1.0\r\n");
+    source.push_str("Content-Type: text/plain; charset=utf-8\r\n");
+    source.push_str("Content-Transfer-Encoding: 8bit\r\n\r\n");
+    for line in message.body.plain_text().lines() {
+        source.push_str(line);
+        source.push_str("\r\n");
+    }
+    source
+}
+
+/// The title and text File ▸ Print… and Export as PDF… lay out for
+/// `message`: its headers as Mail shows them, then the body.
+pub fn printable_message(message: &Message) -> (String, String) {
+    let mut text = format!("From: {}\n", message.sender);
+    if !message.to.is_empty() {
+        text.push_str(&format!("To: {}\n", message.to));
+    }
+    if !message.cc.is_empty() {
+        text.push_str(&format!("Cc: {}\n", message.cc));
+    }
+    text.push_str(&format!("Subject: {}\n", message.subject));
+    text.push_str(&format!("Date: {}\n\n", message.date_time));
+    text.push_str(&message.body.plain_text());
+    let title = if message.subject.trim().is_empty() {
+        "Untitled".to_owned()
+    } else {
+        message.subject.trim().chars().take(120).collect()
+    };
+    (title, text)
+}
+
+/// A file name for saving `message` or one of its parts: the subject with
+/// path separators and control characters replaced.
+pub fn safe_file_stem(subject: &str) -> String {
+    let stem: String = subject
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_control() || matches!(ch, '/' | '\\' | ':') {
+                '-'
+            } else {
+                ch
+            }
+        })
+        .take(80)
+        .collect();
+    let stem = stem.trim_matches(['.', ' ']).to_owned();
+    if stem.is_empty() {
+        "Untitled".to_owned()
+    } else {
+        stem
     }
 }
 
@@ -962,18 +1481,33 @@ fn fixture_message(
         _ => "sender@example.test",
     }
     .to_owned();
-    let (to, cc) = if id == "anna" {
-        ("Jacob Samas".to_owned(), "Sam Ortiz".to_owned())
+    // The fixture accounts' own addresses (`main.rs`), so View ▸ Filter's
+    // To: Me and Cc: Me match the messages addressed to them.
+    let me = if mailbox.account() == "iCloud" {
+        "jacob@icloud.example"
     } else {
-        ("Jacob Samas".to_owned(), String::new())
+        "jacob@example.com"
     };
-    let (to_addresses, cc_addresses) = if id == "anna" {
-        (
-            "jacob@example.test".to_owned(),
+    let (to, cc, to_addresses, cc_addresses) = match id {
+        "anna" => (
+            "Jacob Samas".to_owned(),
+            "Sam Ortiz".to_owned(),
+            me.to_owned(),
             "sam@example.test".to_owned(),
-        )
-    } else {
-        ("jacob@example.test".to_owned(), String::new())
+        ),
+        // A list mail, sent to the testers with a copy to Jacob.
+        "beta" => (
+            "Beta Testers".to_owned(),
+            "Jacob Samas".to_owned(),
+            "testers@lulo.example".to_owned(),
+            me.to_owned(),
+        ),
+        _ => (
+            "Jacob Samas".to_owned(),
+            String::new(),
+            me.to_owned(),
+            String::new(),
+        ),
     };
     Message {
         id: id.to_owned(),
@@ -984,6 +1518,8 @@ fn fixture_message(
         sender_address,
         initials: initials.to_owned(),
         date: date.to_owned(),
+        received_at: 0,
+        date_time: date.to_owned(),
         to,
         cc,
         to_addresses,
@@ -1040,7 +1576,7 @@ mod tests {
         let google_inbox = find(&state, "Google", "Inbox");
         state.select_mailbox(icloud_inbox);
         assert_eq!(state.visible().len(), 2);
-        state.unread_only = true;
+        state.filter.enabled = true;
         assert!(state.visible().is_empty());
         state.select_mailbox(google_inbox);
         assert_eq!(state.visible().len(), 2);
@@ -1128,13 +1664,182 @@ mod tests {
         message.row_id = Some(42);
         let mut state = MailState::new(vec![Mailbox::AllInboxes, inbox], vec![message]);
         state.select("live-1");
-        let persist = state.take_persist().expect("marking read should persist");
+        let persist = state
+            .take_persists()
+            .pop()
+            .expect("marking read should persist");
         assert_eq!(persist.account, account);
         assert_eq!(persist.row_id, 42);
         assert_eq!(
             persist.change,
             PersistChange::Flags(rmac_mail_storage::FLAG_SEEN)
         );
+    }
+
+    fn visible_ids(state: &MailState) -> Vec<&str> {
+        state
+            .visible()
+            .into_iter()
+            .map(|index| state.messages[index].id.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn sort_by_orders_the_list_and_flips_direction() {
+        let mut state = MailState::fixture();
+        assert_eq!(
+            visible_ids(&state),
+            [
+                "anna",
+                "beta",
+                "sam",
+                "northwind",
+                "grandma",
+                "bank",
+                "climbing",
+                "ana"
+            ]
+        );
+        state.set_sort(SortKey::From);
+        assert!(!state.descending);
+        assert_eq!(visible_ids(&state)[0], "ana");
+        assert_eq!(visible_ids(&state)[1], "anna");
+        state.descending = true;
+        assert_eq!(visible_ids(&state)[0], "sam");
+        state.set_sort(SortKey::Date);
+        assert!(state.descending);
+        state.descending = false;
+        assert_eq!(visible_ids(&state)[0], "ana");
+        // The conversation shows as its oldest message now.
+        assert!(visible_ids(&state).contains(&"sam-old"));
+        state.set_sort(SortKey::Unread);
+        let ids = visible_ids(&state);
+        assert!(ids[..3]
+            .iter()
+            .all(|id| ["anna", "beta", "grandma"].contains(id)));
+        state.set_sort(SortKey::Subject);
+        // "Re: Calendar sync spec" sorts under C.
+        assert_eq!(visible_ids(&state)[0], "sam");
+    }
+
+    #[test]
+    fn message_filter_combines_its_groups() {
+        let mut state = MailState::fixture();
+        state.my_addresses = vec!["jacob@example.com".into(), "jacob@icloud.example".into()];
+        state.filter.enabled = true;
+        assert_eq!(visible_ids(&state), ["anna", "beta", "grandma"]);
+        state.filter.flagged = true;
+        assert_eq!(visible_ids(&state).len(), 5);
+        state.filter.unread = false;
+        state.filter.flagged = false;
+        state.filter.cc_me = true;
+        assert_eq!(visible_ids(&state), ["beta"]);
+        state.filter.cc_me = false;
+        state.filter.to_me = true;
+        assert!(!visible_ids(&state).contains(&"beta"));
+        state.filter.to_me = false;
+        state.filter.attachments = true;
+        assert_eq!(visible_ids(&state), ["anna", "sam", "grandma"]);
+        state.filter.enabled = false;
+        assert_eq!(visible_ids(&state).len(), 8);
+    }
+
+    #[test]
+    fn conversations_expand_and_collapse_all() {
+        let mut state = MailState::fixture();
+        assert_eq!(state.visible().len(), 8);
+        state.expand_all_conversations();
+        assert_eq!(state.visible().len(), 10);
+        state.collapse_all_conversations();
+        assert_eq!(state.visible().len(), 8);
+    }
+
+    #[test]
+    fn mark_all_read_clears_the_visible_unread_count() {
+        let mut state = MailState::fixture();
+        assert!(state.has_unread_visible());
+        assert_eq!(state.mark_all_read(), 3);
+        assert_eq!(state.unread_count(&Mailbox::AllInboxes), 0);
+        assert!(!state.has_unread_visible());
+    }
+
+    #[test]
+    fn erase_removes_bin_or_junk_messages_for_good() {
+        let mut state = MailState::fixture();
+        assert!(state.apply(OrganizeAction::Delete));
+        state.select("beta");
+        assert!(state.apply(OrganizeAction::Junk));
+        let bin = Erase {
+            special: SpecialUse::Trash,
+            account: None,
+        };
+        let junk = Erase {
+            special: SpecialUse::Junk,
+            account: Some(FIXTURE_ICLOUD_ACCOUNT),
+        };
+        assert_eq!(state.erasable_count(bin), 1);
+        assert_eq!(state.erasable_count(junk), 0);
+        assert_eq!(state.erase(bin), 1);
+        assert!(!state.messages.iter().any(|message| message.id == "anna"));
+        assert!(!state.can_undo());
+        assert_eq!(
+            state.erase(Erase {
+                special: SpecialUse::Junk,
+                account: Some(FIXTURE_GOOGLE_ACCOUNT),
+            }),
+            1
+        );
+        assert_eq!(state.messages.len(), 8);
+    }
+
+    #[test]
+    fn saved_and_printed_messages_carry_their_headers() {
+        let state = MailState::fixture();
+        let anna = state.selected_message().unwrap();
+        let source = message_source(anna);
+        assert!(source.starts_with("From: Anna Kim <anna@example.test>\r\n"));
+        assert!(source.contains("Subject: Lunch on Friday?\r\n"));
+        assert!(source.contains("\r\n\r\nHi Jacob,"));
+        let (title, text) = printable_message(anna);
+        assert_eq!(title, "Lunch on Friday?");
+        assert!(text.contains("Cc: Sam Ortiz"));
+        assert_eq!(safe_file_stem("Re: a/b"), "Re- a-b");
+        assert_eq!(safe_file_stem("  "), "Untitled");
+    }
+
+    #[test]
+    fn redo_repeats_what_undo_reversed() {
+        let mut state = MailState::fixture();
+        assert!(state.apply(OrganizeAction::Flag));
+        assert!(state.undo());
+        assert!(state.can_redo());
+        assert!(state.redo());
+        assert!(state.messages[0].flagged);
+        assert!(!state.can_redo());
+    }
+
+    #[test]
+    fn mailbox_navigation_and_move_targets() {
+        let mut state = MailState::fixture();
+        assert_eq!(state.favourites().len(), 4);
+        assert_eq!(state.adjacent_mailbox(1, false), Some(Mailbox::Flagged));
+        assert_eq!(state.adjacent_mailbox(-1, false), None);
+        let next_unread = state.adjacent_mailbox(1, true).unwrap();
+        assert_eq!(next_unread.label(), "Inbox");
+        assert_eq!(next_unread.account(), "Google");
+        assert_eq!(state.favourite_target(&Mailbox::AllInboxes), None);
+        let sent = state.favourite_target(&Mailbox::Sent).unwrap();
+        assert_eq!(sent.label(), "Sent");
+        assert_eq!(state.favourite_target(&Mailbox::Flagged), None);
+        let destinations = state.destinations();
+        assert_eq!(destinations.len(), 6);
+        let receipts = find(&state, "Google", "Receipts");
+        assert!(state.apply(OrganizeAction::Move(receipts.clone())));
+        state.select("beta");
+        assert_eq!(state.move_again_target(), Some(receipts));
+        state.select("northwind");
+        assert_eq!(state.move_again_target(), None);
+        assert_eq!(state.accounts().len(), 2);
     }
 
     /// MAIL-10: a 10 000-message mailbox must stay smooth. `visible()` and

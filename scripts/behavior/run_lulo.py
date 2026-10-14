@@ -1126,6 +1126,25 @@ class LuloRun:
         return {"present": week is not None,
                 "current_week": week == f"Week of {first.isoformat()}"}
 
+    def fact_calendar_events(self) -> dict[str, Any]:
+        """Whether Calendar's shown events are selected (Edit ▸ Select All).
+
+        Event blocks are selectable buttons named "Title, time…" or "Title,
+        all day"; the mini-month's day buttons ("Monday 5 October 2026")
+        and the toolbar's Invitations/Search toggles are left out.
+        """
+        pyatspi = atspi()
+        frame = self.active_frame()
+        total = selected = 0
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            label = name(node)
+            if (role(node) in {"push button", "button"}
+                    and has_state(node, pyatspi.STATE_SELECTABLE)
+                    and ", " in label and not label.startswith("Invitations")):
+                total += 1
+                selected += has_state(node, pyatspi.STATE_SELECTED)
+        return {"all_selected": total > 0 and selected == total, "any_selected": selected > 0}
+
     def fact_calendar_month(self) -> dict[str, Any]:
         """Selected Month cell, reported relative to today for stable fixtures."""
         frame = self.active_frame()
@@ -1223,7 +1242,8 @@ class LuloRun:
         path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/weather.json"
         if not path.exists():
             return {"fahrenheit": None}
-        return {"fahrenheit": json.loads(path.read_text()).get("fahrenheit")}
+        saved = json.loads(path.read_text())
+        return {"fahrenheit": saved.get("fahrenheit"), "units": saved.get("units")}
 
     def fact_files(self) -> dict[str, Any]:
         entries = []

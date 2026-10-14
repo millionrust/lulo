@@ -33,8 +33,8 @@ use std::fmt;
 use std::io;
 use std::path::Path;
 
-pub use compress::compress;
-pub use expand::expand;
+pub use compress::{compress, compress_into};
+pub use expand::{expand, expand_into};
 pub use naming::{archive_stem, compressed_name, format_of, unique_path, Format};
 
 /// Bytes processed so far out of the job's total (both in the units the job

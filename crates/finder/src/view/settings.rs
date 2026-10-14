@@ -206,14 +206,32 @@ fn default_tags() -> Vec<TagSetting> {
 #[serde(default)]
 pub(super) struct SidebarSettings {
     pub(super) show_recents: bool,
+    /// The top "Shared" row (`~/Public`, the folder Lulo shares).
+    pub(super) show_shared: bool,
     pub(super) show_applications: bool,
     pub(super) show_desktop: bool,
     pub(super) show_documents: bool,
     pub(super) show_downloads: bool,
+    /// `~/Movies` (or the XDG `~/Videos`; Explorer's Videos on Windows).
+    pub(super) show_movies: bool,
+    pub(super) show_music: bool,
+    pub(super) show_pictures: bool,
+    /// Locations' row named after the home folder (the Mac's "jake").
     pub(super) show_home: bool,
+    /// Locations' row named after this computer, opening its root volume.
+    pub(super) show_computer: bool,
+    /// Cloud mounts (GVFS Google Drive or OneDrive, iCloud Drive).
+    pub(super) show_cloud_storage: bool,
     pub(super) show_bin: bool,
     pub(super) show_hard_disks: bool,
     pub(super) show_external_disks: bool,
+    /// Optical discs and phones/cameras (MTP, PTP, AFC, audio CDs).
+    pub(super) show_cds_dvds_and_ios_devices: bool,
+    /// The Network row: computers found on the local network.
+    pub(super) show_bonjour_computers: bool,
+    /// Mounted network shares (SMB, SFTP, FTP, WebDAV, NFS, AFP).
+    pub(super) show_connected_servers: bool,
+    /// The Tags section ("Recent Tags" on the Mac).
     pub(super) show_tags: bool,
 }
 
@@ -221,6 +239,7 @@ impl Default for SidebarSettings {
     fn default() -> Self {
         Self {
             show_recents: true,
+            show_shared: true,
             show_applications: true,
             // Windows users expect Desktop and Documents in the sidebar,
             // as Explorer shows them; the owner's Mac hides both.
@@ -229,10 +248,20 @@ impl Default for SidebarSettings {
             show_desktop: cfg!(windows),
             show_documents: cfg!(windows),
             show_downloads: true,
+            // The Mac's defaults hide Movies, Music and Pictures; Explorer
+            // shows Videos, Music and Pictures.
+            show_movies: cfg!(windows),
+            show_music: cfg!(windows),
+            show_pictures: cfg!(windows),
             show_home: false,
+            show_computer: false,
+            show_cloud_storage: true,
             show_bin: true,
             show_hard_disks: true,
             show_external_disks: true,
+            show_cds_dvds_and_ios_devices: true,
+            show_bonjour_computers: false,
+            show_connected_servers: true,
             show_tags: true,
         }
     }

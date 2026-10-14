@@ -6174,9 +6174,14 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "rmac-archive",
+ "rmac-portal",
+ "rmac-storage",
  "rmac-ui",
  "rmac-windows-resource-build",
  "rust-embed",
+ "serde",
+ "serde_json",
+ "trash",
 ]
 
 [[package]]
@@ -6873,6 +6878,7 @@ dependencies = [
  "async-io",
  "chrono",
  "gpui",
+ "raw-window-handle",
  "rmac-accounts",
  "rmac-accounts-linux",
  "rmac-editor",
@@ -6883,6 +6889,8 @@ dependencies = [
  "rmac-mail-smtp",
  "rmac-mail-storage",
  "rmac-portal",
+ "rmac-print",
+ "rmac-print-linux",
  "rmac-storage",
  "rmac-ui",
  "rmac-windows-resource-build",

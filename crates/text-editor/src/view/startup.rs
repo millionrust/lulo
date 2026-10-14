@@ -121,7 +121,7 @@ fn open_editor_window_with_picker(
     // format default; an existing file's follows its own extension, not
     // whatever a new document would open as today (UIA-07).
     let rich = match &initial_path {
-        Some(path) => is_rich_text_path(path),
+        Some(path) => OpenOptions::current().opens_rich(path),
         None => crate::settings::current().rich_text_default,
     };
     let (width, height) = document_window_size(rich);

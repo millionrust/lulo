@@ -2062,6 +2062,13 @@ def main() -> int:
         scroll_numbers = {}
         for before in (True, False):
             scroll_failures, numbers = scroll_smoke.run(arguments.bin_dir, before)
+            if scroll_failures and not before:
+                # Once more before it counts: on a shared runner the input
+                # was seen to stop reaching the window part-way through
+                # (the `--before` run beside it lost it the same way).
+                for failure in scroll_failures:
+                    print(f"scroll: first attempt: {failure}; trying again")
+                scroll_failures, numbers = scroll_smoke.run(arguments.bin_dir, before)
             scroll_numbers["before" if before else "after"] = numbers
             if before:
                 for failure in scroll_failures:

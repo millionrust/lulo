@@ -235,10 +235,21 @@ mod tests {
         let result = run(
             "cmd.exe",
             // Separate words, so none needs quoting on the command line.
-            ["/d", "/c", "for", "/L", "%i", "in", "(0,0,1)", "do", "@echo", "0123456789"]
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            [
+                "/d",
+                "/c",
+                "for",
+                "/L",
+                "%i",
+                "in",
+                "(0,0,1)",
+                "do",
+                "@echo",
+                "0123456789",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect(),
             Duration::from_secs(60),
             4096,
         );

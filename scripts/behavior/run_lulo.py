@@ -1354,6 +1354,16 @@ class LuloRun:
                     self.click_item(step["context"], "right")
             elif "focus_desktop" in step:
                 self.nested.input.click(OUTPUT_W // 4, OUTPUT_H // 2, OUTPUT_W, OUTPUT_H)
+            elif "focus_window" in step:
+                # Make one of the app's windows key by title (a floating
+                # panel that opens without taking focus, as the user would
+                # by clicking it).
+                wanted = step["focus_window"]
+                match = next((w for w in self.nested.windows()
+                              if wanted in (w.get("name") or "")), None)
+                if match is None:
+                    raise StepFailed(f"no window titled like {wanted!r}")
+                self.nested.swaymsg(f"[con_id={match['id']}]", "focus")
             elif "menu" in step:
                 raise Unsupported("menu-bar steps need the top bar, which the nested runner does not start yet")
             elif "menu_action" in step:
@@ -1371,6 +1381,7 @@ class LuloRun:
                     "notes": "Notes",
                     "terminal": "Terminal",
                     "mail": "Mail",
+                    "files": "Files",
                 }[self.app] + ".Menu"
                 layout = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,

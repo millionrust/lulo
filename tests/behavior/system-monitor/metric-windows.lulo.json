@@ -2,6 +2,7 @@
   "format": 1,
   "scenario": "system-monitor/metric-windows",
   "observations": {
-    "cpu_usage": {"windows": {"count": 2}}
+    "cpu_usage": {"windows": {"count": 2}},
+    "closed": {"windows": {"count": 1}}
   }
 }

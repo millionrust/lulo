@@ -75,6 +75,20 @@ class VisionTests(unittest.TestCase):
         self.assertEqual(len(spans), 3)
         self.assertTrue(all(right - left >= 16 for left, right in spans))
 
+    def test_control_centre_module_buttons_are_found_and_sliders_are_not(self):
+        # A panel 400 wide: module material (luma ~100), two light discs
+        # with a white glyph in the button column, and a white sun icon
+        # (no disc around it) further left that must not count.
+        image = Image.new("RGB", (400, 500), (100, 100, 100))
+        draw = ImageDraw.Draw(image)
+        x = 400 - shell_tour.CC_BUTTON_FROM_RIGHT
+        for y in (300, 400):
+            draw.ellipse((x - 16, y - 16, x + 16, y + 16), fill=(180, 180, 180))
+            draw.rectangle((x - 5, y - 4, x + 5, y + 4), fill=(255, 255, 255))
+        draw.rectangle((x - 45, 296, x - 35, 304), fill=(255, 255, 255))  # sun icon
+        buttons = shell_tour.module_buttons(image, (0, 0, 400, 500))
+        self.assertEqual([y for _x, y in buttons], [300, 400])
+
 
 if __name__ == "__main__":
     unittest.main()

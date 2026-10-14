@@ -13,6 +13,7 @@ since their positions depend on the hardware and the Dock's contents.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Optional
 
 import live
@@ -224,12 +225,61 @@ def tour(robot) -> None:
 # panel's own top-right corner (image pixels, 1.25x) on the reference
 # laptop's build. The click only happens if that spot really is the light
 # round button, never a slider (which would change brightness or volume).
-CC_PANEL_BUTTONS = (("display", 59, 256), ("sound", 59, 351))
+# Control Centre's Display and Sound modules open their detail panels from
+# the round button at the right end of each module. The robot scans the
+# column those buttons share (this far in from the panel's right edge, in
+# image pixels at 1.25x) for the button pattern, so a taller or reordered
+# panel still works; the last two buttons found are Display, then Sound.
+# It only ever clicks a spot that matches the button, never a slider
+# (which would change brightness or volume).
+CC_BUTTON_FROM_RIGHT = 59
 QUICK_SETTINGS = ["/usr/libexec/rmac/rmac-shortcut-dispatch", "quick-settings"]
 
 
+def is_module_button(luma, x: int, y: int) -> bool:
+    """A white glyph on a light, translucent disc. A slider end or the
+    sun/speaker icon has darker module material beside it."""
+
+    try:
+        centre, left, right = (luma.getpixel((x + dx, y)) for dx in (0, -10, 10))
+    except IndexError:
+        return False
+    return centre >= 230 and 130 <= left <= 235 and 130 <= right <= 235
+
+
+def module_buttons(image, box) -> list[tuple[int, int]]:
+    """Centres of the module buttons in Control Centre's right column."""
+
+    luma = image.convert("L")
+    x = box[2] - CC_BUTTON_FROM_RIGHT
+    centres: list[tuple[int, int]] = []
+    run: list[int] = []
+    for y in range(box[1], box[3]):
+        if is_module_button(luma, x, y):
+            run.append(y)
+        elif run:
+            centres.append((x, (run[0] + run[-1]) // 2))
+            run = []
+    return centres
+
+
+def quick_settings_monitors() -> int:
+    """`pw-dump --monitor` processes Control Centre is running."""
+
+    parents = set(live.pids_of("rmac-quick-settings"))
+    count = 0
+    for pid in live.pids_of("pw-dump"):
+        try:
+            ppid = int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+        count += ppid in parents
+    return count
+
+
 def control_centre_panels(robot) -> None:
-    for name, from_right, from_top in CC_PANEL_BUTTONS:
+    monitors_before = quick_settings_monitors()
+    for index, name in enumerate(("display", "sound")):
         robot.check_session()
         _, before = robot.shot(f"shell-before-cc-{name}")
         robot.niri.spawn(QUICK_SETTINGS)
@@ -239,21 +289,18 @@ def control_centre_panels(robot) -> None:
         if box is None:
             robot.finding("high", "shell", "did-not-open", "Control Centre did not open", "")
             return
-        x, y = box[2] - from_right, box[1] + from_top
-        luma = opened.convert("L")
-        # The button: a white glyph on a light, translucent disc. A slider
-        # end or the sun/speaker icon has darker module material beside it.
-        centre, left, right = (luma.getpixel((x + dx, y)) for dx in (0, -10, 10))
-        if centre < 230 or not (130 <= left <= 235 and 130 <= right <= 235):
-            robot.step("shell", "cc panel button not found", panel=name, luma=(centre, left, right), at=(x, y))
+        buttons = module_buttons(opened, box)
+        if len(buttons) < 2:
+            robot.step("shell", "cc panel button not found", panel=name, buttons=buttons)
             robot.key("escape", 0.5)
             continue
+        x, y = buttons[-2 + index]
         volume, brightness = live.volume(robot.env), live.brightness()
         robot.input.click(x / SCALE, y / SCALE)
         time.sleep(0.8)
         path, panel = robot.shot(f"shell-cc-{name}-panel")
         changed = vision.changed_fraction(opened, panel, box)
-        robot.step("shell", "cc panel", panel=name, changed=round(changed, 4))
+        robot.step("shell", "cc panel", panel=name, changed=round(changed, 4), at=(x, y))
         if changed < 0.01:
             robot.finding("high", "shell", "no-effect", f"Control Centre {name} button opened nothing", "", path)
         for problem in vision.low_contrast(panel, box) + vision.edge_ink(panel, box):
@@ -265,3 +312,9 @@ def control_centre_panels(robot) -> None:
         if live.volume(robot.env) != volume or live.brightness() != brightness:
             robot.finding("high", "shell", "state", f"opening Control Centre {name} changed volume or brightness",
                           f"{volume}/{brightness} -> {live.volume(robot.env)}/{live.brightness()}", path)
+    time.sleep(1.0)
+    monitors_after = quick_settings_monitors()
+    robot.step("shell", "cc monitors", before=monitors_before, after=monitors_after)
+    if monitors_after > monitors_before:
+        robot.finding("high", "shell", "process-leak", "Control Centre leaves a pw-dump monitor running per open",
+                      f"{monitors_before} -> {monitors_after} after two opens and closes")

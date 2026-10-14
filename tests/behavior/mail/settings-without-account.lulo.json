@@ -2,6 +2,7 @@
   "format": 1,
   "scenario": "mail/settings-without-account",
   "observations": {
-    "settings_open": {"windows": {"count": 2}}
+    "settings_open": {"windows": {"count": 2}},
+    "settings_closed": {"windows": {"count": 1}}
   }
 }

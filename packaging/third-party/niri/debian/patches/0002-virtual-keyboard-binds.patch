@@ -1,0 +1,215 @@
+Description: Run compositor key binds for virtual-keyboard keys
+ smithay's zwp_virtual_keyboard_v1 handling sends every key straight to the
+ focused client, so an on-screen keyboard (or any input tool built on the
+ protocol) can never use a compositor shortcut: Lulo OS's Spotlight,
+ Control-F2 menu-bar focus, Control-F3 Dock focus, Command-Tab. niri now
+ wraps the per-keyboard dispatch: a key press that matches a configured
+ bind runs it and is withheld from the client, along with its release;
+ every other request goes to smithay unchanged. Modifiers come from the
+ virtual keyboard's own modifiers requests, keysyms from the seat keymap.
+ Only unrestricted clients get the virtual keyboard global, as before.
+ .
+ See ROBOT-13 in docs/parity.md of the rmac repository.
+Author: Jacob Samas <samasjacob@icloud.com>
+Forwarded: no
+Last-Update: 2026-10-14
+---
+--- a/src/handlers/mod.rs
++++ b/src/handlers/mod.rs
+@@ -69,7 +69,7 @@
+     delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
+     delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
+     delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
+-    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
++    delegate_viewporter, delegate_xdg_activation,
+ };
+ 
+ pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
+@@ -280,7 +280,64 @@
+ 
+ delegate_input_method_manager!(State);
+ delegate_keyboard_shortcuts_inhibit!(State);
+-delegate_virtual_keyboard_manager!(State);
++// Lulo OS: virtual keyboards go through niri's key binds too. smithay's
++// delegate sends every zwp_virtual_keyboard_v1 key straight to the focused
++// client, so an on-screen keyboard (or any input tool built on the protocol)
++// could never use a compositor shortcut. niri keeps smithay's global and
++// manager dispatch and wraps the per-keyboard one: a key press that matches
++// a configured bind runs it and is not sent to the client (nor is its
++// release); everything else goes to smithay unchanged.
++smithay::reexports::wayland_server::delegate_global_dispatch!(
++    State: [
++        smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1:
++            smithay::wayland::virtual_keyboard::VirtualKeyboardManagerGlobalData
++    ] => smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState
++);
++smithay::reexports::wayland_server::delegate_dispatch!(
++    State: [
++        smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1: ()
++    ] => smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState
++);
++
++impl
++    smithay::reexports::wayland_server::Dispatch<
++        smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
++        smithay::wayland::virtual_keyboard::VirtualKeyboardUserData<State>,
++    > for State
++{
++    fn request(
++        state: &mut State,
++        client: &smithay::reexports::wayland_server::Client,
++        resource: &smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
++        request: smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::Request,
++        data: &smithay::wayland::virtual_keyboard::VirtualKeyboardUserData<State>,
++        dhandle: &smithay::reexports::wayland_server::DisplayHandle,
++        data_init: &mut smithay::reexports::wayland_server::DataInit<'_, State>,
++    ) {
++        if state.intercept_virtual_keyboard(resource, &request) {
++            return;
++        }
++        <smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState as smithay::reexports::wayland_server::Dispatch<
++            smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
++            smithay::wayland::virtual_keyboard::VirtualKeyboardUserData<State>,
++            State,
++        >>::request(state, client, resource, request, data, dhandle, data_init);
++    }
++
++    fn destroyed(
++        state: &mut State,
++        client: smithay::reexports::wayland_server::backend::ClientId,
++        resource: &smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
++        data: &smithay::wayland::virtual_keyboard::VirtualKeyboardUserData<State>,
++    ) {
++        state.forget_virtual_keyboard(resource);
++        <smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState as smithay::reexports::wayland_server::Dispatch<
++            smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
++            smithay::wayland::virtual_keyboard::VirtualKeyboardUserData<State>,
++            State,
++        >>::destroyed(state, client, resource, data);
++    }
++}
+ 
+ impl SelectionHandler for State {
+     type SelectionUserData = Arc<[u8]>;
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -614,6 +614,96 @@
+         self.niri.queue_redraw_all();
+     }
+ 
++    /// Lulo OS: run the configured bind a virtual keyboard's key press
++    /// matches, as `on_keyboard` does for real keyboards. Returns whether the
++    /// request was consumed (a bind ran, or this is the release of a press a
++    /// bind consumed); `false` lets smithay send it to the focused client.
++    ///
++    /// The modifier mask comes from the keyboard's own `modifiers` requests
++    /// (standard XKB indices: Shift 0, Lock 1, Control 2, Mod1/Alt 3,
++    /// Mod2/Num Lock 4, Mod4/Super 6), and the keysym from the seat's keymap,
++    /// which an on-screen keyboard shares in practice.
++    pub fn intercept_virtual_keyboard(
++        &mut self,
++        keyboard: &smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
++        request: &smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::Request,
++    ) -> bool {
++        use smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::Request;
++        use smithay::reexports::wayland_server::Resource as _;
++
++        let id = keyboard.id();
++        match *request {
++            Request::Modifiers {
++                mods_depressed,
++                mods_latched,
++                mods_locked,
++                ..
++            } => {
++                self.niri
++                    .virtual_keyboard_mods
++                    .insert(id, mods_depressed | mods_latched | mods_locked);
++                false
++            }
++            Request::Key { key, state, .. } => {
++                let key_code = Keycode::from(key + 8);
++                if state != 1 {
++                    return self.niri.virtual_suppressed_keys.remove(&(id, key_code));
++                }
++                let mask = self.niri.virtual_keyboard_mods.get(&id).copied().unwrap_or(0);
++                let mods = ModifiersState {
++                    shift: mask & (1 << 0) != 0,
++                    caps_lock: mask & (1 << 1) != 0,
++                    ctrl: mask & (1 << 2) != 0,
++                    alt: mask & (1 << 3) != 0,
++                    num_lock: mask & (1 << 4) != 0,
++                    logo: mask & (1 << 6) != 0,
++                    ..ModifiersState::default()
++                };
++                let keyboard = self.niri.seat.get_keyboard().unwrap();
++                let raw = keyboard.with_xkb_state(self, |context| {
++                    let xkb = context.xkb().lock().unwrap();
++                    xkb.raw_syms_for_key_in_layout(key_code, Layout(0)).first().copied()
++                });
++                let Some(raw) = raw else {
++                    return false;
++                };
++                let mod_key = self.backend.mod_key(&self.niri.config.borrow());
++                let bind = {
++                    let config = self.niri.config.borrow();
++                    let bindings = make_binds_iter(
++                        &config,
++                        &mut self.niri.window_mru_ui,
++                        modifiers_from_state(mods),
++                    );
++                    find_configured_bind(bindings, mod_key, Trigger::Keysym(raw), mods)
++                };
++                let Some(bind) = bind else {
++                    return false;
++                };
++                if self.is_inhibiting_shortcuts() && bind.allow_inhibiting {
++                    return false;
++                }
++                self.niri.virtual_suppressed_keys.insert((id, key_code));
++                self.handle_bind(bind);
++                true
++            }
++            _ => false,
++        }
++    }
++
++    /// Lulo OS: drop a destroyed virtual keyboard's modifier and suppression
++    /// state.
++    pub fn forget_virtual_keyboard(
++        &mut self,
++        keyboard: &smithay::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
++    ) {
++        use smithay::reexports::wayland_server::Resource as _;
++
++        let id = keyboard.id();
++        self.niri.virtual_keyboard_mods.remove(&id);
++        self.niri.virtual_suppressed_keys.retain(|(owner, _)| *owner != id);
++    }
++
+     pub fn handle_bind(&mut self, bind: Bind) {
+         let Some(cooldown) = bind.cooldown else {
+             self.do_action(bind.action, bind.allow_when_locked);
+--- a/src/niri.rs
++++ b/src/niri.rs
+@@ -324,6 +324,11 @@
+     pub seat: Seat<State>,
+     /// Scancodes of the keys to suppress.
+     pub suppressed_keys: HashSet<Keycode>,
++    /// Lulo OS: the modifier mask each virtual keyboard last reported, by
++    /// object, and the virtual key presses a bind consumed (whose release
++    /// must not reach the client either).
++    pub virtual_keyboard_mods: HashMap<smithay::reexports::wayland_server::backend::ObjectId, u32>,
++    pub virtual_suppressed_keys: HashSet<(smithay::reexports::wayland_server::backend::ObjectId, Keycode)>,
+     /// Button codes of the mouse buttons to suppress.
+     pub suppressed_buttons: HashSet<u32>,
+     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
+@@ -2551,6 +2556,8 @@
+             popups: PopupManager::default(),
+             popup_grab: None,
+             suppressed_keys: HashSet::new(),
++            virtual_keyboard_mods: HashMap::new(),
++            virtual_suppressed_keys: HashSet::new(),
+             suppressed_buttons: HashSet::new(),
+             bind_cooldown_timers: HashMap::new(),
+             bind_repeat_timer: Option::default(),

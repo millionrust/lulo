@@ -587,10 +587,24 @@ Visual findings are heuristics and marked low for review.
   memory, is rebuilt by relaunching apps in order; volume, brightness and
   appearance are checked at the end.
 
-Two things the robot learned about input on the live session: niri runs key
-binds only for physical keyboards, so the robot reaches global shortcuts
-(⌃F2, ⌘Space) by spawning exactly what the bind spawns; and screenshots of
-the owner's screen stay on the laptop, never in git.
+Two things the robot learned about input on the live session: upstream niri
+runs key binds only for physical keyboards, so the robot reaches global
+shortcuts (⌃F2, ⌘Space) by spawning exactly what the bind spawns; and
+screenshots of the owner's screen stay on the laptop, never in git.
+
+## Virtual-keyboard binds
+
+That first point was also a real bug (ROBOT-13): an on-screen keyboard types
+through the same `zwp_virtual_keyboard_v1` protocol, so it could never open
+Spotlight or reach the menu bar with ⌃F2. Lulo's niri `26.04+lulo1-3` fixes
+it with `packaging/third-party/niri/debian/patches/0002-virtual-keyboard-binds.patch`.
+`scripts/behavior/run_virtual_keyboard_binds.py --niri PATH` checks it in a
+nested niri. Its virtual keyboard connects to niri itself, not to the parent
+Sway, and it checks four things: ⌃F2 and Mod+Shift+T run their binds; the
+bound key never reaches the focused GTK window; and an unbound key still
+does. Upstream niri fails the first three. CI's runtime jobs use an
+unpatched niri from a PPA, so this check runs on the laptop against the
+built package.
 
 ## Parallel visual journeys
 

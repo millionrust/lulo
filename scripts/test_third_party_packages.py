@@ -137,6 +137,22 @@ class PinTests(unittest.TestCase):
             (PACKAGING / "niri" / "debian" / "changelog").read_text(encoding="utf-8"),
         )
 
+    def test_niri_virtual_keyboard_patch_wraps_smithays_dispatch(self):
+        # ROBOT-13: on-screen keyboards reach niri's binds. The patch must
+        # replace smithay's delegate (or virtual keys bypass binds again) and
+        # still hand everything else to smithay.
+        patch = (
+            PACKAGING / "niri" / "debian" / "patches" / "0002-virtual-keyboard-binds.patch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("-delegate_virtual_keyboard_manager!(State);", patch)
+        self.assertIn("state.intercept_virtual_keyboard(resource, &request)", patch)
+        self.assertIn(">>::request(state, client, resource, request, data, dhandle, data_init);", patch)
+        self.assertIn("pub fn intercept_virtual_keyboard(", patch)
+        self.assertIn(
+            "debian/patches/0002-virtual-keyboard-binds.patch",
+            (PACKAGING / "niri" / "debian" / "changelog").read_text(encoding="utf-8"),
+        )
+
     def test_vendor_epoch_stays_on_the_first_entry_of_an_upstream_version(self):
         changelog = (
             "niri (26.04+lulo1-2) resolute; urgency=medium\n\n  * Patch.\n\n"
@@ -262,7 +278,7 @@ class VersionPolicyTests(unittest.TestCase):
             architecture="amd64",
             dependencies=native.resolved_static_dependencies(session, "0.9.0~beta.1-38"),
         ).decode("utf-8")
-        self.assertIn("niri (>= 26.04+lulo1-2)", control)
+        self.assertIn("niri (>= 26.04+lulo1-3)", control)
         self.assertIn("xwayland-satellite (>= 0.8.2+lulo1-1)", control)
 
 

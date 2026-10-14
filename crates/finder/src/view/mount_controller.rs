@@ -61,7 +61,9 @@ impl FinderView {
             })
         });
         self.mounts = mounts;
-        self.rebuild_location_places();
+        // The whole sidebar, so every Settings ▸ Sidebar checkbox also
+        // applies to the volume that just appeared.
+        self.rebuild_sidebar_sections_now();
         if appeared {
             let _ = rmac_sound::play(rmac_sound::Cue::Mount);
         }
@@ -139,60 +141,6 @@ impl FinderView {
                 Some("A mounted volume disconnected; stale locations were removed".into());
             self.persist_finder_state();
             cx.notify();
-        }
-    }
-
-    fn rebuild_location_places(&mut self) {
-        let host = self
-            .home
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| root_volume_name().to_string());
-        let mut places = Vec::new();
-        let icloud = self
-            .home
-            .join("Library/Mobile Documents/com~apple~CloudDocs");
-        if icloud.is_dir() {
-            places.push(Place {
-                name: "iCloud Drive".into(),
-                path: icloud,
-                icon: "icons/cloud.svg",
-                tint: accent(),
-                kind: PlaceKind::Item,
-            });
-        }
-        places.extend([Place {
-            name: host.into(),
-            path: self.home.clone(),
-            icon: "icons/house.svg",
-            tint: drive_gray(),
-            kind: PlaceKind::Item,
-        }]);
-        places.extend(self.mounts.iter().map(|mount| Place {
-            name: mount.name.clone().into(),
-            path: mount.path.clone(),
-            icon: "icons/hard-drive.svg",
-            tint: drive_gray(),
-            kind: if mount.ejectable {
-                PlaceKind::Volume
-            } else {
-                PlaceKind::Item
-            },
-        }));
-        #[cfg(target_os = "linux")]
-        places.push(Place {
-            name: self.file_words.bin().into(),
-            path: PathBuf::new(),
-            icon: "icons/trash-2.svg",
-            tint: accent(),
-            kind: PlaceKind::Trash,
-        });
-        if let Some(locations) = self
-            .sections
-            .iter_mut()
-            .find(|section| section.title.as_ref() == "Locations")
-        {
-            locations.places = places;
         }
     }
 

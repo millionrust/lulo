@@ -142,6 +142,14 @@ impl WeekSnapshot {
 pub struct Navigator {
     pub selected: NaiveDate,
     pub view: View,
+    /// Calendar ▸ Settings ▸ Start week on.
+    pub first_weekday: Weekday,
+    /// Calendar ▸ Settings ▸ Days per week (7 or 5).
+    pub days_per_week: u32,
+    /// The first day Week view shows after a scroll by day
+    /// (`store::WeekScroll::Day`); `None` keeps the week aligned to
+    /// [`Self::first_weekday`].
+    pub week_anchor: Option<NaiveDate>,
 }
 
 impl Navigator {
@@ -149,14 +157,50 @@ impl Navigator {
         Self {
             selected: today,
             view: View::Week,
+            first_weekday: Weekday::Mon,
+            days_per_week: 7,
+            week_anchor: None,
         }
     }
 
     pub fn today(&mut self, today: NaiveDate) {
         self.selected = today;
+        self.week_anchor = None;
+    }
+
+    /// Week view's first column and column count: the week from
+    /// [`Self::first_weekday`], or Monday to Friday with five days per
+    /// week, or the rolling window a scroll by day left.
+    pub fn week_columns(&self) -> (NaiveDate, usize) {
+        if let Some(anchor) = self.week_anchor {
+            let days = if self.days_per_week == 5 { 5 } else { 7 };
+            if anchor <= self.selected && self.selected < anchor + Duration::days(days) {
+                return (anchor, days as usize);
+            }
+        }
+        let start = self.week_start();
+        if self.days_per_week == 5 {
+            let to_monday = (7 - start.weekday().num_days_from_monday() as i64) % 7;
+            (start + Duration::days(to_monday), 5)
+        } else {
+            (start, 7)
+        }
+    }
+
+    /// Scroll Week view by one day (`store::WeekScroll::Day`).
+    pub fn roll_week(&mut self, direction: i64) {
+        let (first, _) = self.week_columns();
+        if let (Some(first), Some(selected)) = (
+            first.checked_add_signed(Duration::days(direction)),
+            self.selected.checked_add_signed(Duration::days(direction)),
+        ) {
+            self.week_anchor = Some(first);
+            self.selected = selected;
+        }
     }
 
     pub fn step(&mut self, direction: i64) {
+        self.week_anchor = None;
         self.selected = match self.view {
             View::Day => self.selected.checked_add_signed(Duration::days(direction)),
             View::Week => self
@@ -169,7 +213,7 @@ impl Navigator {
     }
 
     pub fn week_start(&self) -> NaiveDate {
-        self.selected - Duration::days(self.selected.weekday().num_days_from_monday() as i64)
+        week_start_on(self.selected, self.first_weekday)
     }
 
     pub fn move_day(&mut self, days: i64) {
@@ -177,6 +221,55 @@ impl Navigator {
             self.selected = date;
         }
     }
+
+    /// The days the current view shows, as `first..end` (end exclusive):
+    /// what Edit ▸ Select All selects the events of.
+    pub fn visible_period(&self) -> (NaiveDate, NaiveDate) {
+        match self.view {
+            View::Day => (self.selected, self.selected + Duration::days(1)),
+            View::Week => {
+                let first = self.week_start();
+                (first, first + Duration::days(7))
+            }
+            View::Month => {
+                let first = self.selected.with_day(1).unwrap_or(self.selected);
+                (first, shift_month(first, 1).unwrap_or(first))
+            }
+            View::Year => {
+                let first =
+                    NaiveDate::from_ymd_opt(self.selected.year(), 1, 1).unwrap_or(self.selected);
+                (first, shift_month(first, 12).unwrap_or(first))
+            }
+        }
+    }
+}
+
+/// Edit ▸ Select All: the events shown in `first..end` on visible
+/// calendars, by id.
+pub fn events_in_period(
+    snapshot: &WeekSnapshot,
+    visible: &[bool],
+    (first, end): (NaiveDate, NaiveDate),
+) -> Vec<String> {
+    snapshot
+        .events
+        .iter()
+        .filter(|event| visible.get(event.calendar).copied().unwrap_or(false))
+        .filter(|event| {
+            // The last day `event_occurs_on` is true for: an all-day event
+            // or one ending at midnight stops the day before its end.
+            let end_date = event.end.date_naive();
+            let last = if event.all_day
+                || (event.end.time() == chrono::NaiveTime::MIN && event.end > event.start)
+            {
+                end_date - Duration::days(1)
+            } else {
+                end_date
+            };
+            event.start.date_naive() < end && last.max(event.start.date_naive()) >= first
+        })
+        .map(|event| event.id.clone())
+        .collect()
 }
 
 fn shift_month(date: NaiveDate, delta: i64) -> Option<NaiveDate> {
@@ -293,8 +386,32 @@ pub fn fixture_snapshot() -> WeekSnapshot {
 }
 
 pub fn month_grid_start(date: NaiveDate) -> NaiveDate {
-    let first = date.with_day(1).expect("date has a month");
-    first - Duration::days(first.weekday().num_days_from_monday() as i64)
+    month_grid_start_on(date, Weekday::Mon)
+}
+
+/// The first day of the week containing `date` when weeks start on `first`.
+pub fn week_start_on(date: NaiveDate, first: Weekday) -> NaiveDate {
+    date - Duration::days(i64::from(weekday_offset(date.weekday(), first)))
+}
+
+/// How many columns after a week's first column `day` sits.
+pub fn weekday_offset(day: Weekday, first: Weekday) -> u32 {
+    (day.num_days_from_monday() + 7 - first.num_days_from_monday()) % 7
+}
+
+/// [`month_grid_start`] for weeks that start on `first`.
+pub fn month_grid_start_on(date: NaiveDate, first: Weekday) -> NaiveDate {
+    week_start_on(date.with_day(1).expect("date has a month"), first)
+}
+
+/// The weekday names in column order for weeks starting on `first`.
+pub fn weekday_columns(first: Weekday) -> [Weekday; 7] {
+    let mut day = first;
+    std::array::from_fn(|_| {
+        let current = day;
+        day = day.succ();
+        current
+    })
 }
 
 pub fn is_weekend(day: NaiveDate) -> bool {
@@ -485,11 +602,98 @@ mod tests {
     }
 
     #[test]
+    fn select_all_takes_the_events_of_the_visible_period() {
+        let monday = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
+        let snapshot = fixture_week(monday);
+        let visible = vec![true; snapshot.calendars.len()];
+        let mut nav = Navigator::new(monday);
+        assert_eq!(
+            events_in_period(&snapshot, &visible, nav.visible_period()).len(),
+            snapshot.events.len(),
+            "the week view shows the whole fixture week"
+        );
+        nav.view = View::Day;
+        // Monday: Stand-up and Design review; the Conference starts Tuesday.
+        assert_eq!(
+            events_in_period(&snapshot, &visible, nav.visible_period()).len(),
+            2
+        );
+        nav.selected = monday + Duration::days(2);
+        // Wednesday: Stand-up, Lunch, Vendor call and the Conference.
+        assert_eq!(
+            events_in_period(&snapshot, &visible, nav.visible_period()).len(),
+            4
+        );
+        let mut hidden = visible.clone();
+        hidden[0] = false;
+        assert!(events_in_period(&snapshot, &hidden, nav.visible_period())
+            .iter()
+            .all(|id| snapshot
+                .events
+                .iter()
+                .any(|e| &e.id == id && e.calendar != 0)));
+        nav.view = View::Year;
+        assert_eq!(
+            nav.visible_period(),
+            (
+                NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2027, 1, 1).unwrap()
+            )
+        );
+        nav.view = View::Month;
+        assert_eq!(
+            nav.visible_period(),
+            (
+                NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 11, 1).unwrap()
+            )
+        );
+    }
+
+    #[test]
     fn month_navigation_clamps_short_months() {
         let mut nav = Navigator::new(NaiveDate::from_ymd_opt(2026, 1, 31).unwrap());
         nav.view = View::Month;
         nav.step(1);
         assert_eq!(nav.selected, NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
+    }
+
+    #[test]
+    fn week_settings_shape_the_week_view() {
+        // Wednesday 30 September 2026.
+        let wednesday = NaiveDate::from_ymd_opt(2026, 9, 30).unwrap();
+        let mut nav = Navigator::new(wednesday);
+        assert_eq!(
+            nav.week_columns(),
+            (NaiveDate::from_ymd_opt(2026, 9, 28).unwrap(), 7)
+        );
+        nav.first_weekday = Weekday::Sun;
+        assert_eq!(
+            nav.week_columns(),
+            (NaiveDate::from_ymd_opt(2026, 9, 27).unwrap(), 7)
+        );
+        nav.days_per_week = 5;
+        assert_eq!(
+            nav.week_columns(),
+            (NaiveDate::from_ymd_opt(2026, 9, 28).unwrap(), 5)
+        );
+        nav.days_per_week = 7;
+        nav.roll_week(1);
+        assert_eq!(nav.selected, NaiveDate::from_ymd_opt(2026, 10, 1).unwrap());
+        assert_eq!(
+            nav.week_columns(),
+            (NaiveDate::from_ymd_opt(2026, 9, 28).unwrap(), 7)
+        );
+        nav.step(1);
+        assert_eq!(nav.week_anchor, None);
+        assert_eq!(
+            weekday_columns(Weekday::Sat)[..2],
+            [Weekday::Sat, Weekday::Sun]
+        );
+        assert_eq!(
+            month_grid_start_on(wednesday, Weekday::Sun),
+            NaiveDate::from_ymd_opt(2026, 8, 30).unwrap()
+        );
     }
 
     #[test]

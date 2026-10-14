@@ -531,6 +531,21 @@ pub fn insert_pages_from(
 /// Writes real PDF annotations, preserving page contents and pre-existing annotations.
 /// Caller performs file I/O on a blocking worker and atomically replaces the source.
 pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Result<(), String> {
+    // Settings ▸ PDF ▸ Add name to annotations. Every caller already runs
+    // on a blocking worker, so reading the small settings file here is fine.
+    let author = crate::settings_store::load_settings()
+        .ok()
+        .and_then(|settings| settings.annotation_author());
+    write_pdf_with_author(source, destination, items, author.as_deref())
+}
+
+/// [`write_pdf`], each new annotation carrying `author` as its `/T`.
+pub fn write_pdf_with_author(
+    source: &Path,
+    destination: &Path,
+    items: &[Annotation],
+    author: Option<&str>,
+) -> Result<(), String> {
     let mut doc = Document::load(source).map_err(|e| e.to_string())?;
     let pages: Vec<_> = doc.get_pages().into_values().collect();
     for item in items {
@@ -569,6 +584,9 @@ pub fn write_pdf(source: &Path, destination: &Path, items: &[Annotation]) -> Res
             "NM" => format!("Lulo-{}-{}", item.page, doc.max_id + 1),
         };
         annotation.set("BS", dictionary! { "W" => number(item.width.max(0.5)) });
+        if let Some(author) = author {
+            annotation.set("T", Object::string_literal(author));
+        }
         if matches!(
             item.tool,
             Tool::Highlight | Tool::Underline | Tool::StrikeThrough
@@ -937,6 +955,12 @@ mod tests {
         let bounds = rectangle.get(b"Rect").unwrap().as_array().unwrap();
         assert!((bounds[0].as_float().unwrap() - 61.2).abs() < 0.01);
         assert!((bounds[1].as_float().unwrap() - 396.0).abs() < 0.01);
+        // Settings ▸ PDF ▸ Add name to annotations writes the author.
+        let named = base.join("named.pdf");
+        write_pdf_with_author(&source, &named, &items[..1], Some("Jacob")).unwrap();
+        let named = Document::load(&named).unwrap();
+        let annotation = named.get_page_annotations(page).unwrap()[0];
+        assert_eq!(annotation.get(b"T").unwrap().as_str().unwrap(), b"Jacob");
         std::fs::remove_dir_all(base).unwrap();
     }
 

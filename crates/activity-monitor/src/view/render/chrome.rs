@@ -63,6 +63,7 @@ fn accessible_icon_button(
         .id(SharedString::from(format!("{id}-a11y")))
         .role(Role::Button)
         .aria_label(name)
+        .aria_disabled(!enabled)
         .when_some(expanded, |element, expanded| {
             element.aria_expanded(expanded)
         })
@@ -401,9 +402,12 @@ impl MonitorView {
                     .items_center()
                     .child(
                         div().w(px(ICON_SLOT)).flex().justify_center().child(
+                            // Activity Monitor's accessible names: "Stop",
+                            // "Inspector" and "Actions" (the tooltips say
+                            // Quit Process, Inspect Process, Columns).
                             accessible_icon_button(
                                 "stop",
-                                "Quit Process",
+                                "Stop",
                                 None,
                                 has_selection,
                                 self.toolbar_icon(
@@ -426,7 +430,7 @@ impl MonitorView {
                         div().w(px(ICON_SLOT)).flex().justify_center().child(
                             accessible_icon_button(
                                 "inspect",
-                                "Inspect Process",
+                                "Inspector",
                                 None,
                                 has_selection,
                                 self.toolbar_icon(
@@ -454,7 +458,7 @@ impl MonitorView {
                         .justify_center()
                         .child(accessible_icon_button(
                             "columns",
-                            "Columns",
+                            "Actions",
                             Some(self.cols_menu_open),
                             self.tab.has_process_table(),
                             Button::new("columns", "")

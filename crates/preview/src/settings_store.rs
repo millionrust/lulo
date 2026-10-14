@@ -34,7 +34,59 @@ pub struct Settings {
     /// "search". Stored as strings (not an enum) so an old settings file
     /// from a future Lulo version with more toolbar items still loads.
     pub hidden_toolbar_items: Vec<String>,
+    /// Settings ▸ Images ▸ When opening files: several files chosen together
+    /// open in one window (the Mac's default) or each in its own.
+    pub open_each_in_own_window: bool,
+    /// Settings ▸ PDF ▸ On opening documents: "Start on the last viewed
+    /// page".
+    pub start_on_last_viewed_page: bool,
+    /// Settings ▸ PDF ▸ Opening for the first time: Show as.
+    pub pdf_layout: PdfLayout,
+    /// Settings ▸ PDF ▸ Annotations: "Add name to annotations" and the
+    /// name, written as each new annotation's author (`/T`).
+    pub add_name_to_annotations: bool,
+    pub annotation_name: String,
 }
+
+/// Settings ▸ PDF ▸ Opening for the first time: Show as.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum PdfLayout {
+    /// Preview's own default: single pages, scrolling continuously.
+    #[default]
+    Automatically,
+    ContinuousScroll,
+    SinglePage,
+    TwoPages,
+}
+
+impl PdfLayout {
+    pub const ALL: [Self; 4] = [
+        Self::Automatically,
+        Self::ContinuousScroll,
+        Self::SinglePage,
+        Self::TwoPages,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Automatically => "Automatically",
+            Self::ContinuousScroll => "Continuous Scroll",
+            Self::SinglePage => "Single Page",
+            Self::TwoPages => "Two Pages",
+        }
+    }
+
+    /// (two pages side by side, continuous scrolling) for a new window.
+    pub fn view_mode(self) -> (bool, bool) {
+        match self {
+            Self::Automatically | Self::ContinuousScroll => (false, true),
+            Self::SinglePage => (false, false),
+            Self::TwoPages => (true, false),
+        }
+    }
+}
+
+const MAX_ANNOTATION_NAME_LEN: usize = 128;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -46,6 +98,11 @@ impl Default for Settings {
             show_image_background_default: false,
             dark_appearance_for_pdf_default: false,
             hidden_toolbar_items: Vec::new(),
+            open_each_in_own_window: false,
+            start_on_last_viewed_page: false,
+            pdf_layout: PdfLayout::default(),
+            add_name_to_annotations: false,
+            annotation_name: String::new(),
         }
     }
 }
@@ -59,7 +116,20 @@ impl Settings {
         self.hidden_toolbar_items
             .retain(|item| seen.insert(item.clone()));
         self.hidden_toolbar_items.truncate(MAX_HIDDEN_TOOLBAR_ITEMS);
+        self.annotation_name = self
+            .annotation_name
+            .chars()
+            .filter(|character| !character.is_control())
+            .take(MAX_ANNOTATION_NAME_LEN)
+            .collect();
         self
+    }
+
+    /// The author new annotations carry, if "Add name to annotations" is on
+    /// and a name is set.
+    pub fn annotation_author(&self) -> Option<String> {
+        let name = self.annotation_name.trim();
+        (self.add_name_to_annotations && !name.is_empty()).then(|| name.to_owned())
     }
 }
 
@@ -119,6 +189,22 @@ mod tests {
     }
 
     #[test]
+    fn annotation_author_needs_the_switch_and_a_name() {
+        let mut settings = Settings {
+            annotation_name: " Jacob\u{7} ".to_owned(),
+            ..Settings::default()
+        }
+        .normalized();
+        assert_eq!(settings.annotation_author(), None);
+        settings.add_name_to_annotations = true;
+        assert_eq!(settings.annotation_author().as_deref(), Some("Jacob"));
+        settings.annotation_name.clear();
+        assert_eq!(settings.annotation_author(), None);
+        assert_eq!(PdfLayout::TwoPages.view_mode(), (true, false));
+        assert_eq!(PdfLayout::Automatically.view_mode(), (false, true));
+    }
+
+    #[test]
     fn missing_file_loads_defaults() {
         let directory = scratch("missing");
         let path = directory.join("preview.json");
@@ -135,6 +221,11 @@ mod tests {
             show_image_background_default: true,
             dark_appearance_for_pdf_default: true,
             hidden_toolbar_items: vec!["sidebar".to_owned(), "zoom".to_owned()],
+            open_each_in_own_window: true,
+            start_on_last_viewed_page: true,
+            pdf_layout: PdfLayout::TwoPages,
+            add_name_to_annotations: true,
+            annotation_name: "Jacob".to_owned(),
         };
         save_settings_to(&path, &settings).unwrap();
         assert!(path.exists());

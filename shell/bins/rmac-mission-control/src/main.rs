@@ -15,6 +15,8 @@ mod capture;
 mod ipc;
 mod model;
 #[cfg(all(target_os = "linux", feature = "wayland"))]
+mod placement;
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 mod screencopy;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
@@ -124,10 +126,13 @@ mod linux_wayland {
         /// so 🌐⌃R can put it back. Persisted so it survives this service
         /// restarting (`ParkingStore`'s reasoning, crates/rmac-compositor).
         tile_history: TileHistoryStore,
+        /// Tells the window placer (`crate::placement`) when windows are
+        /// pushed aside on purpose, so it leaves them there.
+        reveal_guard: crate::placement::RevealGuard,
     }
 
     impl Service {
-        fn new(cx: &mut Context<Self>) -> Self {
+        fn new(reveal_guard: crate::placement::RevealGuard, cx: &mut Context<Self>) -> Self {
             let mut service = Self {
                 compositor: rmac_compositor::State::default(),
                 catalog: Rc::new(Vec::new()),
@@ -144,6 +149,7 @@ mod linux_wayland {
                 space_pictures: HashMap::new(),
                 window_pictures: HashMap::new(),
                 tile_history: TileHistoryStore::load_default(),
+                reveal_guard,
             };
             service.refresh_catalog(cx);
             service
@@ -256,6 +262,7 @@ mod linux_wayland {
             else {
                 return Vec::new();
             };
+            self.reveal_guard.hold();
             self.revealed = Some(revealed);
             with_motion(actions)
         }
@@ -266,6 +273,7 @@ mod linux_wayland {
             let Some(revealed) = self.revealed.take() else {
                 return Vec::new();
             };
+            self.reveal_guard.release();
             with_motion(reveal::restore(&self.compositor.snapshot(), &revealed))
         }
 
@@ -1921,7 +1929,32 @@ mod linux_wayland {
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(move |cx: &mut App| {
             tokens::install_appearance_watch(cx);
-            let service = cx.new(Service::new);
+            let reveal_guard = crate::placement::RevealGuard::default();
+            let service = {
+                let reveal_guard = reveal_guard.clone();
+                cx.new(move |cx| Service::new(reveal_guard, cx))
+            };
+
+            // Window placement (macOS's visible frame) runs on its own
+            // event stream off this thread; only Dock changes come from here.
+            let (placement_tx, placement_rx) = crate::placement::channel();
+            let (placement_events_tx, placement_events_rx) = async_channel::bounded(64);
+            cx.background_executor()
+                .spawn(async move {
+                    if let Err(error) = rmac_compositor_niri::watch(placement_events_tx).await {
+                        eprintln!("Mission Control window placement stopped: {error}");
+                    }
+                })
+                .detach();
+            cx.background_executor()
+                .spawn(crate::placement::forward(
+                    placement_events_rx,
+                    placement_tx.clone(),
+                ))
+                .detach();
+            cx.background_executor()
+                .spawn(crate::placement::run(placement_rx, reveal_guard))
+                .detach();
 
             let (compositor_tx, compositor_rx) = async_channel::bounded(64);
             cx.background_executor()
@@ -1975,6 +2008,13 @@ mod linux_wayland {
                         Ok(snapshot) => {
                             let corners = snapshot.settings.hot_corners;
                             let click_to_reveal = snapshot.settings.click_wallpaper_to_reveal;
+                            let reservation = rmac_dock::work_area_reservation(
+                                &snapshot.settings.dock,
+                                crate::placement::MENU_BAR_HEIGHT,
+                            );
+                            let _ = placement_tx
+                                .send(crate::placement::Input::Dock(reservation))
+                                .await;
                             cx.update(|cx| {
                                 configured.update(cx, |service, _| {
                                     service.corners = corners;

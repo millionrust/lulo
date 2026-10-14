@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "scenario": "settings/pane-text-menu-bar",
+  "platform": "Lulo local contract",
+  "observations": {
+    "pane": {
+      "pane_text": {
+        "labelled": 12,
+        "labels": [
+          "Menu Bar Controls"
+        ],
+        "controls": [
+          "Show seconds in the clock",
+          "Show battery percentage"
+        ]
+      }
+    }
+  }
+}

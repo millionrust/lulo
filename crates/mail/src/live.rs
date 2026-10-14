@@ -104,6 +104,8 @@ fn summary_to_message(mailbox: Mailbox, account: Uuid, summary: MessageSummary) 
         sender_address,
         initials,
         date: format_date(summary.received_at),
+        received_at: summary.received_at,
+        date_time: rmac_mail::format_date_time(summary.received_at),
         to: summary.recipients.clone(),
         cc: summary.cc.clone(),
         to_addresses: summary.recipients,
@@ -240,6 +242,16 @@ pub fn fetch_and_store_body(
     Ok((parsed.rich_text, attachment_from(parsed.attachments)))
 }
 
+/// The message's original RFC 5322 source, if its body is cached locally
+/// (View ▸ Message ▸ Raw Source, File ▸ Save As…, Forward as Attachment).
+/// Blocking: call this off the GPUI thread.
+pub fn raw_source(account: Uuid, row_id: i64) -> Option<Vec<u8>> {
+    let root = data_root()?;
+    let storage = MailStorage::open(&root, account).ok()?;
+    let hash = storage.get_message(row_id).ok()??.body_hash?;
+    storage.read_blob(&hash).ok()
+}
+
 fn human_size(bytes: usize) -> String {
     const KB: f64 = 1024.0;
     let value = bytes as f64;
@@ -266,6 +278,7 @@ pub fn persist(change: Persist) {
     let journal_change = match change.change {
         PersistChange::Flags(bits) => Change::SetFlags(bits),
         PersistChange::Move(target) => Change::Move(target),
+        PersistChange::Delete => Change::Delete,
     };
     let _ = storage.queue_change(change.row_id, journal_change);
 }

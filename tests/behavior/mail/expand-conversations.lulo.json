@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "mail/expand-conversations",
+  "observations": {
+    "collapsed": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "expanded": {"mail_messages": {"count": 10, "unread": 3, "flagged": 2}},
+    "collapsed_again": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}}
+  }
+}

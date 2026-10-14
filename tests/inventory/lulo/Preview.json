@@ -1184,6 +1184,14 @@
       },
       {
         "kind": "control",
+        "label": "Add name to annotations"
+      },
+      {
+        "kind": "control",
+        "label": "Start on the last viewed page"
+      },
+      {
+        "kind": "control",
         "label": "Use dark appearance for PDF in new windows"
       },
       {
@@ -1193,6 +1201,22 @@
       {
         "kind": "control",
         "label": "Window background:"
+      },
+      {
+        "kind": "control",
+        "label": "When opening files:"
+      },
+      {
+        "kind": "control",
+        "label": "Name:"
+      },
+      {
+        "kind": "control",
+        "label": "username"
+      },
+      {
+        "kind": "control",
+        "label": "Opening for the first time: Show as"
       },
       {
         "kind": "control",

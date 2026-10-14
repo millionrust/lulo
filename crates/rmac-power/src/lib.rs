@@ -11,9 +11,11 @@ pub mod fake;
 #[cfg(any(target_os = "linux", test))]
 mod linux;
 // The macOS parsers also build under test, so their fixtures run on Linux.
+pub mod low_power;
 #[cfg(any(not(any(target_os = "linux", windows)), test))]
 mod macos;
 mod model;
+pub mod screen_usage;
 #[cfg(test)]
 mod tests;
 #[cfg(windows)]

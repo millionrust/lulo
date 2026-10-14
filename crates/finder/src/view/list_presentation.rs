@@ -562,6 +562,18 @@ impl FinderView {
                         }
                         window.focus(&this.focus, cx);
                     }))
+                    .when(self.applications_view, {
+                        let drag_paths = drag_paths.clone();
+                        move |element| {
+                            element.on_drag(DraggedApplications, move |_, _, _, cx| {
+                                #[cfg(target_os = "linux")]
+                                gpui_linux::stage_external_copy_drag(drag_paths.clone());
+                                #[cfg(not(target_os = "linux"))]
+                                let _ = &drag_paths;
+                                cx.new(|_| DragPreview { count: drag_count })
+                            })
+                        }
+                    })
                     .when(!self.trash_view && !self.applications_view, |element| {
                         element.on_drag(DraggedPaths(drag_paths.clone()), move |_, _, _, cx| {
                             #[cfg(target_os = "linux")]
@@ -1663,6 +1675,18 @@ impl FinderView {
             }
             window.focus(&this.focus, cx);
         }))
+        .when(self.applications_view, {
+            let drag_paths = drag_paths.clone();
+            move |el: Stateful<Div>| {
+                el.on_drag(DraggedApplications, move |_, _, _, cx| {
+                    #[cfg(target_os = "linux")]
+                    gpui_linux::stage_external_copy_drag(drag_paths.clone());
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = &drag_paths;
+                    cx.new(|_| DragPreview { count: drag_count })
+                })
+            }
+        })
         .when(
             !self.trash_view && !self.applications_view,
             |el: Stateful<Div>| {

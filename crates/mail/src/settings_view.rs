@@ -7,19 +7,79 @@
 //! what ACC-2/ACC-3 (`rmac-accounts`, System Settings ▸ Internet Accounts)
 //! already configured, rather than duplicating that D-Bus/OAuth machinery
 //! inside Mail.
+//!
+//! Every option shown is honoured: General's sound and notification
+//! choices by the sync runtime's new-mail notifications
+//! (`rmac_mail_runtime::alerts`), Fonts & Colours and Viewing by the main
+//! window as it draws ([`Applied`]), and Composing by a reply's quoted text.
+//! Left out, as nothing in Lulo could honour them yet: Default email reader
+//! (System Settings ▸ Desktop & Dock sets it), Check for new messages (IMAP
+//! IDLE delivers at once; there is no polling interval), Unread count (the
+//! Dock badge counts inboxes only), Downloads folder and Remove unedited
+//! downloads (Mail saves no attachments yet), the search-scope boxes,
+//! Viewing's header, conversation, smart-address and mark-as-read rows,
+//! Load/Block remote content (Mail never fetches remote content), fixed
+//! fonts for plain text, the message format and spelling rows (the composer
+//! is plain text without a spelling checker), and the Extensions and Privacy
+//! panes (no Mail extensions; no remote content to protect against).
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
-use rmac_mail::settings::{self, ComposeFormat, JunkMailAction, MailSettings, Signature};
-use rmac_ui::{mac, Button, Checkbox, Root, StyledExt as _};
+use rmac_mail::settings::{self, DisplayPrefs, JunkMailAction, MailSettings, Signature};
+use rmac_ui::{mac, Button, Checkbox, PopUpButton, PopupMenuItem, Root, StyledExt as _};
 
 use crate::delivery::{self, ComposeAccount};
 
-const WIDTH: f32 = 560.0;
-const HEIGHT: f32 = 420.0;
+// The Mac's Mail Settings window is 775 points wide.
+const WIDTH: f32 = 775.0;
+const HEIGHT: f32 = 560.0;
+
+/// The display choices the main window draws with, as a GPUI global so an
+/// open Mail window redraws the moment one changes.
+pub struct Applied(pub DisplayPrefs);
+
+impl gpui::Global for Applied {}
+
+/// Loads Settings off the UI thread and applies them once at launch.
+pub fn load_applied(cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let settings = cx
+            .background_executor()
+            .spawn(async { settings::load().0 })
+            .await;
+        cx.update(|cx| apply(&settings, cx));
+    })
+    .detach();
+}
+
+/// Hands `settings` to the sync runtime's notifications and the main window.
+fn apply(settings: &MailSettings, cx: &mut App) {
+    rmac_mail_runtime::alerts::set(
+        settings.general.notify_new_mail,
+        settings.general.play_sound_for_new_mail,
+    );
+    cx.set_global(Applied(DisplayPrefs::from(settings)));
+}
+
+/// A right-aligned label before its control, as the Mac's panes lay out.
+fn labelled(label: &'static str, control: impl IntoElement) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .py(px(2.0))
+        .child(
+            div()
+                .w(px(240.0))
+                .text_right()
+                .text_size(px(13.0))
+                .child(label),
+        )
+        .child(control)
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pane {
@@ -141,6 +201,7 @@ impl SettingsView {
     }
 
     fn persist(&mut self, cx: &mut Context<Self>) {
+        apply(&self.settings, cx);
         if let Err(error) = settings::save(&self.settings) {
             self.save_error = Some(SharedString::from(error.to_string()));
         } else {
@@ -192,47 +253,27 @@ impl SettingsView {
         let general = self.settings.general.clone();
         div()
             .v_flex()
-            .gap(px(2.0))
-            .child(
-                self.row(
-                    Checkbox::new("mail-settings-notify")
-                        .label("Notify me when new mail arrives")
-                        .checked(general.notify_new_mail)
-                        .on_change(cx.listener(|this, value: &bool, _, cx| {
-                            this.settings.general.notify_new_mail = *value;
-                            this.persist(cx);
-                        })),
+            .gap(px(6.0))
+            .child(labelled(
+                "New messages sound:",
+                self.popup(
+                    "mail-settings-sound",
+                    general.play_sound_for_new_mail,
+                    vec![(true, "New Mail".to_owned()), (false, "None".to_owned())],
+                    |settings, on| settings.general.play_sound_for_new_mail = on,
+                    cx,
                 ),
-            )
-            .child(
-                self.row(
-                    Checkbox::new("mail-settings-sound")
-                        .label("Play a sound when new mail arrives")
-                        .checked(general.play_sound_for_new_mail)
-                        .on_change(cx.listener(|this, value: &bool, _, cx| {
-                            this.settings.general.play_sound_for_new_mail = *value;
-                            this.persist(cx);
-                        })),
+            ))
+            .child(labelled(
+                "New message notifications:",
+                self.popup(
+                    "mail-settings-notify",
+                    general.notify_new_mail,
+                    vec![(true, "Inbox Only".to_owned()), (false, "None".to_owned())],
+                    |settings, on| settings.general.notify_new_mail = on,
+                    cx,
                 ),
-            )
-            .child(
-                self.row(
-                    Checkbox::new("mail-settings-remove-downloads")
-                        .label("Remove unedited downloads when Mail quits")
-                        .checked(general.remove_unedited_downloads)
-                        .on_change(cx.listener(|this, value: &bool, _, cx| {
-                            this.settings.general.remove_unedited_downloads = *value;
-                            this.persist(cx);
-                        })),
-                ),
-            )
-            .child(
-                div()
-                    .pt(px(8.0))
-                    .text_size(px(12.0))
-                    .text_color(mac::text_secondary())
-                    .child(format!("Downloads folder: {}", general.downloads_folder)),
-            )
+            ))
     }
 
     /// Mail stores no account state of its own: this reads nothing from
@@ -413,11 +454,11 @@ impl SettingsView {
             ))
             .child(
                 self.row(
-                    Checkbox::new("mail-settings-fixed-width")
-                        .label("Use fixed-width font for plain text messages")
-                        .checked(fonts.fixed_width_for_plain_text)
+                    Checkbox::new("mail-settings-colour-quotes")
+                        .label("Colour quoted text")
+                        .checked(fonts.colour_quoted_text)
                         .on_change(cx.listener(|this, value: &bool, _, cx| {
-                            this.settings.fonts_and_colours.fixed_width_for_plain_text = *value;
+                            this.settings.fonts_and_colours.colour_quoted_text = *value;
                             this.persist(cx);
                         })),
                 ),
@@ -426,50 +467,48 @@ impl SettingsView {
 
     fn viewing_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let viewing = self.settings.viewing.clone();
-        let block_remote = self.settings.privacy.block_all_remote_content;
         div()
             .v_flex()
-            .gap(px(10.0))
-            .child(self.stepper(
-                "mail-settings-preview-lines",
-                "Preview lines in the message list:",
-                viewing.preview_lines,
-                0..=5,
-                |this, value, cx| {
-                    this.settings.viewing.preview_lines = value;
-                    this.persist(cx);
-                },
-                cx,
+            .gap(px(6.0))
+            .child(labelled(
+                "List preview:",
+                self.popup(
+                    "mail-settings-preview-lines",
+                    viewing.preview_lines.min(5),
+                    (0..=5u8)
+                        .map(|lines| {
+                            (
+                                lines,
+                                match lines {
+                                    0 => "None".to_owned(),
+                                    1 => "1 Line".to_owned(),
+                                    lines => format!("{lines} Lines"),
+                                },
+                            )
+                        })
+                        .collect(),
+                    |settings, lines| settings.viewing.preview_lines = lines,
+                    cx,
+                ),
             ))
             .child(
                 self.row(
-                    Checkbox::new("mail-settings-show-to-cc")
-                        .label("Show To/Cc labels in the message list")
-                        .checked(viewing.show_to_cc_in_list)
+                    Checkbox::new("mail-settings-unread-bold")
+                        .label("Display unread messages with bold font")
+                        .checked(viewing.unread_bold)
                         .on_change(cx.listener(|this, value: &bool, _, cx| {
-                            this.settings.viewing.show_to_cc_in_list = *value;
+                            this.settings.viewing.unread_bold = *value;
                             this.persist(cx);
                         })),
                 ),
             )
             .child(
                 self.row(
-                    Checkbox::new("mail-settings-load-remote")
-                        .label("Load remote content in messages")
-                        .checked(viewing.load_remote_content)
+                    Checkbox::new("mail-settings-dark-backgrounds")
+                        .label("Use dark backgrounds for messages")
+                        .checked(viewing.dark_message_backgrounds)
                         .on_change(cx.listener(|this, value: &bool, _, cx| {
-                            this.settings.viewing.load_remote_content = *value;
-                            this.persist(cx);
-                        })),
-                ),
-            )
-            .child(
-                self.row(
-                    Checkbox::new("mail-settings-block-remote")
-                        .label("Block all remote content, even when a message asks for it")
-                        .checked(block_remote)
-                        .on_change(cx.listener(|this, value: &bool, _, cx| {
-                            this.settings.privacy.block_all_remote_content = *value;
+                            this.settings.viewing.dark_message_backgrounds = *value;
                             this.persist(cx);
                         })),
                 ),
@@ -485,30 +524,12 @@ impl SettingsView {
                 div()
                     .text_size(px(13.0))
                     .pb(px(4.0))
-                    .child("Message format:"),
-            )
-            .children(
-                ComposeFormat::ALL
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, format)| {
-                        self.row(
-                            Checkbox::new(("mail-settings-format", index))
-                                .label(format.label())
-                                .checked(composing.format == format)
-                                .on_change(cx.listener(move |this, value: &bool, _, cx| {
-                                    if *value {
-                                        this.settings.composing.format = format;
-                                        this.persist(cx);
-                                    }
-                                })),
-                        )
-                    }),
+                    .child("When quoting text in replies or forwards:"),
             )
             .child(
                 self.row(
                     Checkbox::new("mail-settings-quote-original")
-                        .label("Quote the text of the original message when replying")
+                        .label("Quote the text of the original message")
                         .checked(composing.quote_original_when_replying)
                         .on_change(cx.listener(|this, value: &bool, _, cx| {
                             this.settings.composing.quote_original_when_replying = *value;
@@ -518,15 +539,50 @@ impl SettingsView {
             )
             .child(
                 self.row(
-                    Checkbox::new("mail-settings-spelling")
-                        .label("Check spelling while typing")
-                        .checked(composing.check_spelling_while_typing)
+                    Checkbox::new("mail-settings-increase-quote")
+                        .label("Increase quote level")
+                        .disabled(!composing.quote_original_when_replying)
+                        .checked(composing.increase_quote_level)
                         .on_change(cx.listener(|this, value: &bool, _, cx| {
-                            this.settings.composing.check_spelling_while_typing = *value;
+                            this.settings.composing.increase_quote_level = *value;
                             this.persist(cx);
                         })),
                 ),
             )
+    }
+
+    /// A pop-up of `choices` that writes the picked one through `apply`.
+    fn popup<T: Clone + PartialEq + 'static>(
+        &self,
+        id: &'static str,
+        current: T,
+        choices: Vec<(T, String)>,
+        apply: fn(&mut MailSettings, T),
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let view = cx.entity();
+        let label = choices
+            .iter()
+            .find(|(value, _)| *value == current)
+            .map(|(_, label)| label.clone())
+            .unwrap_or_default();
+        PopUpButton::new(id, label)
+            .w(px(200.0))
+            .dropdown_menu(move |menu, _, _| {
+                choices.iter().fold(menu, |menu, (value, label)| {
+                    let view = view.clone();
+                    let checked = *value == current;
+                    let value = value.clone();
+                    menu.item(PopupMenuItem::new(label.clone()).checked(checked).on_click(
+                        move |_, _, cx| {
+                            view.update(cx, |this, cx| {
+                                apply(&mut this.settings, value.clone());
+                                this.persist(cx);
+                            });
+                        },
+                    ))
+                })
+            })
     }
 
     fn add_signature(&mut self, cx: &mut Context<Self>) {

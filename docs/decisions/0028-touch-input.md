@@ -67,9 +67,11 @@ Two small additions to the vendored core (`shell/compat/gpui/src/rmac_touch.rs`)
   it changes.
 
 Marked `touch_drag`: rmac-ui's `Slider` (System Settings and every app), the
-Control Centre Display and Sound sliders, Dock tiles and the Dock separator.
-Items that use `on_drag` (Files rows and sidebar, Launchpad icons, Clock's
-list) drag after the short rest. `RMAC_TOUCH_TRACE=1` prints each contact's
+Control Centre Display and Sound sliders and the Dock separator. Everything
+else follows one hold-then-drag rule (`touch_gesture::touch_drag_rule`): items
+that use `on_drag` (Files rows and sidebar, Launchpad icons, Clock's list), and
+the Dock, Apps and Files windows whose tiles stage their own drags (and
+Wayland file DnD, op/dock-dnd), drag after the same 160 ms rest. `RMAC_TOUCH_TRACE=1` prints each contact's
 life (down, what it became, how it ended) to stderr, for a real touchscreen.
 
 ### Touch targets grow only while touch is in use

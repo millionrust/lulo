@@ -1303,7 +1303,15 @@
       },
       {
         "kind": "section",
-        "label": "Plain Text Encoding"
+        "label": "When Opening a File:"
+      },
+      {
+        "kind": "section",
+        "label": "When Saving a File:"
+      },
+      {
+        "kind": "section",
+        "label": "Plain Text File Encoding"
       },
       {
         "kind": "control",
@@ -1375,6 +1383,14 @@
       },
       {
         "kind": "control",
+        "label": "Display RTF files as RTF code instead of formatted text"
+      },
+      {
+        "kind": "control",
+        "label": "Add \\"
+      },
+      {
+        "kind": "control",
         "label": "Restore All Defaults"
       },
       {
@@ -1431,11 +1447,11 @@
       },
       {
         "kind": "control",
-        "label": "New documents use:"
+        "label": "Opening files:"
       },
       {
         "kind": "control",
-        "label": "Opening a file still detects its encoding from its contents."
+        "label": "Saving files:"
       },
       {
         "kind": "control",

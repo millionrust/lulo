@@ -165,20 +165,19 @@ pub fn key_face(key: Key) -> KeyFace {
 
 pub fn key_name(key: Key) -> &'static str {
     const DIGIT_NAMES: [&str; 16] = [
-        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "A", "B",
-        "C", "D", "E", "F",
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F",
     ];
     match key {
         Key::Digit(digit) => DIGIT_NAMES[usize::from(digit.min(15))],
         Key::Not => "not",
-        Key::Clear => "clear",
-        Key::Backspace => "delete",
-        Key::ToggleSign => "negate",
-        Key::Equals => "equals",
-        Key::Operator(Operator::Add) => "add",
-        Key::Operator(Operator::Subtract) => "subtract",
-        Key::Operator(Operator::Multiply) => "multiply",
-        Key::Operator(Operator::Divide) => "divide",
+        Key::Clear => "All Clear",
+        Key::Backspace => "Delete",
+        Key::ToggleSign => "Change Sign",
+        Key::Equals => "Equals",
+        Key::Operator(Operator::Add) => "Add",
+        Key::Operator(Operator::Subtract) => "Subtract",
+        Key::Operator(Operator::Multiply) => "Multiply",
+        Key::Operator(Operator::Divide) => "Divide",
         Key::Operator(Operator::And) => "and",
         Key::Operator(Operator::Or) => "or",
         Key::Operator(Operator::Xor) => "xor",

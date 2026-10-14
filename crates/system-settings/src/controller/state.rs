@@ -90,6 +90,11 @@ pub(super) struct Settings {
     pub(super) brightness_slider: Entity<SliderState>,
     pub(super) brightness_generation: u32,
     pub(super) brightness_error: Option<SharedString>,
+    /// The keyboard backlight (Keyboard ▸ Keyboard brightness); None when
+    /// the computer has none Lulo can drive.
+    pub(super) keyboard_brightness: Option<u8>,
+    pub(super) keyboard_brightness_slider: Entity<SliderState>,
+    pub(super) keyboard_brightness_generation: u32,
     /// Desktop & Dock's Size slider (DOCK-01).
     pub(super) dock_size_slider: Entity<SliderState>,
     /// Desktop & Dock's Magnification slider (DOCK-07).
@@ -400,12 +405,22 @@ pub(super) struct Settings {
     pub(super) sound_policy_error: Option<SharedString>,
     pub(super) sound_policy_generation: u64,
     pub(super) alert_volume: Entity<SliderState>,
+    /// Sound ▸ Output & Input shows the Input side.
+    pub(super) sound_shows_input: bool,
 
     // Battery and power profiles
     pub(super) power_loading: bool,
     pub(super) power_busy: bool,
     pub(super) power_generation: u64,
     pub(super) power_refresh_pending: bool,
+    /// Low Power Mode as saved (or inferred from the active profile).
+    pub(super) low_power_mode: rmac_power::low_power::LowPowerMode,
+    /// Screen on/off events for the Screen On Usage chart.
+    pub(super) screen_events: Vec<rmac_power::screen_usage::ScreenEvent>,
+    /// The history shows the last 10 days instead of 24 hours.
+    pub(super) battery_history_long: bool,
+    pub(super) battery_health_sheet: bool,
+    pub(super) hot_corners_sheet: bool,
 
     // Displays
     pub(super) display_loading: bool,

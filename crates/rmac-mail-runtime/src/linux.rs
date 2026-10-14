@@ -251,9 +251,18 @@ impl EventSink for DesktopSink {
         if let Some(ui) = &self.ui {
             let _ = ui.send(UiEvent::NewMail(value.clone()));
         }
+        if !crate::alerts::notify() {
+            return;
+        }
         if let Ok(connection) = Connection::session() {
             let mut hints = HashMap::new();
             hints.insert("desktop-entry", Value::Str("org.rmac.Mail".into()));
+            // Mail ▸ Settings ▸ General ▸ New messages sound.
+            if crate::alerts::sound() {
+                hints.insert("sound-name", Value::Str("message-new-email".into()));
+            } else {
+                hints.insert("suppress-sound", Value::Bool(true));
+            }
             let body = format!("{}\n{}", value.subject, value.preview);
             let reply = connection.call_method(
                 Some("org.freedesktop.Notifications"),

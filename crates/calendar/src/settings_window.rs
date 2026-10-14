@@ -1,24 +1,39 @@
-//! Calendar ▸ Settings… (⌘,): General (default calendar, start of week,
-//! day starts/ends, time zone support, CAL-6), Alerts (Default Alerts for
-//! events and all-day events, CAL-7, ADR 0022 §6), and Accounts (from
-//! `rmac-accounts`; empty until ACC-2/ACC-3 land a live account store).
+//! Calendar ▸ Settings… (⌘,): General (days per week, start of week, week
+//! scrolling, day starts/ends, hours shown, default event duration, default
+//! calendar; CAL-6, MROBOT-07), Accounts (from `rmac-accounts`), Alerts
+//! (Default Alerts for events and all-day events, CAL-7, ADR 0022 §6) and
+//! Advanced (time zone support, year view events, week numbers).
+//!
+//! Left out, as nothing in Lulo could honour them: Default calendar app
+//! (Lulo has one calendar app), Show Birthdays/Holidays calendar and the
+//! alternative calendar (no Contacts birthdays or holiday source), Time to
+//! Leave (no location or traffic service), the Notification Centre message
+//! toggles for shared calendars and invitations (Calendar posts no such
+//! notifications), and Advanced's open-in-separate-windows, ask-before-
+//! sending, invitee declines and recent-locations rows.
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity, FocusHandle,
     FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _,
     Window, WindowHandle,
 };
-use rmac_ui::{mac, Button, InputEvent, InputState, Root, StyledExt as _, TextField};
+use rmac_ui::{
+    mac, Button, Checkbox, InputEvent, InputState, PopUpButton, PopupMenuItem, Root,
+    StyledExt as _, TextField,
+};
 
 use rmac_accounts::model::{Service, Services};
 use rmac_calendar::editing::{AlertOffset, ALL_DAY_ALERT_OFFSETS, EVENT_ALERT_OFFSETS};
-use rmac_calendar::store::GeneralSettings;
+use rmac_calendar::store::{
+    GeneralSettings, WeekScroll, EVENT_DURATION_CHOICES, HOURS_SHOWN_CHOICES,
+};
 
 use crate::view::CalendarView;
 use crate::{CloseWindow, ShowSettings};
 
-const WIDTH: f32 = 480.0;
-const HEIGHT: f32 = 360.0;
+// The Mac's General pane is 629 points wide.
+const WIDTH: f32 = 629.0;
+const HEIGHT: f32 = 520.0;
 
 thread_local! {
     static OPEN: std::cell::Cell<Option<WindowHandle<Root>>> = const { std::cell::Cell::new(None) };
@@ -53,16 +68,18 @@ pub(crate) fn show(main: Entity<CalendarView>, cx: &mut App) {
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Tab {
     General,
-    Alerts,
     Accounts,
+    Alerts,
+    Advanced,
 }
 
 impl Tab {
     fn label(self) -> &'static str {
         match self {
             Self::General => "General",
-            Self::Alerts => "Alerts",
             Self::Accounts => "Accounts",
+            Self::Alerts => "Alerts",
+            Self::Advanced => "Advanced",
         }
     }
 }
@@ -133,46 +150,39 @@ impl SettingsView {
         format!("{display}:00 {suffix}")
     }
 
-    /// A "‹ 8:00 AM ›" control that nudges `hour` by one through `on_change`
-    /// (clamped there, since Starts/Ends clamp differently).
-    fn hour_stepper(
-        cx: &mut Context<Self>,
+    /// A pop-up of `choices` that writes the picked one through `apply`.
+    fn popup<T: Clone + PartialEq + 'static>(
+        &self,
         id: &'static str,
-        hour: u32,
-        general: &GeneralSettings,
-        on_change: fn(&mut GeneralSettings, u32),
+        current: T,
+        choices: Vec<(T, String)>,
+        apply: fn(&mut GeneralSettings, T),
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let dec = general.clone();
-        let inc = general.clone();
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(
-                Button::new(format!("{id}-dec"), "‹")
-                    .small()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let mut next = dec.clone();
-                        on_change(&mut next, hour.saturating_sub(1));
-                        this.set_general(next, cx);
-                    })),
-            )
-            .child(
-                div()
-                    .w(px(84.0))
-                    .text_center()
-                    .text_color(mac::text())
-                    .child(Self::hour_label(hour)),
-            )
-            .child(
-                Button::new(format!("{id}-inc"), "›")
-                    .small()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let mut next = inc.clone();
-                        on_change(&mut next, hour + 1);
-                        this.set_general(next, cx);
-                    })),
-            )
+        let view = cx.entity();
+        let label = choices
+            .iter()
+            .find(|(value, _)| *value == current)
+            .map(|(_, label)| label.clone())
+            .unwrap_or_default();
+        PopUpButton::new(id, label)
+            .w(px(180.0))
+            .dropdown_menu(move |menu, _, _| {
+                choices.iter().fold(menu, |menu, (value, label)| {
+                    let view = view.clone();
+                    let checked = *value == current;
+                    let value = value.clone();
+                    menu.item(PopupMenuItem::new(label.clone()).checked(checked).on_click(
+                        move |_, _, cx| {
+                            view.update(cx, |this, cx| {
+                                let mut next = this.general(cx);
+                                apply(&mut next, value.clone());
+                                this.set_general(next, cx);
+                            });
+                        },
+                    ))
+                })
+            })
     }
 
     fn render_general(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -189,153 +199,224 @@ impl SettingsView {
                 .map(|name| name.to_string())
                 .unwrap_or_default()
         };
-
-        let mut default_pills = div().flex().flex_wrap().gap_2();
-        for name in &names {
-            let selected = name.as_ref() == default_calendar;
-            let general = general.clone();
-            let picked = name.to_string();
-            default_pills = default_pills.child(
-                Button::new(format!("calendar-settings-default-{name}"), name.clone())
-                    .small()
-                    .selected(selected)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let mut general = general.clone();
-                        general.default_calendar = picked.clone();
-                        this.set_general(general, cx);
-                    })),
-            );
-        }
-
-        let week_general = general.clone();
-        let week_row =
-            div()
-                .flex()
-                .gap_2()
-                .children([("Monday", false), ("Sunday", true)].into_iter().map(
-                    |(label, sunday)| {
-                        let selected = general.start_of_week_sunday == sunday;
-                        let week_general = week_general.clone();
-                        Button::new(format!("calendar-settings-week-{label}"), label)
-                            .small()
-                            .selected(selected)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                let mut next = week_general.clone();
-                                next.start_of_week_sunday = sunday;
-                                this.set_general(next, cx);
-                            }))
-                    },
-                ));
-
-        let time_zone_support = general.time_zone_support;
-        let tz_general = general.clone();
+        let weekdays = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ];
+        let hours: Vec<(u32, String)> = (0..=24)
+            .map(|hour| (hour, Self::hour_label(hour)))
+            .collect();
 
         div()
             .v_flex()
-            .gap_4()
-            .child(labelled_row("Default Calendar", default_pills))
-            .child(labelled_row("Start Week On", week_row))
+            .gap_3()
             .child(labelled_row(
-                "Day Starts At",
-                Self::hour_stepper(
+                "Days per week:",
+                self.popup(
+                    "calendar-settings-days-per-week",
+                    general.days_per_week,
+                    vec![(5, "5".to_owned()), (7, "7".to_owned())],
+                    |general, days| general.days_per_week = days,
                     cx,
+                ),
+            ))
+            .child(labelled_row(
+                "Start week on:",
+                self.popup(
+                    "calendar-settings-start-week",
+                    general.start_of_week,
+                    weekdays
+                        .iter()
+                        .enumerate()
+                        .map(|(index, name)| (index as u32, (*name).to_owned()))
+                        .collect(),
+                    |general, day| general.start_of_week = day,
+                    cx,
+                ),
+            ))
+            .child(labelled_row(
+                "Scroll in week view by:",
+                self.popup(
+                    "calendar-settings-week-scroll",
+                    general.week_scroll,
+                    vec![
+                        (WeekScroll::Week, "Week".to_owned()),
+                        (WeekScroll::Day, "Day".to_owned()),
+                    ],
+                    |general, scroll| general.week_scroll = scroll,
+                    cx,
+                ),
+            ))
+            .child(labelled_row(
+                "Day starts at:",
+                self.popup(
                     "calendar-settings-day-start",
                     general.day_starts_hour,
-                    &general,
+                    hours[..24].to_vec(),
                     |general, hour| general.day_starts_hour = hour.min(23),
+                    cx,
                 ),
             ))
             .child(labelled_row(
-                "Day Ends At",
-                Self::hour_stepper(
-                    cx,
+                "Day ends at:",
+                self.popup(
                     "calendar-settings-day-end",
                     general.day_ends_hour,
-                    &general,
+                    hours[1..].to_vec(),
                     |general, hour| general.day_ends_hour = hour.clamp(1, 24),
+                    cx,
                 ),
             ))
-            .child(
-                div().flex().items_center().gap_2().child(
-                    Button::new("calendar-settings-tz-toggle", "Turn on time zone support")
-                        .small()
-                        .selected(time_zone_support)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            let mut next = tz_general.clone();
-                            next.time_zone_support = !next.time_zone_support;
-                            if !next.time_zone_support {
-                                next.time_zone.clear();
-                            }
-                            this.set_general(next, cx);
-                        })),
+            .child(labelled_row(
+                "Show:",
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        self.popup(
+                            "calendar-settings-hours-shown",
+                            general.hours_shown,
+                            HOURS_SHOWN_CHOICES
+                                .iter()
+                                .map(|hours| (*hours, hours.to_string()))
+                                .collect(),
+                            |general, hours| general.hours_shown = hours,
+                            cx,
+                        ),
+                    )
+                    .child("hours at a time"),
+            ))
+            .child(labelled_row(
+                "Default event duration:",
+                self.popup(
+                    "calendar-settings-event-duration",
+                    general.default_event_minutes,
+                    EVENT_DURATION_CHOICES
+                        .iter()
+                        .map(|minutes| (*minutes, duration_label(*minutes)))
+                        .collect(),
+                    |general, minutes| general.default_event_minutes = minutes,
+                    cx,
                 ),
-            )
+            ))
+            .child(labelled_row(
+                "Default Calendar:",
+                self.popup(
+                    "calendar-settings-default-calendar",
+                    default_calendar,
+                    names
+                        .iter()
+                        .map(|name| (name.to_string(), name.to_string()))
+                        .collect(),
+                    |general, name| general.default_calendar = name,
+                    cx,
+                ),
+            ))
+    }
+
+    /// Advanced: time zone support, week numbers and the year view's
+    /// event shading, each read by the main window as it draws.
+    fn render_advanced(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let general = self.general(cx);
+        let time_zone_support = general.time_zone_support;
+        div()
+            .v_flex()
+            .gap_3()
+            .child(self.checkbox(
+                "calendar-settings-tz-toggle",
+                "Turn on time zone support",
+                time_zone_support,
+                |general, on| {
+                    general.time_zone_support = on;
+                    if !on {
+                        general.time_zone.clear();
+                    }
+                },
+                cx,
+            ))
             .when(time_zone_support, |el| {
                 el.child(labelled_row(
                     "Time Zone",
                     TextField::new(&self.time_zone_input).small().w(px(200.0)),
                 ))
             })
+            .child(self.checkbox(
+                "calendar-settings-year-events",
+                "Show events in year view",
+                general.show_events_in_year_view,
+                |general, on| general.show_events_in_year_view = on,
+                cx,
+            ))
+            .child(self.checkbox(
+                "calendar-settings-week-numbers",
+                "Show week numbers",
+                general.show_week_numbers,
+                |general, on| general.show_week_numbers = on,
+                cx,
+            ))
     }
 
-    /// A row of alert-offset pills for [`render_alerts`]; a plain function
-    /// (not a closure) so it can borrow `cx` fresh on each call, the same
-    /// shape as [`Self::hour_stepper`].
-    fn alert_offset_row(
-        cx: &mut Context<Self>,
+    fn checkbox(
+        &self,
         id: &'static str,
-        options: &'static [AlertOffset],
-        general: &GeneralSettings,
-        selected: AlertOffset,
-        on_pick: fn(&mut GeneralSettings, AlertOffset),
+        label: &'static str,
+        checked: bool,
+        apply: fn(&mut GeneralSettings, bool),
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let mut pills = div().flex().flex_wrap().gap_2();
-        for option in options {
-            let option = *option;
-            let general = general.clone();
-            pills = pills.child(
-                Button::new(format!("{id}-{}", option.label()), option.label())
-                    .small()
-                    .selected(option == selected)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let mut next = general.clone();
-                        on_pick(&mut next, option);
-                        this.set_general(next, cx);
-                    })),
-            );
-        }
-        pills
+        let view = cx.entity();
+        Checkbox::new(id)
+            .label(label)
+            .checked(checked)
+            .on_change(move |value: &bool, _, cx| {
+                let value = *value;
+                view.update(cx, |this, cx| {
+                    let mut next = this.general(cx);
+                    apply(&mut next, value);
+                    this.set_general(next, cx);
+                });
+            })
     }
 
     /// Default Alerts (CAL-7, ADR 0022 §6): the alert new events get when
     /// the person does not pick one in the inspector. Birthdays has no row
-    /// yet -- Lulo has no Birthdays calendar (`docs/parity.md`), so a
-    /// default for it would do nothing.
+    /// -- Lulo has no Birthdays calendar (no Contacts app), so a default
+    /// for it would do nothing.
     fn render_alerts(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let general = self.general(cx);
+        let offsets = |options: &'static [AlertOffset]| -> Vec<(AlertOffset, String)> {
+            options
+                .iter()
+                .map(|offset| (*offset, offset.label().to_owned()))
+                .collect()
+        };
         div()
             .v_flex()
-            .gap_4()
+            .gap_3()
             .child(labelled_row(
-                "Events",
-                Self::alert_offset_row(
-                    cx,
+                "Events:",
+                self.popup(
                     "calendar-settings-alert-events",
-                    EVENT_ALERT_OFFSETS,
-                    &general,
                     general.default_alerts.events,
+                    offsets(EVENT_ALERT_OFFSETS),
                     |general, offset| general.default_alerts.events = offset,
+                    cx,
                 ),
             ))
             .child(labelled_row(
-                "All-day Events",
-                Self::alert_offset_row(
-                    cx,
+                "All Day Events:",
+                self.popup(
                     "calendar-settings-alert-allday",
-                    ALL_DAY_ALERT_OFFSETS,
-                    &general,
                     general.default_alerts.all_day_events,
+                    offsets(ALL_DAY_ALERT_OFFSETS),
                     |general, offset| general.default_alerts.all_day_events = offset,
+                    cx,
                 ),
             ))
     }
@@ -429,6 +510,7 @@ impl Render for SettingsView {
             Tab::General => self.render_general(cx).into_any_element(),
             Tab::Alerts => self.render_alerts(cx).into_any_element(),
             Tab::Accounts => self.render_accounts(cx).into_any_element(),
+            Tab::Advanced => self.render_advanced(cx).into_any_element(),
         };
         div()
             .track_focus(&self.focus)
@@ -458,7 +540,7 @@ impl Render for SettingsView {
                     .border_b_1()
                     .border_color(mac::separator())
                     .children(
-                        [Tab::General, Tab::Alerts, Tab::Accounts]
+                        [Tab::General, Tab::Accounts, Tab::Alerts, Tab::Advanced]
                             .into_iter()
                             .map(|tab| {
                                 Button::new(
@@ -481,16 +563,38 @@ impl Render for SettingsView {
 }
 
 fn labelled_row(label: &'static str, control: impl IntoElement) -> impl IntoElement {
+    // Right-aligned labels before their controls, as the Mac's General pane.
     div()
         .flex()
         .items_center()
         .gap_3()
         .child(
             div()
-                .w(px(130.0))
-                .text_color(mac::text_secondary())
-                .text_size(px(12.0))
+                .w(px(220.0))
+                .text_right()
+                .text_color(mac::text())
+                .text_size(px(13.0))
                 .child(label),
         )
         .child(control)
+}
+
+/// "15 minutes", "1 hour", "1.5 hours" for Default event duration.
+fn duration_label(minutes: u32) -> String {
+    match minutes {
+        60 => "1 hour".to_owned(),
+        90 => "1.5 hours".to_owned(),
+        120 => "2 hours".to_owned(),
+        minutes => format!("{minutes} minutes"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn duration_labels_read_like_the_mac() {
+        assert_eq!(super::duration_label(15), "15 minutes");
+        assert_eq!(super::duration_label(60), "1 hour");
+        assert_eq!(super::duration_label(90), "1.5 hours");
+    }
 }

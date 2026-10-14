@@ -72,7 +72,7 @@ ATSPI_ROLES = {
     "text area": "textarea", "terminal": "textarea", "document text": "textarea",
     "label": "text", "static": "text", "heading": "text", "caption": "text",
     "slider": "slider", "spin button": "stepper", "list item": "row", "table row": "row", "tree item": "row",
-    "table cell": "row", "menu item": "menuitem", "check menu item": "menuitem", "radio menu item": "menuitem",
+    "table cell": "row", "column header": "button", "table column header": "button", "menu item": "menuitem", "check menu item": "menuitem", "radio menu item": "menuitem",
     "image": "image", "icon": "image", "link": "link", "page tab list": "tabgroup", "tool bar": "toolbar",
     "list": "list", "list box": "list", "table": "list", "tree": "list", "tree table": "list",
     "color chooser": "colorwell", "level bar": "indicator", "progress bar": "indicator",

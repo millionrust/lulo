@@ -57,6 +57,17 @@ pub fn apply_pin_command(
                 result.insert(destination, moved);
             }
         }
+        PinCommand::PinAt {
+            app_id,
+            index: destination,
+        } => {
+            let kept = match existing {
+                Some(index) => result.remove(index),
+                None => rmac_shell_settings::AppId(app_id.clone()),
+            };
+            let destination = (*destination).min(result.len());
+            result.insert(destination, kept);
+        }
     }
     Ok(result)
 }

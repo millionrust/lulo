@@ -23,6 +23,11 @@ rmac-shortcuts.workspace = true
 rmac-shell-activation-runtime.workspace = true
 rmac-ui.workspace = true
 
+# A drag out of Apps is a Wayland file drag of the app's desktop entry,
+# which the Dock keeps (macOS: drag from Launchpad/Apps to the Dock).
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui_linux.workspace = true
+
 # The Windows shell hosts this surface; `rmac-shell-layer` places it as the
 # layer surface it is on Linux (ADR 0023).
 [target.'cfg(windows)'.dependencies]

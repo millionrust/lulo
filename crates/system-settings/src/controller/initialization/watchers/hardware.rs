@@ -250,6 +250,7 @@ impl Settings {
                                     this.power_loading,
                                 ) {
                                     this.finish_power_stream_update(result);
+                                    this.load_power_extras(cx);
                                     this.notify_if_current_pane(&["Battery"], cx);
                                 }
                             })

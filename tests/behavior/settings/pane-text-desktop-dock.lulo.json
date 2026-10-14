@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "scenario": "settings/pane-text-desktop-dock",
+  "platform": "Lulo local contract",
+  "observations": {
+    "pane": {
+      "pane_text": {
+        "labelled": 24,
+        "labels": [
+          "Dock",
+          "Position on screen",
+          "Hot Corners…",
+          "Desktop & Stage Manager",
+          "Minimise windows using"
+        ],
+        "controls": [
+          "Automatically hide and show the Dock",
+          "Magnification",
+          "Size",
+          "Show indicators for open applications",
+          "Position on screen"
+        ]
+      }
+    }
+  }
+}

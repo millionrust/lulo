@@ -2893,6 +2893,13 @@ impl Window {
         self.a11y.sync_active_flag();
         if self.a11y.is_active() {
             self.a11y.begin_frame();
+            let scale = self.scale_factor() as f64;
+            self.a11y.set_root_bounds(accesskit::Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: f64::from(self.viewport_size.width.0) * scale,
+                y1: f64::from(self.viewport_size.height.0) * scale,
+            });
         }
 
         let _inspector_width: Pixels = rems(30.0).to_pixels(self.rem_size());
@@ -4756,6 +4763,9 @@ impl Window {
                 }
                 FileDropEvent::Exited => {
                     cx.active_drag.take();
+                    // rmac: redraw so views that showed where the drop would
+                    // land (the Dock's open slot) take it away.
+                    self.refresh();
                     PlatformInput::FileDrop(FileDropEvent::Exited)
                 }
             },
@@ -5646,6 +5656,23 @@ impl Window {
     /// See the [accessibility guide](crate::_accessibility) for an overview.
     pub fn is_a11y_active(&self) -> bool {
         self.a11y.is_active()
+    }
+
+    /// rmac: publish a plain text element drawn at `bounds` as static text
+    /// under the nearest accessible element. Called from text prepaint; a
+    /// no-op while no assistive technology is listening.
+    pub(crate) fn a11y_static_text(&mut self, text: &str, bounds: Bounds<Pixels>) {
+        if !self.a11y.is_active() {
+            return;
+        }
+        let scale = self.scale_factor();
+        let rect = accesskit::Rect {
+            x0: (bounds.origin.x.0 * scale) as f64,
+            y0: (bounds.origin.y.0 * scale) as f64,
+            x1: ((bounds.origin.x.0 + bounds.size.width.0) * scale) as f64,
+            y1: ((bounds.origin.y.0 + bounds.size.height.0) * scale) as f64,
+        };
+        self.a11y.nodes.push_text_leaf(text, rect);
     }
 
     /// Register a listener for an accessibility action on a specific node.

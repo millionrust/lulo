@@ -53,7 +53,8 @@ use crate::{
 use document_io::{
     can_begin_print, inspect_external_revision, is_rich_text_path, load_selected_document,
     pdf_export_filename, render_pdf_export, save_document, save_document_copy,
-    should_reuse_untitled_window, LoadedFile, SaveContent, SaveFailure, SavedDocument,
+    should_reuse_untitled_window, with_default_extension, LoadedFile, OpenOptions, SaveContent,
+    SaveFailure, SavedDocument,
 };
 use recovery_state::{recovery_failure_message, startup_recovery, RecoveryClock, RecoveryPrompt};
 use startup::{open_duplicate_window, open_editor_window};
@@ -502,7 +503,8 @@ mod tests {
         assert!(bytes.starts_with(b"{\\rtf1"));
         assert!(String::from_utf8_lossy(&bytes).contains("\\b world"));
 
-        let loaded = super::load_selected_document(&path).unwrap();
+        let loaded =
+            super::document_io::load_document_with(&path, super::OpenOptions::default()).unwrap();
         let super::LoadedFile::RichText {
             document: reopened, ..
         } = loaded

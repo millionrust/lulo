@@ -8,9 +8,6 @@
 mod ipc;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
-mod drag_endpoint;
-
-#[cfg(all(target_os = "linux", feature = "wayland"))]
 pub use dock::run;
 #[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
 pub use dock::start;
@@ -310,6 +307,32 @@ mod dock {
         pointer: (f32, f32),
         grab: (f32, f32),
         icon: Option<PathBuf>,
+    }
+
+    /// A pressed running app that is not kept, becoming a drag that keeps
+    /// it once it crosses the separator into the kept apps (macOS 26).
+    struct KeepDragUi {
+        app_id: String,
+        drag: rmac_dock::keep::KeepDrag,
+        /// Kept-app order when the press began; the drop is applied only
+        /// while the settings still hold exactly this order.
+        pinned: Vec<String>,
+        /// The running apps that are not kept, in shelf order.
+        running: Vec<String>,
+        pointer: (f32, f32),
+        grab: (f32, f32),
+        icon: Option<PathBuf>,
+    }
+
+    /// An application dragged onto the Dock from Apps or Files: the kept
+    /// apps part to open a slot under the pointer (macOS 26).
+    struct IncomingApp {
+        /// Resting centres of the kept tiles when the drag arrived, so the
+        /// opening slot never feeds back into its own thresholds.
+        centers: Vec<f32>,
+        /// Past this point along the Dock (the Trash end) no slot opens.
+        limit: f32,
+        destination: Option<usize>,
     }
 
     struct RemovedTile {
@@ -772,10 +795,12 @@ mod dock {
         content: rmac_dock::presentation::ShelfContent,
         /// A pressed kept app, becoming a drag once the pointer moves.
         tile_drag: Option<TileDragUi>,
-        /// A live insertion-point hint from a drag out of Apps
-        /// (`drag_endpoint::Command::Hover`, item 7): the fraction along
-        /// the kept-apps list the pointer last reported.
-        apps_drag_hover: Option<f32>,
+        /// A pressed running app that is not kept, becoming a keep drag.
+        keep_drag: Option<KeepDragUi>,
+        /// An application dragged in from Apps or Files.
+        incoming: Option<IncomingApp>,
+        /// App tiles drawn in the last frame: (kept, all apps).
+        shelf_counts: (usize, usize),
         /// Neighbours sliding into place: (offset along the axis, start ms).
         slides: std::collections::BTreeMap<String, (f32, u64)>,
         /// Kept-app order shown until the settings watcher confirms a drop.
@@ -898,7 +923,9 @@ mod dock {
                 hide_generation: 0,
                 content: rmac_dock::presentation::ShelfContent::default(),
                 tile_drag: None,
-                apps_drag_hover: None,
+                keep_drag: None,
+                incoming: None,
+                shelf_counts: (0, 0),
                 slides: std::collections::BTreeMap::new(),
                 pending_pins: None,
                 removing: None,
@@ -979,6 +1006,347 @@ mod dock {
                 + index as f32 * (metrics.icon_size + metrics.icon_gap)
         }
 
+        /// The surface position of a tile whose centre is `center` along
+        /// the Dock axis.
+        fn tile_origin(&self, center: f32) -> (f32, f32) {
+            let metrics = self.metrics();
+            let (width, height) = self.surface_size;
+            match self.placement {
+                rmac_shell_settings::DockPlacement::Bottom => (
+                    center - metrics.icon_size / 2.0,
+                    height
+                        - metrics.shelf_bottom_margin
+                        - metrics.shelf_padding
+                        - metrics.icon_size,
+                ),
+                rmac_shell_settings::DockPlacement::Left => (
+                    metrics.shelf_bottom_margin + metrics.shelf_padding,
+                    center - metrics.icon_size / 2.0,
+                ),
+                rmac_shell_settings::DockPlacement::Right => (
+                    width - metrics.shelf_bottom_margin - metrics.shelf_padding - metrics.icon_size,
+                    center - metrics.icon_size / 2.0,
+                ),
+            }
+        }
+
+        /// Resting centre of the separator between `kept` kept apps and
+        /// the running apps.
+        fn running_separator_center(&self, kept: usize) -> f32 {
+            let metrics = self.metrics();
+            self.shelf_start
+                + metrics.shelf_padding
+                + kept as f32 * (metrics.icon_size + metrics.icon_gap)
+                + metrics.separator_slot / 2.0
+        }
+
+        /// Resting centre of the separator after the apps, where the
+        /// minimized windows, stacks and Trash begin: an app dragged past it
+        /// opens no slot (dropping an app on the Trash does nothing).
+        fn places_limit(&self) -> f32 {
+            let metrics = self.metrics();
+            let (kept, apps) = self.shelf_counts;
+            let separated = kept > 0 && kept < apps;
+            self.shelf_start
+                + metrics.shelf_padding
+                + apps as f32 * (metrics.icon_size + metrics.icon_gap)
+                + if separated {
+                    metrics.separator_slot + metrics.icon_gap
+                } else {
+                    0.0
+                }
+                + metrics.separator_slot / 2.0
+        }
+
+        /// Slide app tiles from where `before` drew them to where `after`
+        /// draws them (absolute centres along the axis), on the Mac's
+        /// spring, carrying over any slide still in flight.
+        fn slide_apps(&mut self, before: &[(String, f32)], after: &[(String, f32)], now: u64) {
+            for (id, new_center) in after {
+                let Some((_, old_center)) = before.iter().find(|(old, _)| old == id) else {
+                    continue;
+                };
+                let current = self
+                    .slides
+                    .get(id)
+                    .map(|(offset, started)| {
+                        offset
+                            * (1.0
+                                - rmac_dock::reorder::spring(
+                                    now.saturating_sub(*started),
+                                    rmac_dock::reorder::SLIDE_MS,
+                                ))
+                    })
+                    .unwrap_or(0.0);
+                let offset = old_center - new_center + current;
+                if offset.abs() > 0.5 {
+                    self.slides.insert(id.clone(), (offset, now));
+                }
+            }
+        }
+
+        /// A running app that is not kept was pressed: it becomes a drag
+        /// that keeps it once it crosses the separator (macOS 26).
+        fn begin_keep_drag(
+            &mut self,
+            app_id: &str,
+            icon: Option<PathBuf>,
+            position: (f32, f32),
+            cx: &mut Context<Self>,
+        ) {
+            let metrics = self.metrics();
+            let Some(model) = self.model_snapshot(cx) else {
+                return;
+            };
+            let pinned: Vec<String> = model
+                .items
+                .iter()
+                .take_while(|item| item.pinned)
+                .map(|item| item.id.clone())
+                .collect();
+            if self
+                .pending_pins
+                .as_ref()
+                .is_some_and(|(order, _)| *order != pinned)
+            {
+                // A previous drop is still being saved.
+                return;
+            }
+            let running: Vec<String> = self
+                .content
+                .applications
+                .iter()
+                .skip(pinned.len())
+                .filter_map(|entry| match &entry.id {
+                    rmac_dock::presentation::EntryId::Application(id) => Some(id.clone()),
+                    _ => None,
+                })
+                .collect();
+            let Some(slot) = running.iter().position(|id| id == app_id) else {
+                return;
+            };
+            let separated = !pinned.is_empty();
+            let centers: Vec<f32> = (0..pinned.len())
+                .map(|index| self.pinned_center(index))
+                .collect();
+            let limit = if separated {
+                self.running_separator_center(pinned.len())
+            } else {
+                // No kept apps: the slot opens before the first tile.
+                self.shelf_start + metrics.shelf_padding
+            };
+            let axis = self.axis_of(position.0, position.1);
+            let lift = self.lift_of(position.0, position.1);
+            let Some(drag) =
+                rmac_dock::keep::KeepDrag::begin(centers, limit, axis, lift, metrics.icon_size)
+            else {
+                return;
+            };
+            let center = self.pinned_center(pinned.len() + slot)
+                + if separated {
+                    metrics.separator_slot + metrics.icon_gap
+                } else {
+                    0.0
+                };
+            let tile_origin = self.tile_origin(center);
+            self.keep_drag = Some(KeepDragUi {
+                app_id: app_id.to_owned(),
+                drag,
+                pinned,
+                running,
+                pointer: position,
+                grab: (position.0 - tile_origin.0, position.1 - tile_origin.1),
+                icon,
+            });
+        }
+
+        /// App tile centres (absolute, along the axis) for the kept apps
+        /// with the dragged app shown at `inserted`, then the running apps.
+        fn keep_layout(&self, ui: &KeepDragUi, inserted: Option<usize>) -> Vec<(String, f32)> {
+            let metrics = self.metrics();
+            let pitch = metrics.icon_size + metrics.icon_gap;
+            let mut kept: Vec<&str> = ui.pinned.iter().map(String::as_str).collect();
+            let mut running: Vec<&str> = ui.running.iter().map(String::as_str).collect();
+            if let Some(at) = inserted {
+                running.retain(|id| *id != ui.app_id);
+                kept.insert(at.min(kept.len()), ui.app_id.as_str());
+            }
+            let separator = if ui.pinned.is_empty() {
+                0.0
+            } else {
+                metrics.separator_slot + metrics.icon_gap
+            };
+            let first = self.shelf_start + metrics.shelf_padding + metrics.icon_size / 2.0;
+            kept.iter()
+                .enumerate()
+                .map(|(index, id)| ((*id).to_owned(), first + index as f32 * pitch))
+                .chain(running.iter().enumerate().map(|(index, id)| {
+                    (
+                        (*id).to_owned(),
+                        first + (kept.len() + index) as f32 * pitch + separator,
+                    )
+                }))
+                .collect()
+        }
+
+        fn update_keep_drag(&mut self, position: (f32, f32), cx: &mut Context<Self>) {
+            let axis = self.axis_of(position.0, position.1);
+            let lift = self.lift_of(position.0, position.1);
+            let now = self.now_ms();
+            let Some(ui) = self.keep_drag.as_mut() else {
+                return;
+            };
+            let before = ui.drag.state();
+            let state = ui.drag.update(axis, lift);
+            ui.pointer = position;
+            if !state.active {
+                return;
+            }
+            if !before.active {
+                // The label goes away and the drag owns the whole output.
+                self.hovered_item = None;
+                self.input_region = None;
+            }
+            if before.destination != state.destination {
+                if let Some(ui) = self.keep_drag.as_ref() {
+                    let old = self.keep_layout(ui, before.destination);
+                    let new = self.keep_layout(ui, state.destination);
+                    self.slide_apps(&old, &new, now);
+                }
+            }
+            cx.notify();
+        }
+
+        fn finish_keep_drag(&mut self, modifiers: gpui::Modifiers, cx: &mut Context<Self>) {
+            let Some(ui) = self.keep_drag.take() else {
+                return;
+            };
+            self.input_region = None;
+            self.slides.clear();
+            cx.notify();
+            let at = match ui.drag.finish() {
+                rmac_dock::keep::KeepDrop::Click => {
+                    self.activate_entry(&ui.app_id, modifiers, cx);
+                    return;
+                }
+                rmac_dock::keep::KeepDrop::NoChange => return,
+                rmac_dock::keep::KeepDrop::Keep { at } => at,
+            };
+            let current: Option<Vec<String>> = self.model_snapshot(cx).map(|model| {
+                model
+                    .items
+                    .iter()
+                    .take_while(|item| item.pinned)
+                    .map(|item| item.id.clone())
+                    .collect()
+            });
+            if current.as_ref() != Some(&ui.pinned) {
+                eprintln!("the kept apps changed during the drag; the drop was not applied");
+                return;
+            }
+            let mut order = ui.pinned.clone();
+            order.insert(at.min(order.len()), ui.app_id.clone());
+            self.pending_pins = Some((order, self.now_ms()));
+            self.dispatch_action(
+                rmac_dock::menu::Action::Context(rmac_dock::ContextAction::UpdatePins(
+                    rmac_dock::PinCommand::PinAt {
+                        app_id: ui.app_id,
+                        index: at,
+                    },
+                )),
+                cx,
+            );
+        }
+
+        /// An application dragged in from Apps or Files moved to `position`
+        /// on this surface: open the kept-app slot under it.
+        fn update_incoming(&mut self, position: (f32, f32), cx: &mut Context<Self>) {
+            let metrics = self.metrics();
+            let axis = self.axis_of(position.0, position.1);
+            let lift = self.lift_of(position.0, position.1);
+            let now = self.now_ms();
+            if self.incoming.is_none() {
+                let kept = self.shelf_counts.0;
+                self.incoming = Some(IncomingApp {
+                    centers: (0..kept).map(|index| self.pinned_center(index)).collect(),
+                    limit: self.places_limit(),
+                    destination: None,
+                });
+            }
+            let Some(incoming) = self.incoming.as_ref() else {
+                return;
+            };
+            let destination = rmac_dock::keep::keep_destination(
+                &incoming.centers,
+                incoming.limit,
+                axis,
+                lift,
+                metrics.icon_size,
+            );
+            let previous = incoming.destination;
+            if previous == destination {
+                return;
+            }
+            let old = self.incoming_layout(previous);
+            let new = self.incoming_layout(destination);
+            self.slide_apps(&old, &new, now);
+            if let Some(incoming) = self.incoming.as_mut() {
+                incoming.destination = destination;
+            }
+            cx.notify();
+        }
+
+        /// App tile centres (absolute, along the axis) with an open slot at
+        /// `gap`; the shelf grows by one tile around its centre.
+        fn incoming_layout(&self, gap: Option<usize>) -> Vec<(String, f32)> {
+            let metrics = self.metrics();
+            let pitch = metrics.icon_size + metrics.icon_gap;
+            let (kept, _) = self.shelf_counts;
+            let ids: Vec<&str> = self
+                .content
+                .applications
+                .iter()
+                .filter_map(|entry| match &entry.id {
+                    rmac_dock::presentation::EntryId::Application(id) => Some(id.as_str()),
+                    _ => None,
+                })
+                .collect();
+            let separated = kept > 0 && kept < ids.len();
+            // `shelf_start` is the start drawn in the last frame, which
+            // already includes the slot that frame showed.
+            let shown = self
+                .incoming
+                .as_ref()
+                .and_then(|incoming| incoming.destination);
+            let start = self.shelf_start + if shown.is_some() { pitch / 2.0 } else { 0.0 }
+                - if gap.is_some() { pitch / 2.0 } else { 0.0 };
+            let first = start + metrics.shelf_padding + metrics.icon_size / 2.0;
+            ids.iter()
+                .enumerate()
+                .map(|(index, id)| {
+                    let mut center = first + index as f32 * pitch;
+                    if gap.is_some_and(|gap| index >= gap.min(kept)) {
+                        center += pitch;
+                    }
+                    if separated && index >= kept {
+                        center += metrics.separator_slot + metrics.icon_gap;
+                    }
+                    ((*id).to_owned(), center)
+                })
+                .collect()
+        }
+
+        /// The drag from Apps or Files left the Dock or ended.
+        fn clear_incoming(&mut self, cx: &mut Context<Self>) {
+            let Some(incoming) = self.incoming.take() else {
+                return;
+            };
+            if incoming.destination.is_some() {
+                self.slides.clear();
+                cx.notify();
+            }
+        }
+
         fn begin_tile_drag(
             &mut self,
             app_id: &str,
@@ -1025,25 +1393,7 @@ mod dock {
             };
             // Where the pointer sits inside the icon, so the lifted icon
             // does not jump to the pointer.
-            let center = self.pinned_center(source);
-            let (width, height) = self.surface_size;
-            let tile_origin = match self.placement {
-                rmac_shell_settings::DockPlacement::Bottom => (
-                    center - metrics.icon_size / 2.0,
-                    height
-                        - metrics.shelf_bottom_margin
-                        - metrics.shelf_padding
-                        - metrics.icon_size,
-                ),
-                rmac_shell_settings::DockPlacement::Left => (
-                    metrics.shelf_bottom_margin + metrics.shelf_padding,
-                    center - metrics.icon_size / 2.0,
-                ),
-                rmac_shell_settings::DockPlacement::Right => (
-                    width - metrics.shelf_bottom_margin - metrics.shelf_padding - metrics.icon_size,
-                    center - metrics.icon_size / 2.0,
-                ),
-            };
+            let tile_origin = self.tile_origin(self.pinned_center(source));
             self.tile_drag = Some(TileDragUi {
                 app_id: app_id.to_owned(),
                 drag,
@@ -1093,7 +1443,7 @@ mod dock {
                             .map(|(offset, started)| {
                                 offset
                                     * (1.0
-                                        - rmac_dock::reorder::ease_out(
+                                        - rmac_dock::reorder::spring(
                                             now - started,
                                             rmac_dock::reorder::SLIDE_MS,
                                         ))
@@ -1247,14 +1597,18 @@ mod dock {
                 .detach();
         }
 
-        /// An application (.desktop entry) dropped on the Dock is kept in it.
-        fn keep_dropped_applications(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        /// Applications dropped on the Dock (desktop entries; on Windows
+        /// shortcuts and programs too) are kept at `index` among the kept
+        /// apps, in the order they were dropped, or at the end without one.
+        fn keep_dropped_applications(
+            &mut self,
+            paths: Vec<PathBuf>,
+            index: Option<usize>,
+            cx: &mut Context<Self>,
+        ) {
             let entries: Vec<PathBuf> = paths
                 .into_iter()
-                .filter(|path| {
-                    path.extension()
-                        .is_some_and(|extension| extension == "desktop")
-                })
+                .filter(|path| rmac_dock::keep::is_application_file(path))
                 .collect();
             if entries.is_empty() {
                 return;
@@ -1271,29 +1625,49 @@ mod dock {
                         return;
                     };
                     let backend = rmac_dock_system::SystemBackend;
+                    let mut at = index;
                     for entry in entries {
-                        let file_name = entry
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or_default()
-                            .to_owned();
-                        let Some(application) = catalog.iter().find(|application| {
-                            application.source == entry || application.id == file_name
-                        }) else {
+                        let resolved =
+                            rmac_dock::keep::resolve_dropped_application(&catalog, &entry)
+                                .map(|application| application.id.clone());
+                        #[cfg(windows)]
+                        let resolved = match resolved {
+                            Some(app_id) => Some(app_id),
+                            None => blocking::unblock(move || keep_program_entry(&entry)).await,
+                        };
+                        let Some(app_id) = resolved else {
                             continue;
                         };
-                        let command = rmac_dock::PinCommand::Pin {
-                            app_id: application.id.clone(),
+                        let command = match at {
+                            Some(index) => rmac_dock::PinCommand::PinAt { app_id, index },
+                            None => rmac_dock::PinCommand::Pin { app_id },
                         };
-                        if let Err(error) = backend.update_pins(&command).await {
-                            eprintln!(
+                        match backend.update_pins(&command).await {
+                            Ok(_) => at = at.map(|index| index + 1),
+                            Err(error) => eprintln!(
                                 "could not keep the application in the Dock: {}",
                                 error.detail
-                            );
+                            ),
                         }
                     }
                 })
                 .detach();
+        }
+
+        /// The kept-app slot a drop at `position` lands in, or `None` over
+        /// the Trash end or away from the shelf.
+        fn drop_destination(
+            &mut self,
+            position: (f32, f32),
+            cx: &mut Context<Self>,
+        ) -> Option<usize> {
+            self.update_incoming(position, cx);
+            let destination = self
+                .incoming
+                .as_ref()
+                .and_then(|incoming| incoming.destination);
+            self.clear_incoming(cx);
+            destination
         }
 
         /// A folder or file dropped on the Dock (anywhere but the Trash and
@@ -1607,67 +1981,62 @@ mod dock {
             Self::write_dock_settings(move |dock| dock.tile_size = size, cx);
         }
 
-        /// Keep an application dragged out of Apps (crates/app-drawer) in
-        /// the Dock, at roughly the position it was dropped. This is the
-        /// Dock command endpoint `drag_endpoint` documents: GPUI's Linux
-        /// backend cannot start a real cross-process Wayland drag, so Apps
-        /// reports its own window-local pointer position over a private
-        /// socket instead, and the Dock resolves it against its catalog
-        /// exactly like a `.desktop` file drop.
-        #[cfg_attr(windows, allow(dead_code))]
-        fn keep_dragged_application(
+        /// An app dragged out of Apps (`crates/app-drawer`) on Windows,
+        /// reported by Apps itself (`rmac_shell_layer::windows::dock_drag`):
+        /// the same slot and drop as for an app file dragged in.
+        #[cfg(windows)]
+        fn apps_drag_hint(
             &mut self,
-            app_id: String,
-            fraction: f32,
+            hint: rmac_shell_layer::windows::dock_drag::Hint,
+            window: &Window,
             cx: &mut Context<Self>,
         ) {
-            cx.background_executor()
-                .spawn(async move {
-                    use rmac_dock_system::Backend as _;
-                    // `rmac_apps::discover()` can shell out to `gsettings`
-                    // to read the active icon theme; run it on
-                    // `blocking::unblock`'s dedicated pool rather than
-                    // directly on this background executor (LINUX-HW-07).
-                    let Ok(catalog) = blocking::unblock(rmac_apps::discover).await else {
-                        eprintln!("could not read the installed applications");
+            use rmac_shell_layer::windows::dock_drag::Phase;
+            let origin = window.bounds().origin;
+            let position = (
+                f32::from(hint.screen.x - origin.x),
+                f32::from(hint.screen.y - origin.y),
+            );
+            match hint.phase {
+                Phase::Hover => self.update_incoming(position, cx),
+                Phase::Cancel => self.clear_incoming(cx),
+                Phase::Drop => {
+                    let Some(index) = self.drop_destination(position, cx) else {
                         return;
                     };
-                    let Some(application) =
-                        catalog.iter().find(|application| application.id == app_id)
-                    else {
-                        return;
-                    };
-                    let backend = rmac_dock_system::SystemBackend;
-                    let pin = rmac_dock::PinCommand::Pin {
-                        app_id: application.id.clone(),
-                    };
-                    let pinned = match backend.update_pins(&pin).await {
-                        Ok(pinned) => pinned,
-                        Err(error) => {
-                            eprintln!(
-                                "could not keep the dragged application in the Dock: {}",
-                                error.detail
-                            );
-                            return;
+                    let pinned = self.model_snapshot(cx).map(|model| {
+                        model
+                            .items
+                            .iter()
+                            .take_while(|item| item.pinned)
+                            .map(|item| item.id.clone())
+                            .collect::<Vec<_>>()
+                    });
+                    if let Some(mut order) = pinned {
+                        if !order.contains(&hint.app_id) {
+                            order.insert(index.min(order.len()), hint.app_id.clone());
+                            self.pending_pins = Some((order, self.now_ms()));
                         }
-                    };
-                    // Insert at roughly the dropped position; clamped, since
-                    // the sender's fraction is an untrusted hint.
-                    let destination = ((fraction.clamp(0.0, 1.0) * pinned.len() as f32).round()
-                        as usize)
-                        .min(pinned.len().saturating_sub(1));
-                    let move_to = rmac_dock::PinCommand::MoveTo {
-                        app_id: application.id.clone(),
-                        index: destination,
-                    };
-                    if let Err(error) = backend.update_pins(&move_to).await {
-                        eprintln!(
-                            "kept the dragged application, but could not place it: {}",
-                            error.detail
-                        );
                     }
-                })
-                .detach();
+                    cx.background_executor()
+                        .spawn(async move {
+                            use rmac_dock_system::Backend as _;
+                            let command = rmac_dock::PinCommand::PinAt {
+                                app_id: hint.app_id,
+                                index,
+                            };
+                            if let Err(error) =
+                                rmac_dock_system::SystemBackend.update_pins(&command).await
+                            {
+                                eprintln!(
+                                    "could not keep the dragged application in the Dock: {}",
+                                    error.detail
+                                );
+                            }
+                        })
+                        .detach();
+                }
+            }
         }
 
         /// Read whether `app_id` opens at login (XDG autostart) off the UI
@@ -2026,6 +2395,7 @@ mod dock {
             };
             self.context_menu = None;
             self.tile_drag = None;
+            self.keep_drag = None;
             self.pressed = None;
             let announcement = Announcement {
                 role: Role::Button,
@@ -2570,6 +2940,16 @@ mod dock {
             }) {
                 self.pending_pins = None;
             }
+            // A running app dragged across the separator shows in the kept
+            // apps at its open slot (still invisible: it follows the pointer).
+            let keep_preview = self.keep_drag.as_ref().and_then(|ui| {
+                let at = ui.drag.state().destination?;
+                (ui.drag.is_active() && ui.pinned == model_pinned).then(|| {
+                    let mut order = ui.pinned.clone();
+                    order.insert(at.min(order.len()), ui.app_id.clone());
+                    order
+                })
+            });
             let shown_pinned: Option<Vec<String>> = match (&self.tile_drag, &self.pending_pins) {
                 (Some(ui), _) if ui.drag.is_active() && ui.pinned == model_pinned => Some(
                     ui.drag
@@ -2578,6 +2958,7 @@ mod dock {
                         .map(|index| ui.pinned[index].clone())
                         .collect(),
                 ),
+                _ if keep_preview.is_some() => keep_preview,
                 (_, Some((order, _))) => Some(order.clone()),
                 _ => None,
             };
@@ -2585,27 +2966,52 @@ mod dock {
                 .tile_drag
                 .as_ref()
                 .is_some_and(|ui| ui.pinned != model_pinned)
+                || self
+                    .keep_drag
+                    .as_ref()
+                    .is_some_and(|ui| ui.pinned != model_pinned)
             {
                 // The kept apps changed under the drag: abandon it.
                 self.tile_drag = None;
+                self.keep_drag = None;
                 self.slides.clear();
             }
+            // The drag from Apps or Files ended or left this Dock.
+            if self.incoming.is_some() && !cx.has_active_drag() {
+                self.incoming = None;
+                self.slides.clear();
+            }
+            // While a running app is dragged the shelf keeps its separator,
+            // so its length (and the material under it) does not change.
+            let keep_separated = self
+                .keep_drag
+                .as_ref()
+                .filter(|ui| ui.drag.is_active())
+                .map(|ui| !ui.pinned.is_empty());
             let mut pinned_count = pinned_count;
             if let Some(order) = shown_pinned {
-                let unpinned = entries.split_off(pinned_count.min(entries.len()));
-                let mut kept: Vec<_> = order
-                    .iter()
-                    .filter_map(|id| {
-                        entries.iter().find(|entry| {
-                            matches!(&entry.id, rmac_dock::presentation::EntryId::Application(app_id) if app_id == id)
-                        })
+                let mut unpinned = entries.split_off(pinned_count.min(entries.len()));
+                let find = |id: &String| {
+                    entries.iter().chain(unpinned.iter()).find(|entry| {
+                        matches!(&entry.id, rmac_dock::presentation::EntryId::Application(app_id) if app_id == id)
                     })
-                    .cloned()
-                    .collect();
+                };
+                let mut kept: Vec<_> = order.iter().filter_map(find).cloned().collect();
+                unpinned.retain(|entry| {
+                    !matches!(&entry.id, rmac_dock::presentation::EntryId::Application(app_id) if order.contains(app_id))
+                });
                 pinned_count = kept.len();
                 kept.extend(unpinned);
                 entries = kept;
             }
+            self.shelf_counts = (pinned_count, entries.len());
+            // An app dragged in from Apps or Files: the kept apps part
+            // around an open slot, and the shelf grows by one tile.
+            let incoming_gap = self
+                .incoming
+                .as_ref()
+                .and_then(|incoming| incoming.destination)
+                .map(|gap| gap.min(pinned_count));
             self.slides.retain(|_, (_, started)| {
                 now.saturating_sub(*started) < rmac_dock::reorder::SLIDE_MS
             });
@@ -2617,11 +3023,16 @@ mod dock {
             if !self.slides.is_empty() || self.removing.is_some() {
                 window.request_animation_frame();
             }
-            let separates_running = pinned_count > 0 && pinned_count < entries.len();
+            let separates_running =
+                keep_separated.unwrap_or(pinned_count > 0 && pinned_count < entries.len());
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
             // Minimized tiles, then stacks, sit between the application
             // group and Trash.
-            let item_count = entries.len() + minimized_entries.len() + stack_entries.len() + 1;
+            let item_count = entries.len()
+                + usize::from(incoming_gap.is_some())
+                + minimized_entries.len()
+                + stack_entries.len()
+                + 1;
             let child_count = item_count + separator_count;
             let window_size = window.bounds().size;
             let surface_width = f32::from(window_size.width);
@@ -2688,6 +3099,10 @@ mod dock {
                 .tile_drag
                 .as_ref()
                 .is_some_and(|ui| ui.drag.is_active())
+                || self
+                    .keep_drag
+                    .as_ref()
+                    .is_some_and(|ui| ui.drag.is_active())
                 || self.separator_drag.is_some();
             // Keyboard mode also captures the next click anywhere, which
             // ends it, so the invisible focus surface can never keep the
@@ -2875,6 +3290,7 @@ mod dock {
                             cx.notify();
                         }
                         this.finish_tile_drag(event.modifiers, cx);
+                        this.finish_keep_drag(event.modifiers, cx);
                         this.finish_separator_drag(cx);
                     }),
                 )
@@ -2888,6 +3304,19 @@ mod dock {
                         } else {
                             // The release happened somewhere we never saw.
                             this.tile_drag = None;
+                            this.slides.clear();
+                            this.input_region = None;
+                            cx.notify();
+                        }
+                    }
+                    if this.keep_drag.is_some() {
+                        if event.pressed_button == Some(MouseButton::Left) {
+                            this.update_keep_drag(
+                                (f32::from(event.position.x), f32::from(event.position.y)),
+                                cx,
+                            );
+                        } else {
+                            this.keep_drag = None;
                             this.slides.clear();
                             this.input_region = None;
                             cx.notify();
@@ -2956,18 +3385,38 @@ mod dock {
             } else {
                 shelf.flex_col().items_center()
             };
-            // An application (.desktop entry) dropped anywhere else on the
-            // shelf is kept; a folder or other file becomes a stack (§
-            // folder/file stacks left of the Trash).
-            shelf = shelf.on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
-                let (desktop_entries, stack_paths): (Vec<_>, Vec<_>) =
-                    paths.paths().iter().cloned().partition(|path| {
-                        path.extension()
-                            .is_some_and(|extension| extension == "desktop")
-                    });
-                this.keep_dropped_applications(desktop_entries, cx);
-                this.keep_dropped_stacks(stack_paths, cx);
-            }));
+            // An application dragged over the shelf opens a kept-app slot
+            // under the pointer (macOS 26); dropped there, it is kept in that
+            // slot. A folder or other file becomes a stack (§ folder/file
+            // stacks left of the Trash).
+            shelf = shelf
+                .on_drag_move(cx.listener(
+                    |this, event: &gpui::DragMoveEvent<ExternalPaths>, _, cx| {
+                        if rmac_dock::keep::all_applications(event.drag(cx).paths()) {
+                            this.update_incoming(
+                                (
+                                    f32::from(event.event.position.x),
+                                    f32::from(event.event.position.y),
+                                ),
+                                cx,
+                            );
+                        }
+                    },
+                ))
+                .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                    let (applications, stack_paths): (Vec<_>, Vec<_>) = paths
+                        .paths()
+                        .iter()
+                        .cloned()
+                        .partition(|path| rmac_dock::keep::is_application_file(path));
+                    let position = window.mouse_position();
+                    let destination =
+                        this.drop_destination((f32::from(position.x), f32::from(position.y)), cx);
+                    if let Some(index) = destination {
+                        this.keep_dropped_applications(applications, Some(index), cx);
+                    }
+                    this.keep_dropped_stacks(stack_paths, cx);
+                }));
             let minimized_children: Vec<gpui::AnyElement> = minimized_entries
                 .iter()
                 .enumerate()
@@ -3241,50 +3690,40 @@ mod dock {
                     Some(tile.into_any_element())
                 })
                 .collect();
-            let separator_anchor = entries.len() as f32 * (metrics.icon_size + metrics.icon_gap)
+            let separator_anchor = (entries.len() + usize::from(incoming_gap.is_some())) as f32
+                * (metrics.icon_size + metrics.icon_gap)
                 + metrics.shelf_padding
                 + if separates_running {
                     metrics.separator_slot + metrics.icon_gap
                 } else {
                     0.0
                 };
-            // Item 7: a drag out of Apps previews where it would land as a
-            // thin insertion-point bar between the two kept apps nearest
-            // the pointer, live-updated from drag_endpoint's Hover hint.
-            let apps_drag_gap = self.apps_drag_hover.map(|fraction| {
-                const BAR_WIDTH: f32 = 3.0;
-                let index = ((fraction.clamp(0.0, 1.0) * pinned_count as f32).round() as usize)
-                    .min(pinned_count);
-                let boundary = (metrics.shelf_padding
-                    + index as f32 * (metrics.icon_size + metrics.icon_gap)
-                    - metrics.icon_gap / 2.0
-                    - BAR_WIDTH / 2.0)
-                    .max(0.0);
-                let mut bar = div()
-                    .absolute()
-                    .rounded(px(BAR_WIDTH / 2.0))
-                    .bg(rgba(tokens::accent()));
-                bar = match self.placement {
-                    rmac_shell_settings::DockPlacement::Bottom => bar
-                        .w(px(BAR_WIDTH))
-                        .h(px(metrics.icon_size))
-                        .left(px(boundary))
-                        .bottom_0(),
-                    rmac_shell_settings::DockPlacement::Left
-                    | rmac_shell_settings::DockPlacement::Right => bar
-                        .h(px(BAR_WIDTH))
-                        .w(px(metrics.icon_size))
-                        .top(px(boundary))
-                        .left_0(),
-                };
-                bar.into_any_element()
-            });
+            // The open slot for an app dragged in from Apps or Files.
+            let gap_spacer = || {
+                div()
+                    .flex_none()
+                    .w(px(metrics.icon_size))
+                    .h(px(metrics.icon_size))
+                    .into_any_element()
+            };
+            let entry_count = entries.len();
+            let mut trailing: Vec<gpui::AnyElement> = Vec::new();
+            if pinned_count >= entry_count {
+                if incoming_gap == Some(pinned_count) {
+                    trailing.push(gap_spacer());
+                }
+                if separates_running {
+                    trailing.push(dock_separator(self.placement, metrics, None));
+                }
+            }
             root.child(
                 shelf
                     .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {
+                        let slot =
+                            index + usize::from(incoming_gap.is_some_and(|gap| index >= gap));
                         let relative_center = metrics.shelf_padding
                             + metrics.icon_size / 2.0
-                            + index as f32 * (metrics.icon_size + metrics.icon_gap)
+                            + slot as f32 * (metrics.icon_size + metrics.icon_gap)
                             + if separates_running && index >= pinned_count {
                                 metrics.separator_slot + metrics.icon_gap
                             } else {
@@ -3316,7 +3755,7 @@ mod dock {
                         let slide = self.slides.get(&app_id).map_or(0.0, |(offset, started)| {
                             offset
                                 * (1.0
-                                    - rmac_dock::reorder::ease_out(
+                                    - rmac_dock::reorder::spring(
                                         now.saturating_sub(*started),
                                         rmac_dock::reorder::SLIDE_MS,
                                     ))
@@ -3325,7 +3764,11 @@ mod dock {
                         let dragged_here = self
                             .tile_drag
                             .as_ref()
-                            .is_some_and(|ui| ui.drag.is_active() && ui.app_id == app_id);
+                            .is_some_and(|ui| ui.drag.is_active() && ui.app_id == app_id)
+                            || self
+                                .keep_drag
+                                .as_ref()
+                                .is_some_and(|ui| ui.drag.is_active() && ui.app_id == app_id);
                         let activate_app_id = app_id.clone();
                         let mut item = div()
                             .id(format!("dock-item-{}-{index}", self.display_id))
@@ -3383,9 +3826,6 @@ mod dock {
                                 let press_icon = icon_path.clone();
                                 visual
                                     .cursor_pointer()
-                                    // A finger drags a tile as a held button
-                                    // does (ADR 0028).
-                                    .touch_drag()
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(
@@ -3393,14 +3833,22 @@ mod dock {
                                                 cx.stop_propagation();
                                                 this.pressed = Some(press_app_id.clone());
                                                 cx.notify();
+                                                let position = (
+                                                    f32::from(event.position.x),
+                                                    f32::from(event.position.y),
+                                                );
                                                 if index < pinned_count {
                                                     this.begin_tile_drag(
                                                         &press_app_id,
                                                         press_icon.clone(),
-                                                        (
-                                                            f32::from(event.position.x),
-                                                            f32::from(event.position.y),
-                                                        ),
+                                                        position,
+                                                        cx,
+                                                    );
+                                                } else {
+                                                    this.begin_keep_drag(
+                                                        &press_app_id,
+                                                        press_icon.clone(),
+                                                        position,
                                                         cx,
                                                     );
                                                 }
@@ -3411,9 +3859,11 @@ mod dock {
                                         MouseButton::Left,
                                         cx.listener(
                                             move |this, event: &gpui::MouseUpEvent, _, cx| {
-                                                // Kept apps finish on the root, which
+                                                // Drags finish on the root, which
                                                 // sees drags that left the tile.
-                                                if this.tile_drag.is_some() {
+                                                if this.tile_drag.is_some()
+                                                    || this.keep_drag.is_some()
+                                                {
                                                     return;
                                                 }
                                                 if this.pressed.as_deref()
@@ -3433,16 +3883,41 @@ mod dock {
                         // the icon; dropping opens the file with that app.
                         if let Some(handler) = drop_handler {
                             let drop_app_id = app_id.clone();
+                            // An app dragged over a tile parts the kept
+                            // apps instead (macOS 26), so it never darkens.
                             visual = visual
-                                .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(0.55))
-                                .on_drop(cx.listener(move |this, paths: &ExternalPaths, _, cx| {
-                                    this.open_dropped_files(
-                                        &drop_app_id,
-                                        handler.clone(),
-                                        paths.paths().to_vec(),
-                                        cx,
-                                    );
-                                }));
+                                .drag_over::<ExternalPaths>(|style, paths, _, _| {
+                                    if rmac_dock::keep::all_applications(paths.paths()) {
+                                        style
+                                    } else {
+                                        style.opacity(0.55)
+                                    }
+                                })
+                                .on_drop(cx.listener(
+                                    move |this, paths: &ExternalPaths, window, cx| {
+                                        if rmac_dock::keep::all_applications(paths.paths()) {
+                                            let position = window.mouse_position();
+                                            let destination = this.drop_destination(
+                                                (f32::from(position.x), f32::from(position.y)),
+                                                cx,
+                                            );
+                                            if destination.is_some() {
+                                                this.keep_dropped_applications(
+                                                    paths.paths().to_vec(),
+                                                    destination,
+                                                    cx,
+                                                );
+                                            }
+                                            return;
+                                        }
+                                        this.open_dropped_files(
+                                            &drop_app_id,
+                                            handler.clone(),
+                                            paths.paths().to_vec(),
+                                            cx,
+                                        );
+                                    },
+                                ));
                         }
                         visual = match self.placement {
                             rmac_shell_settings::DockPlacement::Bottom => {
@@ -3632,13 +4107,17 @@ mod dock {
                                     .child(badge),
                             );
                         }
-                        let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
+                        let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(3);
+                        if incoming_gap == Some(index) {
+                            children.push(gap_spacer());
+                        }
                         if separates_running && index == pinned_count {
                             children.push(dock_separator(self.placement, metrics, None));
                         }
                         children.push(item.into_any_element());
                         children
                     }))
+                    .children(trailing)
                     .when(!model.items.is_empty(), |shelf| {
                         shelf.child(dock_separator(
                             self.placement,
@@ -3648,7 +4127,6 @@ mod dock {
                     })
                     .children(minimized_children)
                     .children(stack_children)
-                    .children(apps_drag_gap)
                     .child({
                         let visual_size = magnified_icon_size(
                             trash_center,
@@ -3681,10 +4159,24 @@ mod dock {
                                 }
                             }));
                         if trash_available {
+                            // Dropping an app on the Trash does nothing
+                            // (macOS 26); other files move to the Trash.
                             trash = trash
-                                .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(0.55))
+                                .drag_over::<ExternalPaths>(|style, paths, _, _| {
+                                    if rmac_dock::keep::all_applications(paths.paths()) {
+                                        style
+                                    } else {
+                                        style.opacity(0.55)
+                                    }
+                                })
                                 .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
-                                    this.trash_dropped_files(paths.paths().to_vec(), cx);
+                                    let files: Vec<PathBuf> = paths
+                                        .paths()
+                                        .iter()
+                                        .filter(|path| !rmac_dock::keep::is_application_file(path))
+                                        .cloned()
+                                        .collect();
+                                    this.trash_dropped_files(files, cx);
                                 }));
                             trash = trash.cursor_pointer().on_mouse_down(
                                 MouseButton::Left,
@@ -3840,6 +4332,26 @@ mod dock {
                                         ),
                                 )
                             })
+                    }),
+            )
+            .children(
+                self.keep_drag
+                    .as_ref()
+                    .filter(|ui| ui.drag.is_active())
+                    .map(|ui| {
+                        let art = metrics.icon_size * ICON_ART_SCALE;
+                        let inset = (metrics.icon_size - art) / 2.0;
+                        div()
+                            .absolute()
+                            .left(px(ui.pointer.0 - ui.grab.0 + inset))
+                            .top(px(ui.pointer.1 - ui.grab.1 + inset))
+                            .w(px(art))
+                            .h(px(art))
+                            .children(ui.icon.clone().map(|path| {
+                                rmac_shell_ui::svg_icon(path, art, scale_factor, cx)
+                                    .w(px(art))
+                                    .h(px(art))
+                            }))
                     }),
             )
             .children(self.removing.as_ref().map(|removed| {
@@ -5260,6 +5772,21 @@ mod dock {
         }
     }
 
+    /// A program dropped on the Dock that no installed app names gets a
+    /// desktop entry of its own in Lulo's data home, so it can be kept, as
+    /// the Mac keeps any application dragged to the Dock. Returns its id.
+    #[cfg(windows)]
+    fn keep_program_entry(program: &std::path::Path) -> Option<String> {
+        let (file_name, contents) = rmac_dock::keep::program_entry(program)?;
+        let directory = rmac_apps::windows_apps::data_home()?.join("applications");
+        fs::create_dir_all(&directory).ok()?;
+        let path = directory.join(&file_name);
+        if !path.exists() {
+            fs::write(&path, contents).ok()?;
+        }
+        Some(file_name)
+    }
+
     #[derive(Default)]
     pub struct DockWindows {
         windows:
@@ -5684,84 +6211,6 @@ mod dock {
         let _ = dock.update(cx, |dock, window, cx| dock.begin_keyboard(window, cx));
     }
 
-    /// A drag out of Apps (crates/app-drawer): `Hover` previews where it
-    /// would land (item 7's live insertion gap), `Drop` keeps the
-    /// application in whichever Dock the drag reached, `Cancel` clears the
-    /// preview. This is a hint, not an authority (drag_endpoint's own doc
-    /// comment): `Drop` still resolves and places the application through
-    /// the same catalog/PinCommand path a `.desktop` file drop uses.
-    #[cfg(target_os = "linux")]
-    fn apply_drag_command(
-        windows: &DockWindows,
-        command: crate::drag_endpoint::Command,
-        cx: &mut App,
-    ) {
-        let Some(dock) = windows
-            .windows
-            .values()
-            .next()
-            .map(|(_, foreground, _)| *foreground)
-            .and_then(|handle| handle.downcast::<Dock>())
-        else {
-            return;
-        };
-        let _ = dock.update(cx, |dock, _window, cx| match command {
-            crate::drag_endpoint::Command::Hover { fraction, .. } => {
-                if dock.apps_drag_hover != Some(fraction) {
-                    dock.apps_drag_hover = Some(fraction);
-                    cx.notify();
-                }
-            }
-            crate::drag_endpoint::Command::Drop { app_id, fraction } => {
-                if dock.apps_drag_hover.take().is_some() {
-                    cx.notify();
-                }
-                dock.keep_dragged_application(app_id, fraction, cx);
-            }
-            crate::drag_endpoint::Command::Cancel { .. } => {
-                if dock.apps_drag_hover.take().is_some() {
-                    cx.notify();
-                }
-            }
-        });
-    }
-
-    /// Receive Apps' drag-hint datagrams (`drag_endpoint`) on a thread; the
-    /// Dock keeps running without drag-to-keep from Apps if the socket
-    /// cannot be bound.
-    #[cfg(target_os = "linux")]
-    fn listen_for_drag_commands() -> Option<async_channel::Receiver<crate::drag_endpoint::Command>>
-    {
-        let listener = match crate::drag_endpoint::Listener::bind() {
-            Ok(listener) => listener,
-            Err(error) => {
-                eprintln!("Dock drag-from-Apps endpoint is unavailable: {error}");
-                return None;
-            }
-        };
-        let (command_tx, command_rx) = async_channel::bounded(8);
-        let spawned = std::thread::Builder::new()
-            .name("rmac-dock-drag".into())
-            .spawn(move || loop {
-                match listener.receive() {
-                    Ok(command) => {
-                        if command_tx.send_blocking(command).is_err() {
-                            return;
-                        }
-                    }
-                    Err(error) => {
-                        eprintln!("Dock drag-from-Apps endpoint stopped: {error}");
-                        return;
-                    }
-                }
-            });
-        if let Err(error) = spawned {
-            eprintln!("could not start the Dock drag-from-Apps endpoint: {error}");
-            return None;
-        }
-        Some(command_rx)
-    }
-
     /// Receive `rmac-dock focus` datagrams on a thread; the Dock keeps
     /// running without ⌃F3 if the socket cannot be bound.
     #[cfg(target_os = "linux")]
@@ -5825,7 +6274,6 @@ mod dock {
     #[cfg(target_os = "linux")]
     fn run_service() {
         let commands = listen_for_commands();
-        let drag_commands = listen_for_drag_commands();
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
             rmac_shell_ui::tokens::install_appearance_watch(cx);
@@ -5845,15 +6293,6 @@ mod dock {
                                 toggle_dock_hiding(cx);
                             }
                         });
-                    }
-                })
-                .detach();
-            }
-            if let Some(drag_commands) = drag_commands {
-                let windows = windows.clone();
-                cx.spawn(async move |cx| {
-                    while let Ok(command) = drag_commands.recv().await {
-                        cx.update(|cx| apply_drag_command(&windows.borrow(), command, cx));
                     }
                 })
                 .detach();
@@ -5910,6 +6349,27 @@ mod dock {
                     }
                 });
                 system::requests::register("dock-toggle-hiding", toggle_dock_hiding);
+                // An app dragged out of Apps (same process on Windows) opens
+                // a kept-app slot in the Dock under the pointer.
+                let windows = shared.clone();
+                rmac_shell_layer::windows::dock_drag::set_sink(cx, move |hint, cx| {
+                    let docks: Vec<WindowHandle<Dock>> = windows
+                        .borrow()
+                        .windows
+                        .values()
+                        .filter_map(|(_, foreground, _)| foreground.downcast::<Dock>())
+                        .collect();
+                    for dock in docks {
+                        let hint = hint.clone();
+                        let _ = dock.update(cx, |dock, window, cx| {
+                            if window.bounds().contains(&hint.screen) {
+                                dock.apps_drag_hint(hint, window, cx);
+                            } else {
+                                dock.clear_incoming(cx);
+                            }
+                        });
+                    }
+                });
             }
             cx.spawn(async move |cx| {
                 while reconcile_rx.recv().await.is_ok() {

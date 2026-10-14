@@ -24,20 +24,47 @@ use image::RgbaImage;
 use windows::core::HSTRING;
 use windows::Data::Pdf::{PdfDocument, PdfPage, PdfPageRenderOptions};
 use windows::Storage::{FileAccessMode, StorageFile};
-use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
 
 use crate::poppler::{PageBox, PdfInfo};
 
-/// Every public function below calls this before touching WinRT: a
-/// `blocking::unblock`/`cx.background_executor()` thread pool thread may be
-/// freshly spawned with no WinRT apartment initialised yet. Idempotent —
-/// calling it again on an already-initialised thread just returns
-/// `S_FALSE`, still a success `HRESULT` — and never undone, since these
-/// are long-lived pool threads that may run further WinRT work later.
-fn ensure_winrt_apartment() {
-    // SAFETY: a plain WinRT bootstrap call with no pointers or borrows; it
-    // is documented as safe to call more than once on the same thread.
-    let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+/// The WinRT apartment for one call into `Windows.Data.Pdf`, entered on
+/// the calling thread and left again when the call is over. Every public
+/// function below holds one for as long as it touches WinRT, declared first
+/// so every WinRT object it made is released before the apartment.
+///
+/// The calls run on GPUI's background executor, which is the Windows thread
+/// pool. The pool's threads are shared with Windows' own work in this
+/// process, so an apartment must not be left behind on them: when it was
+/// (the old `ensure_winrt_apartment`, "never undone"), the shell's own pool
+/// work could not set up its apartment, and the Open dialog Preview showed
+/// after a PDF was created and given the keyboard but never shown (WIN
+/// flakes, op/win-flakes: every time on the owner's laptop after a PDF, never
+/// after a PNG).
+struct WinRtApartment {
+    entered: bool,
+}
+
+impl WinRtApartment {
+    fn enter() -> Self {
+        // SAFETY: a plain WinRT bootstrap call with no pointers or borrows.
+        // `S_FALSE` (already in the multithreaded apartment) is a success
+        // that still needs its matching `RoUninitialize`; a thread already
+        // in a single-threaded apartment fails and is left as it is.
+        let entered = unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_ok();
+        Self { entered }
+    }
+}
+
+impl Drop for WinRtApartment {
+    fn drop(&mut self) {
+        if self.entered {
+            // SAFETY: balances the successful `RoInitialize` in `enter`, on
+            // the same thread (the value never leaves the function that made
+            // it).
+            unsafe { RoUninitialize() };
+        }
+    }
 }
 
 fn open_error(path: &Path, detail: &str) -> String {
@@ -57,7 +84,6 @@ fn absolute(path: &Path) -> std::path::PathBuf {
 }
 
 fn open_document(path: &Path) -> windows::core::Result<PdfDocument> {
-    ensure_winrt_apartment();
     let wide = HSTRING::from(absolute(path).as_os_str());
     let file = StorageFile::GetFileFromPathAsync(&wide)?.get()?;
     PdfDocument::LoadFromFileAsync(&file)?.get()
@@ -66,6 +92,7 @@ fn open_document(path: &Path) -> windows::core::Result<PdfDocument> {
 /// Page count and each page's displayed size, for Preview's page list and
 /// layout — poppler's Windows-free counterpart to `render::load_pdf_info`.
 pub fn load_pdf_info(path: &Path) -> Result<PdfInfo, String> {
+    let _apartment = WinRtApartment::enter();
     let document = open_document(path).map_err(|error| windows_error(path, error))?;
     let count = document
         .PageCount()
@@ -106,6 +133,7 @@ pub fn render_page(
     page_size: (f32, f32),
     pixel_scale: f32,
 ) -> Result<RgbaImage, String> {
+    let _apartment = WinRtApartment::enter();
     let document = open_document(path).map_err(|error| windows_error(path, error))?;
     let page = document
         .GetPage(page_index as u32)
@@ -171,5 +199,24 @@ mod tests {
         let error = load_pdf_info(Path::new(r"C:\does\not\exist\rmac-preview-winpdf-test.pdf"))
             .unwrap_err();
         assert!(error.contains("couldn’t be opened"), "{error}");
+    }
+
+    /// A PDF call leaves its thread as it found it: the shell's Open dialog
+    /// stayed hidden while an apartment was left on a thread-pool thread
+    /// (op/win-flakes).
+    #[test]
+    fn a_pdf_call_leaves_no_apartment_on_its_thread() {
+        use windows::Win32::System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        };
+        std::thread::spawn(|| {
+            let _ = load_pdf_info(Path::new(r"C:\does\not\exist\rmac-preview-winpdf-test.pdf"));
+            // SAFETY: joins and leaves an apartment on this test thread.
+            let joined = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+            assert!(joined.is_ok(), "{joined:?}");
+            unsafe { CoUninitialize() };
+        })
+        .join()
+        .unwrap();
     }
 }

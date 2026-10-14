@@ -63,6 +63,28 @@ pub(super) fn classify_touch_motion(
     }
 }
 
+/// The one rule for what a finger may drag, from what it landed on:
+/// `element` is the GPUI hit test (`touch_drag` elements are `Immediate`,
+/// `on_drag` ones `AfterHold`), `title_bar` a window-control drag area,
+/// `item_window` a window whose items stage their own drags outside GPUI's
+/// drag listener (Files, the Dock, Apps), which drag after the same hold.
+/// Returns whether a drag moves the window, and the drag mode.
+pub(super) fn touch_drag_rule(
+    element: Option<TouchDragMode>,
+    title_bar: bool,
+    item_window: bool,
+) -> (bool, Option<TouchDragMode>) {
+    let moves_window = title_bar && element != Some(TouchDragMode::Immediate);
+    let drag = if moves_window {
+        Some(TouchDragMode::Immediate)
+    } else if element.is_none() && item_window {
+        Some(TouchDragMode::AfterHold)
+    } else {
+        element
+    };
+    (moves_window, drag)
+}
+
 pub(super) fn classify_touch_hold(gesture: TouchGesture, elapsed: Duration) -> TouchGesture {
     if gesture == TouchGesture::Pending && elapsed >= TOUCH_HOLD {
         TouchGesture::ContextMenu
@@ -277,6 +299,33 @@ mod tests {
         assert_eq!(
             classify_touch_motion(start, moved, TOUCH_DRAG_HOLD, hold),
             TouchGesture::PointerDrag
+        );
+    }
+
+    #[test]
+    fn one_drag_rule_for_title_bars_elements_and_item_windows() {
+        use TouchDragMode::{AfterHold, Immediate};
+        assert_eq!(touch_drag_rule(None, false, false), (false, None));
+        // A title bar moves the window at once...
+        assert_eq!(touch_drag_rule(None, true, false), (true, Some(Immediate)));
+        assert_eq!(
+            touch_drag_rule(Some(AfterHold), true, false),
+            (true, Some(Immediate))
+        );
+        // ...unless a slider in it takes the finger.
+        assert_eq!(
+            touch_drag_rule(Some(Immediate), true, false),
+            (false, Some(Immediate))
+        );
+        // Dock, Apps and Files items drag after the shared hold.
+        assert_eq!(touch_drag_rule(None, false, true), (false, Some(AfterHold)));
+        assert_eq!(
+            touch_drag_rule(Some(Immediate), false, true),
+            (false, Some(Immediate))
+        );
+        assert_eq!(
+            touch_drag_rule(Some(AfterHold), false, false),
+            (false, Some(AfterHold))
         );
     }
 

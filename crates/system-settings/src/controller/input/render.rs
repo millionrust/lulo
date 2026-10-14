@@ -158,6 +158,16 @@ impl Settings {
                 ),
             );
         }
+        // The Mac's Keyboard brightness slider, in its own group after the repeat sliders as on macOS 26, driving the backlight
+        // through logind.
+        if let Some(level) = self.keyboard_brightness {
+            cards.push(card(vec![value_slider_row(
+                "Keyboard brightness",
+                "keyboard-brightness",
+                &self.keyboard_brightness_slider,
+                format!("{level}%").into(),
+            )]));
+        }
         let shortcuts_view = view.clone();
         let rows = only(
             vec![
@@ -185,15 +195,6 @@ impl Settings {
         );
         if !rows.is_empty() {
             cards.push(card(rows));
-        }
-
-        if self.hardware.has_keyboard_backlight {
-            cards.push(card(vec![value_button_row(
-                "Keyboard backlight",
-                None,
-                Some("Available".into()),
-                None,
-            )]));
         }
 
         // The Mac keyboard layout is a Lulo OS keyd/xkb service; Windows

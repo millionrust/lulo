@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "scenario": "calendar/settings-advanced",
+  "observations": {
+    "defaults": {
+      "settings_controls": {
+        "checked": {
+          "Work": true,
+          "Team": true,
+          "Family": true,
+          "Home": true,
+          "Gym": false,
+          "Holidays": true,
+          "Turn on time zone support": false,
+          "Show events in year view": true,
+          "Show week numbers": false
+        }
+      }
+    },
+    "toggled": {
+      "settings_controls": {
+        "checked": {
+          "Work": true,
+          "Team": true,
+          "Family": true,
+          "Home": true,
+          "Gym": false,
+          "Holidays": true,
+          "Turn on time zone support": false,
+          "Show events in year view": false,
+          "Show week numbers": true
+        }
+      }
+    }
+  }
+}

@@ -1070,10 +1070,6 @@
       },
       {
         "kind": "section",
-        "label": "Show these items in the sidebar:"
-      },
-      {
-        "kind": "section",
         "label": "Keep folders on top:"
       },
       {
@@ -1106,6 +1102,10 @@
       },
       {
         "kind": "control",
+        "label": "Shared"
+      },
+      {
+        "kind": "control",
         "label": "Applications"
       },
       {
@@ -1122,11 +1122,27 @@
       },
       {
         "kind": "control",
-        "label": "Home"
+        "label": "Movies"
       },
       {
         "kind": "control",
-        "label": "Tags…"
+        "label": "Music"
+      },
+      {
+        "kind": "control",
+        "label": "Pictures"
+      },
+      {
+        "kind": "control",
+        "label": "Cloud Storage"
+      },
+      {
+        "kind": "control",
+        "label": "CDs, DVDs and iOS Devices"
+      },
+      {
+        "kind": "control",
+        "label": "Recent Tags"
       },
       {
         "kind": "control",

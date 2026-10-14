@@ -212,6 +212,12 @@ pub enum PinCommand {
         app_id: String,
         index: usize,
     },
+    /// Keep an app at `index` among the kept apps, as a drag onto the Dock
+    /// does; an app already kept moves there.
+    PinAt {
+        app_id: String,
+        index: usize,
+    },
 }
 
 impl PinCommand {
@@ -220,7 +226,8 @@ impl PinCommand {
             Self::Pin { app_id }
             | Self::Unpin { app_id }
             | Self::Move { app_id, .. }
-            | Self::MoveTo { app_id, .. } => app_id,
+            | Self::MoveTo { app_id, .. }
+            | Self::PinAt { app_id, .. } => app_id,
         }
     }
 }

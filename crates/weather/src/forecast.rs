@@ -15,10 +15,10 @@ pub fn forecast_url(latitude: f64, longitude: f64) -> String {
     format!(
         "{FORECAST_ENDPOINT}?latitude={latitude:.4}&longitude={longitude:.4}\
          &current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day,\
-weather_code,wind_speed_10m,wind_direction_10m,precipitation\
+weather_code,wind_speed_10m,wind_direction_10m,precipitation,pressure_msl,visibility\
          &hourly=temperature_2m,weather_code,is_day,precipitation_probability\
          &daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,\
-uv_index_max,precipitation_probability_max\
+uv_index_max,precipitation_probability_max,precipitation_sum\
          &timezone=auto&forecast_days={FORECAST_DAYS}&timeformat=unixtime"
     )
 }
@@ -134,6 +134,10 @@ pub struct Current {
     pub wind_speed: f64,
     pub wind_direction: f64,
     pub precipitation: f64,
+    /// Sea-level pressure in hectopascals; NaN when not reported.
+    pub pressure: f64,
+    /// Visibility in metres; NaN when not reported.
+    pub visibility: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -156,6 +160,8 @@ pub struct Day {
     pub sunset: Option<i64>,
     pub uv_index: Option<f64>,
     pub precipitation_chance: Option<f64>,
+    /// The day's total rain, snow and showers in millimetres.
+    pub precipitation_total: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -192,6 +198,10 @@ struct RawCurrent {
     wind_speed_10m: Option<f64>,
     wind_direction_10m: Option<f64>,
     precipitation: Option<f64>,
+    #[serde(default)]
+    pressure_msl: Option<f64>,
+    #[serde(default)]
+    visibility: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -218,6 +228,8 @@ struct RawDaily {
     uv_index_max: Vec<Option<f64>>,
     #[serde(default)]
     precipitation_probability_max: Vec<Option<f64>>,
+    #[serde(default)]
+    precipitation_sum: Vec<Option<f64>>,
 }
 
 fn at<T: Copy>(values: &[Option<T>], index: usize) -> Option<T> {
@@ -240,6 +252,8 @@ impl Forecast {
             wind_speed: raw.current.wind_speed_10m.unwrap_or(f64::NAN),
             wind_direction: raw.current.wind_direction_10m.unwrap_or(f64::NAN),
             precipitation: raw.current.precipitation.unwrap_or(0.0),
+            pressure: raw.current.pressure_msl.unwrap_or(f64::NAN),
+            visibility: raw.current.visibility.unwrap_or(f64::NAN),
         };
         let hourly = &raw.hourly;
         let hours = hourly
@@ -271,6 +285,7 @@ impl Forecast {
                     sunset: at(&daily.sunset, index),
                     uv_index: at(&daily.uv_index_max, index),
                     precipitation_chance: at(&daily.precipitation_probability_max, index),
+                    precipitation_total: at(&daily.precipitation_sum, index),
                 })
             })
             .take(FORECAST_DAYS)
@@ -298,7 +313,7 @@ pub(crate) mod tests {
       "current": {"time": 1790144100, "interval": 900, "temperature_2m": 24.4,
         "apparent_temperature": 25.9, "relative_humidity_2m": 71, "is_day": 1,
         "weather_code": 2, "wind_speed_10m": 11.2, "wind_direction_10m": 250,
-        "precipitation": 0.0},
+        "precipitation": 0.0, "pressure_msl": 1009.8, "visibility": 24140},
       "hourly": {
         "time": [1790141400, 1790145000, 1790148600, 1790152200, 1790155800],
         "temperature_2m": [24.1, 25.0, 25.8, null, 24.3],
@@ -314,7 +329,8 @@ pub(crate) mod tests {
         "sunrise": [1790124840, 1790211240],
         "sunset": [1790168640, 1790255000],
         "uv_index_max": [7.1, 6.5],
-        "precipitation_probability_max": [40, 80]
+        "precipitation_probability_max": [40, 80],
+        "precipitation_sum": [1.2, 14.6]
       }
     }"#;
 
@@ -349,6 +365,20 @@ pub(crate) mod tests {
         assert_eq!(forecast.days.len(), 2);
         assert_eq!(forecast.days[1].sky, Sky::Thunderstorms);
         assert_eq!(forecast.days[0].sunset, Some(1_790_168_640));
+        assert!((forecast.current.pressure - 1009.8).abs() < 1e-9);
+        assert!((forecast.current.visibility - 24_140.0).abs() < 1e-9);
+        assert_eq!(forecast.days[1].precipitation_total, Some(14.6));
+    }
+
+    #[test]
+    fn an_older_cached_forecast_without_pressure_or_rain_totals_still_parses() {
+        let old = SAMPLE
+            .replace(r#", "pressure_msl": 1009.8, "visibility": 24140"#, "")
+            .replace(",\n        \"precipitation_sum\": [1.2, 14.6]", "");
+        let forecast = Forecast::parse(old.as_bytes()).unwrap();
+        assert!(forecast.current.pressure.is_nan());
+        assert!(forecast.current.visibility.is_nan());
+        assert_eq!(forecast.days[1].precipitation_total, None);
     }
 
     #[test]

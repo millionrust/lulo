@@ -137,6 +137,17 @@ impl fmt::Display for CodecError {
 impl std::error::Error for CodecError {}
 
 pub(crate) fn decode(bytes: Vec<u8>) -> Result<DecodedDocument, CodecError> {
+    decode_as(bytes, None)
+}
+
+/// [`decode`] with Settings ▸ Open and Save ▸ "Opening files:" applied:
+/// `None` is Automatic (the byte-order mark decides, UTF-8 otherwise);
+/// `Some(encoding)` reads a file without a matching mark as that encoding,
+/// as TextEdit does when a specific opening encoding is chosen.
+pub(crate) fn decode_as(
+    bytes: Vec<u8>,
+    forced: Option<TextEncoding>,
+) -> Result<DecodedDocument, CodecError> {
     if bytes.len() > MAX_DOCUMENT_BYTES {
         return Err(CodecError::TooLarge);
     }
@@ -145,7 +156,21 @@ pub(crate) fn decode(bytes: Vec<u8>) -> Result<DecodedDocument, CodecError> {
         return Err(CodecError::UnsupportedUtf32);
     }
 
-    let (encoding, decoded) = if let Some(body) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
+    let forced_utf16 = match forced {
+        Some(TextEncoding::Utf16Le) if !bytes.starts_with(&[0xff, 0xfe]) => Some(true),
+        Some(TextEncoding::Utf16Be) if !bytes.starts_with(&[0xfe, 0xff]) => Some(false),
+        _ => None,
+    };
+    let (encoding, decoded) = if let Some(little_endian) = forced_utf16 {
+        (
+            if little_endian {
+                TextEncoding::Utf16Le
+            } else {
+                TextEncoding::Utf16Be
+            },
+            decode_utf16(&bytes, little_endian)?,
+        )
+    } else if let Some(body) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
         (
             TextEncoding::Utf8Bom,
             std::str::from_utf8(body)
@@ -362,6 +387,23 @@ fn preferred_line_ending(normalized: &NormalizedText) -> LineEnding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_chosen_opening_encoding_reads_unmarked_utf16() {
+        let little: Vec<u8> = "héllo".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let automatic = decode_as(little.clone(), None);
+        assert!(automatic.is_err() || automatic.unwrap().text != "héllo");
+        let forced = decode_as(little, Some(TextEncoding::Utf16Le)).unwrap();
+        assert_eq!(forced.text, "héllo");
+        assert_eq!(forced.format.encoding, TextEncoding::Utf16Le);
+        let big: Vec<u8> = "ok".encode_utf16().flat_map(u16::to_be_bytes).collect();
+        let forced = decode_as(big, Some(TextEncoding::Utf16Be)).unwrap();
+        assert_eq!(forced.text, "ok");
+        // A byte-order mark still wins over a UTF-8 choice.
+        let marked = decode_as(vec![0xff, 0xfe, b'a', 0], Some(TextEncoding::Utf8)).unwrap();
+        assert_eq!(marked.text, "a");
+        assert_eq!(marked.format.encoding, TextEncoding::Utf16Le);
+    }
 
     #[test]
     fn utf8_bom_and_crlf_round_trip_with_normalized_editing_text() {

@@ -1120,8 +1120,13 @@ impl WaylandWindowStatePtr {
             .and_then(|callback| callback())
     }
 
-    pub fn is_files_window(&self) -> bool {
-        self.state.borrow().app_id.as_deref() == Some("org.rmac.Files")
+    /// rmac: windows whose items a touch drags after a short hold (Files'
+    /// items, the Dock's tiles, Apps' icons) rather than scrolling.
+    pub fn is_item_drag_window(&self) -> bool {
+        matches!(
+            self.state.borrow().app_id.as_deref(),
+            Some("org.rmac.Files" | "dev.rmac.Dock" | "org.rmac.AppDrawer")
+        )
     }
 
     pub fn start_window_move(&self) {

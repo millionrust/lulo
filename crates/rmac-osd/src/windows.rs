@@ -13,8 +13,8 @@ use std::sync::OnceLock;
 
 use windows::core::{w, BSTR};
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CLSCTX_INPROC_SERVER,
-    COINIT_MULTITHREADED, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
+    CoCreateInstance, CoIncrementMTAUsage, CoSetProxyBlanket, CLSCTX_INPROC_SERVER, EOAC_NONE,
+    RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
 };
 use windows::Win32::System::Variant::{
     VariantToInt32, VariantToStringAlloc, VARENUM, VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0,
@@ -87,10 +87,18 @@ fn checked<T>(stage: &str, result: windows::core::Result<T>) -> Option<T> {
 }
 
 fn services() -> Option<IWbemServices> {
-    // SAFETY: COM on this thread (a blocking worker or the helper's main
-    // thread); the objects are released when dropped.
+    // No thread joins an apartment here (one left on a Windows thread-pool
+    // thread kept the shell's Open dialog from showing, op/win-flakes): the
+    // process keeps the multithreaded apartment alive once, and a thread
+    // without COM uses it implicitly.
+    static MTA: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    MTA.get_or_init(|| {
+        // SAFETY: a plain COM call; the cookie is kept for the process.
+        let _ = unsafe { CoIncrementMTAUsage() };
+    });
+    // SAFETY: COM in that apartment (or the thread's own); the objects are
+    // released when dropped.
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let locator: IWbemLocator = checked(
             "WbemLocator",
             CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER),

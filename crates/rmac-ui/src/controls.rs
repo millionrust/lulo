@@ -587,6 +587,7 @@ impl RenderOnce for PopUpButtonTrigger {
             .aria_expanded(open)
             .aria_label(self.value.clone())
             .when(!menu_button_icon, |el| el.aria_value(self.value))
+            .aria_disabled(disabled)
             .cursor_default()
             .h(px(metrics.control_height_regular))
             .px(px(2.0))
@@ -1170,6 +1171,7 @@ impl RenderOnce for Toggle {
             .id(self.id)
             .role(Role::Switch)
             .aria_toggled(toggled)
+            .aria_disabled(disabled)
             .when_some(accessible_name, |el, name| el.aria_label(name))
             .cursor_default()
             .when(!disabled, |el| {
@@ -1312,6 +1314,7 @@ impl RenderOnce for Checkbox {
             .id(self.id)
             .role(Role::CheckBox)
             .aria_toggled(toggled)
+            .aria_disabled(disabled)
             .when_some(self.label, |el, label| el.aria_label(label))
             .cursor_default()
             .when(!disabled, |el| {
@@ -1422,6 +1425,7 @@ impl RenderOnce for Radio {
             .id(self.id)
             .role(Role::RadioButton)
             .aria_selected(selected)
+            .aria_disabled(disabled)
             .when_some(self.label, |el, label| el.aria_label(label))
             .cursor_default()
             .when(!disabled, |el| {

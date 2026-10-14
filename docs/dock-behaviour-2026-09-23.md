@@ -83,7 +83,7 @@ recorded**.
 | Drag off to remove | Remove at 1.5 tiles, 200 ms fade | Missing | ✓ Kept apps only; recent apps cannot be dragged out yet |
 | Drop a file on an app | Opens it with the app | Missing | ✓ For apps declaring MIME types, through `gio launch` |
 | Drop on the Bin | Moves the items to the Bin | Missing | ✓ Through the `trash` crate |
-| Drop an app on the Dock | Kept at the drop point | Missing | ◐ Kept at the end of the kept apps. rmac Files cannot start a drag yet (GPUI) |
+| Drop an app on the Dock | Kept at the drop point | Missing | ✓ The kept apps part on a spring; kept at the drop point from Apps, Files' Applications, a running app's tile, or (Windows) a .lnk/.exe (DOCK-31) |
 | Recent apps | 3, quit apps stay without a dot | Running only | ✓ `crates/rmac-dock/src/recents.rs`, persisted in `$XDG_STATE_HOME/rmac/dock-recents` |
 | Insert and remove animation | Grow or shrink over 0.47 s | Instant | ✗ The shelf material is a separate layer surface that is reopened when its size changes |
 | Minimise into the Dock | Genie into a thumbnail tile | Tile with a thumbnail, no animation | ◐ Genie needs compositor support |

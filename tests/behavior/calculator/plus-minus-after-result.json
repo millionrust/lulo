@@ -22,7 +22,7 @@
       ]
     },
     {
-      "click_key": "negate",
+      "click_key": "Change Sign",
       "row": 4,
       "col": 6,
       "settle": 0.6

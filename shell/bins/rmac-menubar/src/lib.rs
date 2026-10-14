@@ -387,6 +387,8 @@ mod bar {
                                     this.menu_generation = this.menu_generation.saturating_add(1);
                                     if rmac_app_menu::bus_name(&app_id).is_some() {
                                         request_app_menus(app_id, this.menu_generation, cx);
+                                    } else {
+                                        learn_app_name(app_id, cx);
                                     }
                                 } else if this.menu_app_id.is_none() {
                                     this.show_desktop_menus(cx);
@@ -460,6 +462,31 @@ mod bar {
                 request_app_menus(app_id, self.menu_generation, cx);
             }
         }
+    }
+
+    /// A third-party app is named in bold by its desktop entry's `Name`
+    /// ("Visual Studio Code", not "Code"), as the Mac names an app by its
+    /// bundle. The entry is read once, off this thread, and remembered in
+    /// the same registry Lulo on Windows fills from executables.
+    fn learn_app_name(app_id: String, cx: &mut Context<ShellStatus>) {
+        if rmac_apps::identity::window_title(&app_id).is_some()
+            || rmac_apps::windows_apps::display_name_for(&app_id).is_some()
+        {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let wanted = vec![app_id.clone()];
+            let Ok(entries) = blocking::unblock(move || rmac_apps::discover_entries(&wanted)).await
+            else {
+                return;
+            };
+            let Some(entry) = entries.first() else {
+                return;
+            };
+            rmac_apps::windows_apps::register_display_name(&app_id, &entry.name);
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
     }
 
     fn request_app_menus(app_id: String, generation: u64, cx: &mut Context<ShellStatus>) {

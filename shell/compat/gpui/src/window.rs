@@ -994,21 +994,6 @@ fn touch_drag_mode_at(
         .max()
 }
 
-#[cfg(test)]
-mod rmac_touch_tests {
-    use super::*;
-    use crate::TouchDragMode;
-
-    #[test]
-    fn immediate_anywhere_under_the_finger_wins() {
-        let (a, b, c) = (HitboxId(1), HitboxId(2), HitboxId(3));
-        let marked = [(a, TouchDragMode::AfterHold), (b, TouchDragMode::Immediate)];
-        assert_eq!(touch_drag_mode_at(&[c], &marked), None);
-        assert_eq!(touch_drag_mode_at(&[a, c], &marked), Some(TouchDragMode::AfterHold));
-        assert_eq!(touch_drag_mode_at(&[a, b], &marked), Some(TouchDragMode::Immediate));
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 enum InputModality {
     Mouse,

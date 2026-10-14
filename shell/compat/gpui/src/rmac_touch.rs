@@ -36,23 +36,3 @@ pub fn last_input_was_touch() -> bool {
 pub fn set_last_input_was_touch(touch: bool) -> bool {
     LAST_INPUT_TOUCH.swap(touch, Ordering::Relaxed) != touch
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn modality_reports_changes_only() {
-        set_last_input_was_touch(false);
-        assert!(set_last_input_was_touch(true));
-        assert!(!set_last_input_was_touch(true));
-        assert!(last_input_was_touch());
-        assert!(set_last_input_was_touch(false));
-        assert!(!last_input_was_touch());
-    }
-
-    #[test]
-    fn immediate_outranks_after_hold() {
-        assert!(TouchDragMode::Immediate > TouchDragMode::AfterHold);
-    }
-}

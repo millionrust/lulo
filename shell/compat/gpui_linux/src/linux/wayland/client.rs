@@ -2828,7 +2828,9 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 }
                 let gesture = contact.gesture;
                 let window = contact.window.clone();
-                let delta = point(previous.x - position.x, previous.y - position.y);
+                // Content follows the finger: moving up scrolls down, a negative
+                // delta, as natural scrolling on the touchpad gives (ADR 0028).
+                let delta = point(position.x - previous.x, position.y - previous.y);
                 if gesture == TouchGesture::Scroll {
                     state.momentum_generation = state.momentum_generation.wrapping_add(1);
                     track_finger_velocity(&mut state, delta);

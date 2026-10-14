@@ -168,7 +168,7 @@ impl TwoFinger {
                 });
             } else {
                 self.kind = TwoFingerKind::Scroll;
-                let delta = self.last_centroid - centroid;
+                let delta = centroid - self.last_centroid;
                 self.last_centroid = centroid;
                 out[0] = Some(TwoFingerEvent::Scroll {
                     position: centroid,
@@ -180,7 +180,7 @@ impl TwoFinger {
         }
         match self.kind {
             TwoFingerKind::Scroll => {
-                let delta = self.last_centroid - centroid;
+                let delta = centroid - self.last_centroid;
                 self.last_centroid = centroid;
                 out[0] = Some(TwoFingerEvent::Scroll {
                     position: centroid,
@@ -297,13 +297,13 @@ mod tests {
         assert_eq!(phase, TouchPhase::Started);
         assert_eq!(position, at(150.0, 119.0));
         // Fingers moved down: the same sign as a one-finger swipe down.
-        assert_eq!(delta, at(0.0, -11.0));
+        assert_eq!(delta, at(0.0, 11.0));
         let [moved, _] = gesture.update(2, at(200.0, 130.0));
         assert_eq!(
             moved,
             Some(TwoFingerEvent::Scroll {
                 position: at(150.0, 130.0),
-                delta: at(0.0, -11.0),
+                delta: at(0.0, 11.0),
                 phase: TouchPhase::Moved,
             })
         );

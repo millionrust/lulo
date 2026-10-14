@@ -630,6 +630,15 @@ class Scenario(BaseScenario):
             errors.append("the service started while Lulo Intelligence was off")
         self.close()
 
+        # 1b. Off: "dark mode" still offers the Appearance pane (its search
+        # keyword), as macOS Spotlight offers the settings pane (ROBOT-12).
+        self.open_and_type("dark mode")
+        appearance = wait_until(lambda: any(n.startswith("Appearance") for n in self.showing()), 10)
+        self.facts["dark_mode_offers_appearance"] = bool(appearance)
+        if not appearance:
+            errors.append('"dark mode" did not offer the Appearance settings pane')
+        self.close()
+
         # 2. On: the row, the confirmation, the change.
         set_enabled(self.config_home, True)
         before = theme_scheme(self.config_home)

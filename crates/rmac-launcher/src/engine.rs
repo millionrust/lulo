@@ -68,7 +68,17 @@ pub(crate) fn score(query: &str, result: &SearchResult, learned: u16) -> Option<
         1_000
     } else {
         match_quality(query, &title)
-            .or_else(|| secondary_quality(query, &subtitle).map(|score| score.saturating_sub(80)))?
+            .or_else(|| secondary_quality(query, &subtitle).map(|score| score.saturating_sub(80)))
+            .or_else(|| {
+                // Settings panes and apps are found by their keywords too
+                // ("dark mode" is Appearance), which the provider matched
+                // and the result does not carry: rank them below any title
+                // or subtitle match rather than drop them (ROBOT-12).
+                result
+                    .category
+                    .matched_by_provider_keywords()
+                    .then_some(KEYWORD_QUALITY)
+            })?
     };
     Some(
         textual
@@ -96,6 +106,8 @@ fn secondary_quality(query: &str, value: &str) -> Option<u16> {
 }
 
 const SUBSEQUENCE_QUALITY: u16 = 300;
+/// A result its provider matched by keyword alone.
+const KEYWORD_QUALITY: u16 = 250;
 
 pub(crate) fn match_quality(query: &str, value: &str) -> Option<u16> {
     if value == query {

@@ -21,9 +21,11 @@ use crate::{
 };
 
 mod menu;
+mod tools;
 mod windows;
 
-pub use menu::{close_all, set_viewer_window, show_viewer};
+pub use menu::close_all;
+pub use tools::{open_viewer, show_viewer, viewers};
 
 const SIDEBAR: f32 = 220.0;
 const LIST: f32 = 340.0;
@@ -82,6 +84,23 @@ pub struct MailView {
     /// Bumped for each File ▸ Print… the portal must tie to this window.
     #[cfg(target_os = "linux")]
     print_generation: Arc<std::sync::atomic::AtomicU64>,
+    /// Edit ▸ Find in the message: the find bar, its field, the current
+    /// match, and whether the viewer still has to scroll to it.
+    find_open: bool,
+    find_input: Entity<InputState>,
+    find_current: usize,
+    find_scroll: bool,
+    find_anchor: gpui::ScrollAnchor,
+    /// View ▸ Message ▸ All Headers, and the header block it shows for one
+    /// message (by id).
+    all_headers: bool,
+    all_headers_text: Option<(String, SharedString)>,
+    /// File ▸ Quick Look Attachments…'s panel while it is open.
+    quick_look: Option<rmac_quick_look::Handle>,
+    /// View ▸ Show Message Size.
+    show_size: bool,
+    /// The `MailState::revision` last handed to the other viewers.
+    shared_revision: std::cell::Cell<u64>,
 }
 
 /// The conversation list as its own GPUI view (SPEED-09). A scroll
@@ -138,6 +157,10 @@ struct Row {
     to_cc: Option<&'static str>,
     /// View ▸ Highlight Conversations: part of the selected conversation.
     highlighted: bool,
+    /// Message ▸ Flag's colour, while `flagged`.
+    flag_colour: rmac_mail::FlagColour,
+    /// View ▸ Show Message Size: "212 KB", or empty.
+    size: String,
 }
 
 /// What View ▸ Use Column Layout, Show Contact Photo and the other list
@@ -159,6 +182,20 @@ impl MailView {
         cx: &mut Context<Self>,
     ) -> Self {
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search Mail"));
+        let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
+        cx.subscribe(&find_input, |this, _, event: &InputEvent, cx| match event {
+            InputEvent::Change => {
+                this.find_current = 0;
+                this.find_scroll = true;
+                this.sync_menu(cx);
+                cx.notify();
+            }
+            InputEvent::PressEnter { shift, .. } => {
+                this.step_find(if *shift { -1 } else { 1 }, cx);
+            }
+            _ => {}
+        })
+        .detach();
         cx.subscribe(&search_input, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let query = this.search_input.read(cx).value().to_owned();
@@ -197,6 +234,8 @@ impl MailView {
             .iter()
             .map(|account| account.address.clone())
             .collect();
+        let viewer_scroll = ScrollHandle::new();
+        let find_anchor = gpui::ScrollAnchor::for_handle(viewer_scroll.clone());
         let mut view = Self {
             focus: cx.focus_handle(),
             state,
@@ -218,10 +257,20 @@ impl MailView {
             highlight_conversations: false,
             erase_confirm: None,
             notice: None,
-            viewer_scroll: ScrollHandle::new(),
+            viewer_scroll,
             active: true,
             #[cfg(target_os = "linux")]
             print_generation: Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            find_open: false,
+            find_input,
+            find_current: 0,
+            find_scroll: false,
+            find_anchor,
+            all_headers: false,
+            all_headers_text: None,
+            quick_look: None,
+            show_size: false,
+            shared_revision: std::cell::Cell::new(0),
         };
         view.ensure_body_loaded(cx);
         view
@@ -313,6 +362,7 @@ impl MailView {
     /// waiting for the next IDLE timeout. A no-op for fixture data, which
     /// never produces a `Persist`.
     fn dispatch_persist(&mut self, cx: &mut Context<Self>) {
+        self.share_changes(cx);
         let persists = self.state.take_persists();
         if persists.is_empty() {
             return;
@@ -846,6 +896,12 @@ impl MailView {
                         to_cc,
                         highlighted: highlight
                             && selected_thread.as_deref() == Some(message.thread_id.as_str()),
+                        flag_colour: message.flag_colour(),
+                        size: if self.show_size && message.size > 0 {
+                            rmac_mail::size_label(message.size)
+                        } else {
+                            String::new()
+                        },
                     }
                 })
                 .collect(),
@@ -923,10 +979,15 @@ impl MailView {
                                 let row = &rows[index];
                                 let id = row.id.clone();
                                 let view = view.clone();
+                                let flag = match (row.flagged, row.flag_colour) {
+                                    (false, _) => String::new(),
+                                    (true, rmac_mail::FlagColour::Red) => "flagged, ".to_owned(),
+                                    (true, colour) => format!("flagged, {} flag, ", colour.label()),
+                                };
                                 let accessible = format!(
                                     "{}{}{}, {}, {}, {}{}",
                                     if row.unread { "Unread, " } else { "" },
-                                    if row.flagged { "flagged, " } else { "" },
+                                    flag,
                                     row.sender,
                                     row.subject,
                                     row.date,
@@ -970,7 +1031,11 @@ impl MailView {
             .into_any_element()
     }
 
-    fn rich_body(body: &RichText, display: &rmac_mail::settings::DisplayPrefs) -> AnyElement {
+    fn rich_body(
+        body: &RichText,
+        display: &rmac_mail::settings::DisplayPrefs,
+        find: Option<tools::FindHighlight<'_>>,
+    ) -> AnyElement {
         // Viewing ▸ "Use dark backgrounds for messages" off: in Dark Mode
         // the message sits on white paper with black text, as on the Mac.
         let paper = !display.dark_message_backgrounds && mac::is_dark();
@@ -1007,28 +1072,107 @@ impl MailView {
             if block.kind == BlockKind::ListItem {
                 line = line.child("• ");
             }
-            for span in &block.spans {
-                let mut piece = div().child(SharedString::from(span.text.clone()));
-                if span.bold {
-                    piece = piece.font_weight(FontWeight::BOLD);
+            for (span_index, span) in block.spans.iter().enumerate() {
+                let style_piece = |mut piece: gpui::Div| {
+                    if span.bold {
+                        piece = piece.font_weight(FontWeight::BOLD);
+                    }
+                    if span.italic {
+                        piece = piece.italic();
+                    }
+                    if span.underline || span.link.is_some() {
+                        piece = piece.underline();
+                    }
+                    if span.link.is_some() {
+                        piece = piece.text_color(mac::system_blue());
+                    }
+                    piece
+                };
+                // Edit ▸ Find marks every match in the span, the current
+                // one strongest, and scrolls to the current one.
+                let here: Vec<(usize, &rmac_mail::FindMatch)> = find
+                    .as_ref()
+                    .map(|find| {
+                        find.matches
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, found)| found.block == index && found.span == span_index)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if here.is_empty() {
+                    line =
+                        line.child(style_piece(div()).child(SharedString::from(span.text.clone())));
+                    continue;
                 }
-                if span.italic {
-                    piece = piece.italic();
+                let mut at = 0;
+                for (match_index, found) in here {
+                    if found.range.start > at {
+                        line = line.child(style_piece(div()).child(SharedString::from(
+                            span.text[at..found.range.start].to_owned(),
+                        )));
+                    }
+                    let current = find
+                        .as_ref()
+                        .is_some_and(|find| find.current == match_index);
+                    let mut piece = style_piece(div())
+                        .rounded(px(2.0))
+                        .bg(if current {
+                            mac::system_yellow()
+                        } else {
+                            mac::system_yellow().opacity(0.35)
+                        })
+                        .when(current, |piece| piece.text_color(mac::black()))
+                        .child(SharedString::from(
+                            span.text[found.range.clone()].to_owned(),
+                        ))
+                        .id(("mail-find-match", match_index));
+                    if current {
+                        piece = piece.anchor_scroll(find.as_ref().map(|find| find.anchor.clone()));
+                    }
+                    line = line.child(piece);
+                    at = found.range.end;
                 }
-                if span.underline || span.link.is_some() {
-                    piece = piece.underline();
+                if at < span.text.len() {
+                    line = line.child(
+                        style_piece(div()).child(SharedString::from(span.text[at..].to_owned())),
+                    );
                 }
-                if span.link.is_some() {
-                    piece = piece.text_color(mac::system_blue());
-                }
-                line = line.child(piece);
             }
             content = content.child(line);
         }
         content.into_any_element()
     }
 
-    fn viewer(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn viewer(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let matches = self.find_matches(cx);
+        if self.find_scroll && !matches.is_empty() {
+            // The current match is drawn this frame with the anchor; the
+            // viewer scrolls to it on the next.
+            self.find_scroll = false;
+            self.find_anchor.scroll_to(window, cx);
+        }
+        let find_bar = self.find_open.then(|| self.find_bar(matches.len(), cx));
+        let viewer = self.message_viewer(&matches, cx);
+        match find_bar {
+            Some(bar) => div()
+                .flex_1()
+                .h_full()
+                .min_w(px(0.0))
+                .flex()
+                .flex_col()
+                .child(bar)
+                .child(div().flex_1().min_h(px(0.0)).flex().child(viewer))
+                .into_any_element(),
+            None => viewer,
+        }
+    }
+
+    fn message_viewer(
+        &self,
+        matches: &[rmac_mail::FindMatch],
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let Some(message) = self.state.selected_message() else {
             return div()
                 .flex_1()
@@ -1055,6 +1199,9 @@ impl MailView {
             .gap(px(16.0))
             .bg(mac::window())
             .child(Self::header(message));
+        if let Some(headers) = self.all_headers_block() {
+            body = body.child(headers);
+        }
         if !message.body.blocked_remote_images.is_empty() {
             body = body.child(
                 div()
@@ -1068,7 +1215,12 @@ impl MailView {
         }
         match &message.body_state {
             BodyState::Loaded => {
-                body = body.child(Self::rich_body(&message.body, &self.display));
+                let find = (!matches.is_empty()).then(|| tools::FindHighlight {
+                    matches,
+                    current: self.find_current.min(matches.len() - 1),
+                    anchor: &self.find_anchor,
+                });
+                body = body.child(Self::rich_body(&message.body, &self.display, find));
                 if let Some(attachment) = message.attachment.clone() {
                     body = body.child(self.attachment_chip(attachment, cx));
                 }
@@ -1392,6 +1544,7 @@ impl Render for MailView {
                 .cached(gpui::StyleRefinement::default().size_full())
                 .into_any_element()
         };
+        let viewer = self.viewer(window, cx);
         let root = div()
             .size_full()
             .relative()
@@ -1514,7 +1667,7 @@ impl Render for MailView {
                 cx.defer(crate::settings_view::show);
             }))
             .when(!self.toolbar_hidden, |root| root.child(self.toolbar(cx)))
-            .child(self.content(list, cx))
+            .child(self.content(list, viewer))
             .when(!self.sidebar_hidden, |root| root.child(self.sidebar(cx)))
             .when(self.sidebar_hidden, |root| {
                 // The window controls move to the top left of the window.
@@ -1541,6 +1694,15 @@ impl Render for MailView {
 }
 
 /// The status column every row starts with: unread dot or flag.
+/// Blue for unread, the flag's own colour for a flag.
+fn status_colour(row: &Row) -> gpui::Hsla {
+    if !row.unread && row.flagged {
+        tools::flag_hsla(row.flag_colour)
+    } else {
+        mac::system_blue()
+    }
+}
+
 fn status_mark(row: &Row) -> &'static str {
     if row.unread {
         "●"
@@ -1596,7 +1758,7 @@ fn card_row(
                 .w(px(9.0))
                 .pt(px(9.0))
                 .text_size(px(12.0))
-                .text_color(mac::system_blue())
+                .text_color(status_colour(row))
                 .child(status_mark(row)),
         )
         .when(style.contact_photo, |element| {
@@ -1654,7 +1816,17 @@ fn card_row(
                         } else {
                             String::new()
                         })
-                        .child(if row.attachment { "⌁" } else { "" }),
+                        .child(if row.attachment { "⌁" } else { "" })
+                        .when(!row.size.is_empty(), |line| {
+                            line.child(
+                                div()
+                                    .ml_auto()
+                                    .flex_none()
+                                    .text_size(px(10.0))
+                                    .text_color(mac::text_secondary())
+                                    .child(row.size.clone()),
+                            )
+                        }),
                 )
                 .when(style.display.preview_lines > 0, |column| {
                     column.child(
@@ -1694,7 +1866,7 @@ fn column_row(
             div()
                 .flex_none()
                 .w(px(12.0))
-                .text_color(mac::system_blue())
+                .text_color(status_colour(row))
                 .child(status_mark(row)),
         )
         .child(
@@ -1730,6 +1902,16 @@ fn column_row(
                     row.subject.clone()
                 }),
         )
+        .when(!row.size.is_empty(), |element| {
+            element.child(
+                div()
+                    .flex_none()
+                    .w(px(64.0))
+                    .text_size(px(11.0))
+                    .text_color(mac::text_secondary())
+                    .child(row.size.clone()),
+            )
+        })
         .child(
             div()
                 .flex_none()

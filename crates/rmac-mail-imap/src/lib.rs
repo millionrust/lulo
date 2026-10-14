@@ -323,6 +323,22 @@ impl Client {
         Ok(responses.iter().find_map(Response::first_literal))
     }
 
+    /// [`Self::fetch_headers`] plus the message's `RFC822.SIZE`, for the
+    /// size Mail's list shows before the body is ever downloaded.
+    pub fn fetch_headers_sized(
+        &mut self,
+        uid: u32,
+    ) -> Result<Option<(Vec<u8>, Option<u64>)>, Error> {
+        let responses = self.command(&format!(
+            "UID FETCH {uid} (UID RFC822.SIZE BODY.PEEK[HEADER])"
+        ))?;
+        Ok(responses.iter().find_map(|response| {
+            response
+                .first_literal()
+                .map(|bytes| (bytes, protocol::parse_rfc822_size(response)))
+        }))
+    }
+
     pub fn move_uids(
         &mut self,
         uid_set: &str,
@@ -416,6 +432,27 @@ impl Client {
             self.command(&format!(
                 "UID STORE {uid} +FLAGS.SILENT ({})",
                 flags.join(" ")
+            ))?;
+        }
+        Ok(())
+    }
+
+    /// Mac Mail's flag colour: replaces the `$MailFlagBit0..2` keywords
+    /// with the ones in `keywords`. A server that keeps no keywords rejects
+    /// this ([`Error::Rejected`]); the standard flags are stored apart.
+    pub fn store_colour_keywords(&mut self, uid: u32, keywords: &[&str]) -> Result<(), Error> {
+        const ALL: [&str; 3] = ["$MailFlagBit0", "$MailFlagBit1", "$MailFlagBit2"];
+        if uid == 0 || keywords.iter().any(|keyword| !ALL.contains(keyword)) {
+            return Err(Error::Protocol("Invalid IMAP flags"));
+        }
+        self.command(&format!(
+            "UID STORE {uid} -FLAGS.SILENT ({})",
+            ALL.join(" ")
+        ))?;
+        if !keywords.is_empty() {
+            self.command(&format!(
+                "UID STORE {uid} +FLAGS.SILENT ({})",
+                keywords.join(" ")
             ))?;
         }
         Ok(())

@@ -105,7 +105,7 @@ impl Render for MessageWindow {
             .flex_col()
             .gap(px(16.0))
             .child(MailView::header(&self.message))
-            .child(MailView::rich_body(&self.message.body, &display))
+            .child(MailView::rich_body(&self.message.body, &display, None))
     }
 }
 

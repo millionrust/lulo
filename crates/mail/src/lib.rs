@@ -175,6 +175,178 @@ pub struct Message {
     pub body: RichText,
     pub body_state: BodyState,
     pub junk_origin: Option<Mailbox>,
+    /// The message's size in bytes, for View ▸ Sort By ▸ Size and Show
+    /// Message Size. 0 while the server has not said.
+    pub size: i64,
+}
+
+impl Message {
+    /// Message ▸ Flag's colour, from the flag-colour bits Mail shares with
+    /// Mac Mail (`$MailFlagBit0..2`). Red when no bit is set.
+    pub fn flag_colour(&self) -> FlagColour {
+        FlagColour::from_flags(self.raw_flags)
+    }
+}
+
+/// Message ▸ Flag ▸ colour. The value is Mac Mail's: the three
+/// `$MailFlagBit` keywords read as a number.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum FlagColour {
+    #[default]
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+    Grey,
+}
+
+impl FlagColour {
+    /// In Message ▸ Flag's order.
+    pub const MENU: [FlagColour; 7] = [
+        FlagColour::Orange,
+        FlagColour::Red,
+        FlagColour::Purple,
+        FlagColour::Blue,
+        FlagColour::Yellow,
+        FlagColour::Green,
+        FlagColour::Grey,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Red => "Red",
+            Self::Orange => "Orange",
+            Self::Yellow => "Yellow",
+            Self::Green => "Green",
+            Self::Blue => "Blue",
+            Self::Purple => "Purple",
+            Self::Grey => "Grey",
+        }
+    }
+
+    const fn value(self) -> i64 {
+        match self {
+            Self::Red => 0,
+            Self::Orange => 1,
+            Self::Yellow => 2,
+            Self::Green => 3,
+            Self::Blue => 4,
+            Self::Purple => 5,
+            Self::Grey => 6,
+        }
+    }
+
+    pub fn from_flags(flags: i64) -> Self {
+        let mut value = 0;
+        for (index, bit) in [
+            rmac_mail_storage::FLAG_COLOUR_BIT0,
+            rmac_mail_storage::FLAG_COLOUR_BIT1,
+            rmac_mail_storage::FLAG_COLOUR_BIT2,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if flags & bit != 0 {
+                value |= 1 << index;
+            }
+        }
+        Self::MENU
+            .into_iter()
+            .find(|colour| colour.value() == value)
+            .unwrap_or_default()
+    }
+
+    /// `flags` flagged with this colour.
+    pub fn apply(self, flags: i64) -> i64 {
+        let mut bits =
+            (flags & !rmac_mail_storage::FLAG_COLOUR_MASK) | rmac_mail_storage::FLAG_FLAGGED;
+        for (index, bit) in [
+            rmac_mail_storage::FLAG_COLOUR_BIT0,
+            rmac_mail_storage::FLAG_COLOUR_BIT1,
+            rmac_mail_storage::FLAG_COLOUR_BIT2,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if self.value() & (1 << index) != 0 {
+                bits |= bit;
+            }
+        }
+        bits
+    }
+}
+
+/// `212 KB` / `2.4 MB`, as Mac Mail shows sizes.
+pub fn size_label(bytes: i64) -> String {
+    const KB: f64 = 1024.0;
+    let value = bytes.max(0) as f64;
+    if value < KB {
+        format!("{value:.0} bytes")
+    } else if value < KB * KB {
+        format!("{:.0} KB", value / KB)
+    } else {
+        format!("{:.1} MB", value / (KB * KB))
+    }
+}
+
+/// One Edit ▸ Find match in a message body: which block and span it sits
+/// in, and its byte range in that span's text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FindMatch {
+    pub block: usize,
+    pub span: usize,
+    pub range: std::ops::Range<usize>,
+}
+
+/// Every case-insensitive occurrence of `query` in `body`, in reading
+/// order, for Edit ▸ Find in the message viewer.
+pub fn find_in_body(body: &RichText, query: &str) -> Vec<FindMatch> {
+    let needle: Vec<char> = query.chars().flat_map(char::to_lowercase).collect();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let mut matches = Vec::new();
+    for (block_index, block) in body.blocks.iter().enumerate() {
+        for (span_index, span) in block.spans.iter().enumerate() {
+            let text = span.text.as_str();
+            let mut skip_until = 0;
+            for (start, _) in text.char_indices() {
+                if start < skip_until {
+                    continue;
+                }
+                let mut wanted = needle.iter();
+                let mut end = start;
+                let mut matched = true;
+                'chars: for (offset, ch) in text[start..].char_indices() {
+                    for lower in ch.to_lowercase() {
+                        match wanted.next() {
+                            Some(&want) if want == lower => {}
+                            Some(_) => {
+                                matched = false;
+                                break 'chars;
+                            }
+                            None => break 'chars,
+                        }
+                    }
+                    end = start + offset + ch.len_utf8();
+                    if wanted.as_slice().is_empty() {
+                        break;
+                    }
+                }
+                if matched && wanted.as_slice().is_empty() && end > start {
+                    matches.push(FindMatch {
+                        block: block_index,
+                        span: span_index,
+                        range: start..end,
+                    });
+                    skip_until = end;
+                }
+            }
+        }
+    }
+    matches
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -183,8 +355,8 @@ pub enum SearchScope {
     CurrentMailbox,
 }
 
-/// View ▸ Sort By. Mail keeps no message size, sent date, reminder or
-/// send-later time, so those keys are left out.
+/// View ▸ Sort By. Mail keeps no sent date, reminder or send-later time,
+/// so those keys are left out.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SortKey {
     Attachments,
@@ -192,17 +364,19 @@ pub enum SortKey {
     Date,
     Flags,
     From,
+    Size,
     Subject,
     To,
     Unread,
 }
 
 impl SortKey {
-    pub const ALL: [SortKey; 7] = [
+    pub const ALL: [SortKey; 8] = [
         SortKey::Attachments,
         SortKey::Date,
         SortKey::Flags,
         SortKey::From,
+        SortKey::Size,
         SortKey::Subject,
         SortKey::To,
         SortKey::Unread,
@@ -213,7 +387,7 @@ impl SortKey {
     const fn descending_by_default(self) -> bool {
         matches!(
             self,
-            SortKey::Date | SortKey::Flags | SortKey::Unread | SortKey::Attachments
+            SortKey::Date | SortKey::Flags | SortKey::Unread | SortKey::Attachments | SortKey::Size
         )
     }
 }
@@ -258,6 +432,8 @@ pub enum OrganizeAction {
     Delete,
     Junk,
     Flag,
+    /// Message ▸ Flag ▸ colour: flags the message in that colour.
+    FlagColour(FlagColour),
     MarkRead,
     MarkUnread,
     Move(Mailbox),
@@ -337,6 +513,9 @@ pub struct MailState {
     pub last_move: Option<Mailbox>,
     next_copy: u64,
     last_persist: Vec<Persist>,
+    /// Bumped whenever a message changes here (read marks, organise
+    /// actions, undo, erase), so a second viewer window can follow.
+    pub revision: u64,
 }
 
 impl MailState {
@@ -362,6 +541,7 @@ impl MailState {
             last_move: None,
             next_copy: 0,
             last_persist: Vec::new(),
+            revision: 0,
         };
         // Highlights the first row without marking it read: opening Mail
         // must never silently consume someone's unread count.
@@ -606,6 +786,7 @@ impl MailState {
             last_move: None,
             next_copy: 0,
             last_persist: Vec::new(),
+            revision: 0,
         }
     }
 
@@ -775,6 +956,7 @@ impl MailState {
                 SortKey::Date => a.received_at.cmp(&b.received_at),
                 SortKey::Attachments => a.attachment.is_some().cmp(&b.attachment.is_some()),
                 SortKey::Flags => a.flagged.cmp(&b.flagged),
+                SortKey::Size => a.size.cmp(&b.size),
                 SortKey::Unread => a.unread.cmp(&b.unread),
                 SortKey::From => compare_text(&a.sender, &b.sender),
                 SortKey::Subject => compare_text(
@@ -856,6 +1038,7 @@ impl MailState {
             if message.unread {
                 message.unread = false;
                 message.raw_flags |= rmac_mail_storage::FLAG_SEEN;
+                self.revision += 1;
                 if let (Mailbox::Real(real), Some(row_id)) = (&message.mailbox, message.row_id) {
                     self.last_persist.push(Persist {
                         account: real.account,
@@ -994,6 +1177,16 @@ impl MailState {
                     PersistChange::Flags(self.messages[index].raw_flags),
                 );
             }
+            OrganizeAction::FlagColour(colour) => {
+                let flags = colour.apply(original.raw_flags);
+                if original.flagged && flags == original.raw_flags {
+                    return false;
+                }
+                self.messages[index].flagged = true;
+                self.messages[index].raw_flags = flags;
+                persist =
+                    live_persist(&original_real, original.row_id, PersistChange::Flags(flags));
+            }
             OrganizeAction::MarkRead => {
                 self.messages[index].unread = false;
                 self.messages[index].raw_flags = original.raw_flags | rmac_mail_storage::FLAG_SEEN;
@@ -1080,6 +1273,7 @@ impl MailState {
             undo_persist,
         });
         self.last_persist = persist.into_iter().collect();
+        self.revision += 1;
         true
     }
 
@@ -1100,6 +1294,7 @@ impl MailState {
         }
         self.selected = undo.selection;
         self.last_persist = undo.undo_persist.into_iter().collect();
+        self.revision += 1;
         true
     }
 
@@ -1156,6 +1351,7 @@ impl MailState {
             }
         }
         if marked > 0 {
+            self.revision += 1;
             // A read mark cannot be undone message by message here; the
             // single-step undo would restore the wrong one.
             self.undo = None;
@@ -1201,6 +1397,7 @@ impl MailState {
         });
         let erased = before - self.messages.len();
         if erased > 0 {
+            self.revision += 1;
             self.last_persist = persists;
             self.undo = None;
             self.redo = None;
@@ -1377,6 +1574,14 @@ pub fn message_source(message: &Message) -> String {
     source
 }
 
+/// View ▸ Message ▸ All Headers: every header of a message source, up to
+/// the blank line before its body, with folded lines kept as they came.
+pub fn header_block(source: &str) -> String {
+    let source = source.replace("\r\n", "\n");
+    let end = source.find("\n\n").unwrap_or(source.len());
+    source[..end].trim_end().to_owned()
+}
+
 /// The title and text File ▸ Print… and Export as PDF… lay out for
 /// `message`: its headers as Mail shows them, then the body.
 pub fn printable_message(message: &Message) -> (String, String) {
@@ -1533,7 +1738,20 @@ fn fixture_message(
         body,
         body_state: BodyState::Loaded,
         junk_origin: None,
+        size: fixture_size(id, preview),
     }
+}
+
+/// A plausible size for each fixture message: its attachment plus a few
+/// kilobytes of headers and text.
+fn fixture_size(id: &str, preview: &str) -> i64 {
+    let attachment = match id {
+        "anna" => 217_088,
+        "grandma" => 2_516_582,
+        "sam" => 1_024,
+        _ => 0,
+    };
+    attachment + 2_048 + 24 * preview.len() as i64
 }
 
 #[cfg(test)]
@@ -1891,5 +2109,99 @@ mod tests {
             elapsed < std::time::Duration::from_secs(5),
             "20 passes over 10 000 messages took {elapsed:?}, expected a few seconds at most"
         );
+    }
+
+    #[test]
+    fn flag_colours_round_trip_through_mac_mail_bits() {
+        for colour in FlagColour::MENU {
+            let flags = colour.apply(rmac_mail_storage::FLAG_SEEN);
+            assert_eq!(FlagColour::from_flags(flags), colour);
+            assert_ne!(flags & rmac_mail_storage::FLAG_FLAGGED, 0);
+            assert_ne!(flags & rmac_mail_storage::FLAG_SEEN, 0);
+        }
+        // Mac Mail's numbering: purple is $MailFlagBit0 + $MailFlagBit2.
+        assert_eq!(
+            FlagColour::Purple.apply(0) & rmac_mail_storage::FLAG_COLOUR_MASK,
+            rmac_mail_storage::FLAG_COLOUR_BIT0 | rmac_mail_storage::FLAG_COLOUR_BIT2
+        );
+        assert_eq!(
+            FlagColour::Red.apply(0) & rmac_mail_storage::FLAG_COLOUR_MASK,
+            0
+        );
+    }
+
+    #[test]
+    fn flag_colour_action_flags_undoes_and_persists() {
+        let mut state = MailState::fixture();
+        state.select("beta");
+        assert!(!state.selected_message().unwrap().flagged);
+        assert!(state.apply(OrganizeAction::FlagColour(FlagColour::Blue)));
+        let message = state.selected_message().unwrap();
+        assert!(message.flagged);
+        assert_eq!(message.flag_colour(), FlagColour::Blue);
+        // The same colour again changes nothing.
+        assert!(!state.apply(OrganizeAction::FlagColour(FlagColour::Blue)));
+        assert!(state.apply(OrganizeAction::FlagColour(FlagColour::Green)));
+        assert_eq!(
+            state.selected_message().unwrap().flag_colour(),
+            FlagColour::Green
+        );
+        assert!(state.undo());
+        assert_eq!(
+            state.selected_message().unwrap().flag_colour(),
+            FlagColour::Blue
+        );
+    }
+
+    #[test]
+    fn sort_by_size_puts_the_largest_first() {
+        let mut state = MailState::fixture();
+        state.threads = false;
+        state.set_sort(SortKey::Size);
+        assert!(state.descending);
+        let visible = state.visible();
+        let sizes: Vec<i64> = visible
+            .iter()
+            .map(|&index| state.messages[index].size)
+            .collect();
+        assert!(sizes.windows(2).all(|pair| pair[0] >= pair[1]), "{sizes:?}");
+        assert_eq!(state.messages[visible[0]].id, "grandma");
+        assert_eq!(size_label(2_516_582), "2.4 MB");
+        assert_eq!(size_label(4_096), "4 KB");
+        assert_eq!(size_label(12), "12 bytes");
+    }
+
+    #[test]
+    fn find_in_body_matches_case_insensitively_in_reading_order() {
+        let body = rmac_mail_mime::RichText::from_plain("Café Lulo at noon\nSee you at the CAFÉ");
+        let matches = find_in_body(&body, "café");
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].block, 0);
+        assert_eq!(
+            &body.blocks[0].spans[0].text[matches[0].range.clone()],
+            "Café"
+        );
+        assert_eq!(matches[1].block, 1);
+        assert_eq!(
+            &body.blocks[1].spans[0].text[matches[1].range.clone()],
+            "CAFÉ"
+        );
+        assert_eq!(find_in_body(&body, "at").len(), 2);
+        assert!(find_in_body(&body, "").is_empty());
+        assert!(find_in_body(&body, "tea").is_empty());
+        // Overlapping matches count once, as a find bar steps through them.
+        let repeated = rmac_mail_mime::RichText::from_plain("aaaa");
+        assert_eq!(find_in_body(&repeated, "aa").len(), 2);
+    }
+
+    #[test]
+    fn header_block_stops_at_the_body() {
+        let source =
+            "From: Ada <a@example.test>\r\nSubject: Hi\r\n there\r\nX-Priority: 1\r\n\r\nBody\r\n";
+        assert_eq!(
+            header_block(source),
+            "From: Ada <a@example.test>\nSubject: Hi\n there\nX-Priority: 1"
+        );
+        assert_eq!(header_block("Subject: only"), "Subject: only");
     }
 }

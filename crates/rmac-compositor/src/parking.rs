@@ -170,8 +170,7 @@ impl ParkingStore {
     }
 
     pub fn default_path() -> Option<PathBuf> {
-        let runtime = std::env::var_os("XDG_RUNTIME_DIR")?;
-        Some(PathBuf::from(runtime).join("rmac").join("parking.json"))
+        crate::runtime_dir().map(|runtime| runtime.join("parking.json"))
     }
 
     /// The directory minimized-window thumbnails are cached in, next to the

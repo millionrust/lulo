@@ -205,6 +205,16 @@ pub(super) const SEARCH_GAP: f32 = 15.5;
 pub(super) const TRAILING_MARGIN: f32 = 8.0;
 pub(super) const SEARCH_MAX_WIDTH: f32 = 326.0;
 pub(super) const SEARCH_MIN_WIDTH: f32 = 150.0;
+/// The narrowest search field once it has had to give way: opened from its
+/// collapsed button in a narrow window.
+pub(super) const SEARCH_NARROW_WIDTH: f32 = 96.0;
+/// The least room the toolbar's flexible spaces keep around the format
+/// capsule.
+pub(super) const TOOLBAR_SPACER: f32 = 8.0;
+/// Narrower than this, the editor column takes the folder list's room: the
+/// list of folders gives way as the Mac's sidebar does when its window is
+/// made narrow (a Windows half-screen window is 683 wide).
+pub(super) const EDITOR_MIN_WIDTH: f32 = 330.0;
 /// Date 12 pt, baseline 20 below the toolbar; title 20 bold, baseline 51.5;
 /// body 13 on a 17 pitch.
 pub(super) const DATE_SIZE: f32 = 12.0;

@@ -356,6 +356,7 @@ def measure_idle_cpu(
     exited)."""
     time.sleep(settle)
     threads_before = thread_cpu_times_100ns(pid)
+    modules_before = thread_start_modules(pid, threads_before.keys())
     before = process_cpu_time_100ns(pid)
     if before is None:
         return None
@@ -374,6 +375,17 @@ def measure_idle_cpu(
             output.seek(start)
             trace = output.read().decode("utf-8", errors="replace")
     delta = max(after - before, 0)
+    # A thread that ended inside the window took its time with it: the
+    # process's total keeps it, the live threads do not show it. Name what
+    # ended (WIN-OS: Weather's one 2-tick idle reading had no busy thread).
+    unattributed = delta / TICK_100NS - sum(ticks for _, ticks in threads)
+    if unattributed >= 0.5:
+        ended = [
+            f"{name or 'unnamed'} ({tid})" + (f" [{modules_before[tid]}]" if tid in modules_before else "")
+            for tid, (name, _) in threads_before.items()
+            if tid not in threads_after
+        ]
+        threads.append((f"threads that ended in the window: {', '.join(ended) or 'none seen'}", unattributed))
     return delta / TICK_100NS, (delta / (window * 10_000_000)) * 100, trace, threads
 
 
@@ -701,6 +713,28 @@ def open_backdrop(rect: tuple[int, int, int, int]) -> subprocess.Popen | None:
         return None
 
 
+def raise_over_backdrop(hwnd: int) -> bool:
+    """Put `hwnd` at the top of the z-order and confirm the point at its
+    client centre belongs to it (its top-level window is `hwnd`)."""
+    swp_nomove, swp_nosize, swp_showwindow = 0x0002, 0x0001, 0x0040
+    left, top, right, bottom = client_rect_on_screen(hwnd)
+    centre = wintypes.POINT((left + right) // 2, (top + bottom) // 2)
+    for _ in range(10):
+        user32().SetWindowPos(
+            wintypes.HWND(hwnd), wintypes.HWND(0), 0, 0, 0, 0,
+            swp_nomove | swp_nosize | swp_showwindow,
+        )
+        user32().BringWindowToTop(wintypes.HWND(hwnd))
+        time.sleep(0.2)
+        user32().WindowFromPoint.restype = wintypes.HWND
+        under = user32().WindowFromPoint(centre)
+        user32().GetAncestor.restype = wintypes.HWND
+        root = user32().GetAncestor(under, 2) if under else None  # GA_ROOT
+        if root and int(root) == int(hwnd):
+            return True
+    return False
+
+
 def check_window_frame(app: str, hwnd: int, screenshots: Path | None) -> str | None:
     """ADR 0023 "Window chrome" (WIN-OS-73): the window is drawn as on Lulo
     OS and macOS, over a contrasting backdrop. Outside the arc of Lulo's
@@ -731,6 +765,14 @@ def check_window_frame(app: str, hwnd: int, screenshots: Path | None) -> str | N
         time.sleep(1.5)
         if not bring_forward(hwnd):
             return "could not bring the window over the frame check's backdrop"
+        # An app window that is the foreground window already stays where it
+        # is in the z-order when SetForegroundWindow is asked for it again,
+        # so a backdrop opened over it (Windows only refuses the backdrop's
+        # process the foreground) hid it: Calculator, the first app, kept the
+        # foreground through the backdrop's start and was sampled under it,
+        # all blue. Raise it explicitly and check what is at its centre.
+        if not raise_over_backdrop(hwnd):
+            return "the frame check's backdrop stayed over the window"
         time.sleep(1.0)
         left, top, right, bottom = client_rect_on_screen(hwnd)
         image = grab(area)
@@ -1327,6 +1369,16 @@ def launch(
                 f"{app}: memory at idle: working set {memory['working_set_mb']} MB, "
                 f"private {memory['private_mb']} MB"
             )
+        if idle is not None and idle[0] >= 1.0:
+            # Once more before it counts: a single reading over the budget
+            # can be Windows' own housekeeping in the process (a thread-pool
+            # worker retiring), not the app. A real idle cost shows twice.
+            first_ticks, _, _, first_threads = idle
+            print(f"{app}: idle CPU over {IDLE_WINDOW_SECONDS:.0f} s = {first_ticks:.2f} ticks; measuring again")
+            for thread, thread_ticks in first_threads[:6]:
+                print(f"{app}:   first reading: thread {thread} used {thread_ticks:.2f} ticks")
+            measurement["idle_first_ticks"] = round(first_ticks, 3)
+            idle = measure_idle_cpu(process.pid, settle=2.0, log=log)
         if idle is None:
             print(f"{app}: idle CPU skipped (could not read its CPU time)")
         else:

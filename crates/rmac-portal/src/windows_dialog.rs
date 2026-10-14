@@ -15,7 +15,8 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{
-    FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTISELECT, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH,
+    FOLDERID_Documents, FileOpenDialog, IFileOpenDialog, IShellItem, SHGetKnownFolderItem,
+    FOS_ALLOWMULTISELECT, FOS_FORCEFILESYSTEM, KF_FLAG_DEFAULT, SIGDN_FILESYSPATH,
 };
 
 use crate::{Error, Operation};
@@ -52,6 +53,17 @@ fn show(title: &str, filters: &[Filter], multiple: bool) -> windows::core::Resul
             options |= FOS_ALLOWMULTISELECT;
         }
         dialog.SetOptions(options)?;
+        // With no folder remembered yet, Windows 11 opens the dialog on Home
+        // (Quick access and "Recommended" cloud files), which can keep the
+        // created dialog hidden for half a minute while it asks the cloud,
+        // and the hidden dialog already holds the keyboard. Start in
+        // Documents instead, as the Mac's Open panel does; a folder the
+        // dialog remembers from last time still wins.
+        if let Ok(documents) =
+            SHGetKnownFolderItem::<IShellItem>(&FOLDERID_Documents, KF_FLAG_DEFAULT, None)
+        {
+            let _ = dialog.SetDefaultFolder(&documents);
+        }
         let names: Vec<Vec<u16>> = filters.iter().map(|filter| wide(filter.name)).collect();
         let patterns: Vec<Vec<u16>> = filters.iter().map(|filter| wide(filter.patterns)).collect();
         let specs: Vec<COMDLG_FILTERSPEC> = names

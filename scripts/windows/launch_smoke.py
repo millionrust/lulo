@@ -923,6 +923,7 @@ def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | N
         height = user32().GetSystemMetrics(1)
         print(f"{app}: F11: {before} -> {full} -> {after}")
         if full[2] - full[0] < width or full[3] - full[1] < height:
+            diagnose_keys(app, process, hwnd, "F11")
             return f"F11 did not make the window full screen ({full})"
         if after != before:
             user32().ShowWindow(hwnd, 9)  # SW_RESTORE
@@ -945,6 +946,42 @@ def check_window_keys(app: str, process: subprocess.Popen, hwnd: int) -> str | N
     return None
 
 
+def describe_window(hwnd: int) -> str:
+    if not hwnd:
+        return "none"
+    owner = wintypes.DWORD()
+    user32().GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+    name = ctypes.create_unicode_buffer(64)
+    user32().GetClassNameW(hwnd, name, 64)
+    length = user32().GetWindowTextLengthW(hwnd)
+    title = ctypes.create_unicode_buffer(length + 1)
+    user32().GetWindowTextW(hwnd, title, length + 1)
+    return f"{hwnd:#x} pid {owner.value} class {name.value!r} title {title.value!r}"
+
+
+def diagnose_keys(app: str, process: subprocess.Popen, hwnd: int, what: str) -> None:
+    """Where keys went when `what` had no effect: the foreground window,
+    the modifiers Windows holds down, and every window of the process."""
+    held = [
+        name
+        for name, code in (("Ctrl", VK_CONTROL), ("Alt", VK_MENU), ("Shift", VK_SHIFT), ("Win", 0x5B))
+        if user32().GetAsyncKeyState(code) & 0x8000
+    ]
+    foreground = user32().GetForegroundWindow()
+    print(f"{app}: {what}: foreground {describe_window(foreground)}; window {hwnd:#x}; held {held}")
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def collect(window, _lparam):
+        owner = wintypes.DWORD()
+        user32().GetWindowThreadProcessId(window, ctypes.byref(owner))
+        if owner.value == process.pid:
+            visible = bool(user32().IsWindowVisible(window))
+            print(f"{app}: {what}:   {describe_window(window)} visible={visible}")
+        return True
+
+    user32().EnumWindows(collect, 0)
+
+
 def focus_content(hwnd: int) -> None:
     """Click the window's lower content area, as a user would before typing,
     so keys reach the view and not whatever last held focus."""
@@ -953,29 +990,71 @@ def focus_content(hwnd: int) -> None:
     time.sleep(0.4)
 
 
+def process_dialogs(pid: int) -> dict[int, bool]:
+    """Every top-level common dialog (#32770) of `pid`, shown or not."""
+    found: dict[int, bool] = {}
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def collect(window, _lparam):
+        owner = wintypes.DWORD()
+        user32().GetWindowThreadProcessId(window, ctypes.byref(owner))
+        if owner.value == pid:
+            name = ctypes.create_unicode_buffer(64)
+            user32().GetClassNameW(window, name, 64)
+            if name.value == "#32770":
+                found[window] = bool(user32().IsWindowVisible(window))
+        return True
+
+    user32().EnumWindows(collect, 0)
+    return found
+
+
+#: How long the Open dialog may take to appear. Windows creates it hidden
+#: and shows it once its folder view is filled; a hosted runner's first
+#: dialog has been seen hidden for over 35 s while it holds the keyboard.
+OPEN_DIALOG_SECONDS = 60.0
+
+
 def check_open_panel(app: str, process: subprocess.Popen, hwnd: int) -> str | None:
     """Ctrl+O shows Windows' Open dialog, and Esc cancels it.
 
     Found by the robot: Preview's File ▸ Open… asked the Linux desktop
-    portal on every platform, so on Windows it did nothing."""
+    portal on every platform, so on Windows it did nothing.
+
+    The dialog is created hidden and takes the keyboard at once, so it is
+    waited for until it shows, and closed whatever happens: a dialog left
+    hidden kept every later key (F11, Ctrl+M) from reaching the window."""
     if not bring_forward(hwnd):
         return "could not bring the window forward to test Ctrl+O"
     focus_content(hwnd)
-    before = {window for window, _ in visible_windows(process.pid)}
+    before = set(process_dialogs(process.pid))
     chord(VK_CONTROL, "o")
-    dialog = None
-    deadline = time.monotonic() + 15.0
-    while time.monotonic() < deadline and dialog is None:
+    pressed = time.monotonic()
+    created = None
+    shown = None
+    deadline = pressed + OPEN_DIALOG_SECONDS
+    while time.monotonic() < deadline and shown is None:
         time.sleep(0.2)
-        for window, _title in visible_windows(process.pid):
-            if window not in before:
-                buffer = ctypes.create_unicode_buffer(64)
-                user32().GetClassNameW(window, buffer, 64)
-                if buffer.value == "#32770":
-                    dialog = window
-    print(f"{app}: Ctrl+O: open dialog {'shown' if dialog else 'not shown'}")
-    if dialog is None:
-        return "Ctrl+O showed no Open dialog"
+        for window, visible in process_dialogs(process.pid).items():
+            if window in before:
+                continue
+            if created is None:
+                created = time.monotonic() - pressed
+            if visible:
+                shown = time.monotonic() - pressed
+                dialog = window
+    created_text = "never" if created is None else f"after {created:.1f} s"
+    shown_text = "never" if shown is None else f"after {shown:.1f} s"
+    print(f"{app}: Ctrl+O: open dialog created {created_text}, shown {shown_text}")
+    if shown is None:
+        diagnose_keys(app, process, hwnd, "Ctrl+O")
+        for window in set(process_dialogs(process.pid)) - before:
+            user32().PostMessageW(window, WM_CLOSE, 0, 0)
+        time.sleep(KEY_SETTLE_SECONDS)
+        bring_forward(hwnd)
+        if created is None:
+            return "Ctrl+O showed no Open dialog"
+        return f"the Open dialog stayed hidden for {OPEN_DIALOG_SECONDS:.0f} s after Ctrl+O"
     user32().SetForegroundWindow(dialog)
     time.sleep(0.3)
     tap(VK_ESCAPE)

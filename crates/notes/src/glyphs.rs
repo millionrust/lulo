@@ -14,6 +14,8 @@ pub(super) const MORE: &str = "notes/more.svg";
 pub(super) const SEARCH: &str = "notes/search.svg";
 pub(super) const FOLDER: &str = "notes/folder.svg";
 pub(super) const TRASH: &str = "notes/trash.svg";
+/// The » of a toolbar too narrow for all its items.
+pub(super) const OVERFLOW: &str = "notes/overflow.svg";
 
 const GLYPHS: &[(&str, &[u8])] = &[
     (COMPOSE, include_bytes!("../assets/notes/compose.svg")),
@@ -25,6 +27,7 @@ const GLYPHS: &[(&str, &[u8])] = &[
     (SEARCH, include_bytes!("../assets/notes/search.svg")),
     (FOLDER, include_bytes!("../assets/notes/folder.svg")),
     (TRASH, include_bytes!("../assets/notes/trash.svg")),
+    (OVERFLOW, include_bytes!("../assets/notes/overflow.svg")),
 ];
 
 pub(super) struct NotesAssets;

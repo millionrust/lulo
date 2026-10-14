@@ -661,6 +661,12 @@ impl PlatformWindow for WindowsWindow {
 
     fn resize(&mut self, size: Size<Pixels>) {
         let hwnd = self.0.hwnd;
+        // rmac: measure the frame now. The cached offset was taken when the
+        // window was made; a Lulo layer surface (`rmac-shell-layer`) drops
+        // the resize frame afterwards, and the stale 8 px a side made every
+        // resize 16 px wider than asked, past the right edge for Control
+        // Centre, which grows to its content after it is placed.
+        self.state.border_offset.update(hwnd).log_err();
         let bounds = gpui::bounds(self.bounds().origin, size).to_device_pixels(self.scale_factor());
         let rect = calculate_window_rect(bounds, &self.state.border_offset);
 

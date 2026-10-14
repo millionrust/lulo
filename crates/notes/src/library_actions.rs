@@ -695,7 +695,7 @@ impl NotesView {
         );
         rmac_ui::set_menu_label(
             "notes::ToggleFolders",
-            if self.folders_visible {
+            if self.folders_shown() {
                 "Hide Folders"
             } else {
                 "Show Folders"

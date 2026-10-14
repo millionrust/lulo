@@ -2131,6 +2131,38 @@ compared side by side. What differed, and why:
 and Text Editor in Light, and compares the windows themselves (`compare_shell_scenes.py
 --regions window`: the whole window, its title bar band and its content).
 
+## The Windows robot's open items (branch `op/win-polish2`)
+
+- **Full screen.** Windows reports no event when a window is only resized, so the shell never
+  heard that F11 had made a window full screen. The bar did not hide. The next refresh (any
+  Window-menu action) hid it at y = -29, with its buttons at -14, and it stayed hidden after
+  the window left full screen. The window watcher now also listens to location changes, which
+  it skips for the shell's own windows. It reads the windows again only when a listed window
+  starts or stops covering its monitor, so dragging a window costs nothing. Over a
+  full-screen window the bar and the Dock hide, and the pointer at the top edge reveals the
+  bar, as on the Mac.
+- **Control Centre 8 px past the edge.** `gpui_windows` resized with the frame size it
+  measured when the window was made. A layer surface drops that frame afterwards, so every
+  resize came out 16 px too wide. It now measures the frame again on each resize.
+- **Hide Others, Show All and Return to Previous Size** keep their state in the session's
+  runtime folder. Windows has no `XDG_RUNTIME_DIR`, so nothing was recorded and Show All
+  stayed greyed out. On Windows that folder is now `%TEMP%\Lulo\runtime`.
+- **Full-Screen Tile** puts the window on its half the way Win+Left and Win+Right do, so
+  Windows' Snap Assist offers the other windows for the other half, as the Mac does. With
+  snapping turned off, the window is tiled to that half without the picker.
+- **Notes' toolbar** in a narrow window (both systems): the folder list gives way, Search
+  collapses to its button, and then More and Search move into a » menu. An open search keeps
+  its field.
+- **lulo-session's idle reading.** The session only waits on lulo-shell. Windows' own
+  thread-pool threads retire about a minute after it starts, and when that falls inside the
+  idle window it is charged as up to 2 ticks. `shell_smoke.py` now names those threads and
+  reads again, as `launch_smoke.py` does for apps.
+
+Checks: `shell_smoke.py` (the desktop menu's rows, New Folder and Show View Options; Control
+Centre's right edge; the bar over a full-screen Text Editor, revealed at the top edge;
+Full-Screen Tile; Hide Others and Show All) and `launch_smoke.py` (Notes at 683 px wide:
+nothing outside the window under UI Automation, and the » menu is there).
+
 ## Phase plan
 
 The goal is "usable on Windows without Linux". Phases are ordered by how much value they

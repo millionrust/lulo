@@ -6,5 +6,5 @@ pub use linux::current_platform;
 pub use linux::{
     begin_external_file_drag, external_file_drag_active, file_drop_should_copy,
     request_layer_window_configure, reserve_window_drawable, set_layer_window_mapped,
-    stage_external_file_drag, trace_mark,
+    stage_external_copy_drag, stage_external_file_drag, trace_mark,
 };

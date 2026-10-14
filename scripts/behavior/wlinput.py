@@ -394,9 +394,12 @@ class Wayland:
 
     def drag(self, start: tuple[float, float], end: tuple[float, float], width: int, height: int,
              button: str = "left", steps: int = 8, step_delay: float = 0.04,
-             grab_delay: float = 0.0, modifiers: Optional[list[str]] = None) -> None:
+             grab_delay: float = 0.0, modifiers: Optional[list[str]] = None,
+             hold: float = 0.0) -> None:
         """Press at `start`, move to `end` in `steps` and release, holding
-        `modifiers` throughout (niri's Mod + right-drag resizes)."""
+        `modifiers` throughout (niri's Mod + right-drag resizes). `hold`
+        keeps the button down at `end` before the release, as a hand does
+        when it drags a Dock icon off to remove it."""
 
         mask = 0
         for mod in modifiers or []:
@@ -414,6 +417,8 @@ class Wayland:
             if step == 1 and grab_delay:
                 time.sleep(grab_delay)
             time.sleep(step_delay)
+        if hold:
+            time.sleep(hold)
         self.button(False, button)
         for mod in reversed(modifiers or []):
             mod_code, bit = MODIFIER_KEYS[mod]

@@ -316,6 +316,9 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
         .receive_prepare_for_sleep()
         .await
         .map_err(|_| Error::failed(Operation::SubscribeLogind))?;
+    // Screen On Usage (Settings ▸ Battery) is built from these events; a
+    // missing shutdown stream only loses that chart's precision.
+    let shutdown_changes = manager.receive_prepare_for_shutdown().await.ok();
     let _settings = crate::lock_settings::serve(policy_path)
         .await
         .map_err(|_| Error::failed(Operation::ServeSettings))?;
@@ -347,11 +350,21 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
     let mut power_key = crate::power_key::PowerKey::default();
 
     notify_systemd("Lulo OS lock coordinator is ready")?;
+    record_screen(true);
     futures_util::pin_mut!(lock_requests, sleep_changes);
+    let mut shutdown_changes = shutdown_changes.map(Box::pin);
 
     loop {
         let lock_request = futures_util::FutureExt::fuse(lock_requests.next());
         let sleep_change = futures_util::FutureExt::fuse(sleep_changes.next());
+        let shutdown = match shutdown_changes.as_mut() {
+            Some(stream) => {
+                futures_util::FutureExt::fuse(futures_util::future::Either::Left(stream.next()))
+            }
+            None => futures_util::FutureExt::fuse(futures_util::future::Either::Right(
+                futures_util::future::pending(),
+            )),
+        };
         // Once the listener has gone, `recv` would fail at once on every
         // turn; leave it out instead of spinning.
         let press = if presses.is_closed() {
@@ -363,8 +376,20 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
             Some(at) => async_io::Timer::at(at),
             None => async_io::Timer::never(),
         });
-        futures_util::pin_mut!(lock_request, sleep_change, press, deadline);
+        futures_util::pin_mut!(lock_request, sleep_change, press, deadline, shutdown);
+        let mut shutdown_ended = false;
         futures_util::select! {
+            signal = shutdown => {
+                match signal {
+                    Some(signal) => {
+                        if signal.args().is_ok_and(|args| *args.start()) {
+                            record_screen(false);
+                        }
+                    }
+                    // The stream ended: stop listening rather than spin.
+                    None => shutdown_ended = true,
+                }
+            },
             event = press => {
                 if let Ok(crate::Event::Activated { .. }) = event {
                     let locked = session_locked(&session).await;
@@ -397,6 +422,7 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
                     .args()
                     .map_err(|_| Error::failed(Operation::ReadSignal))?
                     .start();
+                record_screen(!preparing);
                 if preparing {
                     power_key.sleeping();
                     match request() {
@@ -413,6 +439,18 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
                 }
             },
         }
+        if shutdown_ended {
+            shutdown_changes = None;
+        }
+    }
+}
+
+/// Note for Settings ▸ Battery ▸ Screen On Usage that the screen came on
+/// or went off. A failure only loses that chart's sample.
+#[cfg(target_os = "linux")]
+fn record_screen(on: bool) {
+    if let Err(error) = rmac_power::screen_usage::record(on) {
+        eprintln!("screen-on usage record warning: {error}");
     }
 }
 
@@ -814,6 +852,9 @@ trait LoginManager {
 
     #[zbus(signal)]
     fn prepare_for_sleep(&self, start: bool) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn prepare_for_shutdown(&self, start: bool) -> zbus::Result<()>;
 }
 
 #[cfg(test)]

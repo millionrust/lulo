@@ -26,6 +26,7 @@
 pub mod appbar;
 pub mod backdrop;
 pub mod desktop_layer;
+pub mod dock_drag;
 pub mod layer_types;
 pub mod material;
 pub mod power;

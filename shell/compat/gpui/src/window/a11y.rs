@@ -647,8 +647,26 @@ fn text_placement(parent: &accesskit::Node, text: &str) -> TextPlacement {
     ) {
         return TextPlacement::Skip;
     }
-    if parent.label().is_some_and(|label| label.trim() == text)
-        || parent.value().is_some_and(|value| value.trim() == text)
+    // A container named after its title (a slider group, a dialog) still
+    // shows that title as text; a row or control named after its text
+    // does not repeat it.
+    let container = matches!(
+        role,
+        Role::Group
+            | Role::RadioGroup
+            | Role::Toolbar
+            | Role::Window
+            | Role::Dialog
+            | Role::AlertDialog
+            | Role::Pane
+            | Role::Region
+            | Role::Section
+            | Role::Form
+            | Role::TabPanel
+    );
+    if !container
+        && (parent.label().is_some_and(|label| label.trim() == text)
+            || parent.value().is_some_and(|value| value.trim() == text))
     {
         return TextPlacement::Skip;
     }
@@ -967,6 +985,17 @@ mod row_text_tests {
         assert_eq!(text_placement(&field, "typed"), TextPlacement::Skip);
         let check = Node::new(Role::CheckBox);
         assert_eq!(text_placement(&check, "✓"), TextPlacement::Skip);
+        // A slider group named after its title still shows the title; a
+        // row named after its text does not repeat it.
+        let mut titled = Node::new(Role::Group);
+        titled.set_label("Tracking speed");
+        assert_eq!(
+            text_placement(&titled, "Tracking speed"),
+            TextPlacement::Child
+        );
+        let mut row = Node::new(Role::ListItem);
+        row.set_label("Wi-Fi");
+        assert_eq!(text_placement(&row, "Wi-Fi"), TextPlacement::Skip);
     }
 }
 

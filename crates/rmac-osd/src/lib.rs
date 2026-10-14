@@ -188,6 +188,33 @@ pub fn brightness() -> Result<u8, Error> {
     }
 }
 
+/// The keyboard backlight's level in percent; an error when the machine has
+/// none (or on Windows and macOS, which keep their own).
+pub fn keyboard_brightness() -> Result<u8, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::keyboard_brightness()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error::new(Operation::ReadBrightness))
+    }
+}
+
+/// Set the keyboard backlight to `percentage` (0 is off) through logind and
+/// return the level read back from sysfs.
+pub fn set_keyboard_brightness(percentage: u8) -> Result<u8, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::set_keyboard_brightness_percentage(percentage)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = percentage;
+        Err(Error::new(Operation::ChangeBrightness))
+    }
+}
+
 /// Set the preferred backlight to `percentage` through logind and return the
 /// level read back from sysfs.
 pub fn set_brightness(percentage: u8) -> Result<u8, Error> {

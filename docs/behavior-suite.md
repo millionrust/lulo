@@ -438,6 +438,19 @@ directories.
 python3 scripts/behavior/run_file_drag.py --bin-dir ~/rmac-wt/target/iterate
 ```
 
+## Keeping apps in the Dock by dragging
+
+`scripts/behavior/run_dock_drag.py` starts the shipped shell in a private
+nested niri and drags with the virtual pointer (`wlinput.drag`, whose `hold`
+keeps the button down before the release): a running app across the
+separator into the kept apps, a reorder, a drag off the Dock to remove, and
+an app out of Apps onto the Dock. Each check reads the saved shell settings.
+See `tests/behavior/shell/dock-drag-pinning.md`.
+
+```sh
+python3 scripts/behavior/run_dock_drag.py --bin-dir ~/rmac-wt/target/iterate
+```
+
 ## Menu dismissal on an outside click
 
 `scripts/behavior/run_menu_dismiss.py` starts the shipped shell services in

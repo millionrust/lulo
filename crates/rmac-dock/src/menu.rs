@@ -322,7 +322,7 @@ impl Session {
             PinCommand::Pin { .. } => ("Keep in Dock", false),
             PinCommand::Unpin { .. } if running => ("Keep in Dock", true),
             PinCommand::Unpin { .. } => ("Remove from Dock", false),
-            PinCommand::Move { .. } | PinCommand::MoveTo { .. } => {
+            PinCommand::Move { .. } | PinCommand::MoveTo { .. } | PinCommand::PinAt { .. } => {
                 return Err(MenuError::InvalidPinAction);
             }
         };

@@ -483,7 +483,9 @@ impl Model {
             ContextAction::TerminateApplication { pids, .. } => {
                 authoritative_process_ids(item).as_ref() == Some(pids)
             }
-            ContextAction::UpdatePins(PinCommand::Pin { .. }) => !item.pinned,
+            ContextAction::UpdatePins(PinCommand::Pin { .. } | PinCommand::PinAt { .. }) => {
+                !item.pinned
+            }
             ContextAction::UpdatePins(PinCommand::Unpin { .. }) => item.pinned,
             ContextAction::UpdatePins(PinCommand::Move { .. } | PinCommand::MoveTo { .. }) => {
                 item.pinned

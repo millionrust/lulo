@@ -261,6 +261,12 @@ enum ViewMode {
 /// Drag payload: the file paths being dragged.
 struct DraggedPaths(Vec<PathBuf>);
 
+/// Drag payload for apps dragged out of Applications. Nothing in Files
+/// accepts it, so an app is never moved; outside Files the drag carries the
+/// apps' desktop entries copy-only, and the Dock keeps them (macOS: drag an
+/// app to the Dock).
+struct DraggedApplications;
+
 /// A sidebar shortcut drag. It never carries a filesystem move request.
 struct DraggedSidebarItem(PathBuf);
 

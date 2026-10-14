@@ -48,7 +48,27 @@ impl ServiceReader for SystemServiceReader {
     }
 
     fn power(&self) -> Result<rmac_power::Snapshot, String> {
-        rmac_power::snapshot().map_err(|error| error.to_string())
+        let snapshot = rmac_power::snapshot().map_err(|error| error.to_string())?;
+        // Low Power Mode "Only on Battery" / "Only on Power Adapter" follows
+        // the power source while Settings is closed: carry it out when the
+        // source changes (and once at session start). Reads already run off
+        // the UI thread, on power events only.
+        static LAST_ON_BATTERY: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+        let on_battery = snapshot.battery.as_ref().map(|battery| battery.on_battery);
+        let changed = LAST_ON_BATTERY
+            .lock()
+            .map(|mut last| std::mem::replace(&mut *last, on_battery) != on_battery)
+            .unwrap_or(false);
+        if changed && on_battery.is_some() {
+            match rmac_power::low_power::follow_power_source(&snapshot) {
+                Ok(true) => return rmac_power::snapshot().map_err(|error| error.to_string()),
+                Ok(false) => {}
+                Err(error) => {
+                    eprintln!("Low Power Mode could not follow the power source: {error}")
+                }
+            }
+        }
+        Ok(snapshot)
     }
 }
 

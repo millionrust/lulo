@@ -1038,6 +1038,54 @@ fn drag_reorder_moves_to_a_bounded_persisted_index() {
 }
 
 #[test]
+fn a_drag_onto_the_dock_keeps_the_app_at_the_drop_index() {
+    let pinned = vec![
+        rmac_shell_settings::AppId("finder.desktop".into()),
+        rmac_shell_settings::AppId("notes.desktop".into()),
+    ];
+    let ids = |apps: &[rmac_shell_settings::AppId]| {
+        apps.iter()
+            .map(|app_id| app_id.0.clone())
+            .collect::<Vec<_>>()
+    };
+    let kept = apply_pin_command(
+        &pinned,
+        &PinCommand::PinAt {
+            app_id: "terminal.desktop".into(),
+            index: 1,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        ids(&kept),
+        ["finder.desktop", "terminal.desktop", "notes.desktop"]
+    );
+    // Past the end keeps it last.
+    let last = apply_pin_command(
+        &pinned,
+        &PinCommand::PinAt {
+            app_id: "terminal.desktop".into(),
+            index: usize::MAX,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        ids(&last),
+        ["finder.desktop", "notes.desktop", "terminal.desktop"]
+    );
+    // An app already kept moves rather than appearing twice.
+    let moved = apply_pin_command(
+        &pinned,
+        &PinCommand::PinAt {
+            app_id: "notes".into(),
+            index: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(ids(&moved), ["notes.desktop", "finder.desktop"]);
+}
+
+#[test]
 fn parked_windows_become_minimized_tiles_instead_of_running_apps() {
     let catalog = [application("terminal.desktop", "Terminal")];
     let place = |id: u64, name: Option<&str>| rmac_compositor::Workspace {

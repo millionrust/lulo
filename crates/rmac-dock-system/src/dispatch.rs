@@ -683,7 +683,9 @@ fn revalidate_context(
                 {
                     Some(rmac_dock::ContextAction::UpdatePins(menu.pin))
                 }
-                rmac_dock::PinCommand::Move { .. } | rmac_dock::PinCommand::MoveTo { .. } => {
+                rmac_dock::PinCommand::Move { .. }
+                | rmac_dock::PinCommand::MoveTo { .. }
+                | rmac_dock::PinCommand::PinAt { .. } => {
                     let action = rmac_dock::ContextAction::UpdatePins(requested.clone());
                     model.authorizes_context_action(&action).then_some(action)
                 }

@@ -255,8 +255,10 @@ mod night_shift_tests {
 
     #[test]
     fn warmth_maps_to_kelvin_and_round_trips() {
-        let mut policy = Policy::default();
-        policy.warmth = 0;
+        let mut policy = Policy {
+            warmth: 0,
+            ..Policy::default()
+        };
         assert_eq!(policy.night_kelvin(), LEAST_WARM_KELVIN);
         policy.warmth = 100;
         assert_eq!(policy.night_kelvin(), WARMEST_KELVIN);

@@ -721,6 +721,11 @@ impl FinderView {
             cx,
         );
         rmac_ui::set_menu_checked("finder::ShowAllTabs", self.show_all_tabs, cx);
+        // Show Previous/Next Tab do nothing with one tab; macOS greys them
+        // out (live robot, ROBOT-10).
+        for action in ["finder::PreviousTab", "finder::NextTab"] {
+            rmac_ui::set_menu_enabled(action, self.tabs.len() > 1, cx);
+        }
         let has_folder = self.selected_folder().is_some();
         for action in [
             "finder::OpenSelectionInNewTab",

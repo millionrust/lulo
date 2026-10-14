@@ -181,13 +181,24 @@ pub(crate) fn current_menus(cx: &mut App) -> Vec<Menu> {
     let definition = model.definition.clone();
     let overrides = model.overrides.clone();
     let dynamic_children = model.dynamic_children.clone();
-    let text_actions = definition
+    let leaves = definition
         .iter()
         .flat_map(Menu::leaves)
         .map(|(_, item)| item.action.clone())
-        .filter(|action| action.starts_with(rmac_app_menu::TEXT_FIELD_ACTION_PREFIX))
         .collect::<Vec<_>>();
+    let mut text_actions = leaves
+        .iter()
+        .filter(|action| action.starts_with(rmac_app_menu::TEXT_FIELD_ACTION_PREFIX))
+        .cloned()
+        .collect::<Vec<_>>();
+    let wants_text_focus = leaves
+        .iter()
+        .any(|action| rmac_app_menu::acts_on_focused_text(action));
+    if wants_text_focus {
+        text_actions.push(rmac_app_menu::TEXT_FIELD_PROBE_ACTION.to_owned());
+    }
     let available = available_in_key_window(&text_actions, cx);
+    let text_focused = available.contains(rmac_app_menu::TEXT_FIELD_PROBE_ACTION);
     let mut menus = rmac_app_menu::apply_state(&definition, |item| {
         let mut state = overrides.get(&item.action).cloned().unwrap_or_default();
         if item
@@ -195,6 +206,9 @@ pub(crate) fn current_menus(cx: &mut App) -> Vec<Menu> {
             .starts_with(rmac_app_menu::TEXT_FIELD_ACTION_PREFIX)
             && !available.contains(&item.action)
         {
+            state.enabled = Some(false);
+        }
+        if !text_focused && rmac_app_menu::acts_on_focused_text(&item.action) {
             state.enabled = Some(false);
         }
         if item.action == rmac_app_menu::PASTE_MATCH_STYLE_ACTION

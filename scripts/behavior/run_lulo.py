@@ -886,6 +886,32 @@ class LuloRun:
             "strikeouts": len(re.findall(rb"/Subtype\s*/StrikeOut\b", data)),
         }
 
+    MENU_BUS_NAMES = {
+        "calculator": "Calculator", "clock": "Clock", "text-editor": "TextEditor",
+        "weather": "Weather", "system-monitor": "SystemMonitor", "settings": "SystemSettings",
+        "preview": "Preview", "notes": "Notes", "terminal": "Terminal", "mail": "Mail",
+        "files": "Files", "calendar": "Calendar",
+    }
+
+    def menu_bus(self) -> str:
+        return "org.rmac." + self.MENU_BUS_NAMES[self.app] + ".Menu"
+
+    def fact_menu_items(self) -> dict[str, Any]:
+        """Every menu row the app publishes, by action: whether it is
+        enabled right now. The app validates them as the menu bar's
+        request arrives, as AppKit does when a menu opens."""
+
+        out = subprocess.run(
+            ["busctl", "--user", "--json=short", "call", self.menu_bus(), "/org/rmac/AppMenu1",
+             "org.rmac.AppMenu2", "Layout"],
+            env=self.env, capture_output=True, text=True, timeout=5,
+        )
+        if out.returncode:
+            raise StepFailed(f"menu layout failed: {out.stderr.strip()}")
+        _revision, menus = json.loads(out.stdout)["data"]
+        return {action: bool(bits & 1) for _label, items in menus
+                for _item_label, action, _shortcut, bits, _depth in items}
+
     def fact_windows(self) -> dict[str, Any]:
         pyatspi = atspi()
         plain = [f for f in self.frames() if role(f) not in DIALOG_ROLES
@@ -1370,19 +1396,7 @@ class LuloRun:
                 # Lulo-only scenarios can activate the same published D-Bus
                 # command the menu bar sends. Fetch Layout first as the menu
                 # bar does when it opens a menu, so dynamic Recent rows exist.
-                bus = "org.rmac." + {
-                    "calculator": "Calculator",
-                    "clock": "Clock",
-                    "text-editor": "TextEditor",
-                    "weather": "Weather",
-                    "system-monitor": "SystemMonitor",
-                    "settings": "SystemSettings",
-                    "preview": "Preview",
-                    "notes": "Notes",
-                    "terminal": "Terminal",
-                    "mail": "Mail",
-                    "files": "Files",
-                }[self.app] + ".Menu"
+                bus = self.menu_bus()
                 layout = subprocess.run(
                     ["gdbus", "call", "--session", "--dest", bus,
                      "--object-path", "/org/rmac/AppMenu1", "--method",

@@ -1,0 +1,9 @@
+{
+  "title": "Clock: Edit ▸ Transformations and Check Document Now are greyed out with no text field focused",
+  "app": "clock",
+  "lulo_only": true,
+  "steps": [
+    {"wait": 1.0},
+    {"observe": "no_text", "facts": ["menu_items"]}
+  ]
+}

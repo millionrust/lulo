@@ -1,0 +1,10 @@
+{
+  "title": "Text Editor: Edit ▸ Transformations and Check Document Now stay enabled while the document has focus",
+  "app": "text-editor",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"type": "robot"},
+    {"observe": "editing", "facts": ["menu_items"]}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "scenario": "text-editor/text-commands-with-text",
+  "observations": {
+    "editing": {
+      "menu_items": {
+        "text_editor::TransformUppercase": true,
+        "text_editor::CheckDocumentNow": true
+      }
+    }
+  }
+}

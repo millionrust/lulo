@@ -371,6 +371,35 @@ macro_rules! submenu {
 /// keyboard focus (gpui-component's `input::` actions). The app side greys
 /// them out while no text field is focused.
 pub const TEXT_FIELD_ACTION_PREFIX: &str = "input::";
+
+/// App commands that act on the focused text (Edit ▸ Spelling and Grammar's
+/// checks, Edit ▸ Transformations), by the last segment of their action
+/// name. Apps handle them on their root view, so a handler is always on the
+/// focus path; the app side greys them out unless a text field has focus,
+/// as AppKit does (ROBOT-17: Clock showed them enabled with nothing to act
+/// on). Test the name with [`acts_on_focused_text`].
+const FOCUSED_TEXT_COMMANDS: &[&str] = &[
+    "ShowSpellingAndGrammar",
+    "CheckDocumentNow",
+    "TransformUppercase",
+    "TransformLowercase",
+    "TransformCapitalise",
+    "MakeUppercase",
+    "MakeLowercase",
+    "Capitalise",
+];
+
+/// The action every rmac text field answers; its availability tells the
+/// app side that a text field has keyboard focus.
+pub const TEXT_FIELD_PROBE_ACTION: &str = "input::SelectAll";
+
+/// Whether `action` only makes sense with a text field focused (see
+/// [`FOCUSED_TEXT_COMMANDS`]).
+pub fn acts_on_focused_text(action: &str) -> bool {
+    action
+        .rsplit_once("::")
+        .is_some_and(|(_, name)| FOCUSED_TEXT_COMMANDS.contains(&name))
+}
 /// Plain-text fields already discard source styling when they paste.
 pub const PASTE_MATCH_STYLE_ACTION: &str = "rmac_ui::PasteAndMatchStyle";
 
@@ -3923,6 +3952,28 @@ mod tests {
                 .items[0]
                 .enabled
         );
+    }
+
+    #[test]
+    fn text_commands_are_recognised_in_every_app_that_has_them() {
+        // ROBOT-17: these grey out with no text field focused.
+        for action in [
+            "clock::TransformUppercase",
+            "clock::CheckDocumentNow",
+            "text_editor::TransformCapitalise",
+            "notes::MakeLowercase",
+            "preview::ShowSpellingAndGrammar",
+        ] {
+            assert!(acts_on_focused_text(action), "{action}");
+        }
+        for action in [
+            "clock::ShowAlarms",
+            "notes::Capitalised",
+            "input::SelectAll",
+            "Capitalise",
+        ] {
+            assert!(!acts_on_focused_text(action), "{action}");
+        }
     }
 
     #[test]

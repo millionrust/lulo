@@ -42,8 +42,13 @@ pub(super) fn glyph_button(
 /// Whether the window is too narrow for the folder list beside the note
 /// list and an editor column its toolbar fits in.
 pub(super) fn narrow_window(window: &Window) -> bool {
-    f32::from(rmac_ui::window_content_size(window).width)
-        < SIDEBAR_WIDTH + LIST_WIDTH + 1.0 + EDITOR_MIN_WIDTH
+    !folder_list_fits(f32::from(rmac_ui::window_content_size(window).width))
+}
+
+/// Whether a window `width` wide has room for the folder list, the note
+/// list and an editor column.
+fn folder_list_fits(width: f32) -> bool {
+    width >= SIDEBAR_WIDTH + LIST_WIDTH + 1.0 + EDITOR_MIN_WIDTH
 }
 
 /// What the editor column's toolbar has room for. As in the Mac's
@@ -926,7 +931,7 @@ mod tests {
 
     #[test]
     fn a_half_screen_window_hides_the_folder_list() {
-        assert!(683.0 < SIDEBAR_WIDTH + LIST_WIDTH + 1.0 + EDITOR_MIN_WIDTH);
-        assert!(1366.0 >= SIDEBAR_WIDTH + LIST_WIDTH + 1.0 + EDITOR_MIN_WIDTH);
+        assert!(!folder_list_fits(683.0));
+        assert!(folder_list_fits(1366.0));
     }
 }

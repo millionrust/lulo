@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     rc::{Rc, Weak},
     str::FromStr,
-    sync::{atomic::AtomicBool, Arc, Once},
+    sync::{Arc, Once, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 
@@ -16,7 +16,6 @@ use gpui_util::ResultExt;
 use raw_window_handle as rwh;
 use smallvec::SmallVec;
 use windows::{
-    core::*,
     Win32::{
         Foundation::*,
         Graphics::Dwm::*,
@@ -26,6 +25,7 @@ use windows::{
         },
         UI::{Controls::*, HiDpi::*, Input::KeyboardAndMouse::*, Shell::*, WindowsAndMessaging::*},
     },
+    core::*,
 };
 
 use crate::direct_manipulation::DirectManipulationHandler;
@@ -1820,9 +1820,9 @@ fn set_non_rude_hwnd(hwnd: HWND, non_rude: bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        fit_rect_to_work_area, screen_to_workspace, workspace_to_screen, ClickState, RECT,
+        ClickState, RECT, fit_rect_to_work_area, screen_to_workspace, workspace_to_screen,
     };
-    use gpui::{point, DevicePixels, MouseButton};
+    use gpui::{DevicePixels, MouseButton, point};
     use std::time::Duration;
 
     #[test]

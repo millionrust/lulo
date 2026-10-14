@@ -367,6 +367,19 @@ impl WindowsWindowInner {
                 .hovered_status_change
                 .set(Some(callback));
         }
+        // rmac: say the pointer left, as GPUI's Wayland backend does, so
+        // views drop their hover. Without it a hovered element stayed
+        // hovered once the pointer jumped elsewhere without a last move
+        // inside the window: the menu bar revealed over a full-screen
+        // window never hid again.
+        if let Some(mut func) = self.state.callbacks.input.take() {
+            func(PlatformInput::MouseExited(MouseExitEvent {
+                position: Point::default(),
+                pressed_button: None,
+                modifiers: current_modifiers(),
+            }));
+            self.state.callbacks.input.set(Some(func));
+        }
 
         Some(0)
     }

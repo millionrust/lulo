@@ -2009,10 +2009,20 @@ def check_window_menu(
             time.sleep(0.2)
             tap(VK_RETURN)
             middle = (area[0] + area[2]) // 2
-            tiled = wait_until(
-                lambda: abs(frame_bounds(hwnd)[0] - area[0]) <= 2 and abs(frame_bounds(hwnd)[2] - middle) <= 12,
-                5.0,
-            )
+
+            def on_left_half():
+                # The left half, full height; no narrower than the app's
+                # own minimum width (Text Editor's is wider than half of the
+                # runner's 1024 px screen).
+                left, top, right, bottom = frame_bounds(hwnd)
+                return (
+                    abs(left - area[0]) <= 2
+                    and abs(top - area[1]) <= 2
+                    and abs(bottom - area[3]) <= 2
+                    and right - left <= max(middle - area[0], 620) + 12
+                )
+
+            tiled = wait_until(on_left_half, 5.0)
             time.sleep(1.0)
             save(screenshots, "full-screen-tile")
             print(f"shell: Full-Screen Tile ▸ Left of Screen: Text Editor at {frame_bounds(hwnd)}, work area {area}")

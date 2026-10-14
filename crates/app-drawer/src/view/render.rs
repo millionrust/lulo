@@ -51,6 +51,10 @@ impl Render for AppDrawer {
         .filter(|indices| !indices.is_empty())
         .map(|indices| self.recents_row(&indices, cx));
 
+        #[cfg(windows)]
+        if !self.loading && !self.apps.is_empty() && !self.ready_traced.replace(true) {
+            rmac_shell_layer::windows::trace::trace(|| format!("apps ready {} apps", self.apps.len()));
+        }
         let body: gpui::AnyElement = if self.loading {
             div()
                 .min_h(px(320.0))

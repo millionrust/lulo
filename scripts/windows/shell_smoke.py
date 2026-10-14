@@ -1320,6 +1320,7 @@ def check_shell(
         # dragged across the separator, a reorder, a drag off to remove,
         # and an app dragged in from Apps.
         check_dock_drag(log, bin_dir, environment, screenshots, failures)
+        check_apps_open_speed(log, bin_dir, environment, failures)
         time.sleep(5.0)
         memory = memory_mb(shell_pid)
         print(f"shell: lulo-shell memory after the switcher and Notification Centre closed: {memory}")
@@ -2364,6 +2365,42 @@ def check_notification_centre(log: Log, screenshots: Path | None, failures: list
     tap(VK_ESCAPE)
     if panel is not None and log.wait_for(r"^layer rmac-notification-center closed", 5.0, after=before) is None:
         failures.append("Esc did not close Notification Centre")
+
+
+#: Apps must show its tiles this soon after the request once the shell has
+#: read the catalogue (the first open above warmed it). The time includes
+#: starting `lulo-shell.exe --app-drawer` and the 5 ms poll below.
+APPS_OPEN_BUDGET_SECONDS = 0.30
+
+
+def check_apps_open_speed(log: Log, bin_dir: Path, environment: dict, failures: list[str]) -> None:
+    """Apps opens fast: the time from asking the running shell for Apps to
+    the window's `apps ready` trace, three opens after the first."""
+    pattern = re.compile(r"^apps ready \d+ apps")
+    times = []
+    for _ in range(4):
+        before = len(log.lines())
+        started = time.monotonic()
+        subprocess.run([str(bin_dir / "lulo-shell.exe"), "--app-drawer"], env=environment, timeout=30)
+        elapsed = None
+        while time.monotonic() - started < 5.0:
+            if any(pattern.search(line) for line in log.lines()[before:]):
+                elapsed = time.monotonic() - started
+                break
+            time.sleep(0.005)
+        tap(VK_ESCAPE)
+        time.sleep(0.8)
+        if elapsed is None:
+            failures.append("apps speed: Apps did not report its tiles within 5 s")
+            return
+        times.append(elapsed)
+    print("shell: apps open to tiles (ms): " + ", ".join(f"{t * 1000:.0f}" for t in times))
+    warm = sorted(times[1:])[len(times[1:]) // 2]
+    if warm > APPS_OPEN_BUDGET_SECONDS:
+        failures.append(
+            f"apps speed: Apps took {warm * 1000:.0f} ms to show its tiles, over the "
+            f"{APPS_OPEN_BUDGET_SECONDS * 1000:.0f} ms budget"
+        )
 
 
 DOCK_TILE = re.compile(r"^dock tile (\S+) .* at (-?\d+),(-?\d+) (\w+)$")

@@ -228,6 +228,136 @@ pub fn media_folders(home: &Path) -> Vec<PlaceSpec> {
     .collect()
 }
 
+/// One of the Mac's own Movies, Music and Pictures favourites, at the folder
+/// it really is here (`~/Videos` is the XDG name for `~/Movies`), only when
+/// that folder exists.
+pub fn media_favourite(home: &Path, media: MediaFolder) -> Option<PlaceSpec> {
+    let (name, folders, icon): (&str, &[&str], &'static str) = match media {
+        MediaFolder::Movies => ("Movies", &["Movies", "Videos"], "icons/movie.svg"),
+        MediaFolder::Music => ("Music", &["Music"], "icons/music.svg"),
+        MediaFolder::Pictures => ("Pictures", &["Pictures"], "icons/image.svg"),
+    };
+    folders
+        .iter()
+        .map(|folder| home.join(folder))
+        .find(|path| path.is_dir())
+        .map(|path| place(name, path, icon, false))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MediaFolder {
+    Movies,
+    Music,
+    Pictures,
+}
+
+/// Which Finder ▸ Settings ▸ Sidebar checkbox a mounted volume belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MountClass {
+    HardDisk,
+    ExternalDisk,
+    /// "CDs, DVDs and iOS Devices": optical discs and phones or cameras.
+    OpticalOrDevice,
+    CloudStorage,
+    ConnectedServer,
+}
+
+/// Sorts one mount into its sidebar checkbox. GVFS mounts carry their
+/// scheme in the mount-point name (`smb-share:server=nas,share=docs`);
+/// `optical` says the filesystem is ISO 9660 or UDF.
+pub fn classify_mount(path: &Path, ejectable: bool, optical: bool) -> MountClass {
+    if optical {
+        return MountClass::OpticalOrDevice;
+    }
+    let gvfs = path
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|parent| parent == "gvfs");
+    if gvfs {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let scheme = name.split(':').next().unwrap_or_default();
+        return match scheme {
+            "google-drive" | "onedrive" => MountClass::CloudStorage,
+            "mtp" | "gphoto2" | "afc" | "cdda" => MountClass::OpticalOrDevice,
+            _ => MountClass::ConnectedServer,
+        };
+    }
+    if ejectable {
+        MountClass::ExternalDisk
+    } else {
+        MountClass::HardDisk
+    }
+}
+
+/// The mount points of optical discs (ISO 9660 and UDF) right now, read
+/// from the kernel's mount table each time the sidebar is rebuilt.
+#[cfg(target_os = "linux")]
+pub fn optical_mount_points() -> Vec<PathBuf> {
+    let Ok(bytes) = FileSystem.read_bounded_no_follow(Path::new("/proc/self/mounts"), 4 << 20)
+    else {
+        return Vec::new();
+    };
+    optical_mount_points_in(&String::from_utf8_lossy(&bytes))
+}
+
+/// No mount table to read: discs show under External disks.
+#[cfg(not(target_os = "linux"))]
+pub fn optical_mount_points() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn optical_mount_points_in(table: &str) -> Vec<PathBuf> {
+    table
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let _source = fields.next()?;
+            let target = fields.next()?;
+            let kind = fields.next()?;
+            matches!(kind, "iso9660" | "udf")
+                .then(|| PathBuf::from(target.replace("\\040", " ").replace("\\011", "\t")))
+        })
+        .collect()
+}
+
+/// This computer's name, for the Locations row the Mac names after the Mac
+/// (the pretty name from `/etc/machine-info`, else the host name).
+pub fn computer_name() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        let read = |path: &str| {
+            FileSystem
+                .read_bounded_no_follow(Path::new(path), 64 * 1024)
+                .ok()
+                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        };
+        let pretty = read("/etc/machine-info").and_then(|info| {
+            info.lines().find_map(|line| {
+                line.strip_prefix("PRETTY_HOSTNAME=")
+                    .map(|value| value.trim().trim_matches('"').to_owned())
+            })
+        });
+        if let Some(pretty) = pretty.filter(|name| !name.is_empty()) {
+            return pretty;
+        }
+        if let Some(host) = read("/proc/sys/kernel/hostname") {
+            let host = host.trim();
+            if !host.is_empty() {
+                return host.to_owned();
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(name) = std::env::var_os("COMPUTERNAME") {
+        return name.to_string_lossy().into_owned();
+    }
+    "Computer".to_owned()
+}
+
 /// iCloud Drive (when synced here) and the home folder.
 pub fn standard_locations(home: &Path) -> Vec<PlaceSpec> {
     let mut locations = Vec::new();
@@ -304,6 +434,68 @@ mod tests {
             .map(|place| place.name)
             .collect();
         assert_eq!(names, ["Music", "Photos", "Movies"]);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn mounts_sort_into_the_mac_sidebar_checkboxes() {
+        let gvfs = |name: &str| PathBuf::from(format!("/run/user/1000/gvfs/{name}"));
+        assert_eq!(
+            classify_mount(&gvfs("smb-share:server=nas,share=docs"), true, false),
+            MountClass::ConnectedServer
+        );
+        assert_eq!(
+            classify_mount(&gvfs("sftp:host=pi"), true, false),
+            MountClass::ConnectedServer
+        );
+        assert_eq!(
+            classify_mount(&gvfs("google-drive:host=gmail.com,user=a"), true, false),
+            MountClass::CloudStorage
+        );
+        assert_eq!(
+            classify_mount(&gvfs("mtp:host=Pixel"), true, false),
+            MountClass::OpticalOrDevice
+        );
+        assert_eq!(
+            classify_mount(Path::new("/media/jake/DVD"), true, true),
+            MountClass::OpticalOrDevice
+        );
+        assert_eq!(
+            classify_mount(Path::new("/media/jake/USB"), true, false),
+            MountClass::ExternalDisk
+        );
+        assert_eq!(
+            classify_mount(Path::new("/mnt/data"), false, false),
+            MountClass::HardDisk
+        );
+    }
+
+    #[test]
+    fn optical_mounts_are_read_from_the_mount_table() {
+        let table = "/dev/sr0 /media/jake/My\\040Disc iso9660 ro 0 0\n\
+                     /dev/sdb1 /media/jake/USB vfat rw 0 0\n\
+                     /dev/sr1 /media/jake/BD udf ro 0 0\n";
+        assert_eq!(
+            optical_mount_points_in(table),
+            [
+                PathBuf::from("/media/jake/My Disc"),
+                PathBuf::from("/media/jake/BD")
+            ]
+        );
+    }
+
+    #[test]
+    fn movies_falls_back_to_the_xdg_videos_folder() {
+        let home = std::env::temp_dir().join(format!(
+            "rmac-places-videos-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(home.join("Videos")).unwrap();
+        let movies = media_favourite(&home, MediaFolder::Movies).unwrap();
+        assert_eq!(movies.name, "Movies");
+        assert_eq!(movies.path, home.join("Videos"));
+        assert!(media_favourite(&home, MediaFolder::Music).is_none());
         std::fs::remove_dir_all(&home).ok();
     }
 

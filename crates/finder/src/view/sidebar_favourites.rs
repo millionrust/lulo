@@ -79,6 +79,12 @@ impl FinderView {
             1
         } else if path == self.home.join("Downloads") {
             2
+        } else if path == self.home.join("Movies") || path == self.home.join("Videos") {
+            4
+        } else if path == self.home.join("Music") {
+            5
+        } else if path == self.home.join("Pictures") {
+            6
         } else {
             return false;
         };
@@ -88,6 +94,9 @@ impl FinderView {
                     0 => settings.sidebar.show_desktop = visible,
                     1 => settings.sidebar.show_documents = visible,
                     2 => settings.sidebar.show_downloads = visible,
+                    4 => settings.sidebar.show_movies = visible,
+                    5 => settings.sidebar.show_music = visible,
+                    6 => settings.sidebar.show_pictures = visible,
                     _ => settings.sidebar.show_applications = visible,
                 },
                 cx,

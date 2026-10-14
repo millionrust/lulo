@@ -2061,6 +2061,7 @@ impl Dispatch<wl_seat::WlSeat, ()> for WaylandClientStatePtr {
             capabilities: WEnum::Value(capabilities),
         } = event
         {
+            touch_trace(format_args!("seat capabilities {capabilities:?}"));
             let client = state.get_client();
             let mut state = client.borrow_mut();
             if capabilities.contains(wl_seat::Capability::Keyboard) {

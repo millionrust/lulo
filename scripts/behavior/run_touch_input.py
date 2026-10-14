@@ -209,13 +209,21 @@ class Run:
         # only then, so the first few touches are lost. Tap until one lands.
         landed = None
         for attempt in range(1, 21):
+            if attempt == 11:
+                # Still nothing: a pointer click on an empty spot first.
+                self.touch.pointer(1200, 780)
+                time.sleep(0.2)
+                self.touch.button(True)
+                self.touch.button(False)
+                time.sleep(0.3)
             self.touch.tap(140, 90)
             if self.named(self.step(0.5), "click", target="tap"):
                 landed = attempt
                 break
         if not landed:
             raise SystemExit("no touch reached the probe")
-        print(f"touch reached the probe after {landed} tap(s)", flush=True)
+        print(f"touch reached the probe after {landed} tap(s)"
+              f"{' and a pointer click' if landed > 10 else ''}", flush=True)
         time.sleep(0.6)
 
     def run(self) -> int:

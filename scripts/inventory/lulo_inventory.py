@@ -66,6 +66,9 @@ APP_TABLES = {
     "System Settings": "SETTINGS_MENUS",
     "Clock": "CLOCK_MENUS",
     "Weather": "WEATHER_MENUS",
+    "Calendar": "CALENDAR_MENUS",
+    "Mail": "MAIL_MENUS",
+    "Archive Utility": "ARCHIVE_UTILITY_MENUS",
 }
 
 # Mirrors the `match spec.action` block in `resolve_items`
@@ -448,6 +451,12 @@ def read_settings_window(app_display_name: str) -> dict:
             # These controls are text children and the sort choices are
             # generated from a literal (label, SortOrder) table.
             for label in re.findall(r'\.child\("([^\"]+)"\)', text):
+                key = ("control", label)
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "control", "label": label})
+            # The Sort notes by pop-up names its choices in `sort_label`.
+            for label in re.findall(r'SortOrder::\w+\s*=>\s*"([^"]+)"', text):
                 key = ("control", label)
                 if key not in seen:
                     seen.add(key)

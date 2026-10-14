@@ -1183,12 +1183,14 @@ class LuloRun:
         return {"value": None}
 
     def fact_calculator_rpn(self) -> dict[str, Any]:
-        """Whether Calculator shows RPN Mode: the "RPN" badge in the
-        display and the = key turned into "enter" (ROBOT-11)."""
+        """Whether Calculator shows RPN Mode: the display announces "RPN"
+        (its badge, and the display's accessible name) and the = key turned
+        into "enter" (ROBOT-11)."""
 
         frame = self.active_frame()
         names = {name(node) for node in descendants(frame, limit=2000)} if frame is not None else set()
-        return {"badge": "RPN" in names, "enter_key": "enter" in names, "equals_key": "equals" in names}
+        return {"badge": any("RPN" in (label or "") for label in names),
+                "enter_key": "enter" in names, "equals_key": "equals" in names}
 
     def fact_clock_timers(self) -> dict[str, Any]:
         path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/clock.json"

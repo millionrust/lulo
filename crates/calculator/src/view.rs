@@ -834,7 +834,8 @@ impl CalculatorView {
                 div()
                     .id("calculator-result")
                     .role(Role::Label)
-                    .aria_label("Display")
+                    // VoiceOver hears the mode too, not just sighted users.
+                    .aria_label("Display, RPN Mode")
                     .absolute()
                     .left(px(inset))
                     .right(px(inset))

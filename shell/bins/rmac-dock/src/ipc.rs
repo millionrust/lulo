@@ -45,9 +45,7 @@ pub(crate) fn invalid(message: &'static str) -> io::Error {
 }
 
 /// `$XDG_RUNTIME_DIR/rmac/<name>`, refusing symlinks and directories owned
-/// by anyone but the runtime directory's owner. Shared by every bounded
-/// local Dock socket (`dock.sock` here, `dock-drag.sock` in
-/// `drag_endpoint`), so the privacy checks are written and reviewed once.
+/// by anyone but the runtime directory's owner.
 pub(crate) fn socket_path(name: &str) -> io::Result<PathBuf> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)

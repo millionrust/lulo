@@ -2,20 +2,20 @@ mod content;
 
 use crate::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, DragMoveEvent,
-    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
-    ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
-    StyledImage as _, Window,
+    div, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ObjectFit, ParentElement,
+    Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _,
+    Window,
 };
+#[cfg(windows)]
+use gpui::{DragMoveEvent, MouseUpEvent};
 use gpui_component::StyledExt as _;
 use rmac_ui::{mac, Button, EmptyState, SearchField, Spinner};
 
 use crate::catalog::{App, Category};
 use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp, OpenApp, RevealInFinder};
 
-use super::{
-    AppDrawer, LaunchDesktopAction, ViewMode, DRAWER_HEIGHT, DRAWER_WIDTH, ICON, ROW_ICON, TILE_W,
-};
+use super::{AppDrawer, LaunchDesktopAction, ViewMode, DRAWER_WIDTH, ICON, ROW_ICON, TILE_W};
 
 impl Render for AppDrawer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -170,49 +170,62 @@ impl Render for AppDrawer {
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.dismiss(window, cx);
             }))
-            // Drag from Apps to the Dock (§ drag from Apps): GPUI's Linux
-            // backend has no cross-process drag source, so this reports
-            // Apps' own window-relative pointer position over
-            // `drag_endpoint` instead of a real Wayland drag. Crossing
-            // below Apps' own window is the nearest available proxy for
-            // "heading toward the Dock", which normally sits at the
-            // screen's bottom edge, below Apps' centered popover.
-            .on_drag_move(cx.listener(
-                |this, event: &DragMoveEvent<content::DraggedApp>, _window, cx| {
-                    let app_id = event.drag(cx).app_id.clone();
-                    // Event positions are window-relative, and the window
-                    // is exactly the panel.
-                    let below = f32::from(event.event.position.y) > DRAWER_HEIGHT;
-                    if below {
-                        let fraction =
-                            (f32::from(event.event.position.x) / DRAWER_WIDTH).clamp(0.0, 1.0);
-                        crate::drag_endpoint::send(
-                            &app_id,
-                            crate::drag_endpoint::Phase::Hover(fraction),
-                        );
-                        this.dock_drag = Some(app_id);
-                    } else if this.dock_drag.take().is_some() {
-                        crate::drag_endpoint::send(&app_id, crate::drag_endpoint::Phase::Cancel);
-                    }
-                },
-            ))
-            // The drop itself is only meaningful once the pointer has left
-            // Apps' own window (see the comment above `on_drag_move`), so
-            // this listens for release *outside* the root hitbox, not a
-            // release inside it.
-            .on_mouse_up_out(
-                MouseButton::Left,
-                cx.listener(|this, event: &MouseUpEvent, _window, _cx| {
-                    let Some(app_id) = this.dock_drag.take() else {
-                        return;
-                    };
-                    let fraction = (f32::from(event.position.x) / DRAWER_WIDTH).clamp(0.0, 1.0);
-                    crate::drag_endpoint::send(
-                        &app_id,
-                        crate::drag_endpoint::Phase::Drop(fraction),
+            // Drag from Apps to the Dock keeps the app there (macOS 26). On
+            // Lulo OS the drag becomes a Wayland file drag of the app's
+            // desktop entry once it nears Apps' edge (`content::DraggedApp`).
+            // On Windows Apps and the Dock share `lulo-shell`, which holds
+            // the pointer for Apps through the drag, so Apps reports where
+            // the drag is on screen and the Dock opens its slot there.
+            .map(|root| {
+                #[cfg(windows)]
+                let root = root
+                    .on_drag_move(cx.listener(
+                        |this, event: &DragMoveEvent<content::DraggedApp>, window, cx| {
+                            use rmac_shell_layer::windows::dock_drag::{send, Hint, Phase};
+                            let app_id = event.drag(cx).app_id.clone();
+                            let screen = window.bounds().origin + event.event.position;
+                            if !event.bounds.contains(&event.event.position) {
+                                this.dock_drag = Some(app_id.clone());
+                                send(
+                                    cx,
+                                    Hint {
+                                        app_id,
+                                        phase: Phase::Hover,
+                                        screen,
+                                    },
+                                );
+                            } else if this.dock_drag.take().is_some() {
+                                send(
+                                    cx,
+                                    Hint {
+                                        app_id,
+                                        phase: Phase::Cancel,
+                                        screen,
+                                    },
+                                );
+                            }
+                        },
+                    ))
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                            use rmac_shell_layer::windows::dock_drag::{send, Hint, Phase};
+                            let Some(app_id) = this.dock_drag.take() else {
+                                return;
+                            };
+                            let screen = window.bounds().origin + event.position;
+                            send(
+                                cx,
+                                Hint {
+                                    app_id,
+                                    phase: Phase::Drop,
+                                    screen,
+                                },
+                            );
+                        }),
                     );
-                }),
-            )
+                root
+            })
             .size_full()
             .v_flex()
             .bg(mac::material_popover())

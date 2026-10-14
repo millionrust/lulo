@@ -5,7 +5,6 @@
 
 pub mod accessibility;
 mod catalog;
-mod drag_endpoint;
 mod search;
 mod service;
 mod view;

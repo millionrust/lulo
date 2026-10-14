@@ -197,9 +197,10 @@ impl QuickSettingsView {
             .top(px(TRACK_CENTRE - 12.0))
             .w(px(width + 16.0))
             .h(px(24.0))
+            // A finger slides the value instead of scrolling (ADR 0028).
+            .when(enabled, |hit| hit.touch_drag())
             .when(enabled, |hit| {
-                // A finger slides the value instead of scrolling (ADR 0028).
-                hit.touch_drag().on_mouse_down(
+                hit.on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                         // A press on the track is not a click on the title.

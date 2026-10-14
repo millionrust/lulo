@@ -84,7 +84,8 @@ impl Deref for ModifiersChangedEvent {
 
 /// The phase of a touch motion event.
 /// Based on the winit enum of the same name.
-#[derive(Clone, Copy, Debug, Default)]
+// rmac (ADR 0028): comparable, so the touch recogniser can be tested.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TouchPhase {
     /// The touch started.
     Started,

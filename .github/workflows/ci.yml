@@ -719,6 +719,12 @@ jobs:
         working-directory: shell
         run: cargo test --locked --lib
 
+      # The vendored backend is not a workspace member; its touch gesture
+      # recogniser (ADR 0028) is pure and tested here.
+      - name: Test vendored GPUI touch gestures
+        working-directory: shell
+        run: cargo test --locked -p gpui_linux --lib touch
+
       - name: Check Wayland probes
         working-directory: shell
         run: cargo clippy --locked --bins --features wayland -- -D warnings

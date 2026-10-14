@@ -1,0 +1,23 @@
+[package]
+name = "rmac-shell-touch-probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# A full-screen GPUI window that logs what touch turns into (clicks, scrolls,
+# pinches, drags) for scripts/behavior/run_touch_input.py (ADR 0028). A probe,
+# never part of the product packages.
+[[bin]]
+name = "touch-probe"
+path = "src/main.rs"
+
+[features]
+default = []
+wayland = ["gpui_platform/wayland"]
+x11 = ["gpui_platform/x11"]
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+rmac-shell-ui.workspace = true

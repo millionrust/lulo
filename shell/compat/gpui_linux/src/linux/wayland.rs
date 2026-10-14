@@ -5,6 +5,7 @@ mod display;
 pub(crate) mod frame_trace;
 mod popup;
 mod serial;
+mod touch_gesture;
 mod window;
 
 /// Contains Types for configuring layer_shell surfaces.

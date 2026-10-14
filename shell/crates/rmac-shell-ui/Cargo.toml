@@ -13,6 +13,7 @@ rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
 rmac-apps.workspace = true
 rmac-design.workspace = true
+rmac-hardware.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shell-status.workspace = true
 rmac-theme.workspace = true

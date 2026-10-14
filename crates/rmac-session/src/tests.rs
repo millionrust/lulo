@@ -705,11 +705,21 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     let fallback = include_str!("../../../packaging/rmac-session/shortcuts-fallback.kdl");
 
     for reserved in [
-        "Mod+A ", "Mod+F ", "Mod+H ", "Mod+J ", "Mod+K ", "Mod+L ", "Mod+N ", "Mod+O ", "Mod+Q ",
-        "Mod+T ", "Mod+W ",
+        "Mod+A ", "Mod+F ", "Mod+H ", "Mod+J ", "Mod+K ", "Mod+L ", "Mod+N ", "Mod+O ", "Mod+T ",
     ] {
         assert!(!shell.contains(reserved), "shell captures {reserved}");
         assert!(!fallback.contains(reserved), "fallback captures {reserved}");
+    }
+    // ⌘Q and ⌘W go to the menu bar, which runs the frontmost app's own Quit
+    // and ⌘W item, or closes a third-party app's windows (WIN-17).
+    for (keys, word) in [("Mod+Q ", "app-quit"), ("Mod+W ", "window-close")] {
+        assert!(shell.lines().any(|line| {
+            line.trim_start().starts_with(keys)
+                && line.contains(&format!(
+                    "{{ spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"{word}\"; }}"
+                ))
+        }));
+        assert!(!fallback.contains(keys), "fallback captures {keys}");
     }
     assert!(!shell.contains("shortcuts-fallback.kdl"));
     assert!(shell.contains("Ctrl+Up repeat=false hotkey-overlay-title=\"Mission Control\""));

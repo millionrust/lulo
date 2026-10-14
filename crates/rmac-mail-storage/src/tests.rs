@@ -283,6 +283,7 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
         .execute_batch(
             "ALTER TABLE mailboxes DROP COLUMN highest_modseq; \
              ALTER TABLE messages DROP COLUMN cc; \
+             ALTER TABLE messages DROP COLUMN size; \
              PRAGMA user_version=2;",
         )
         .unwrap();
@@ -303,7 +304,7 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .unwrap(),
-        5
+        6
     );
 }
 
@@ -320,7 +321,7 @@ fn migration_is_idempotent_and_rejects_future_schema() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .expect("version"),
-        5
+        6
     );
     drop(reopened);
     let db = Connection::open(path).expect("open raw");
@@ -384,6 +385,7 @@ fn existing_v1_cache_gains_outbox_without_losing_mail() {
             "DROP TABLE outbox_recipients; DROP TABLE outbox; \
              ALTER TABLE mailboxes DROP COLUMN highest_modseq; \
              ALTER TABLE messages DROP COLUMN cc; \
+             ALTER TABLE messages DROP COLUMN size; \
              PRAGMA user_version=1;",
         )
         .unwrap();
@@ -886,4 +888,85 @@ fn graph_remote_ids_bind_move_and_cascade() {
         .unwrap()
         .is_none());
     assert_eq!(fixture.store.remote_mailboxes().unwrap().len(), 1);
+}
+
+#[test]
+fn existing_v5_cache_gains_message_sizes() {
+    let mut fixture = Fixture::new();
+    let id = fixture.insert(21, "Header only", None);
+    fixture
+        .store
+        .connection
+        .execute_batch("ALTER TABLE messages DROP COLUMN size; PRAGMA user_version=5;")
+        .unwrap();
+    let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    let before = reopened.get_message(id).unwrap().unwrap();
+    assert_eq!(before.subject, "Header only");
+    assert_eq!(before.size, 0);
+    // The server's RFC822.SIZE for a header-only message, then a body that
+    // arrives later keeps the server's figure.
+    reopened.set_message_size(id, 4096).unwrap();
+    reopened.attach_body(id, b"short", "short").unwrap();
+    assert_eq!(reopened.get_message(id).unwrap().unwrap().size, 4096);
+}
+
+#[test]
+fn size_comes_from_the_body_and_flag_colour_bits_survive() {
+    let mut fixture = Fixture::new();
+    let with_body = fixture.insert(31, "Full", Some(b"0123456789"));
+    assert_eq!(
+        fixture.store.get_message(with_body).unwrap().unwrap().size,
+        10
+    );
+    let header_only = fixture.insert(32, "Later", None);
+    fixture
+        .store
+        .attach_body(header_only, b"abc", "abc")
+        .unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .get_message(header_only)
+            .unwrap()
+            .unwrap()
+            .size,
+        3
+    );
+    let purple = FLAG_FLAGGED | FLAG_COLOUR_BIT0 | FLAG_COLOUR_BIT2;
+    fixture
+        .store
+        .set_server_flags(fixture.inbox, 31, purple)
+        .unwrap();
+    let flags = fixture.store.get_message(with_body).unwrap().unwrap().flags;
+    assert_eq!(
+        flags & FLAG_COLOUR_MASK,
+        FLAG_COLOUR_BIT0 | FLAG_COLOUR_BIT2
+    );
+}
+
+#[test]
+fn replacing_a_draft_source_removes_the_old_blob() {
+    let mut fixture = Fixture::new();
+    let first = fixture.insert(41, "Draft", Some(b"first draft source"));
+    let first_hash = fixture
+        .store
+        .get_message(first)
+        .unwrap()
+        .unwrap()
+        .body_hash
+        .unwrap();
+    // Another message sharing the same bytes keeps the blob alive.
+    fixture.insert(42, "Same bytes", Some(b"first draft source"));
+    fixture.insert(41, "Draft", Some(b"second draft source"));
+    assert!(fixture.store.read_blob(&first_hash).is_ok());
+    fixture.insert(42, "Same bytes", Some(b"third"));
+    assert!(fixture.store.read_blob(&first_hash).is_err());
+    let current = fixture.store.get_message(first).unwrap().unwrap();
+    assert_eq!(
+        fixture
+            .store
+            .read_blob(&current.body_hash.unwrap())
+            .unwrap(),
+        b"second draft source"
+    );
 }

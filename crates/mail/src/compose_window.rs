@@ -12,56 +12,153 @@ use gpui::{
 use rmac_editor::InputState;
 use rmac_mail::compose::{
     addresses, apply_completion, complete, completion_query, format_lines, initial_draft_with,
-    quote_text, ComposeKind, LineFormat, Recipient,
+    link_text, normalise_link, quote_text, remove_links, ComposeKind, LineFormat, Recipient,
 };
 use rmac_mail::Message;
-use rmac_mail_mime::Draft;
-use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, Root, TextField};
+use rmac_mail_mime::{Draft, Priority};
+use rmac_ui::text_assist::{SpellChecker, TextAssistSettings};
+use rmac_ui::{mac, AccessibleTextInput as _, DialogButtonKind, InputEvent, Root, TextField};
 
 use crate::{
-    delivery::{ComposeAccount, DeliveryResult, DraftLocation, PendingAttachment},
-    AttachFile, CloseWindow, DecreaseIndentation, DecreaseQuoteLevel, Delete, IncreaseIndentation,
-    IncreaseQuoteLevel, PasteAsQuotation, Redo, SaveDraft, SendMessage, StartSpeaking,
-    StopSpeaking, TransformCapitalise, TransformLowercase, TransformUppercase, Undo,
+    delivery::{ComposeAccount, DeliveryResult, DraftHeaders, DraftLocation, PendingAttachment},
+    AddLink, AttachFile, CheckDocumentNow, CloseWindow, DecreaseIndentation, DecreaseQuoteLevel,
+    Delete, IncreaseIndentation, IncreaseQuoteLevel, PasteAsQuotation, PriorityHigh, PriorityLow,
+    PriorityNormal, Redo, RemoveLink, SaveDraft, SendMessage, ShowSpellingAndGrammar,
+    StartSpeaking, StopSpeaking, TransformCapitalise, TransformLowercase, TransformUppercase, Undo,
 };
 
-/// View ▸ Cc Address Field and Bcc Address Field: which optional address
-/// rows every compose window shows. The Mac shows Cc and hides Bcc until
-/// asked; a draft that already has Bcc recipients shows it regardless.
+/// View ▸ Cc, Bcc and Reply-To Address Field: which optional address rows
+/// every compose window shows. The Mac shows Cc and hides Bcc and Reply-To
+/// until asked; a draft that already has addresses there shows the row
+/// regardless.
+#[derive(Clone, Copy)]
 struct ComposeFields {
     cc: bool,
     bcc: bool,
+    reply_to: bool,
 }
 
 impl Global for ComposeFields {}
 
-fn fields(cx: &App) -> (bool, bool) {
+impl Default for ComposeFields {
+    fn default() -> Self {
+        Self {
+            cc: true,
+            bcc: false,
+            reply_to: false,
+        }
+    }
+}
+
+/// One of View's optional address fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    Cc,
+    Bcc,
+    ReplyTo,
+}
+
+fn fields(cx: &App) -> ComposeFields {
     cx.try_global::<ComposeFields>()
-        .map_or((true, false), |fields| (fields.cc, fields.bcc))
+        .copied()
+        .unwrap_or_default()
 }
 
-/// Ticks View ▸ Cc/Bcc Address Field to match the current choice.
+/// Edit ▸ Spelling and Grammar ▸ Check Spelling: when compose windows
+/// check spelling.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SpellingMode {
+    #[default]
+    WhileTyping,
+    /// Asks before a message with misspelt words is sent.
+    BeforeSending,
+    Never,
+}
+
+/// Edit ▸ Spelling and Grammar and Substitutions, for every compose window.
+#[derive(Clone, Copy, Default)]
+struct ComposeAssist {
+    mode: SpellingMode,
+    settings: TextAssistSettings,
+}
+
+impl Global for ComposeAssist {}
+
+fn assist(cx: &App) -> ComposeAssist {
+    let mut assist = cx
+        .try_global::<ComposeAssist>()
+        .copied()
+        .unwrap_or_default();
+    assist.settings.check_spelling_while_typing = assist.mode == SpellingMode::WhileTyping;
+    assist
+}
+
+/// Ticks View's address fields and Edit's spelling and substitution rows to
+/// match the current choices.
 pub fn publish_field_state(cx: &mut App) {
-    let (cc, bcc) = fields(cx);
-    rmac_ui::set_menu_checked("mail::ToggleCcField", cc, cx);
-    rmac_ui::set_menu_checked("mail::ToggleBccField", bcc, cx);
+    let shown = fields(cx);
+    rmac_ui::set_menu_checked("mail::ToggleCcField", shown.cc, cx);
+    rmac_ui::set_menu_checked("mail::ToggleBccField", shown.bcc, cx);
+    rmac_ui::set_menu_checked("mail::ToggleReplyToField", shown.reply_to, cx);
+    let assist = assist(cx);
+    for (action, mode) in [
+        ("mail::CheckSpellingWhileTyping", SpellingMode::WhileTyping),
+        (
+            "mail::CheckSpellingBeforeSending",
+            SpellingMode::BeforeSending,
+        ),
+        ("mail::CheckSpellingNever", SpellingMode::Never),
+    ] {
+        rmac_ui::set_menu_checked(action, assist.mode == mode, cx);
+    }
+    let settings = assist.settings;
+    for (action, on) in [
+        (
+            "mail::ToggleCheckGrammarWithSpelling",
+            settings.check_grammar_with_spelling,
+        ),
+        (
+            "mail::ToggleCorrectSpellingAutomatically",
+            settings.correct_spelling_automatically,
+        ),
+        ("mail::ToggleSmartQuotes", settings.smart_quotes),
+        ("mail::ToggleSmartDashes", settings.smart_dashes),
+        ("mail::ToggleTextReplacement", settings.text_replacement),
+    ] {
+        rmac_ui::set_menu_checked(action, on, cx);
+    }
 }
 
-/// View ▸ Cc Address Field (`cc`) or Bcc Address Field: show or hide that
-/// row in every compose window.
-pub fn toggle_field(cc: bool, cx: &mut App) {
-    let (current_cc, current_bcc) = fields(cx);
-    let (cc_shown, bcc_shown) = if cc {
-        (!current_cc, current_bcc)
-    } else {
-        (current_cc, !current_bcc)
-    };
-    cx.set_global(ComposeFields {
-        cc: cc_shown,
-        bcc: bcc_shown,
-    });
+/// View ▸ Cc, Bcc or Reply-To Address Field: show or hide that row in
+/// every compose window.
+pub fn toggle_field(field: Field, cx: &mut App) {
+    let mut shown = fields(cx);
+    match field {
+        Field::Cc => shown.cc = !shown.cc,
+        Field::Bcc => shown.bcc = !shown.bcc,
+        Field::ReplyTo => shown.reply_to = !shown.reply_to,
+    }
+    cx.set_global(shown);
     publish_field_state(cx);
     cx.refresh_windows();
+}
+
+/// Edit ▸ Spelling and Grammar ▸ Check Spelling ▸ While Typing, Before
+/// Sending or Never.
+pub fn set_spelling_mode(mode: SpellingMode, cx: &mut App) {
+    let mut current = assist(cx);
+    current.mode = mode;
+    cx.set_global(current);
+    publish_field_state(cx);
+}
+
+/// Edit ▸ Spelling and Grammar's and Substitutions' toggles, which apply to
+/// every compose window.
+pub fn change_assist(change: impl FnOnce(&mut TextAssistSettings), cx: &mut App) {
+    let mut current = assist(cx);
+    change(&mut current.settings);
+    cx.set_global(current);
+    publish_field_state(cx);
 }
 
 /// Hands an Edit command to the focused text field (gpui-component's
@@ -134,6 +231,14 @@ struct ComposeView {
     to: Entity<InputState>,
     cc: Entity<InputState>,
     bcc: Entity<InputState>,
+    /// View ▸ Reply-To Address Field.
+    reply_to: Entity<InputState>,
+    /// Message ▸ Set Priority.
+    priority: Priority,
+    /// Edit ▸ Add Link…'s address field, while its sheet is open.
+    link_sheet: Option<Entity<InputState>>,
+    /// Check Spelling ▸ Before Sending found misspelt words: ask first.
+    spelling_warning: bool,
     subject: Entity<InputState>,
     body: Entity<InputState>,
     /// Edit ▸ Writing Tools and its panel, for the message body (ADR 0024
@@ -214,6 +319,11 @@ impl ComposeView {
         let to = cx.new(|cx| InputState::new(window, cx).placeholder("Add recipients"));
         let cc = cx.new(|cx| InputState::new(window, cx).placeholder("Add Cc recipients"));
         let bcc = cx.new(|cx| InputState::new(window, cx).placeholder("Add Bcc recipients"));
+        let reply_to = cx.new(|cx| InputState::new(window, cx).placeholder("Reply-To"));
+        reply_to.update(cx, |input, cx| {
+            input.set_value(quote.reply_to.join(", "), window, cx)
+        });
+        let priority = quote.priority;
         let subject = cx.new(|cx| InputState::new(window, cx).placeholder("Subject"));
         let body = rmac_editor::multiline("Message", window, cx);
         to.update(cx, |input, cx| {
@@ -232,15 +342,39 @@ impl ComposeView {
             input.set_value(quote.text.clone(), window, cx)
         });
         for input in [&subject, &body] {
-            cx.subscribe(input, |this, _, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Change) {
-                    this.status = None;
-                    this.schedule_autosave(cx);
-                    cx.notify();
-                }
-            })
+            cx.subscribe_in(
+                input,
+                window,
+                |this, field, event: &InputEvent, window, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        this.status = None;
+                        this.schedule_autosave(cx);
+                        // Edit ▸ Substitutions and Correct Spelling
+                        // Automatically, as the person types.
+                        if !this.pending && !this.sent {
+                            let checker = rmac_spelling::shared();
+                            rmac_ui::text_assist::on_text_changed(
+                                field,
+                                assist(cx).settings,
+                                Some(checker.as_ref() as &dyn SpellChecker),
+                                window,
+                                cx,
+                            );
+                        }
+                        cx.notify();
+                    }
+                },
+            )
             .detach();
         }
+        cx.subscribe(&reply_to, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.status = None;
+                this.schedule_autosave(cx);
+                cx.notify();
+            }
+        })
+        .detach();
         for (field, input) in [
             (AddressField::To, &to),
             (AddressField::Cc, &cc),
@@ -282,7 +416,7 @@ impl ComposeView {
         }
         // Lulo Intelligence may have been turned on in System Settings
         // since: Writing Tools look again when this window comes forward.
-        cx.observe_window_activation(window, |_, window, cx| {
+        cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 rmac_writing_tools::refresh(cx);
                 // Message ▸ Send Again becomes Send in a compose window.
@@ -294,9 +428,27 @@ impl ComposeView {
                     "mail::Undo",
                     "mail::Redo",
                     "mail::Delete",
+                    "mail::PriorityLow",
+                    "mail::PriorityNormal",
+                    "mail::PriorityHigh",
+                    "mail::AddLink",
+                    "mail::RemoveLink",
+                    "mail::ShowSpellingAndGrammar",
+                    "mail::CheckDocumentNow",
                 ] {
                     rmac_ui::set_menu_enabled(action, true, cx);
                 }
+                // Find in a message belongs to the viewer.
+                for action in [
+                    "mail::FindInMessage",
+                    "mail::FindNext",
+                    "mail::FindPrevious",
+                    "mail::JumpToSelection",
+                ] {
+                    rmac_ui::set_menu_enabled(action, false, cx);
+                }
+                this.publish_priority(cx);
+                publish_field_state(cx);
             }
         })
         .detach();
@@ -305,6 +457,10 @@ impl ComposeView {
             to,
             cc,
             bcc,
+            reply_to,
+            priority,
+            link_sheet: None,
+            spelling_warning: false,
             subject,
             body,
             writing_tools: cx.new(rmac_writing_tools::WritingTools::new),
@@ -325,10 +481,186 @@ impl ComposeView {
 
     /// The address, subject or body field that has keyboard focus.
     fn focused_field(&self, window: &Window, cx: &App) -> Option<Entity<InputState>> {
-        [&self.to, &self.cc, &self.bcc, &self.subject, &self.body]
-            .into_iter()
-            .find(|input| input.read(cx).focus_handle(cx).is_focused(window))
-            .cloned()
+        [
+            &self.to,
+            &self.cc,
+            &self.bcc,
+            &self.reply_to,
+            &self.subject,
+            &self.body,
+        ]
+        .into_iter()
+        .find(|input| input.read(cx).focus_handle(cx).is_focused(window))
+        .cloned()
+    }
+
+    /// What a saved draft keeps beside its fields.
+    fn draft_headers(&self, cx: &App) -> DraftHeaders {
+        DraftHeaders {
+            reply_to: addresses(&self.reply_to.read(cx).value()).unwrap_or_default(),
+            priority: self.priority,
+        }
+    }
+
+    /// Ticks Message ▸ Set Priority's row for this message.
+    fn publish_priority(&self, cx: &mut App) {
+        for (action, priority) in [
+            ("mail::PriorityLow", Priority::Low),
+            ("mail::PriorityNormal", Priority::Normal),
+            ("mail::PriorityHigh", Priority::High),
+        ] {
+            rmac_ui::set_menu_checked(action, self.priority == priority, cx);
+        }
+    }
+
+    /// Message ▸ Set Priority ▸ Low, Normal or High.
+    fn set_priority(&mut self, priority: Priority, cx: &mut Context<Self>) {
+        if self.priority != priority {
+            self.priority = priority;
+            self.publish_priority(cx);
+            self.schedule_autosave(cx);
+            cx.notify();
+        }
+    }
+
+    /// Edit ▸ Spelling and Grammar ▸ Check Document Now (⌘;) and Show
+    /// Spelling and Grammar: selects the next misspelt word in the focused
+    /// field, or the message body.
+    fn check_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let field = self
+            .focused_field(window, cx)
+            .unwrap_or_else(|| self.body.clone());
+        let checker = rmac_spelling::shared();
+        let grammar = assist(cx).settings.check_grammar_with_spelling;
+        rmac_ui::text_assist::check_document_now(&field, checker.as_ref(), grammar, window, cx);
+    }
+
+    /// Edit ▸ Add Link… (⌘K): asks for the address.
+    fn open_link_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("https://"));
+        cx.subscribe_in(&input, window, |this, _, event: &InputEvent, window, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                this.insert_link(window, cx);
+            }
+        })
+        .detach();
+        input.update(cx, |state, cx| state.focus(window, cx));
+        self.link_sheet = Some(input);
+        cx.notify();
+    }
+
+    /// The link sheet's OK: the body's selection gains the address.
+    fn insert_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(input) = self.link_sheet.clone() else {
+            return;
+        };
+        let Some(url) = normalise_link(&input.read(cx).value()) else {
+            self.status = Some("Enter a web or email address".into());
+            cx.notify();
+            return;
+        };
+        self.link_sheet = None;
+        self.status = None;
+        let focus = self.body.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        self.body.update(cx, |state, cx| {
+            let range = state.selected_range();
+            let selection = state.value()[range.clone()].to_string();
+            let replacement = link_text(&selection, &url);
+            state.replace_text_in_range(None, &replacement, window, cx);
+        });
+        self.schedule_autosave(cx);
+        cx.notify();
+    }
+
+    /// Edit ▸ Remove Link (⌥⌘K): takes the links Add Link wrote out of the
+    /// body's selection.
+    fn remove_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.body.update(cx, |state, cx| {
+            let range = state.selected_range();
+            if range.is_empty() {
+                return;
+            }
+            let selection = state.value()[range].to_string();
+            if let Some(cleaned) = remove_links(&selection) {
+                state.replace_text_in_range(None, &cleaned, window, cx);
+            }
+        });
+        self.schedule_autosave(cx);
+        cx.notify();
+    }
+
+    fn link_sheet_view(
+        &self,
+        input: &Entity<InputState>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .id("compose-link-sheet")
+            .role(Role::Dialog)
+            .aria_label("Add Link")
+            .absolute()
+            .top(px(52.0))
+            .left(px(120.0))
+            .right(px(120.0))
+            .p(px(16.0))
+            .flex()
+            .flex_col()
+            .gap(px(10.0))
+            .rounded(px(mac::radius_card()))
+            .bg(mac::raised())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .text_color(mac::text())
+                    .child("Enter the link’s address:"),
+            )
+            .child(
+                div()
+                    .id("compose-link-url")
+                    .role(Role::TextInput)
+                    .aria_label("Link Address")
+                    .accessible_text_input(input, cx)
+                    .h(px(24.0))
+                    .rounded(px(mac::radius_control()))
+                    .bg(mac::control_fill())
+                    .child(TextField::new(input).appearance(false).small()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "compose-link-cancel",
+                            "Cancel",
+                            DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.link_sheet = None;
+                            cx.notify();
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button("compose-link-ok", "OK", DialogButtonKind::Primary)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.insert_link(window, cx)),
+                            ),
+                    ),
+            )
+    }
+
+    /// Check Spelling ▸ Before Sending: whether the body has a misspelt
+    /// word (no while the dictionary is still loading).
+    fn has_spelling_errors(&self, cx: &App) -> bool {
+        let text = self.body.read(cx).value().to_string();
+        let checker = rmac_spelling::shared();
+        let grammar = assist(cx).settings.check_grammar_with_spelling;
+        rmac_ui::text_assist::next_issue(&text, 0, checker.as_ref(), grammar).is_some()
     }
 
     /// File ▸ Save (⌘S): writes the draft to Drafts now rather than at the
@@ -353,6 +685,7 @@ impl ComposeView {
         let body = self.body.read(cx).value().to_string();
         let attachments = self.attachments.clone();
         let existing = self.draft_location;
+        let headers = self.draft_headers(cx);
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let location = cx
                 .background_executor()
@@ -367,6 +700,7 @@ impl ComposeView {
                         &subject,
                         &body,
                         &attachments,
+                        &headers,
                     )
                 })
                 .await;
@@ -424,6 +758,8 @@ impl ComposeView {
         draft.to = addresses(&self.to.read(cx).value())?;
         draft.cc = addresses(&self.cc.read(cx).value())?;
         draft.bcc = addresses(&self.bcc.read(cx).value())?;
+        draft.reply_to = addresses(&self.reply_to.read(cx).value())?;
+        draft.priority = self.priority;
         draft.subject = self.subject.read(cx).value().to_string();
         draft.text = self.body.read(cx).value().to_string();
         draft.attachments = self
@@ -451,6 +787,20 @@ impl ComposeView {
     }
 
     fn send(&mut self, cx: &mut Context<Self>) {
+        if self.pending {
+            return;
+        }
+        if assist(cx).mode == SpellingMode::BeforeSending && self.has_spelling_errors(cx) {
+            self.spelling_warning = true;
+            cx.notify();
+            return;
+        }
+        self.send_now(cx);
+    }
+
+    /// Sends without the spelling check (its "Send Anyway").
+    fn send_now(&mut self, cx: &mut Context<Self>) {
+        self.spelling_warning = false;
         if self.pending {
             return;
         }
@@ -532,6 +882,7 @@ impl ComposeView {
         let body = self.body.read(cx).value().to_string();
         let attachments = self.attachments.clone();
         let existing = self.draft_location;
+        let headers = self.draft_headers(cx);
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             cx.background_executor().timer(Duration::from_secs(2)).await;
             let current = this
@@ -556,6 +907,7 @@ impl ComposeView {
                         &subject,
                         &body,
                         &attachments,
+                        &headers,
                     )
                 })
                 .await;
@@ -651,6 +1003,7 @@ impl ComposeView {
                 let body = self.body.read(cx).value().to_string();
                 let attachments = self.attachments.clone();
                 let existing = self.draft_location;
+                let headers = self.draft_headers(cx);
                 cx.background_executor()
                     .spawn(async move {
                         crate::delivery::save_draft(
@@ -663,6 +1016,7 @@ impl ComposeView {
                             &subject,
                             &body,
                             &attachments,
+                            &headers,
                         )
                     })
                     .detach();
@@ -846,15 +1200,37 @@ impl Render for ComposeView {
             rmac_writing_tools::publish_menu_state(!self.pending && !self.sent, cx);
         }
         let editable = !self.pending && !self.sent;
-        let (cc_field, bcc_field) = fields(cx);
-        let show_cc = cc_field || !self.cc.read(cx).value().trim().is_empty();
-        let show_bcc = bcc_field || self.show_bcc;
+        let shown = fields(cx);
+        let show_cc = shown.cc || !self.cc.read(cx).value().trim().is_empty();
+        let show_bcc = shown.bcc || self.show_bcc;
+        let show_reply_to = shown.reply_to || !self.reply_to.read(cx).value().trim().is_empty();
         let root = div()
             .size_full()
             .bg(mac::window())
             .track_focus(&self.focus)
             .key_context("MailCompose")
             .on_action(cx.listener(|this, _: &SendMessage, _, cx| this.send(cx)))
+            .on_action(
+                cx.listener(|this, _: &PriorityLow, _, cx| this.set_priority(Priority::Low, cx)),
+            )
+            .on_action(cx.listener(|this, _: &PriorityNormal, _, cx| {
+                this.set_priority(Priority::Normal, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &PriorityHigh, _, cx| this.set_priority(Priority::High, cx)),
+            )
+            .on_action(cx.listener(|this, _: &ShowSpellingAndGrammar, window, cx| {
+                this.check_document(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &CheckDocumentNow, window, cx| {
+                    this.check_document(window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &AddLink, window, cx| this.open_link_sheet(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &RemoveLink, window, cx| this.remove_link(window, cx)))
             .on_action(cx.listener(|this, _: &AttachFile, _, cx| this.attach_files(cx)))
             .on_action(cx.listener(|this, _: &IncreaseIndentation, window, cx| {
                 this.format_body(LineFormat::IncreaseIndent, window, cx)
@@ -932,7 +1308,11 @@ impl Render for ComposeView {
                             .flex_1()
                             .text_size(px(13.0))
                             .text_color(mac::text())
-                            .child("New Message"),
+                            .child(match self.priority {
+                                Priority::High => "New Message · High Priority",
+                                Priority::Low => "New Message · Low Priority",
+                                Priority::Normal => "New Message",
+                            }),
                     )
                     .child(
                         div()
@@ -952,6 +1332,9 @@ impl Render for ComposeView {
             })
             .when(show_bcc, |root| {
                 root.child(self.field("Bcc:", &self.bcc, Some(AddressField::Bcc), cx))
+            })
+            .when(show_reply_to, |root| {
+                root.child(self.field("Reply-To:", &self.reply_to, None, cx))
             })
             .child(self.field("Subject:", &self.subject, None, cx))
             .when_some(self.attachments_row(cx), |parent, row| parent.child(row))
@@ -1009,7 +1392,35 @@ impl Render for ComposeView {
                         .child(status),
                 )
             })
-            .child(self.writing_tools.clone());
+            .child(self.writing_tools.clone())
+            .when_some(self.link_sheet.clone(), |root, input| {
+                root.child(self.link_sheet_view(&input, cx))
+            })
+            .when(self.spelling_warning, |root| {
+                root.child(rmac_ui::alert_cancel_default(
+                    "This message contains spelling errors. Are you sure you want to send it?",
+                    "",
+                    vec![
+                        rmac_ui::dialog_button(
+                            "compose-spelling-edit",
+                            "Edit Message",
+                            DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.spelling_warning = false;
+                            cx.notify();
+                        }))
+                        .into_any_element(),
+                        rmac_ui::dialog_button(
+                            "compose-spelling-send",
+                            "Send Anyway",
+                            DialogButtonKind::Primary,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.send_now(cx)))
+                        .into_any_element(),
+                    ],
+                ))
+            });
         let view = cx.entity().downgrade();
         rmac_writing_tools::on_actions(root, &self.writing_tools, move |_, cx| {
             let view = view.upgrade()?;

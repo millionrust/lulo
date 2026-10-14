@@ -2,7 +2,7 @@
 //! Every field is optional where Graph may omit it (delta replies only carry
 //! changed properties for some items).
 
-use rmac_mail_storage::{FLAG_ANSWERED, FLAG_DRAFT, FLAG_FLAGGED, FLAG_SEEN};
+use rmac_mail_storage::{FLAG_ANSWERED, FLAG_COLOUR_MASK, FLAG_DRAFT, FLAG_FLAGGED, FLAG_SEEN};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -113,10 +113,11 @@ pub fn clean(value: &str) -> String {
 }
 
 /// Local flag bits from a Graph message. Graph has no "answered" property in
-/// v1.0, so that bit is kept from the cache. A property the delta reply
+/// v1.0 and no flag colours, so those bits are kept from the cache (a colour
+/// stays on this computer). A property the delta reply
 /// omitted keeps its cached value too.
 pub fn flags(message: &Message, cached: i64) -> i64 {
-    let mut bits = cached & FLAG_ANSWERED;
+    let mut bits = cached & (FLAG_ANSWERED | FLAG_COLOUR_MASK);
     let keep = |bit: i64| cached & bit;
     bits |= match message.is_read {
         Some(true) => FLAG_SEEN,

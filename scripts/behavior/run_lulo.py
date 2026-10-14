@@ -1171,6 +1171,19 @@ class LuloRun:
                         "flagged": sum("flagged," in name(item) for item in rows)}
         return {"count": 0, "unread": 0, "flagged": 0}
 
+    def fact_mail_viewer(self) -> dict[str, Any]:
+        """Mail's message viewer: the find bar's "2 of 5" (or "Not found"),
+        and whether View ▸ Message ▸ All Headers shows its header block."""
+        frame = self.active_frame()
+        find, headers = None, False
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            label = name(node)
+            if re.fullmatch(r"\d+ of \d+|Not found", label):
+                find = label
+            elif label == "All Headers" and not role(node).endswith("menu item"):
+                headers = True
+        return {"find": find, "all_headers": headers}
+
     def fact_sidebar(self) -> dict[str, Any]:
         """Weather's city list owns the window's only editable search field."""
         frame = self.active_frame()

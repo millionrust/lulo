@@ -10,7 +10,8 @@ use rmac_mail_imap::{
     Authentication, Client, Config, Interrupt, MailboxKind, Secret, SyncCursor, TlsMode,
 };
 use rmac_mail_storage::{
-    Change, MailStorage, NewMessage, FLAG_ANSWERED, FLAG_DRAFT, FLAG_FLAGGED, FLAG_SEEN,
+    Change, MailStorage, NewMessage, FLAG_ANSWERED, FLAG_COLOUR_BIT0, FLAG_COLOUR_BIT1,
+    FLAG_COLOUR_BIT2, FLAG_DRAFT, FLAG_FLAGGED, FLAG_SEEN,
 };
 use uuid::Uuid;
 
@@ -120,8 +121,29 @@ fn flags_from_imap(flags: &[String]) -> i64 {
         if flag.eq_ignore_ascii_case("\\Draft") {
             bits |= FLAG_DRAFT;
         }
+        for (bit, keyword) in COLOUR_KEYWORDS {
+            if flag.eq_ignore_ascii_case(keyword) {
+                bits |= bit;
+            }
+        }
     }
     bits
+}
+
+/// Mac Mail's flag colour keywords and the bits they set.
+const COLOUR_KEYWORDS: [(i64, &str); 3] = [
+    (FLAG_COLOUR_BIT0, "$MailFlagBit0"),
+    (FLAG_COLOUR_BIT1, "$MailFlagBit1"),
+    (FLAG_COLOUR_BIT2, "$MailFlagBit2"),
+];
+
+/// The colour keywords `flags` carries.
+fn colour_keywords(flags: i64) -> Vec<&'static str> {
+    COLOUR_KEYWORDS
+        .iter()
+        .filter(|(bit, _)| flags & bit != 0)
+        .map(|(_, keyword)| *keyword)
+        .collect()
 }
 
 fn flags_to_imap(flags: i64) -> Vec<&'static str> {
@@ -190,7 +212,21 @@ impl ImapBackend {
             let uid = u32::try_from(pending.uid).map_err(|_| Error::StaleUidValidity)?;
             let removes_source = matches!(&pending.change, Change::Move(_) | Change::Delete);
             match pending.change {
-                Change::SetFlags(bits) => self.client.store_flags(uid, &flags_to_imap(bits))?,
+                Change::SetFlags(bits) => {
+                    self.client.store_flags(uid, &flags_to_imap(bits))?;
+                    // A flagged message's colour travels as keywords, as Mac
+                    // Mail stores it. A server that keeps no keywords refuses
+                    // them; the flag itself is already stored.
+                    if bits & FLAG_FLAGGED != 0 {
+                        match self
+                            .client
+                            .store_colour_keywords(uid, &colour_keywords(bits))
+                        {
+                            Ok(()) | Err(rmac_mail_imap::Error::Rejected(_)) => {}
+                            Err(error) => return Err(error.into()),
+                        }
+                    }
+                }
                 Change::Move(target) => {
                     let destination = store
                         .mailbox_by_id(target)?
@@ -280,10 +316,12 @@ impl ImapBackend {
                 continue;
             }
             let fetch_full = kind == MailboxKind::Inbox && previous.is_some();
-            let Some(bytes) = (if fetch_full {
-                self.client.fetch_body(change.uid)?
+            let Some((bytes, server_size)) = (if fetch_full {
+                self.client
+                    .fetch_body(change.uid)?
+                    .map(|bytes| (bytes, None))
             } else {
-                self.client.fetch_headers(change.uid)?
+                self.client.fetch_headers_sized(change.uid)?
             }) else {
                 continue;
             };
@@ -322,6 +360,9 @@ impl ImapBackend {
                 body: fetch_full.then_some(bytes.as_slice()),
                 body_text: fetch_full.then_some(parsed.plain_text.as_str()),
             })?;
+            if let Some(size) = server_size {
+                store.set_message_size(id, i64::try_from(size).unwrap_or(i64::MAX))?;
+            }
             if kind == MailboxKind::Inbox && previous.is_some() && bits & FLAG_SEEN == 0 {
                 new_mail.push(NewMail {
                     account,
@@ -522,7 +563,7 @@ mod tests {
                             );
                         }
                     }
-                    "UID FETCH 7 (UID BODY.PEEK[HEADER])" => literal(
+                    "UID FETCH 7 (UID RFC822.SIZE BODY.PEEK[HEADER])" => literal(
                         &mut stream,
                         tag,
                         7,
@@ -849,6 +890,13 @@ mod tests {
             flags_from_imap(&["\\seen".into(), "\\FLAGGED".into()]),
             bits
         );
+        let blue = FLAG_FLAGGED | FLAG_COLOUR_BIT2;
+        assert_eq!(
+            flags_from_imap(&["\\Flagged".into(), "$mailflagbit2".into()]),
+            blue
+        );
+        assert_eq!(colour_keywords(blue), vec!["$MailFlagBit2"]);
+        assert!(colour_keywords(FLAG_FLAGGED).is_empty());
         assert_eq!(uid_set_members("2:4,9"), vec![2, 3, 4, 9]);
         assert!(uid_set_members("1:999999999").is_empty());
     }

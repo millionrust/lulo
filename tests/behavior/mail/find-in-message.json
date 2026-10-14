@@ -1,0 +1,19 @@
+{
+  "title": "Mail: Edit ▸ Find finds words in the open message and steps through them",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "closed", "facts": ["mail_viewer"]},
+    {"menu_action": "mail::FindInMessage"},
+    {"type": "the"},
+    {"wait": 1},
+    {"observe": "first", "facts": ["mail_viewer"]},
+    {"key": "cmd-g", "settle": 0.5},
+    {"observe": "second", "facts": ["mail_viewer"]},
+    {"key": "cmd-shift-g", "settle": 0.5},
+    {"observe": "back", "facts": ["mail_viewer"]},
+    {"key": "escape", "settle": 0.5},
+    {"observe": "done", "facts": ["mail_viewer"]}
+  ]
+}

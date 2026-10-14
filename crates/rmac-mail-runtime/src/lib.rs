@@ -1,6 +1,7 @@
 //! Mail's worker-thread sync coordinator. Construct and drive it off the GPUI
 //! thread; its callbacks carry immutable snapshots back to the app.
 
+pub mod alerts;
 mod imap;
 #[cfg(target_os = "linux")]
 pub mod linux;

@@ -103,7 +103,12 @@ impl Default for JunkMailSettings {
 pub struct FontsAndColoursSettings {
     pub message_list_font_size: u8,
     pub message_font_size: u8,
+    /// Not offered: the viewer cannot tell a plain-text message from an
+    /// HTML one yet. Kept so older files still load.
     pub fixed_width_for_plain_text: bool,
+    /// "Colour quoted text": quoted blocks in the viewer take the Mac's
+    /// first-level quote colour instead of secondary text.
+    pub colour_quoted_text: bool,
 }
 
 impl Default for FontsAndColoursSettings {
@@ -112,6 +117,7 @@ impl Default for FontsAndColoursSettings {
             message_list_font_size: 13,
             message_font_size: 13,
             fixed_width_for_plain_text: false,
+            colour_quoted_text: true,
         }
     }
 }
@@ -120,9 +126,20 @@ impl Default for FontsAndColoursSettings {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ViewingSettings {
+    /// "List preview": how many lines of each message the list shows.
     pub preview_lines: u8,
+    /// Not offered (the list rows do not know whether you were a To or Cc
+    /// recipient); kept so older files still load.
     pub show_to_cc_in_list: bool,
+    /// Not offered: Mail never fetches remote content (`RichText`
+    /// records blocked images, nothing loads them). Kept so older files
+    /// still load.
     pub load_remote_content: bool,
+    /// "Display unread messages with bold font".
+    pub unread_bold: bool,
+    /// "Use dark backgrounds for messages": off shows message bodies on
+    /// white in Dark Mode, as the Mac does.
+    pub dark_message_backgrounds: bool,
 }
 
 impl Default for ViewingSettings {
@@ -131,6 +148,8 @@ impl Default for ViewingSettings {
             preview_lines: 2,
             show_to_cc_in_list: false,
             load_remote_content: false,
+            unread_bold: false,
+            dark_message_backgrounds: true,
         }
     }
 }
@@ -139,9 +158,16 @@ impl Default for ViewingSettings {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ComposingSettings {
+    /// Not offered: the composer writes plain text only. Kept so older
+    /// files still load.
     pub format: ComposeFormat,
+    /// "Quote the text of the original message" when replying.
     pub quote_original_when_replying: bool,
+    /// Not offered: the composer has no spelling checker yet. Kept so
+    /// older files still load.
     pub check_spelling_while_typing: bool,
+    /// "Increase quote level": a reply's quoted lines gain a "> " level.
+    pub increase_quote_level: bool,
 }
 
 impl Default for ComposingSettings {
@@ -150,7 +176,52 @@ impl Default for ComposingSettings {
             format: ComposeFormat::default(),
             quote_original_when_replying: true,
             check_spelling_while_typing: true,
+            increase_quote_level: true,
         }
+    }
+}
+
+/// What the main window reads from Settings as it draws the list and the
+/// message (Fonts & Colours and Viewing).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DisplayPrefs {
+    pub list_font_size: f32,
+    pub message_font_size: f32,
+    pub preview_lines: u8,
+    pub unread_bold: bool,
+    pub colour_quoted_text: bool,
+    pub dark_message_backgrounds: bool,
+}
+
+impl Default for DisplayPrefs {
+    fn default() -> Self {
+        Self::from(&MailSettings::default())
+    }
+}
+
+impl From<&MailSettings> for DisplayPrefs {
+    fn from(settings: &MailSettings) -> Self {
+        Self {
+            list_font_size: f32::from(
+                settings
+                    .fonts_and_colours
+                    .message_list_font_size
+                    .clamp(9, 24),
+            ),
+            message_font_size: f32::from(settings.fonts_and_colours.message_font_size.clamp(9, 24)),
+            preview_lines: settings.viewing.preview_lines.min(5),
+            unread_bold: settings.viewing.unread_bold,
+            colour_quoted_text: settings.fonts_and_colours.colour_quoted_text,
+            dark_message_backgrounds: settings.viewing.dark_message_backgrounds,
+        }
+    }
+}
+
+impl DisplayPrefs {
+    /// A list row's height for [`Self::preview_lines`] lines of preview
+    /// (two lines keep the original 78-point row).
+    pub fn list_row_height(&self) -> f32 {
+        48.0 + 15.0 * f32::from(self.preview_lines)
     }
 }
 
@@ -326,6 +397,31 @@ mod tests {
         assert!(!settings.privacy.block_all_remote_content);
         assert_eq!(settings.composing.format, ComposeFormat::RichText);
         assert!(settings.signatures.signatures.is_empty());
+    }
+
+    #[test]
+    fn display_prefs_follow_fonts_and_viewing() {
+        let mut settings = MailSettings::default();
+        let defaults = DisplayPrefs::from(&settings);
+        assert_eq!(defaults.list_font_size, 13.0);
+        assert_eq!(defaults.list_row_height(), 78.0);
+        assert!(!defaults.unread_bold);
+        assert!(defaults.colour_quoted_text);
+        assert!(defaults.dark_message_backgrounds);
+        settings.fonts_and_colours.message_list_font_size = 40;
+        settings.fonts_and_colours.message_font_size = 16;
+        settings.viewing.preview_lines = 0;
+        settings.viewing.unread_bold = true;
+        let prefs = DisplayPrefs::from(&settings);
+        assert_eq!(prefs.list_font_size, 24.0);
+        assert_eq!(prefs.message_font_size, 16.0);
+        assert_eq!(prefs.list_row_height(), 48.0);
+        assert!(prefs.unread_bold);
+        // Files written before these fields existed still load.
+        let old: MailSettings = serde_json::from_str(r#"{"viewing":{"preview_lines":3}}"#).unwrap();
+        assert_eq!(old.viewing.preview_lines, 3);
+        assert!(old.viewing.dark_message_backgrounds);
+        assert!(old.composing.increase_quote_level);
     }
 
     #[test]

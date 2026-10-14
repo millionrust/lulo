@@ -156,6 +156,9 @@ impl EventSink for ToastSink {
         if let Some(ui) = &self.ui {
             let _ = ui.send(UiEvent::NewMail(value.clone()));
         }
+        if !crate::alerts::notify() {
+            return;
+        }
         let body = format!("{}\n{}", value.subject, value.preview);
         let _ = rmac_win_toast::show(AUMID, &value.sender, &body);
     }

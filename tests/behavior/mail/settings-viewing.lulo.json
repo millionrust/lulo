@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "mail/settings-viewing",
+  "observations": {
+    "defaults": {
+      "settings_controls": {
+        "checked": {
+          "Display unread messages with bold font": false,
+          "Use dark backgrounds for messages": true
+        }
+      }
+    },
+    "toggled": {
+      "settings_controls": {
+        "checked": {
+          "Display unread messages with bold font": true,
+          "Use dark backgrounds for messages": false
+        }
+      }
+    }
+  }
+}

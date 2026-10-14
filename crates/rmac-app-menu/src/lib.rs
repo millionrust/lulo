@@ -2183,16 +2183,24 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
     },
     MenuSpec {
         label: "Edit",
+        // MROBOT-02: the Mac's rows, each on events, or on the focused
+        // text field's text while one has focus (Calendar forwards them).
+        // Mark as Incomplete needs reminders, Sharing Settings…/Stop
+        // Sharing…/Resend Invitations… need CalDAV sharing and invitation
+        // sending, and Show Inspector's floating panel is the same sheet
+        // Get Info opens, so those rows stay out.
         items: &[
             item!("Undo", "calendar::UndoEvent", "⌘Z"),
             item!("Redo", "calendar::RedoEvent", "⇧⌘Z"),
-            item!(
-                "Show Event Info",
-                "calendar::ShowInspector",
-                "⌘I",
-                separator
-            ),
-            item!("Delete Event", "calendar::DeleteEvent", "⌫"),
+            item!("Cut", "calendar::CutEvents", "⌘X", separator),
+            item!("Copy", "calendar::CopyEvents", "⌘C"),
+            item!("Paste", "calendar::PasteEvents", "⌘V"),
+            item!("Delete", "calendar::DeleteEvent", ""),
+            item!("Select All", "calendar::SelectAllEvents", "⌘A"),
+            item!("Duplicate", "calendar::DuplicateEvent", "⌘D"),
+            item!("Edit Event", "calendar::EditEvent", "⌘E", separator),
+            item!("Get Info", "calendar::ShowInspector", "⌘I"),
+            item!("Find", "calendar::Search", "⌘F", separator),
         ],
     },
     MenuSpec {
@@ -2206,7 +2214,6 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
             item!("Previous Period", "calendar::PreviousPeriod", "⌘←"),
             item!("Next Period", "calendar::NextPeriod", "⌘→"),
             item!("Show Sidebar", "calendar::ToggleSidebar", "⌃⌘S", separator),
-            item!("Search", "calendar::Search", "⌘F"),
             item!("Invitations", "calendar::ShowInvitations", "", separator),
         ],
     },
@@ -4408,6 +4415,27 @@ mod tests {
             .items
             .iter()
             .any(|item| item.action == "calendar::GoToday"));
+        // MROBOT-02: Edit has the Mac's event rows, in its order.
+        let edit = menus.iter().find(|menu| menu.label == "Edit").unwrap();
+        assert_eq!(
+            edit.items
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Undo",
+                "Redo",
+                "Cut",
+                "Copy",
+                "Paste",
+                "Delete",
+                "Select All",
+                "Duplicate",
+                "Edit Event",
+                "Get Info",
+                "Find"
+            ]
+        );
     }
 
     #[test]

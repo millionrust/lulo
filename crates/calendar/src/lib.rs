@@ -177,6 +177,55 @@ impl Navigator {
             self.selected = date;
         }
     }
+
+    /// The days the current view shows, as `first..end` (end exclusive):
+    /// what Edit ▸ Select All selects the events of.
+    pub fn visible_period(&self) -> (NaiveDate, NaiveDate) {
+        match self.view {
+            View::Day => (self.selected, self.selected + Duration::days(1)),
+            View::Week => {
+                let first = self.week_start();
+                (first, first + Duration::days(7))
+            }
+            View::Month => {
+                let first = self.selected.with_day(1).unwrap_or(self.selected);
+                (first, shift_month(first, 1).unwrap_or(first))
+            }
+            View::Year => {
+                let first =
+                    NaiveDate::from_ymd_opt(self.selected.year(), 1, 1).unwrap_or(self.selected);
+                (first, shift_month(first, 12).unwrap_or(first))
+            }
+        }
+    }
+}
+
+/// Edit ▸ Select All: the events shown in `first..end` on visible
+/// calendars, by id.
+pub fn events_in_period(
+    snapshot: &WeekSnapshot,
+    visible: &[bool],
+    (first, end): (NaiveDate, NaiveDate),
+) -> Vec<String> {
+    snapshot
+        .events
+        .iter()
+        .filter(|event| visible.get(event.calendar).copied().unwrap_or(false))
+        .filter(|event| {
+            // The last day `event_occurs_on` is true for: an all-day event
+            // or one ending at midnight stops the day before its end.
+            let end_date = event.end.date_naive();
+            let last = if event.all_day
+                || (event.end.time() == chrono::NaiveTime::MIN && event.end > event.start)
+            {
+                end_date - Duration::days(1)
+            } else {
+                end_date
+            };
+            event.start.date_naive() < end && last.max(event.start.date_naive()) >= first
+        })
+        .map(|event| event.id.clone())
+        .collect()
 }
 
 fn shift_month(date: NaiveDate, delta: i64) -> Option<NaiveDate> {
@@ -482,6 +531,55 @@ mod tests {
         );
         nav.today(today);
         assert_eq!(nav.selected, today);
+    }
+
+    #[test]
+    fn select_all_takes_the_events_of_the_visible_period() {
+        let monday = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
+        let snapshot = fixture_week(monday);
+        let visible = vec![true; snapshot.calendars.len()];
+        let mut nav = Navigator::new(monday);
+        assert_eq!(
+            events_in_period(&snapshot, &visible, nav.visible_period()).len(),
+            snapshot.events.len(),
+            "the week view shows the whole fixture week"
+        );
+        nav.view = View::Day;
+        // Monday: Stand-up and Design review; the Conference starts Tuesday.
+        assert_eq!(
+            events_in_period(&snapshot, &visible, nav.visible_period()).len(),
+            2
+        );
+        nav.selected = monday + Duration::days(2);
+        // Wednesday: Stand-up, Lunch, Vendor call and the Conference.
+        assert_eq!(
+            events_in_period(&snapshot, &visible, nav.visible_period()).len(),
+            4
+        );
+        let mut hidden = visible.clone();
+        hidden[0] = false;
+        assert!(events_in_period(&snapshot, &hidden, nav.visible_period())
+            .iter()
+            .all(|id| snapshot
+                .events
+                .iter()
+                .any(|e| &e.id == id && e.calendar != 0)));
+        nav.view = View::Year;
+        assert_eq!(
+            nav.visible_period(),
+            (
+                NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2027, 1, 1).unwrap()
+            )
+        );
+        nav.view = View::Month;
+        assert_eq!(
+            nav.visible_period(),
+            (
+                NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 11, 1).unwrap()
+            )
+        );
     }
 
     #[test]

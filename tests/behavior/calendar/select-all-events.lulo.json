@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "calendar/select-all-events",
+  "observations": {
+    "none": {"calendar_events": {"all_selected": false, "any_selected": false}},
+    "all": {"calendar_events": {"all_selected": true, "any_selected": true}}
+  }
+}

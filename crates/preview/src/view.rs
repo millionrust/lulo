@@ -696,6 +696,9 @@ pub(crate) struct PreviewView {
     /// Continuous Scroll checkbox (PRV-MENU-031..034, 052's neighbours).
     page_mode: PageMode,
     continuous_scroll: bool,
+    /// Settings ▸ PDF ▸ Start on the last viewed page: remember each PDF's
+    /// page as it changes.
+    start_on_last_page: bool,
     /// View ▸ Use Dark Appearance for PDF (PRV-MENU-049): inverts the
     /// rendered page bitmap. Seeded from Settings ▸ PDF for a new window.
     dark_appearance_for_pdf: bool,
@@ -2266,6 +2269,7 @@ impl PreviewView {
             spell_checker: rmac_spelling::shared(),
             page_mode: PageMode::Single,
             continuous_scroll: true,
+            start_on_last_page: false,
             dark_appearance_for_pdf: false,
             slideshow: false,
             tab_bar_shown: false,
@@ -2338,6 +2342,15 @@ impl PreviewView {
                 this.image_background = settings.show_image_background_default;
                 this.dark_appearance_for_pdf = settings.dark_appearance_for_pdf_default;
                 this.hidden_toolbar_items = settings.hidden_toolbar_items.into_iter().collect();
+                // Settings ▸ PDF ▸ Opening for the first time: Show as.
+                let (two_pages, continuous) = settings.pdf_layout.view_mode();
+                this.page_mode = if two_pages {
+                    PageMode::Two
+                } else {
+                    PageMode::Single
+                };
+                this.continuous_scroll = continuous;
+                this.start_on_last_page = settings.start_on_last_viewed_page;
                 cx.notify();
             });
         })
@@ -2358,13 +2371,19 @@ impl PreviewView {
         };
         let (id, path) = (slot.id, slot.path.clone());
         cx.spawn(async move |this, cx| {
-            let (result, bookmarks, has_version) = cx
+            let (result, bookmarks, has_version, last_page) = cx
                 .background_executor()
                 .spawn(async move {
+                    // Settings ▸ PDF ▸ Start on the last viewed page.
+                    let last_page = rmac_preview::settings_store::load_settings()
+                        .is_ok_and(|settings| settings.start_on_last_viewed_page)
+                        .then(|| crate::load_last_page(&path))
+                        .flatten();
                     (
                         render::load(&path),
                         crate::load_bookmarks(&path),
                         versions::has_version(&path),
+                        last_page,
                     )
                 })
                 .await;
@@ -2418,6 +2437,11 @@ impl PreviewView {
                     record_recent_document(path, cx);
                 }
                 view.ensure_text(cx);
+                if let Some(page) = last_page.filter(|page| *page > 0 && *page < pages) {
+                    if view.slot().is_some_and(|slot| slot.id == id) {
+                        view.go_to_page(page, cx);
+                    }
+                }
                 cx.notify();
             });
         })
@@ -6162,7 +6186,11 @@ impl PreviewView {
                             .h(px(layout.height.max(viewport.1)))
                             .children(pages)
                             .into_any_element();
+                        let remember = self.start_on_last_page;
                         if let Some(slot) = self.slots.get_mut(self.selected) {
+                            if remember && slot.current_page != current {
+                                crate::remember_last_page(slot.path.clone(), current);
+                            }
                             slot.current_page = current;
                         }
                         element

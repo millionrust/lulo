@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "scenario": "preview/settings-pdf",
+  "observations": {
+    "defaults": {
+      "settings_controls": {
+        "checked": {
+          "Add name to annotations": false,
+          "Start on the last viewed page": false,
+          "Use dark appearance for PDF in new windows": false
+        }
+      }
+    },
+    "toggled": {
+      "settings_controls": {
+        "checked": {
+          "Add name to annotations": true,
+          "Start on the last viewed page": true,
+          "Use dark appearance for PDF in new windows": false
+        }
+      }
+    }
+  }
+}

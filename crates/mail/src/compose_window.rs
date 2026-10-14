@@ -994,6 +994,7 @@ impl Render for ComposeView {
                             .context_menu(rmac_writing_tools::text_menu(
                                 self.body.clone(),
                                 editable,
+                                &rmac_writing_tools::text_menu::MAIL,
                             ))
                             .px_0()
                             .py_0(),

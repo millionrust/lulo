@@ -1005,12 +1005,33 @@ def check_shell(
                 measurement["ready_ms"] = int(ready.group(1))
             measurements[name] = measurement
         # The session is measured over the same window as the shell.
+        from launch_smoke import busy_threads, thread_cpu_times_100ns
+
         session_before = process_cpu_time_100ns(session.pid)
+        session_threads = thread_cpu_times_100ns(session.pid)
         idle_shell = measure_idle_cpu(shell_pid, settle=idle_settle, log=log_path)
         session_after = process_cpu_time_100ns(session.pid)
         idle_session = None
         if session_before is not None and session_after is not None:
-            idle_session = (max(session_after - session_before, 0) / tick_100ns, 0.0, "", [])
+            ticks = max(session_after - session_before, 0) / tick_100ns
+            threads_after = thread_cpu_times_100ns(session.pid)
+            threads = busy_threads(session_threads, threads_after)
+            ended = [tid for tid in session_threads if tid not in threads_after]
+            unattributed = ticks - sum(thread_ticks for _, thread_ticks in threads)
+            if unattributed >= 0.5:
+                threads.append((f"{len(ended)} thread(s) that ended in the window", unattributed))
+            idle_session = (ticks, 0.0, "", threads)
+            if ticks >= 1.0:
+                # lulo-session only waits on lulo-shell. What it was charged
+                # comes from Windows' own thread-pool threads retiring about
+                # a minute after it started (CI run 38538069296: 2.00
+                # ticks, no live thread busy), so read it once more, as
+                # launch_smoke.py does for an app; a real cost shows twice.
+                print(f"shell: lulo-session: idle CPU = {ticks:.2f} ticks; measuring again")
+                for thread, thread_ticks in threads:
+                    print(f"shell: lulo-session:   first reading: thread {thread} used {thread_ticks:.2f} ticks")
+                measurements["lulo-session"]["idle_first_ticks"] = round(ticks, 3)
+                idle_session = measure_idle_cpu(session.pid, settle=2.0)
         for name, idle in (("lulo-shell", idle_shell), ("lulo-session", idle_session)):
             if idle is None:
                 print(f"shell: {name}: idle CPU skipped (could not read its CPU time)")
@@ -1168,6 +1189,7 @@ def check_shell(
         # the desktop staying under app windows.
         if desktop_hwnd:
             check_desktop_icons(log, desktop_hwnd, check_folder, check_note, screenshots, opened, failures)
+            check_desktop_menu(log, desk, screenshots, failures)
 
         note_memory(shell_pid, "after the desktop icons")
         # 5. A maximised window stays between the bar and the Dock.
@@ -1280,6 +1302,13 @@ def check_shell(
         # 6e. Every Lulo app opens inside the work area the bar and the
         # Dock leave (WIN-OS-50).
         check_app_placement(bin_dir, environment, screenshots, failures)
+
+        # 6e2. Control Centre inside the screen; the bar over a full-screen
+        # window; the Window menu's Full-Screen Tile and the app menu's
+        # Hide Others and Show All (Windows robot).
+        check_control_centre(log, shell_pid, screenshots, failures)
+        check_full_screen_bar(log, bin_dir, environment, screenshots, failures)
+        check_window_menu(log, bin_dir, environment, screenshots, failures)
 
         # 6f. ⌘Tab (Alt+Tab) and Notification Centre, the shared views
         # lulo-shell hosts; then their memory once they have closed.
@@ -1720,6 +1749,308 @@ PLACED_APPS = (
     "rmac-weather",
     "rmac-terminal",
 )
+
+
+#: The rows of Lulo OS's desktop menu (Finder's on the Mac) that Windows
+#: must show too (Windows robot).
+DESKTOP_MENU_ROWS = (
+    "New Folder",
+    "Get Info",
+    "Change Wallpaper…",
+    "Use Stacks",
+    "Sort By",
+    "Clean Up",
+    "Show View Options",
+)
+VK_UP = 0x26
+
+
+def check_desktop_menu(log: Log, desk: Path, screenshots: Path | None, failures: list[str]) -> None:
+    """A right-click on the wallpaper opens Lulo OS's desktop menu, and its
+    rows work: New Folder makes a folder (and starts renaming it), Show View
+    Options opens the panel."""
+    width, height = screen_size()
+    spot = (150, height - 120)  # Clear of the icons (top right) and the Dock.
+    mark = len(log.lines())
+    right_click(*spot)
+    menu = log.wait_for(r"^desktop menu open: (.+)$", 5.0, after=mark)
+    time.sleep(0.6)
+    save(screenshots, "desktop-menu")
+    rows = menu.group(1).split(" | ") if menu else []
+    print(f"shell: right-click on the wallpaper: {rows if menu else 'no menu'}")
+    if menu is None:
+        failures.append("right-clicking the wallpaper opened no desktop menu")
+        return
+    missing = [row for row in DESKTOP_MENU_ROWS if row not in rows]
+    if missing:
+        failures.append(f"the desktop menu lacks {missing} (it has {rows})")
+    # New Folder: the first row.
+    before = {path.name for path in desk.iterdir()} if desk.exists() else set()
+    tap(VK_DOWN)
+    time.sleep(0.2)
+    tap(VK_RETURN)
+    created = wait_until(
+        lambda: [path for path in desk.iterdir() if path.is_dir() and path.name not in before], 8.0
+    )
+    editing = log.wait_for(r"^desktop rename editing", 5.0, after=mark)
+    time.sleep(0.5)
+    save(screenshots, "desktop-new-folder")
+    print(f"shell: desktop menu New Folder: {[path.name for path in created or []]}, renaming {bool(editing)}")
+    if not created:
+        failures.append("the desktop menu's New Folder made no folder on the Desktop")
+    tap(VK_ESCAPE)
+    log.wait_for(r"^desktop rename idle", 5.0, after=mark)
+    time.sleep(0.5)
+    for path in created or []:
+        try:
+            path.rmdir()
+        except OSError as error:
+            print(f"shell: could not remove {path}: {error}")
+    # Show View Options: the last row.
+    mark = len(log.lines())
+    right_click(*spot)
+    if log.wait_for(r"^desktop menu open", 5.0, after=mark) is None:
+        failures.append("the desktop menu did not open a second time")
+        return
+    time.sleep(0.4)
+    tap(VK_UP)
+    time.sleep(0.2)
+    tap(VK_RETURN)
+    panel = log.wait_for(r"^desktop panel view options", 5.0, after=mark)
+    time.sleep(0.6)
+    save(screenshots, "desktop-view-options")
+    print(f"shell: desktop menu Show View Options: {'panel open' if panel else 'nothing'}")
+    if panel is None:
+        failures.append("the desktop menu's Show View Options opened no panel")
+    tap(VK_ESCAPE)
+    if panel is not None and log.wait_for(r"^desktop panel none", 5.0, after=mark) is None:
+        failures.append("Esc did not close the desktop's View Options")
+    time.sleep(0.5)
+
+
+def shell_window_at(shell_pid: int, left: int, top: int) -> int | None:
+    """The shell's window whose top left corner is at `left`, `top`."""
+    for hwnd in windows_of(shell_pid):
+        rect = wintypes.RECT()
+        user32().GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect))
+        if rect.left == left and rect.top == top:
+            return hwnd
+    return None
+
+
+def check_control_centre(log: Log, shell_pid: int, screenshots: Path | None, failures: list[str]) -> None:
+    """Control Centre opens under its status item and, once grown to its
+    content, still ends its 8 pt margin short of the screen's right edge
+    (it sat 8 px past the edge: Windows robot)."""
+    item = log.last(r"^bar control centre at (-?\d+),(-?\d+)")
+    if item is None:
+        failures.append("the bar did not say where its Control Centre item is")
+        return
+    mark = len(log.lines())
+    click(int(item.group(1)), int(item.group(2)))
+    placed = log.wait_for(r"^layer rmac-quick-settings at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", 10.0, after=mark)
+    if placed is None:
+        failures.append("clicking the bar's Control Centre item opened no Control Centre")
+        return
+    time.sleep(1.5)
+    save(screenshots, "control-centre")
+    left, top = int(placed.group(1)), int(placed.group(2))
+    hwnd = shell_window_at(shell_pid, left, top)
+    width, _ = screen_size()
+    if hwnd is None:
+        failures.append("found no Control Centre window where it was placed")
+    else:
+        rect = wintypes.RECT()
+        user32().GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect))
+        margin = round(8 * window_scale(hwnd))
+        print(
+            f"shell: Control Centre window {rect.left},{rect.top},{rect.right},{rect.bottom}, "
+            f"screen width {width}"
+        )
+        if rect.right > width - margin + 1:
+            failures.append(
+                f"Control Centre ends at x={rect.right}, past its margin from the screen's edge ({width})"
+            )
+    tap(VK_ESCAPE)
+    if log.wait_for(r"^layer rmac-quick-settings closed", 5.0, after=mark) is None:
+        click(int(item.group(1)), int(item.group(2)))
+    time.sleep(0.8)
+
+
+VK_F11 = 0x7A
+
+
+def start_text_editor(bin_dir: Path, environment: dict) -> tuple[subprocess.Popen, int] | None:
+    """Text Editor in front, its content clicked so it has the keyboard."""
+    exe = bin_dir / "rmac-text-editor.exe"
+    if not exe.is_file():
+        return None
+    for pid in processes_named("rmac-text-editor.exe"):
+        terminate(pid)
+    process = subprocess.Popen([str(exe)], env=environment)
+    found = wait_until(lambda: app_window("rmac-text-editor.exe"), 20.0)
+    if found is None:
+        process.kill()
+        return None
+    time.sleep(1.5)
+    hwnd = found[1]
+    bring_to_front(hwnd)
+    left, top, right, bottom = frame_bounds(hwnd)
+    click((left + right) // 2, (top + bottom) // 2)
+    time.sleep(0.5)
+    return process, hwnd
+
+
+def check_full_screen_bar(
+    log: Log, bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str]
+) -> None:
+    """Over a full-screen window the bar hides, the pointer at the top edge
+    reveals it and moving away hides it again, as on the Mac; when the
+    window leaves full screen the bar is back (it stayed hidden, its buttons
+    at y=-14, after Window-menu actions: Windows robot)."""
+    started = start_text_editor(bin_dir, environment)
+    if started is None:
+        failures.append("Text Editor did not open for the full-screen check")
+        return
+    process, hwnd = started
+    width, height = screen_size()
+    try:
+        mark = len(log.lines())
+        tap(VK_F11)
+        full = wait_until(lambda: frame_bounds(hwnd) == (0, 0, width, height), 5.0)
+        hidden = log.wait_for(r"^top bar hidden over full screen", 5.0, after=mark)
+        time.sleep(1.0)
+        save(screenshots, "full-screen")
+        print(f"shell: Text Editor full screen: {bool(full)}; bar {'hidden' if hidden else 'still shown'}")
+        if full is None:
+            failures.append("F11 did not put Text Editor in full screen")
+            return
+        if hidden is None:
+            failures.append("the bar did not hide over a full-screen window")
+        mark = len(log.lines())
+        user32().SetCursorPos(width // 2, 0)
+        revealed = log.wait_for(r"^top bar shown over full screen", 5.0, after=mark)
+        time.sleep(0.6)
+        save(screenshots, "full-screen-top-edge")
+        user32().SetCursorPos(width // 2, height // 2)
+        hidden_again = log.wait_for(r"^top bar hidden over full screen", 5.0, after=mark)
+        print(
+            f"shell: pointer at the top edge: bar {'revealed' if revealed else 'not revealed'}; "
+            f"away again: {'hidden' if hidden_again else 'still shown'}"
+        )
+        if revealed is None:
+            failures.append("the pointer at the top edge did not reveal the bar over a full-screen window")
+        elif hidden_again is None:
+            failures.append("the bar did not hide again when the pointer left it")
+        mark = len(log.lines())
+        bring_to_front(hwnd)
+        tap(VK_F11)
+        back = log.wait_for(r"^top bar shown$", 5.0, after=mark)
+        time.sleep(1.0)
+        save(screenshots, "full-screen-left")
+        print(f"shell: Text Editor left full screen: bar {'back' if back else 'NOT back'}")
+        if back is None:
+            failures.append("the bar did not come back when the window left full screen")
+    finally:
+        process.kill()
+        time.sleep(1.0)
+
+
+def bar_menu_row(log: Log, title: str, row: str, mark: int):
+    """Open the bar's `title` menu; the screen point of its `row`."""
+    titles = log.last(rf"^bar title (\d+) {re.escape(title)} at (-?\d+),(-?\d+)$")
+    if titles is None:
+        return None
+    index = titles.group(1)
+    click(int(titles.group(2)), int(titles.group(3)))
+    return log.wait_for(rf"^menu {index} row {re.escape(row)} at (-?\d+),(-?\d+)$", 5.0, after=mark)
+
+
+def check_window_menu(
+    log: Log, bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str]
+) -> None:
+    """Window ▸ Full-Screen Tile ▸ Left of Screen puts the window on the
+    left half (Windows' Snap Assist then offers the others); the app menu's
+    Hide Others minimises the other apps' windows and Show All brings them
+    back (both did nothing on Windows: Windows robot)."""
+    notepad = subprocess.Popen(["notepad.exe"])
+    other = wait_until(lambda: app_window("notepad.exe"), 15.0)
+    started = start_text_editor(bin_dir, environment)
+    if started is None or other is None:
+        failures.append("Text Editor or Notepad did not open for the Window menu check")
+        notepad.kill()
+        return
+    process, hwnd = started
+    area = work_area()
+    try:
+        # Full-Screen Tile ▸ Left of Screen: hover the row, then its
+        # submenu's first item from the keyboard.
+        mark = len(log.lines())
+        row = bar_menu_row(log, "Window", "Full-Screen Tile", mark)
+        if row is None:
+            failures.append("the bar's Window menu has no Full-Screen Tile row for Text Editor")
+            tap(VK_ESCAPE)
+        else:
+            user32().SetCursorPos(int(row.group(1)), int(row.group(2)))
+            time.sleep(1.0)
+            tap(VK_DOWN)
+            time.sleep(0.2)
+            tap(VK_RETURN)
+            middle = (area[0] + area[2]) // 2
+            tiled = wait_until(
+                lambda: abs(frame_bounds(hwnd)[0] - area[0]) <= 2 and abs(frame_bounds(hwnd)[2] - middle) <= 12,
+                5.0,
+            )
+            time.sleep(1.0)
+            save(screenshots, "full-screen-tile")
+            print(f"shell: Full-Screen Tile ▸ Left of Screen: Text Editor at {frame_bounds(hwnd)}, work area {area}")
+            if tiled is None:
+                failures.append(f"Full-Screen Tile ▸ Left of Screen left Text Editor at {frame_bounds(hwnd)}")
+            # Snap Assist's picker, if it showed.
+            tap(VK_ESCAPE)
+            time.sleep(0.5)
+        # Hide Others, then Show All, from Text Editor's app menu.
+        bring_to_front(hwnd)
+        time.sleep(0.5)
+        mark = len(log.lines())
+        app_title = log.last(r"^bar title 1 (.+) at (-?\d+),(-?\d+)$")
+        name = app_title.group(1) if app_title else "Text Editor"
+        row = bar_menu_row(log, name, "Hide Others", mark)
+        if row is None:
+            failures.append("the app menu has no Hide Others row")
+            tap(VK_ESCAPE)
+            return
+        click(int(row.group(1)), int(row.group(2)))
+        hidden = wait_until(lambda: user32().IsIconic(wintypes.HWND(other[1])), 5.0)
+        kept = not user32().IsIconic(wintypes.HWND(hwnd))
+        time.sleep(0.8)
+        save(screenshots, "hide-others")
+        print(f"shell: Hide Others: Notepad {'minimised' if hidden else 'still shown'}, Text Editor kept {kept}")
+        if not hidden:
+            failures.append("Hide Others did not hide Notepad")
+        if not kept:
+            failures.append("Hide Others hid the app it was chosen in")
+        bring_to_front(hwnd)
+        time.sleep(0.5)
+        mark = len(log.lines())
+        row = bar_menu_row(log, name, "Show All", mark)
+        if row is None:
+            failures.append("the app menu has no Show All row")
+            tap(VK_ESCAPE)
+            return
+        click(int(row.group(1)), int(row.group(2)))
+        shown = wait_until(lambda: not user32().IsIconic(wintypes.HWND(other[1])), 5.0)
+        time.sleep(0.8)
+        save(screenshots, "show-all")
+        print(f"shell: Show All: Notepad {'back' if shown else 'still hidden'}")
+        if not shown:
+            failures.append("Show All did not bring back the window Hide Others hid")
+    finally:
+        process.kill()
+        notepad.kill()
+        for pid in processes_named("notepad.exe"):
+            terminate(pid)
+        time.sleep(1.0)
 
 
 def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str]) -> None:

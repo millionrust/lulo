@@ -226,8 +226,18 @@ pub async fn full_screen_tile(
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+        let before = frame_bounds(hwnd);
         snap_keys(right);
-        Ok(())
+        // With snapping turned off in Settings the keys do nothing: tile
+        // the window to that half without the picker.
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_millis(800) {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            if frame_bounds(hwnd) != before {
+                return Ok(());
+            }
+        }
+        frame_percent(hwnd, if right { 50.0 } else { 0.0 }, 0.0, 50.0, 100.0)
     })
     .await;
     notify_watchers();

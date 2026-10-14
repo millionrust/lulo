@@ -1719,7 +1719,8 @@ def write_silent_wav(path: Path) -> None:
 
 def check_archive_utility(binary: Path) -> str | None:
     """Archive Utility has no main window (as on the Mac): handed a zip it
-    expands it beside the archive and exits; handed nothing it exits at once.
+    expands it beside the archive and exits; handed nothing it shows the
+    Expand Archive… panel and stays open.
     Print how long the expansion took."""
     import zipfile
 
@@ -1755,9 +1756,21 @@ def check_archive_utility(binary: Path) -> str | None:
             return "a nested entry was not expanded"
         if (expanded / "CON").exists():
             return "a Windows device name was written"
-        empty = subprocess.run([str(binary)], env=environment, capture_output=True, timeout=60)
-        if empty.returncode != 0:
-            return f"exited {empty.returncode} with nothing to expand"
+        # Handed nothing it shows the Expand Archive… panel (so its menus
+        # have a window) and stays open until the panel is answered.
+        empty = subprocess.Popen([str(binary)], env=environment,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        try:
+            code = empty.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            code = None
+        finally:
+            if empty.poll() is None:
+                empty.kill()
+                empty.wait(timeout=10)
+        if code is not None:
+            stderr = empty.stderr.read().decode(errors="replace")[-400:] if empty.stderr else ""
+            return f"exited {code} with nothing to expand instead of showing the Expand panel: {stderr}"
     return None
 
 

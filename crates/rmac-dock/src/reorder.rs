@@ -184,6 +184,19 @@ pub fn slot_at(centers: &[f32], pitch: f32, axis: f32) -> Option<usize> {
         .position(|center| (axis - center).abs() <= pitch / 2.0)
 }
 
+/// Progress of the Mac's spring for icons parting around an open slot: a
+/// critically damped spring that has settled to within half a percent at
+/// `duration_ms`, so it starts faster than an ease-out and lands softly.
+pub fn spring(elapsed_ms: u64, duration_ms: u64) -> f32 {
+    if duration_ms == 0 || elapsed_ms >= duration_ms {
+        return 1.0;
+    }
+    // (1 + x) e^-x = 0.005 at x ≈ 7.43.
+    const SETTLED: f32 = 7.43;
+    let x = SETTLED * elapsed_ms as f32 / duration_ms as f32;
+    1.0 - (1.0 + x) * (-x).exp()
+}
+
 /// Ease-out progress of a slide or settle animation.
 pub fn ease_out(elapsed_ms: u64, duration_ms: u64) -> f32 {
     if duration_ms == 0 || elapsed_ms >= duration_ms {
@@ -275,6 +288,21 @@ mod tests {
         assert_eq!(slot_at(&centers, 68.0, 135.0), Some(1));
         assert_eq!(slot_at(&centers, 68.0, 20.0), None);
         assert_eq!(slot_at(&centers, 68.0, f32::NAN), None);
+    }
+
+    #[test]
+    fn spring_is_bounded_monotonic_and_settles() {
+        assert_eq!(spring(0, SLIDE_MS), 0.0);
+        assert_eq!(spring(SLIDE_MS, SLIDE_MS), 1.0);
+        assert!(spring(SLIDE_MS - 1, SLIDE_MS) > 0.99);
+        // Faster than the ease-out early on, like the Mac's spring.
+        assert!(spring(SLIDE_MS / 4, SLIDE_MS) > 0.5);
+        let mut previous = 0.0;
+        for elapsed in 0..=SLIDE_MS {
+            let value = spring(elapsed, SLIDE_MS);
+            assert!((0.0..=1.0).contains(&value) && value >= previous);
+            previous = value;
+        }
     }
 
     #[test]

@@ -6085,6 +6085,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "gpui_linux",
  "rmac-app-launch",
  "rmac-apps",
  "rmac-icon",

@@ -43,6 +43,22 @@ pub fn compress(
         Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
         _ => PathBuf::from("."),
     };
+    compress_into(items, &parent, cancel, progress)
+}
+
+/// [`compress`], writing the zip into `destination` instead of beside the
+/// first item (Archive Utility ▸ Settings ▸ Save archives: into a chosen
+/// folder).
+pub fn compress_into(
+    items: &[PathBuf],
+    destination: &Path,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<PathBuf, Error> {
+    if items.is_empty() {
+        return Err(Error::Io(io::Error::from(io::ErrorKind::InvalidInput)));
+    }
+    let parent = destination.to_path_buf();
     let name = compressed_name(items);
 
     let mut plan = Vec::new();
@@ -202,6 +218,25 @@ mod tests {
             compressed_name(&[PathBuf::from("/d/a"), PathBuf::from("/d/b")]),
             "Archive.zip"
         );
+    }
+
+    #[test]
+    fn compress_into_and_expand_into_use_the_chosen_folder() {
+        let root = scratch("into");
+        let elsewhere = root.join("Elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        fs::write(root.join("notes.txt"), "one").unwrap();
+        let cancel = AtomicBool::new(false);
+        let zip =
+            compress_into(&[root.join("notes.txt")], &elsewhere, &cancel, &mut |_| {}).unwrap();
+        assert_eq!(zip, elsewhere.join("notes.txt.zip"));
+        let unpacked = root.join("Unpacked");
+        fs::create_dir(&unpacked).unwrap();
+        let expanded = crate::expand_into(&zip, &unpacked, &cancel, &mut |_| {}).unwrap();
+        assert_eq!(expanded, unpacked.join("notes.txt"));
+        assert_eq!(fs::read_to_string(expanded).unwrap(), "one");
+        assert!(compress_into(&[], &elsewhere, &cancel, &mut |_| {}).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

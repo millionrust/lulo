@@ -2790,6 +2790,32 @@ const PLAYER_MENUS: &[MenuSpec] = &[
     },
 ];
 
+// MROBOT-04: Archive Utility, as macOS 26 shows it. Its Edit menu is left
+// out: Archive Utility has no text to edit, and every row of the Mac's is
+// greyed out.
+const ARCHIVE_UTILITY_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!("Settings…", "archive_utility::ShowSettings", "⌘,")],
+    },
+    MenuSpec {
+        label: "File",
+        items: &[
+            item!("Create Archive…", "archive_utility::CreateArchive", "⌘K"),
+            item!(
+                "Expand Archive…",
+                "archive_utility::ExpandArchive",
+                "⌘U",
+                separator
+            ),
+        ],
+    },
+    MenuSpec {
+        label: WINDOW_MENU,
+        items: &[item!("Close", "archive_utility::CloseWindow", "⌘W")],
+    },
+];
+
 fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
     match app_id {
         rmac_apps::identity::FILES => Some(FILES_MENUS),
@@ -2805,6 +2831,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::CLOCK => Some(CLOCK_MENUS),
         rmac_apps::identity::WEATHER => Some(WEATHER_MENUS),
         rmac_apps::identity::PLAYER => Some(PLAYER_MENUS),
+        rmac_apps::identity::ARCHIVE_UTILITY => Some(ARCHIVE_UTILITY_MENUS),
         _ => None,
     }
 }
@@ -2835,6 +2862,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::CLOCK => Some("org.rmac.Clock.Menu"),
         rmac_apps::identity::WEATHER => Some("org.rmac.Weather.Menu"),
         rmac_apps::identity::PLAYER => Some("org.rmac.Player.Menu"),
+        rmac_apps::identity::ARCHIVE_UTILITY => Some("org.rmac.ArchiveUtility.Menu"),
         _ => None,
     }
 }
@@ -2855,6 +2883,7 @@ const MENU_APPS: &[&str] = &[
     rmac_apps::identity::CLOCK,
     rmac_apps::identity::WEATHER,
     rmac_apps::identity::PLAYER,
+    rmac_apps::identity::ARCHIVE_UTILITY,
 ];
 
 /// The app whose menu endpoint owns `name`, if it is one.
@@ -4435,6 +4464,29 @@ mod tests {
                 "Get Info",
                 "Find"
             ]
+        );
+    }
+
+    #[test]
+    fn archive_utility_publishes_the_macs_menus() {
+        let actions = spec_actions(ARCHIVE_UTILITY_MENUS);
+        let menus = definition(rmac_apps::identity::ARCHIVE_UTILITY, &actions).unwrap();
+        assert!(validate_menus(&menus).is_ok());
+        assert_eq!(
+            bus_name(rmac_apps::identity::ARCHIVE_UTILITY),
+            Some("org.rmac.ArchiveUtility.Menu")
+        );
+        assert_eq!(
+            app_for_bus_name("org.rmac.ArchiveUtility.Menu"),
+            Some(rmac_apps::identity::ARCHIVE_UTILITY)
+        );
+        let file = menus.iter().find(|menu| menu.label == "File").unwrap();
+        assert_eq!(
+            file.items
+                .iter()
+                .map(|item| (item.label.as_str(), item.shortcut.as_str()))
+                .collect::<Vec<_>>(),
+            [("Create Archive…", "⌘K"), ("Expand Archive…", "⌘U")]
         );
     }
 

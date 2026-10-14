@@ -2481,7 +2481,9 @@ fn touch_click(
     let click_count = state.count_click(button, position);
     let modifiers = state.modifiers;
     drop(state);
-    touch_trace(format_args!("click {button:?} count={click_count} at {position:?}"));
+    touch_trace(format_args!(
+        "click {button:?} count={click_count} at {position:?}"
+    ));
     window.handle_input(PlatformInput::MouseDown(MouseDownEvent {
         button,
         position,
@@ -2683,7 +2685,10 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                     let promote = match (&window, state.touch.as_ref()) {
                         (Some(window), Some(first)) => {
                             first.window.ptr_eq(window)
-                                && matches!(first.gesture, TouchGesture::Pending | TouchGesture::Scroll)
+                                && matches!(
+                                    first.gesture,
+                                    TouchGesture::Pending | TouchGesture::Scroll
+                                )
                         }
                         _ => false,
                     };
@@ -2754,7 +2759,9 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 } else {
                     element_drag
                 };
-                touch_trace(format_args!("contact id={id} drag={drag:?} title={drag_region}"));
+                touch_trace(format_args!(
+                    "contact id={id} drag={drag:?} title={drag_region}"
+                ));
                 client.borrow_mut().touch = Some(TouchContact {
                     id,
                     window,

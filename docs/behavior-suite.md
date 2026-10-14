@@ -606,6 +606,33 @@ does. Upstream niri fails the first three. CI's runtime jobs use an
 unpatched niri from a PPA, so this check runs on the laptop against the
 built package.
 
+## Touch input
+
+No wlroots compositor can inject touch without a real device: nested niri,
+Sway and cage have no virtual touch protocol, and `/dev/uinput` belongs to
+root. `scripts/behavior/run_touch_input.py --probe PATH` therefore starts a
+private headless GNOME Shell (Mutter) with PipeWire on its own session bus,
+with a temporary HOME and runtime dir. It injects touches through Mutter's
+RemoteDesktop D-Bus API, which delivers real `wl_touch` events. They go to
+`shell/probes/touch`, a full-screen GPUI window on the vendored backend that
+logs what each touch became (ADR 0028). It checks 17 things:
+
+- tap, double tap and long press;
+- touch-sized hit targets, and that they shrink back after a pointer move;
+- a natural swipe with momentum;
+- rest-then-drag on an `on_drag` row, and an immediate drag on a
+  `touch_drag` slider;
+- two-finger scroll with momentum, pinch out and in, and a two-finger tap;
+- three fingers doing nothing.
+
+GNOME Shell opens its overview at start, so the runner closes it first
+(`OverviewActive`). Mutter adds its virtual touchscreen on the first touch,
+so the runner also taps until one lands. Build the probe with
+`cargo build --features wayland -p rmac-shell-touch-probe` in `shell/`. Then
+run the runner on the laptop. CI has no GNOME Shell, so it runs only the
+recogniser's unit tests. Layer-shell surfaces (Dock, menu bar, panels) cannot
+run under Mutter, but they take touch through the same backend code.
+
 ## Parallel visual journeys
 
 `tests/parallel/` contains ten first-hour journeys that use the same JSON

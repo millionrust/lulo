@@ -153,7 +153,11 @@ impl TwoFinger {
 
     /// One finger moved. Up to two events: the gesture starting and its
     /// first movement.
-    pub(super) fn update(&mut self, id: i32, position: Point<Pixels>) -> [Option<TwoFingerEvent>; 2] {
+    pub(super) fn update(
+        &mut self,
+        id: i32,
+        position: Point<Pixels>,
+    ) -> [Option<TwoFingerEvent>; 2] {
         let Some(index) = self.ids.iter().position(|known| *known == id) else {
             return [None, None];
         };
@@ -301,7 +305,12 @@ mod tests {
         assert_eq!(gesture.kind(), TwoFingerKind::Pending);
         let [started, none] = gesture.update(1, at(100.0, 130.0));
         assert_eq!(none, None);
-        let Some(TwoFingerEvent::Scroll { delta, phase, position }) = started else {
+        let Some(TwoFingerEvent::Scroll {
+            delta,
+            phase,
+            position,
+        }) = started
+        else {
             panic!("expected a scroll start, got {started:?}");
         };
         assert_eq!(phase, TouchPhase::Started);
@@ -359,7 +368,10 @@ mod tests {
         assert!(matches!(still_pinch, Some(TwoFingerEvent::Pinch { .. })));
         assert!(matches!(
             gesture.end(Duration::from_secs(1), false),
-            Some(TwoFingerEvent::Pinch { phase: TouchPhase::Ended, .. })
+            Some(TwoFingerEvent::Pinch {
+                phase: TouchPhase::Ended,
+                ..
+            })
         ));
     }
 
@@ -370,7 +382,9 @@ mod tests {
         assert!(gesture.contains(9) && !gesture.contains(5));
         assert_eq!(
             gesture.end(Duration::from_millis(120), false),
-            Some(TwoFingerEvent::SecondaryTap { position: at(120.0, 100.0) })
+            Some(TwoFingerEvent::SecondaryTap {
+                position: at(120.0, 100.0)
+            })
         );
         assert_eq!(gesture.end(TWO_FINGER_TAP, false), None);
         assert_eq!(gesture.end(Duration::from_millis(120), true), None);

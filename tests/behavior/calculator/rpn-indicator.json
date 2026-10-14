@@ -1,0 +1,13 @@
+{
+  "title": "Calculator: RPN Mode shows an RPN badge and turns = into enter, and turning it off restores =",
+  "app": "calculator",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "basic", "facts": ["calculator_rpn"]},
+    {"key": "cmd-r", "settle": 1.0},
+    {"observe": "rpn", "facts": ["calculator_rpn"]},
+    {"key": "cmd-r", "settle": 1.0},
+    {"observe": "basic_again", "facts": ["calculator_rpn"]}
+  ]
+}

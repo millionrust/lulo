@@ -77,6 +77,13 @@ impl Category {
             Self::Calculator | Self::Clock | Self::Dictionary | Self::SearchIn | Self::Intelligence
         )
     }
+
+    /// Rows whose provider also matched the query against keywords the row
+    /// does not carry: a settings pane's search terms ("dark mode" is
+    /// Appearance). Apps still need the text in their name or subtitle.
+    pub(crate) fn matched_by_provider_keywords(self) -> bool {
+        matches!(self, Self::Settings)
+    }
 }
 
 /// Tahoe's fixed Apps browse categories. Suggestions are intentionally not a

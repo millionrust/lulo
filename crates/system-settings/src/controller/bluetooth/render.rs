@@ -143,9 +143,11 @@ impl Settings {
                 refresh_view.update(cx, |settings, cx| settings.refresh_bluetooth(cx));
             })
             .into_any_element()]));
-            cards.push(footnote(
-                "Confirm that pairing codes match on both devices. A device becomes trusted only after BlueZ reports that pairing succeeded.",
-            ));
+            cards.push(footnote(if cfg!(windows) {
+                "Confirm that pairing codes match on both devices. Windows connects a paired audio device here; other devices connect when you use them."
+            } else {
+                "Confirm that pairing codes match on both devices. A device becomes trusted only after BlueZ reports that pairing succeeded."
+            }));
         }
         self.pane(cards)
     }

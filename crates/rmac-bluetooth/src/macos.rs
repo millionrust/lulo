@@ -113,6 +113,8 @@ pub(crate) fn parse_macos_snapshot(output: &str) -> Snapshot {
                     paired: true,
                     trusted: true,
                     connected: connected_group,
+                    can_connect: false,
+                    battery: None,
                 });
             }
         } else if let Some(device) = current.as_mut() {

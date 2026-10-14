@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "scenario": "clock/text-commands-need-text",
+  "observations": {
+    "no_text": {
+      "menu_items": {
+        "clock::TransformUppercase": false,
+        "clock::TransformLowercase": false,
+        "clock::TransformCapitalise": false,
+        "clock::CheckDocumentNow": false
+      }
+    }
+  }
+}

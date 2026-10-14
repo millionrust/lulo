@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "terminal/tab-commands",
+  "observations": {
+    "one_tab": {"menu_items": {"terminal::PrevTab": false, "terminal::NextTab": false}},
+    "two_tabs": {"menu_items": {"terminal::PrevTab": true, "terminal::NextTab": true}}
+  }
+}

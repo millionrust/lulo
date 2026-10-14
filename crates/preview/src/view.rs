@@ -648,6 +648,8 @@ pub(crate) struct PreviewView {
     search_input: Entity<InputState>,
     search: Search,
     menu: Option<rmac_ui::ContextMenuState>,
+    /// Which surface `menu` belongs to.
+    menu_kind: MenuKind,
     in_flight: usize,
     garbage: Vec<Arc<RenderImage>>,
     /// The document column measured on the last frame.
@@ -773,6 +775,14 @@ pub(crate) struct PreviewView {
     /// File ▸ Move To… (PRV-MENU-003): true while the folder-picker move
     /// is running, so the menu item disables rather than re-entering.
     move_busy: bool,
+}
+
+/// The two Lulo-drawn context menus: the sidebar's view chevron and the
+/// image itself (MROBOT-09).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MenuKind {
+    Sidebar,
+    Image,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2228,6 +2238,7 @@ impl PreviewView {
             search_input,
             search: Search::default(),
             menu: None,
+            menu_kind: MenuKind::Sidebar,
             in_flight: 0,
             garbage: Vec::new(),
             viewport: (0.0, 0.0),
@@ -3865,8 +3876,30 @@ impl PreviewView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.menu_kind = MenuKind::Sidebar;
         self.menu = Some(rmac_ui::ContextMenuState::open(
             event.position(),
+            &self.focus,
+            window,
+            cx,
+        ));
+        cx.notify();
+    }
+
+    /// Right-click on an image: Preview's image menu. Copy Image copies the
+    /// whole image as shown (Edit ▸ Copy's image path). The Mac's Copy/Share
+    /// Subject, Share Image… and Continuity Camera rows need Visual Look Up,
+    /// a share service and an iPhone, none of which Lulo has, so they are left
+    /// out rather than listed dead.
+    fn open_image_menu(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.menu_kind = MenuKind::Image;
+        self.menu = Some(rmac_ui::ContextMenuState::open(
+            event.position,
             &self.focus,
             window,
             cx,
@@ -6055,6 +6088,11 @@ impl PreviewView {
         // it is showing.
         let is_pdf = self.page_mode != PageMode::Contact
             && self.slot().and_then(Slot::kind) == Some(Kind::Pdf);
+        // Only a shown image has the image menu (not a loading or failed
+        // slot, nor the empty Open state).
+        let is_image = self.slot().is_some_and(|slot| {
+            matches!(&slot.state, SlotState::Ready(loaded) if matches!(loaded.content, Content::Image(_)))
+        });
         let body = match self.slots.get(self.selected) {
             None => self.render_empty_state(palette, cx),
             Some(slot) => match &slot.state {
@@ -6214,6 +6252,14 @@ impl PreviewView {
                             this.text_mouse_up(cx);
                         }),
                     )
+            })
+            .when(is_image, |document| {
+                document.on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                        this.open_image_menu(event, window, cx);
+                    }),
+                )
             })
             .when(!is_pdf, |document| {
                 document
@@ -7768,6 +7814,11 @@ impl Render for PreviewView {
                     rmac_ui::MenuCheck::None
                 }
             };
+            if self.menu_kind == MenuKind::Image {
+                return rmac_ui::ContextMenu::new(state.position())
+                    .item("Copy Image", Box::new(Copy))
+                    .render(state);
+            }
             rmac_ui::ContextMenu::new(state.position())
                 .checked_item("Hide Sidebar", check(!self.sidebar), Box::new(HideSidebar))
                 .checked_item(

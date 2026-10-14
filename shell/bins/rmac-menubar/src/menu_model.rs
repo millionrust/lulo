@@ -1691,7 +1691,11 @@ pub fn bluetooth_menu_rows(input: BluetoothMenuInput<'_>) -> Vec<StatusRow> {
                     glyph: BadgeGlyph::BluetoothDevice,
                     on: device.connected,
                     locked: false,
-                    action: Some(StatusAction::SetBluetoothConnected(device.id.clone())),
+                    // Listed only when the platform cannot connect it from
+                    // an app (on Windows, anything but Bluetooth audio).
+                    action: device
+                        .can_connect
+                        .then(|| StatusAction::SetBluetoothConnected(device.id.clone())),
                 });
             }
         }
@@ -3359,6 +3363,8 @@ mod tests {
             paired,
             trusted: paired,
             connected,
+            can_connect: paired,
+            ..Default::default()
         }
     }
 

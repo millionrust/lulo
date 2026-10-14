@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "settings/pane-text-spotlight",
+  "platform": "Lulo local contract",
+  "observations": {
+    "pane": {
+      "pane_text": {
+        "labelled": 22,
+        "labels": [
+          "Recent Documents",
+          "Results from System",
+          "Search Privacy"
+        ],
+        "controls": [
+          "Allow private file results",
+          "Include removable volumes",
+          "Currency conversions"
+        ]
+      }
+    }
+  }
+}

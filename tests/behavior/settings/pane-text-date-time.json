@@ -1,0 +1,24 @@
+{
+  "title": "Date & Time pane publishes its rows' text and names its controls over AT-SPI (MROBOT-10)",
+  "app": "settings",
+  "lulo_only": true,
+  "launch": {
+    "pane": "date-time"
+  },
+  "steps": [
+    {
+      "wait": 2.0
+    },
+    {
+      "observe": "pane",
+      "facts": [
+        "pane_text"
+      ]
+    }
+  ],
+  "tolerance": {
+    "pane.pane_text.labelled": "at-least",
+    "pane.pane_text.labels": "subset",
+    "pane.pane_text.controls": "subset"
+  }
+}

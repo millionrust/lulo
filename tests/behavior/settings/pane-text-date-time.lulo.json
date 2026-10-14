@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "scenario": "settings/pane-text-date-time",
+  "platform": "Lulo local contract",
+  "observations": {
+    "pane": {
+      "pane_text": {
+        "labelled": 14,
+        "labels": [
+          "Date and time",
+          "Time zone"
+        ],
+        "controls": [
+          "Set time and date automatically",
+          "24-Hour Time"
+        ]
+      }
+    }
+  }
+}

@@ -669,7 +669,11 @@ fn text_placement(parent: &accesskit::Node, text: &str) -> TextPlacement {
     );
     if !names_itself {
         TextPlacement::Child
-    } else if parent.label().is_none() && parent.value().is_none() {
+    } else if parent.label().is_none()
+        && parent.value().is_none()
+        && text.chars().any(char::is_alphanumeric)
+    {
+        // A glyph (✓, ×, ⌄) is not a name; the row's title names it.
         TextPlacement::NameParent
     } else {
         // A named control's other text (a shortcut, a count, a caption
@@ -693,6 +697,17 @@ fn takes_row_label(role: accesskit::Role) -> bool {
             | Role::Meter
             | Role::ColorWell
     )
+}
+
+/// Whether `node` still needs its row's title as its name. A pop-up named
+/// only after its current value (rmac-ui's `PopUpButton`) counts as unnamed:
+/// on macOS the value is `AXValue` and the row title names it.
+fn needs_row_label(node: &accesskit::Node) -> bool {
+    takes_row_label(node.role())
+        && match node.label() {
+            None => true,
+            Some(label) => node.role() == accesskit::Role::ComboBox && node.value() == Some(label),
+        }
 }
 
 /// Controls that end a row: the next control's title comes after them.
@@ -721,9 +736,7 @@ fn ends_row(node: &accesskit::Node) -> bool {
 /// Runs once per built frame over the nodes already built.
 fn label_controls_from_row_text(nodes: &mut [(NodeId, accesskit::Node)]) {
     use accesskit::Role;
-    let has_candidate = nodes
-        .iter()
-        .any(|(_, node)| takes_row_label(node.role()) && node.label().is_none());
+    let has_candidate = nodes.iter().any(|(_, node)| needs_row_label(node));
     if !has_candidate {
         return;
     }
@@ -762,21 +775,29 @@ fn label_controls_from_row_text(nodes: &mut [(NodeId, accesskit::Node)]) {
             }
             let row_start = since;
             since = slot + 1;
-            if !takes_row_label(node.role()) || node.label().is_some() {
+            if !needs_row_label(node) {
                 continue;
             }
             let Some(bounds) = node.bounds() else {
                 continue;
             };
             let slack = bounds.height().max(16.0);
+            // A slider's title may sit on the line above it, left-aligned
+            // with it, with the "Slow"/"Fast" ends beside the track.
+            let slider = node.role() == Role::Slider;
             let before = children[row_start..slot]
                 .iter()
                 .filter_map(|&p| static_text(p))
                 .find(|(_, text)| {
                     let center = (text.y0 + text.y1) / 2.0;
-                    text.x1 <= bounds.x0 + 1.0
+                    let beside = text.x1 <= bounds.x0 + 1.0
                         && center >= bounds.y0 - slack
-                        && center <= bounds.y1 + slack
+                        && center <= bounds.y1 + slack;
+                    let above = slider
+                        && text.y1 <= bounds.y0 + 1.0
+                        && bounds.y0 - text.y1 <= 2.0 * slack
+                        && text.x0 <= bounds.x0 + 1.0;
+                    beside || above
                 });
             let after = || {
                 children[slot + 1..]
@@ -890,6 +911,35 @@ mod row_text_tests {
     }
 
     #[test]
+    fn a_value_named_pop_up_and_a_slider_take_their_titles() {
+        let mut root = Node::new(Role::Window);
+        root.set_children(vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4), NodeId(5)]);
+        let mut pop_up = control(Role::ComboBox, Rect::new(300.0, 10.0, 380.0, 34.0));
+        pop_up.set_label("Bottom");
+        pop_up.set_value("Bottom");
+        let mut nodes = vec![
+            (NodeId(0), root),
+            (
+                NodeId(1),
+                text("Position on screen", Rect::new(20.0, 14.0, 160.0, 30.0)),
+            ),
+            (NodeId(2), pop_up),
+            (
+                NodeId(3),
+                text("Key repeat rate", Rect::new(20.0, 50.0, 140.0, 66.0)),
+            ),
+            (NodeId(4), text("Slow", Rect::new(20.0, 74.0, 50.0, 90.0))),
+            (
+                NodeId(5),
+                control(Role::Slider, Rect::new(20.0, 70.0, 300.0, 94.0)),
+            ),
+        ];
+        label_controls_from_row_text(&mut nodes);
+        assert_eq!(label_of(&nodes, 2).as_deref(), Some("Position on screen"));
+        assert_eq!(label_of(&nodes, 5).as_deref(), Some("Key repeat rate"));
+    }
+
+    #[test]
     fn text_placement_names_unnamed_buttons_and_skips_repeats() {
         let button = Node::new(Role::Button);
         assert_eq!(text_placement(&button, "Share"), TextPlacement::NameParent);
@@ -904,6 +954,8 @@ mod row_text_tests {
         );
         let field = Node::new(Role::TextInput);
         assert_eq!(text_placement(&field, "typed"), TextPlacement::Skip);
+        let check = Node::new(Role::CheckBox);
+        assert_eq!(text_placement(&check, "✓"), TextPlacement::Skip);
     }
 }
 

@@ -2055,6 +2055,9 @@ def check_dock_drag(
             return
         print("shell: dock drag: running Clock dragged across the separator is kept second")
         save(screenshots, "dock-drag-kept")
+        # The Dock shows a drop's order at once, and takes no new drag until
+        # the saved settings confirm it.
+        time.sleep(2.5)
         # Reorder: Files, Clock, Apps, Notes… → between Apps and Notes.
         kept, _ = dock_groups(log)
         tile = kept[1]
@@ -2068,6 +2071,7 @@ def check_dock_drag(
             print("shell: dock drag: the kept Clock reorders by dragging")
         # Drag it off the Dock and hold: released there it is no longer
         # kept, and as it runs it stays among the running apps.
+        time.sleep(2.5)
         kept, _ = dock_groups(log)
         tile = next((tile for tile in kept if tile[0] == clock_id), None)
         if tile is not None:
@@ -2096,33 +2100,37 @@ def check_dock_drag(
     if log.wait_for(r"^apps first tile ", 15.0, after=before) is None:
         failures.append("dock drag: Apps did not open")
         return
-    time.sleep(0.8)
-    type_text("Preview")
-    first = log.wait_for(r"^apps first tile org\.rmac\.Preview(?:\.desktop)? at (-?\d+),(-?\d+)", 10.0, after=before)
+    # Drag the first app in Apps (alphabetical) between the first two kept
+    # apps: it is kept second.
+    first = log.last(r"^apps first tile (\S+) at (-?\d+),(-?\d+)")
     if first is None:
-        failures.append("dock drag: searching Apps for Preview showed no Preview tile first")
+        failures.append("dock drag: Apps showed no first tile")
         tap(VK_ESCAPE)
         return
-    time.sleep(0.5)
-    slow_drag((int(first.group(1)), int(first.group(2))), between(kept, 0), hold=0.6)
-    preview = "org.rmac.preview"
-    kept_second = wait_until(lambda: kept_index(log, preview) == 1, 10.0)
+    app_id = dock_app_id(first.group(1))
+    was_kept = kept_index(log, app_id)
+    time.sleep(0.8)
+    slow_drag((int(first.group(2)), int(first.group(3))), between(kept, 0), hold=0.6)
+    kept_second = wait_until(lambda: kept_index(log, app_id) == 1, 10.0)
     save(screenshots, "dock-drag-from-apps")
     tap(VK_ESCAPE)
     time.sleep(0.5)
     if kept_second is None:
         failures.append(
-            f"dock drag: Preview dragged out of Apps between the first two kept apps was not kept "
-            f"second: {[tile for tile, _, _ in dock_groups(log)[0]]}"
+            f"dock drag: {app_id} dragged out of Apps between the first two kept apps was not "
+            f"kept second: {[tile for tile, _, _ in dock_groups(log)[0]]}"
         )
         return
-    print("shell: dock drag: Preview dragged out of Apps is kept where it was dropped")
-    # Leave the Dock as it was: drag Preview off again.
+    print(f"shell: dock drag: {app_id} dragged out of Apps is kept where it was dropped")
+    if was_kept is not None:
+        return
+    # Leave the Dock as it was: drag it off again.
+    time.sleep(2.5)
     kept, _ = dock_groups(log)
     tile = kept[1]
     slow_drag((tile[1], tile[2]), (tile[1], tile[2] - 260), hold=1.0)
-    if wait_until(lambda: kept_index(log, preview) is None, 10.0) is None:
-        failures.append("dock drag: Preview dragged off the Dock stayed kept")
+    if wait_until(lambda: kept_index(log, app_id) is None, 10.0) is None:
+        failures.append(f"dock drag: {app_id} dragged off the Dock stayed kept")
 
 
 def check_memory_after_use(log: Log, shell_pid: int, measurements: dict, failures: list[str]) -> None:

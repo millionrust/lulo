@@ -1371,6 +1371,13 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self
     }
 
+    /// rmac: report this element as disabled (dimmed, not actionable) to
+    /// assistive technology, like an `AXEnabled = false` control on macOS.
+    fn aria_disabled(mut self, disabled: bool) -> Self {
+        self.interactivity().aria_disabled = disabled;
+        self
+    }
+
     /// Register a handler for an accessibility action on this element.
     /// The handler is called when a screen reader requests the given action.
     ///
@@ -1981,6 +1988,7 @@ pub struct Interactivity {
     pub(crate) aria_column_index: Option<usize>,
     pub(crate) aria_row_count: Option<usize>,
     pub(crate) aria_column_count: Option<usize>,
+    pub(crate) aria_disabled: bool,
 
     #[cfg(any(feature = "inspector", debug_assertions))]
     pub(crate) source_location: Option<&'static core::panic::Location<'static>>,
@@ -3278,6 +3286,9 @@ impl Interactivity {
         }
         if let Some(count) = self.aria_column_count {
             node.set_column_count(count);
+        }
+        if self.aria_disabled {
+            node.set_disabled();
         }
         if !self.click_listeners.is_empty() {
             node.add_action(accesskit::Action::Click);

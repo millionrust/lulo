@@ -606,6 +606,7 @@ impl RenderOnce for Slider {
         div()
             .id(("slider", self.state.entity_id()))
             .role(Role::Slider)
+            .aria_disabled(self.disabled)
             .aria_numeric_value(slider_value)
             .aria_min_numeric_value(slider_min)
             .aria_max_numeric_value(slider_max)

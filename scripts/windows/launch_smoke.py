@@ -713,9 +713,31 @@ def open_backdrop(rect: tuple[int, int, int, int]) -> subprocess.Popen | None:
         return None
 
 
-def raise_over_backdrop(hwnd: int) -> bool:
-    """Put `hwnd` at the top of the z-order and confirm the point at its
-    client centre belongs to it (its top-level window is `hwnd`)."""
+def put_backdrop_under(backdrop: subprocess.Popen, hwnd: int) -> bool:
+    """Put the backdrop's window directly under `hwnd` in the z-order. Only
+    the z-order changes: no window takes the foreground, which Windows'
+    foreground lock may refuse a background process (CI run 38552704647:
+    Calculator could not be brought over a backdrop that had just opened
+    in front of it)."""
+    swp_nomove, swp_nosize, swp_noactivate = 0x0002, 0x0001, 0x0010
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        windows = visible_windows(backdrop.pid)
+        if windows:
+            for window, _title in windows:
+                user32().SetWindowPos(
+                    wintypes.HWND(window), wintypes.HWND(hwnd), 0, 0, 0, 0,
+                    swp_nomove | swp_nosize | swp_noactivate,
+                )
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def raise_over_backdrop(hwnd: int, backdrop: subprocess.Popen | None = None) -> bool:
+    """Put `hwnd` at the top of the z-order (and `backdrop` right under it)
+    and confirm the point at its client centre belongs to it (its top-level
+    window is `hwnd`)."""
     swp_nomove, swp_nosize, swp_showwindow = 0x0002, 0x0001, 0x0040
     left, top, right, bottom = client_rect_on_screen(hwnd)
     centre = wintypes.POINT((left + right) // 2, (top + bottom) // 2)
@@ -725,6 +747,8 @@ def raise_over_backdrop(hwnd: int) -> bool:
             swp_nomove | swp_nosize | swp_showwindow,
         )
         user32().BringWindowToTop(wintypes.HWND(hwnd))
+        if backdrop is not None:
+            put_backdrop_under(backdrop, hwnd)
         time.sleep(0.2)
         user32().WindowFromPoint.restype = wintypes.HWND
         under = user32().WindowFromPoint(centre)
@@ -762,16 +786,21 @@ def check_window_frame(app: str, hwnd: int, screenshots: Path | None) -> str | N
     if backdrop is None:
         return "could not open the backdrop window for the frame check"
     try:
+        if not put_backdrop_under(backdrop, hwnd):
+            return "the frame check's backdrop opened no window"
         time.sleep(1.5)
+        # The backdrop is under the window whether or not Windows lets the
+        # window take the foreground; asking still helps the raise below.
         if not bring_forward(hwnd):
-            return "could not bring the window over the frame check's backdrop"
+            print(f"{app}: the window did not take the foreground over the backdrop; checking the z-order")
+            put_backdrop_under(backdrop, hwnd)
         # An app window that is the foreground window already stays where it
         # is in the z-order when SetForegroundWindow is asked for it again,
         # so a backdrop opened over it (Windows only refuses the backdrop's
         # process the foreground) hid it: Calculator, the first app, kept the
         # foreground through the backdrop's start and was sampled under it,
         # all blue. Raise it explicitly and check what is at its centre.
-        if not raise_over_backdrop(hwnd):
+        if not raise_over_backdrop(hwnd, backdrop):
             return "the frame check's backdrop stayed over the window"
         time.sleep(1.0)
         left, top, right, bottom = client_rect_on_screen(hwnd)

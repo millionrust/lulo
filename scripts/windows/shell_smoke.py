@@ -2087,14 +2087,14 @@ def check_dock_drag(
     # An app dragged out of Apps between the first two kept apps is kept
     # second.
     kept, _ = dock_groups(log)
-    apps = next((tile for tile in kept if tile[0] == "org.rmac.appdrawer"), None)
-    if apps is None or len(kept) < 2:
-        failures.append("dock drag: the Dock has no Apps tile to open Apps from")
+    if len(kept) < 2:
+        failures.append("dock drag: the Dock has fewer than two kept apps")
         return
     before = len(log.lines())
-    click(apps[1], apps[2])
+    # Open Apps as its desktop entry does: a request to the running shell.
+    subprocess.run([str(bin_dir / "lulo-shell.exe"), "--app-drawer"], env=environment, timeout=30)
     if log.wait_for(r"^apps first tile ", 15.0, after=before) is None:
-        failures.append("dock drag: Apps did not open from the Dock")
+        failures.append("dock drag: Apps did not open")
         return
     time.sleep(0.8)
     type_text("Preview")

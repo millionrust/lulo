@@ -29,7 +29,9 @@ pub struct Hint {
     pub screen: Point<Pixels>,
 }
 
-struct Sink(Rc<dyn Fn(Hint, &mut App)>);
+type SinkFn = dyn Fn(Hint, &mut App);
+
+struct Sink(Rc<SinkFn>);
 
 impl Global for Sink {}
 

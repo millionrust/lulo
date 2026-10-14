@@ -233,7 +233,9 @@ mod tests {
         // cmd.exe starts at once; PowerShell's start-up alone can pass a
         // short timeout on a loaded runner and report TimedOut instead.
         // Separate words, so none needs quoting on the command line.
-        let words = ["/d", "/c", "for", "/L", "%i", "in", "(0,0,1)", "do", "@echo", "x"];
+        let words = [
+            "/d", "/c", "for", "/L", "%i", "in", "(0,0,1)", "do", "@echo", "x",
+        ];
         let result = run(
             "cmd.exe",
             words.into_iter().map(Into::into).collect(),

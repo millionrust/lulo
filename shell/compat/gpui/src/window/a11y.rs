@@ -782,23 +782,34 @@ fn label_controls_from_row_text(nodes: &mut [(NodeId, accesskit::Node)]) {
                 continue;
             };
             let slack = bounds.height().max(16.0);
-            // A slider's title may sit on the line above it, left-aligned
-            // with it, with the "Slow"/"Fast" ends beside the track.
-            let slider = node.role() == Role::Slider;
-            let before = children[row_start..slot]
-                .iter()
-                .filter_map(|&p| static_text(p))
-                .find(|(_, text)| {
+            // A slider's title may sit just above it, left-aligned with it,
+            // with the "Slow"/"Fast" ends beside the track; that title wins
+            // over a text beside it. Otherwise the first text beside it on
+            // its line does.
+            let candidates = || {
+                children[row_start..slot]
+                    .iter()
+                    .filter_map(|&p| static_text(p))
+            };
+            let above = (node.role() == Role::Slider)
+                .then(|| {
+                    candidates()
+                        .filter(|(_, text)| {
+                            text.y1 <= bounds.y0 + 1.0
+                                && bounds.y0 - text.y1 <= 0.5 * slack
+                                && text.x0 <= bounds.x0 + 1.0
+                        })
+                        .last()
+                })
+                .flatten();
+            let before = above.or_else(|| {
+                candidates().find(|(_, text)| {
                     let center = (text.y0 + text.y1) / 2.0;
-                    let beside = text.x1 <= bounds.x0 + 1.0
+                    text.x1 <= bounds.x0 + 1.0
                         && center >= bounds.y0 - slack
-                        && center <= bounds.y1 + slack;
-                    let above = slider
-                        && text.y1 <= bounds.y0 + 1.0
-                        && bounds.y0 - text.y1 <= 2.0 * slack
-                        && text.x0 <= bounds.x0 + 1.0;
-                    beside || above
-                });
+                        && center <= bounds.y1 + slack
+                })
+            });
             let after = || {
                 children[slot + 1..]
                     .iter()

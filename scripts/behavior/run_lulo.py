@@ -1074,7 +1074,7 @@ class LuloRun:
         return {"checked": controls}
 
     PANE_TEXT_ROLES = {"label", "static", "heading", "caption"}
-    PANE_CONTROL_ROLES = {"check box", "toggle button", "switch", "slider", "combo box", "push button",
+    PANE_CONTROL_ROLES = {"check box", "toggle button", "switch", "slider", "combo box", "push button", "button",
                           "radio button", "spin button", "entry", "text"}
 
     def fact_pane_text(self) -> dict[str, Any]:

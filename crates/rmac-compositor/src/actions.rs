@@ -26,6 +26,7 @@ pub enum ActionKind {
     UnnameWorkspace,
     MoveWindowBy,
     CrossfadeScreen,
+    ResizeWindow,
 }
 
 /// Target region for [`Action::TileWindow`]: the halves offered by the green
@@ -274,6 +275,14 @@ pub enum Action {
     CrossfadeScreen {
         delay_ms: u16,
     },
+    /// Give floating `window` this size in logical pixels, keeping its
+    /// top-left corner. A new third-party window bigger than the visible
+    /// frame is shrunk this way ([`crate::placement`]).
+    ResizeWindow {
+        window: WindowId,
+        width: Distance,
+        height: Distance,
+    },
 }
 
 impl Action {
@@ -298,6 +307,7 @@ impl Action {
             Self::UnnameWorkspace { .. } => ActionKind::UnnameWorkspace,
             Self::MoveWindowBy { .. } => ActionKind::MoveWindowBy,
             Self::CrossfadeScreen { .. } => ActionKind::CrossfadeScreen,
+            Self::ResizeWindow { .. } => ActionKind::ResizeWindow,
         }
     }
 }

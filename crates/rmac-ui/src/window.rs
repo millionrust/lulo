@@ -1581,7 +1581,7 @@ mod fit_tests {
             super::reserved_edges(&compositor, &output_id, &bottom_dock);
         assert_eq!(top, rmac_top_bar::BAR_HEIGHT as f32);
         assert_eq!((right, left), (0.0, 0.0));
-        assert_eq!(bottom, 64.0); // default tile size + shelf padding
+        assert_eq!(bottom, 89.0); // default 64 pt tiles: shelf and its margin
 
         let left_dock = rmac_shell_settings::DockSettings {
             placement: rmac_shell_settings::DockPlacement::Left,
@@ -1590,7 +1590,7 @@ mod fit_tests {
         };
         let (_, right, bottom, left) = super::reserved_edges(&compositor, &output_id, &left_dock);
         assert_eq!((right, bottom), (0.0, 0.0));
-        assert_eq!(left, 64.0);
+        assert_eq!(left, 89.0);
 
         let hidden_dock = rmac_shell_settings::DockSettings {
             reserve_space: false,

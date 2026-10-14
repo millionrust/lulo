@@ -71,6 +71,7 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::UnnameWorkspace,
             domain::ActionKind::MoveWindowBy,
             domain::ActionKind::CrossfadeScreen,
+            domain::ActionKind::ResizeWindow,
         ],
     }
 }
@@ -206,6 +207,20 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
         domain::Action::CrossfadeScreen { delay_ms } => wire::Action::DoScreenTransition {
             delay_ms: Some(*delay_ms),
         },
+        // `convert_action_sequence` sends the height too.
+        domain::Action::ResizeWindow { window, width, .. } => wire::Action::SetWindowWidth {
+            id: Some(window.0),
+            change: wire::SizeChange::SetFixed(fixed_size(width.0)),
+        },
+    }
+}
+
+/// A logical size as niri's whole-pixel `SetFixed`, never below 1.
+fn fixed_size(size: f64) -> i32 {
+    if size.is_finite() {
+        size.round().clamp(1.0, f64::from(i32::MAX)) as i32
+    } else {
+        1
     }
 }
 
@@ -256,6 +271,13 @@ pub(super) fn convert_action_sequence(
             width,
             height,
         } => Ok(floating_frame(*window, (x.0, y.0, width.0, height.0))),
+        domain::Action::ResizeWindow { window, height, .. } => Ok(vec![
+            convert_action(action),
+            wire::Action::SetWindowHeight {
+                id: Some(window.0),
+                change: wire::SizeChange::SetFixed(fixed_size(height.0)),
+            },
+        ]),
         domain::Action::FullscreenWindow { window, .. }
         | domain::Action::CenterWindow { window } => Ok(vec![
             wire::Action::FocusWindow { id: window.0 },

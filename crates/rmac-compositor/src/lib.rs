@@ -8,6 +8,7 @@ mod actions;
 mod events;
 mod model;
 mod parking;
+pub mod placement;
 pub mod reveal;
 mod state;
 mod tile_history;

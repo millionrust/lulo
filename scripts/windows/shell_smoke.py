@@ -12,7 +12,9 @@ and private profile folders, then checks, with real input:
    tile gets the running dot;
 4. the bar shows Calculator's own menus over the menu pipe, and choosing
    Calculator ▸ About Calculator in the bar opens Calculator's About panel;
-5. a maximised window stops below the bar and above the Dock;
+5. a maximised window stops below the bar and above the Dock, and a
+   third-party window opened at 0,0 and 4000 × 4000 is moved into the work
+   area while a full-screen one is left alone;
 6. Alt+Space opens Spotlight, typing finds Text Editor and Return opens it
    (and, reported but not required, "notepad" finds Windows' Notepad
    through the Apps folder);
@@ -1291,6 +1293,12 @@ def check_shell(
         if memory is not None:
             measurements["lulo-shell"]["after_switcher_nc_private_mb"] = memory["private_mb"]
 
+        # 6g. A third-party window that opens at 0,0 and 4000 × 4000 is put
+        # inside the work area (macOS's visible frame); a full-screen one is
+        # left alone. Last, after the memory readings: a full-screen window
+        # makes the bar and the Dock step aside.
+        check_foreign_windows(screenshots, failures)
+
         # 7. Turning Lulo off gives the desktop back.
         stop_session(bin_dir, environment, session, failures)
         time.sleep(SETTLE_SECONDS)
@@ -1720,6 +1728,57 @@ PLACED_APPS = (
     "rmac-weather",
     "rmac-terminal",
 )
+
+
+def check_foreign_windows(screenshots: Path | None, failures: list[str]) -> None:
+    """scripts/windows/foreign_window.py's two windows: the huge one ends
+    inside the work area, the full-screen one still covers the screen."""
+    import sys
+
+    helper = Path(__file__).resolve().parent / "foreign_window.py"
+    process = subprocess.Popen([sys.executable, str(helper)])
+    try:
+        def found():
+            titled = {}
+            for hwnd in windows_of(process.pid, titled=True):
+                buffer = ctypes.create_unicode_buffer(128)
+                user32().GetWindowTextW(hwnd, buffer, 128)
+                titled[buffer.value] = hwnd
+            if "Lulo Foreign Window" in titled and "Lulo Foreign Full Screen" in titled:
+                return titled
+            return None
+
+        titled = wait_until(found, 20.0)
+        if titled is None:
+            failures.append("foreign_window.py opened no windows")
+            return
+        area = work_area()
+        big = titled["Lulo Foreign Window"]
+
+        def placed():
+            left, top, right, bottom = frame_bounds(big)
+            inside = left >= area[0] and top >= area[1] and right <= area[2] and bottom <= area[3]
+            return (left, top, right, bottom) if inside else None
+
+        inside = wait_until(placed, 10.0)
+        bounds = frame_bounds(big)
+        print(f"shell: third-party 4000 × 4000 window at 0,0 now {bounds}, work area {area}")
+        save(screenshots, "foreign-window")
+        if inside is None:
+            failures.append(f"a third-party window opened at 0,0 4000 × 4000 stayed at {bounds}, "
+                            f"outside the work area {area}")
+        width, height = screen_size()
+        full = frame_bounds(titled["Lulo Foreign Full Screen"])
+        print(f"shell: third-party full-screen window {full}, screen {width} × {height}")
+        if full[0] > 0 or full[1] > 0 or full[2] < width or full[3] < height:
+            failures.append(f"a full-screen third-party window was moved to {full}")
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        time.sleep(0.5)
 
 
 def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str]) -> None:

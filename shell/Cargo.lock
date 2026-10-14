@@ -6261,6 +6261,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-dock",
  "rmac-shell-layer",
  "rmac-shell-settings",
  "rmac-shell-ui",

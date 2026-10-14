@@ -221,7 +221,17 @@ prints every wheel message and frame; `RMAC_GPUI_SMOOTH_SCROLL=0` restores
 upstream's behaviour for measurements. `scripts/windows/scroll_smoke.py`
 (run by `launch_smoke.py` with Text Editor) injects a touchpad-like stream and
 three notches and checks that the scroll moves on every frame, without frame
-gaps above 1.5 vsync intervals, and keeps moving after the input stops.
+gaps above 1.5 vsync intervals (on a hardware GPU; CI's WARP only reports
+them), and keeps moving after the input stops.
+
+Measured on the owner's test laptop (AMD Radeon, 60 Hz, CI debug build), the
+same injected input before (`RMAC_GPUI_SMOOTH_SCROLL=0`) and after, two runs
+each: touchpad-like stream, per-frame step 18–27 px (CV 0.12–0.14) before,
+15.6–22.6 px (CV 0.06–0.07) after; glide after the input stops, 0 frames
+before, 83–88 frames (about 1.4 s) after; a notch, one 72 px jump before,
+11–12 eased frames after; mean frame interval 16.7 ms both, max gap
+18.8–19.0 ms after in the last two runs (one 25 ms gap in an earlier one,
+since fixed: a late frame no longer hands out nothing on the next).
 
 ## Results
 

@@ -292,7 +292,14 @@ impl SmoothScroll {
 
     /// The scroll this frame hands out, if any.
     pub(crate) fn frame(&self) -> Option<ScrollWheelEvent> {
-        let step = self.step_at(frame_time_ms());
+        // A frame that ran late used the time it ran; the vblank after it
+        // can be older than that, so such a frame uses its own time too
+        // rather than handing out nothing.
+        let mut now = frame_time_ms();
+        if self.last_frame.get().is_some_and(|last| now <= last) {
+            now = now_ms();
+        }
+        let step = self.step_at(now);
         (!is_zero(step)).then(|| ScrollWheelEvent {
             position: self.position.get(),
             delta: ScrollDelta::Pixels(point(px(step.x), px(step.y))),

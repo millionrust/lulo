@@ -686,6 +686,16 @@ impl Render for SettingsView {
             .on_action(cx.listener(|_, _: &crate::ShowSettings, window, _| {
                 window.activate_window();
             }))
+            // ⌘W (`CloseWindow` in the Mail key context) and Esc close
+            // Settings; neither did before the 2026-10-14 live robot run.
+            .on_action(cx.listener(|_, _: &crate::CloseWindow, window, _| {
+                window.remove_window();
+            }))
+            .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, _| {
+                if event.keystroke.key == "escape" {
+                    window.remove_window();
+                }
+            }))
             .bg(mac::window())
             .text_color(mac::text())
             .child(rmac_ui::title_bar_content(

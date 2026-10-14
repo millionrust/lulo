@@ -35,6 +35,7 @@ STEP_KINDS = {
     "click_key",
     "capture",
     "focus_desktop",
+    "focus_window",
     "relaunch",
     "drag_in_window",
 }

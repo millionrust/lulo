@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "files/panels-close",
+  "observations": {
+    "toolbar_open": {"windows": {"count": 2}},
+    "toolbar_closed": {"windows": {"count": 1}},
+    "preview_closed": {"windows": {"count": 1}}
+  }
+}

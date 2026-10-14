@@ -81,14 +81,12 @@ pub fn key_face(key: Key) -> KeyFace {
 }
 
 pub fn key_name(key: Key) -> &'static str {
-    const DIGIT_NAMES: [&str; 10] = [
-        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-    ];
+    const DIGIT_NAMES: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
     match key {
         Key::Digit(digit) => DIGIT_NAMES[usize::from(digit.min(9))],
-        Key::Decimal => "decimal point",
-        Key::Clear => "clear",
-        Key::Backspace => "delete",
+        Key::Decimal => "Point",
+        Key::Clear => "All Clear",
+        Key::Backspace => "Delete",
         Key::Swap => "swap units",
     }
 }

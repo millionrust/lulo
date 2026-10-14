@@ -272,6 +272,9 @@ class Run:
         self.keys = wlinput.Wayland({**self.env, "WAYLAND_DISPLAY": self.sway_display,
                                      "RMAC_BEHAVIOR_NESTED": "1"})
 
+        # The visible frame as the Dock changes below.
+        current_area = area
+
         # 1. GTK 4 at 4000 × 4000.
         gtk = self.spawn([*me, "--gtk4", "org.example.ForeignBig"], "gtk4", gtk_env)
         window = self.wait_for(lambda: self.window("org.example.ForeignBig"))
@@ -375,6 +378,7 @@ class Run:
             self.check("the window sits just above the Dock", self.inside(before_dock, area), f"frame {before_dock}")
             self.set_dock_tile_size(128.0)
             big = self.visible(BIG_DOCK)
+            current_area = big
 
             def above_big_dock():
                 current = self.window_by_id(first)
@@ -412,9 +416,9 @@ class Run:
             def filled():
                 current = self.window_by_id(target)
                 frame = self.frame(current) if current else None
-                return frame if frame and all(abs(a - b) <= SLACK for a, b in zip(frame, area)) else None
+                return frame if frame and all(abs(a - b) <= SLACK for a, b in zip(frame, current_area)) else None
             self.check("Zoom fills the visible frame", self.wait_for(filled, 10),
-                       f"frame {self.frame(self.window_by_id(target))} visible {area}")
+                       f"frame {self.frame(self.window_by_id(target))} visible {current_area}")
             subprocess.run([mission_control, "zoom"], env=self.env, capture_output=True, timeout=10, check=False)
 
             def restored():

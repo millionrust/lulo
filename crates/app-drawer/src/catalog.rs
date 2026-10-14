@@ -186,6 +186,28 @@ fn is_app_drawer(desktop_id: &str) -> bool {
     desktop_id.strip_suffix(".desktop").unwrap_or(desktop_id) == rmac_apps::identity::APP_DRAWER
 }
 
+/// The last scanned catalog, kept for the process so Apps opens with its
+/// tiles already known instead of in a loading state. On Windows the shell
+/// fills it while idle and refreshes it on change notifications
+/// (`service::prewarm`); an open window refreshes it too.
+#[derive(Default)]
+pub(crate) struct CatalogCache {
+    pub(crate) apps: Option<Vec<App>>,
+}
+
+impl gpui::Global for CatalogCache {}
+
+pub(crate) fn cached(cx: &gpui::App) -> Option<Vec<App>> {
+    cx.try_global::<CatalogCache>()
+        .and_then(|cache| cache.apps.clone())
+}
+
+pub(crate) fn store(apps: &[App], cx: &mut gpui::App) {
+    cx.set_global(CatalogCache {
+        apps: Some(apps.to_vec()),
+    });
+}
+
 pub(crate) fn signal_change(sender: &async_channel::Sender<()>) {
     let _ = sender.try_send(());
 }

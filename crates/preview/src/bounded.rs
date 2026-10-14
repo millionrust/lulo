@@ -232,24 +232,13 @@ mod tests {
     fn output_past_the_cap_is_refused() {
         // cmd.exe starts at once; PowerShell's start-up alone can pass a
         // short timeout on a loaded runner and report TimedOut instead.
+        // Separate words, so none needs quoting on the command line.
+        let words = [
+            "/d", "/c", "for", "/L", "%i", "in", "(0,0,1)", "do", "@echo", "x",
+        ];
         let result = run(
             "cmd.exe",
-            // Separate words, so none needs quoting on the command line.
-            [
-                "/d",
-                "/c",
-                "for",
-                "/L",
-                "%i",
-                "in",
-                "(0,0,1)",
-                "do",
-                "@echo",
-                "0123456789",
-            ]
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+            words.into_iter().map(Into::into).collect(),
             Duration::from_secs(60),
             4096,
         );

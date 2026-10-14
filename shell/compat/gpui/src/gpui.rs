@@ -45,6 +45,7 @@ pub mod profiler;
 #[expect(missing_docs)]
 pub mod queue;
 mod rmac_resize;
+mod rmac_touch;
 mod scene;
 mod shared_uri;
 mod style;
@@ -141,6 +142,7 @@ pub use profiler::*;
 #[cfg(any(target_os = "windows", target_os = "linux", target_family = "wasm"))]
 pub use queue::{PriorityQueueReceiver, PriorityQueueSender};
 pub use refineable::*;
+pub use rmac_touch::*;
 pub use scene::*;
 pub use shared_uri::*;
 use std::{any::Any, future::Future};

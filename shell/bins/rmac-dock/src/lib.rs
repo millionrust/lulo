@@ -5460,6 +5460,7 @@ mod dock {
             .id("dock-separator-main")
             .role(Role::Button)
             .aria_label("Dock separator")
+            .touch_drag()
             .flex()
             .items_center()
             .justify_center()

@@ -95,6 +95,11 @@ mod bar {
     const STATUS_PAD: f32 = 10.0;
     const CLOCK_DATE_TIME_GAP: f32 = 7.0;
     const SLOT_HEIGHT: f32 = 22.0;
+    /// On touch, status items reach to the bar's edges (ADR 0028); the
+    /// footprint stays the same, so nothing moves.
+    fn touch_reach() -> f32 {
+        rmac_shell_ui::touch::touch_slop().min((BAR_HEIGHT - SLOT_HEIGHT) / 2.0)
+    }
     /// macOS opens a menu with nothing highlighted until hover or arrow keys.
     const NO_ITEM: usize = usize::MAX;
     const MENU_TEXT_SIZE: f32 = 13.0;
@@ -4964,12 +4969,14 @@ mod bar {
                                         _ => None,
                                     };
                                     let slots = self.status_slots.clone();
+                                    let reach = touch_reach();
                                     let mut item = div()
                                         .id(format!("status-{}-{index}", self.display_id))
                                         .role(Role::Button)
                                         .aria_label(indicator.accessible)
                                         .relative()
-                                        .h(px(SLOT_HEIGHT))
+                                        .h(px(SLOT_HEIGHT + 2.0 * reach))
+                                        .my(px(-reach))
                                         .flex()
                                         .items_center()
                                         .gap(px(5.0))
@@ -5045,7 +5052,8 @@ mod bar {
                                 .id(format!("spotlight-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("Spotlight")
-                                .h(px(SLOT_HEIGHT))
+                                .h(px(SLOT_HEIGHT + 2.0 * touch_reach()))
+                                .my(px(-touch_reach()))
                                 .px(px(STATUS_PAD))
                                 .flex()
                                 .items_center()

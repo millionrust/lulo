@@ -1,15 +1,20 @@
 {
-  "title": "Mail: Settings… (⌘,) opens with no mail account set up",
+  "title": "Mail: Settings… (⌘,) opens with no mail account set up, and ⌘W closes it",
   "app": "mail",
   "launch": {"no_fixture": true},
   "lulo_only": true,
   "steps": [
     {"key": "cmd-,", "settle": 1.2},
-    {"observe": "settings_open", "facts": ["windows"]}
+    {"observe": "settings_open", "facts": ["windows"]},
+    {"key": "cmd-w", "settle": 1.2},
+    {"observe": "settings_closed", "facts": ["windows"]}
   ],
   "omit": [
     "settings_open.windows.front",
     "settings_open.windows.titles",
-    "settings_open.windows.fullscreen"
+    "settings_open.windows.fullscreen",
+    "settings_closed.windows.front",
+    "settings_closed.windows.titles",
+    "settings_closed.windows.fullscreen"
   ]
 }

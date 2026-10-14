@@ -1,0 +1,22 @@
+{
+  "title": "Files: Customise Toolbar and Preview Options close on ⌘W once they are the key window",
+  "app": "files",
+  "lulo_only": true,
+  "launch": {"folder": "."},
+  "steps": [
+    {"menu_action": "finder::CustomiseToolbar", "settle": 1.2},
+    {"observe": "toolbar_open", "facts": ["windows"]},
+    {"focus_window": "Customise Toolbar", "settle": 0.6},
+    {"key": "cmd-w", "settle": 1.2},
+    {"observe": "toolbar_closed", "facts": ["windows"]},
+    {"menu_action": "finder::ShowPreviewOptions", "settle": 1.2},
+    {"focus_window": "Preview Options", "settle": 0.6},
+    {"key": "escape", "settle": 1.2},
+    {"observe": "preview_closed", "facts": ["windows"]}
+  ],
+  "omit": [
+    "toolbar_open.windows.front", "toolbar_open.windows.titles", "toolbar_open.windows.fullscreen",
+    "toolbar_closed.windows.front", "toolbar_closed.windows.titles", "toolbar_closed.windows.fullscreen",
+    "preview_closed.windows.front", "preview_closed.windows.titles", "preview_closed.windows.fullscreen"
+  ]
+}

@@ -91,6 +91,8 @@ pub(crate) fn show(kind: MetricWindowKind, monitor: Entity<MonitorView>, cx: &mu
     match cx.open_window(options, move |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| MetricWindowView::new(kind, monitor, window, cx));
+        let focus = view.read(cx).focus.clone();
+        window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
     }) {
         Ok(handle) => OPEN.with(|open| open.borrow_mut()[kind.index()] = Some(handle)),
@@ -238,8 +240,18 @@ impl Render for MetricWindowView {
                 }
             },
         };
+        // ⌘W (`Close` in this key context, as in the main window) and Esc
+        // close the floating window. Neither did before the 2026-10-14 live
+        // robot run: the window had no key context and no focus.
         div()
             .track_focus(&self.focus)
+            .key_context("ActivityMonitor")
+            .on_action(cx.listener(|_, _: &crate::Close, window, _| window.remove_window()))
+            .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, window, _| {
+                if event.keystroke.key == "escape" {
+                    window.remove_window();
+                }
+            }))
             .size_full()
             .v_flex()
             .bg(mac::window())

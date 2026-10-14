@@ -974,7 +974,7 @@ Automatic Mac-vs-Lulo capture pass (index: docs/ui-audit-2026-10-06.md). Mac: ma
 
 ## Bugs found by the live robot
 
-These were found on 2026-10-13 by `scripts/robot/` (docs/behavior-suite.md, "Live robot"), which drove the installed 0.9.0~beta.1-38 build in the owner's real session. Each fix is pending the owner's next install, except where it says otherwise.
+These were found on 2026-10-13 by `scripts/robot/` (docs/behavior-suite.md, "Live robot"), which drove the installed 0.9.0~beta.1-38 build in the owner's real session. On 2026-10-14 the robot ran again on the dev `8fa45614` install. ROBOT-01, 02, 04, 05, 06 and 08 no longer reproduce live: System Monitor did not crash, every app exited on ⌘Q, every Settings window closed, Mail Settings opened, and typing in Settings Search worked after About. ROBOT-14 to ROBOT-16 are that run's new findings.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
@@ -991,6 +991,10 @@ These were found on 2026-10-13 by `scripts/robot/` (docs/behavior-suite.md, "Liv
 | ROBOT-11 | P3 | S | Open | Calculator ▸ View ▸ RPN Mode toggles its checkmark but Basic's keypad and display look the same, so nothing shows that RPN is on. | `crates/calculator/src/view.rs` |
 | ROBOT-12 | P3 | S | Open | Spotlight "dark mode" offers only Search in Files. There is no Appearance pane or Dark Mode command row. | `crates/rmac-launcher-providers` |
 | ROBOT-13 | P2 | M | Open | niri runs its key binds only for physical keyboards. Keys from a `zwp_virtual_keyboard_v1` go straight to the focused client, so an on-screen keyboard cannot use Lulo's global shortcuts (⌘Space, ⌃F2, ⌃F3, ⌘Tab). This matters on the touchscreen laptop (hardware-adaptive). The robot works around it by spawning what each bind runs. | niri config / compositor |
+| ROBOT-14 | P1 | S | Fixed (branch `op/robot-ubuntu-2`) | Each time Control Centre opened, it started another `pw-dump --monitor` that never stopped: 3 opens left 3, and 3 more open/close cycles took it to 7. Each closed panel's `rmac_shell_runtime::watch` task was joined with its update consumer, so it outlived the panel. The task now ends when the panel is released (`watch_while_open`, plus a release hook that closes the update channel), and dropping it kills the monitor (`kill_on_drop`). Unit test: `a_closed_panel_drops_its_system_watcher`. The robot's shell tour now fails if the monitor count grows. | `crates/quick-settings-app/src/view.rs`, `scripts/robot/shell_tour.py` |
+| ROBOT-15 | P2 | S | Fixed (branch `op/robot-ubuntu-2`) | System Monitor's CPU Usage, CPU History and GPU History windows ignored ⌘W and Esc: no key context and no focus. Test: `system-monitor/metric-windows` now also checks ⌘W. | `crates/activity-monitor/src/floating_windows.rs` |
+| ROBOT-16 | P2 | S | Fixed (branch `op/robot-ubuntu-2`) | Files' Customise Toolbar and Preview Options panels, and Mail Settings (which opens since ROBOT-06), ignored ⌘W and Esc once key. Tests: `files/panels-close` (with a new `focus_window` scenario step) and `mail/settings-without-account` (now also checks ⌘W). | `crates/finder/src/view/{customise_toolbar,preview_options}.rs`, `crates/mail/src/settings_view.rs`, `scripts/behavior/{run_lulo,scenario}.py` |
+| ROBOT-17 | P3 | S | Open | Clock's Edit ▸ Transformations and Spelling and Grammar ▸ Check Document Now are enabled with no text field focused, and do nothing. macOS disables them. | `crates/clock` / rmac-ui menu validation |
 
 ## Found by the Mac-vs-Lulo robot
 

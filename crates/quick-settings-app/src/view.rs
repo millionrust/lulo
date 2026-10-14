@@ -266,6 +266,13 @@ impl QuickSettingsView {
         .detach();
 
         let (snapshot_tx, snapshot_rx) = async_channel::bounded(4);
+        // Closing the channel when the panel is released wakes the consumer
+        // below at once, rather than at the next system update.
+        let closer = snapshot_rx.clone();
+        cx.on_release(move |_, _| {
+            closer.close();
+        })
+        .detach();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let watch = rmac_shell_runtime::watch(snapshot_tx);
             let consume = async {
@@ -278,7 +285,9 @@ impl QuickSettingsView {
                     }
                 }
             };
-            let (result, ()) = futures_util::join!(watch, consume);
+            let Some(result) = watch_while_open(watch, consume).await else {
+                return;
+            };
             if result.is_err() {
                 let _ = this.update(cx, |this, cx| {
                     this.stream_error = Some(
@@ -1103,10 +1112,74 @@ fn save_color_scheme(dark: bool, host: &rmac_appearance::Snapshot) -> Result<(),
     Ok(())
 }
 
+/// Run a panel's system watcher only while the panel consumes its updates.
+/// When `consume` ends (the panel was released), `watch` is dropped, which
+/// ends its system monitors (`pw-dump --monitor` is `kill_on_drop`). Joining
+/// the two instead kept every closed panel's watchers alive, so each Control
+/// Centre open left one more `pw-dump` running for good (live robot,
+/// 2026-10-14). `Some` is the watcher's own result if it stopped first.
+async fn watch_while_open<W, C>(watch: W, consume: C) -> Option<W::Output>
+where
+    W: std::future::Future,
+    C: std::future::Future<Output = ()>,
+{
+    futures_util::pin_mut!(watch, consume);
+    match futures_util::future::select(watch, consume).await {
+        futures_util::future::Either::Left((result, _)) => Some(result),
+        futures_util::future::Either::Right(((), _)) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rmac_ui::SLIDER_BULGE_MS;
+
+    #[test]
+    fn a_closed_panel_drops_its_system_watcher() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        struct Monitor(Arc<AtomicBool>);
+        impl Drop for Monitor {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let monitor = Monitor(dropped.clone());
+        // A watcher that never finishes on its own, like `pw-dump --monitor`.
+        let watch = async move {
+            let _monitor = monitor;
+            futures_util::future::pending::<Result<(), ()>>().await
+        };
+        let (tx, rx) = async_channel::bounded::<()>(1);
+        let consume = async move { while rx.recv().await.is_ok() {} };
+        rx_closer(tx);
+        // Both futures settle on their first poll here, so no executor is
+        // needed: the closed channel ends `consume` at once.
+        let result = futures_util::FutureExt::now_or_never(watch_while_open(watch, consume));
+        assert_eq!(result, Some(None));
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "the watcher must not outlive its panel"
+        );
+
+        // A watcher that fails first still reports its error.
+        let (_tx, rx) = async_channel::bounded::<()>(1);
+        let consume = async move { while rx.recv().await.is_ok() {} };
+        let failed = futures_util::FutureExt::now_or_never(watch_while_open(
+            async { Err::<(), ()>(()) },
+            consume,
+        ));
+        assert_eq!(failed, Some(Some(Err(()))));
+    }
+
+    /// The panel's release closes the update channel.
+    fn rx_closer(tx: async_channel::Sender<()>) {
+        tx.close();
+    }
 
     #[test]
     fn slider_bulges_track_each_slider_independently() {

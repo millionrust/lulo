@@ -36,6 +36,10 @@ impl FinderView {
                         owner: view_owner,
                         focus: cx.focus_handle(),
                     });
+                    // Focus inside the panel's window so Esc and ⌘W reach it
+                    // once it is key (2026-10-14 live robot).
+                    let focus = view.read(cx).focus.clone();
+                    window.focus(&focus, cx);
                     cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
                 });
                 let _ = owner.update(cx, |this, cx| {
@@ -172,10 +176,14 @@ impl Render for PreviewOptionsWindow {
             .ok();
         div()
             .size_full()
+            .track_focus(&self.focus)
             .key_context("Finder")
             .on_action(cx.listener(|this, _: &ShowPreviewOptions, window, cx| {
                 this.close(window, cx);
             }))
+            // ⌘W is Finder's Close Tab in this key context; here it closes
+            // the panel.
+            .on_action(cx.listener(|this, _: &CloseTab, window, cx| this.close(window, cx)))
             .on_action(
                 cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| this.close(window, cx)),
             )

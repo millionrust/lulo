@@ -1035,7 +1035,11 @@ mod dock {
                 #[cfg(windows)]
                 rmac_shell_layer::windows::resize_layer(cx, material, size);
                 #[cfg(not(windows))]
-                let _ = material.update(cx, |_, window, _| window.resize(size));
+                let _ = material.update(cx, |_, window, _| {
+                    window.resize(size);
+                    // The new layer size is committed with the next frame.
+                    window.refresh();
+                });
             });
         }
 

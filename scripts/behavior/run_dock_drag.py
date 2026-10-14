@@ -271,7 +271,9 @@ def inner(args: argparse.Namespace) -> int:
         left = (run.width - width) / 2
         offsets = [(left, (dock_top - height) / 2), (left, (run.height - height) / 2)]
         kept_from_apps = None
-        rim_y = int(files_box[1] - 6) if files_box else run.height - 80
+        # The shelf's middle row: the material's ends are its rim there, not
+        # its rounded corners.
+        rim_y = int(files[1])
         resting = material_span(run.capture("material-resting"), rim_y)
         widened = None
         for left, top in offsets:
@@ -287,7 +289,7 @@ def inner(args: argparse.Namespace) -> int:
                                                start[1] + (target[1] - start[1]) * part),
                              run.parent_width, run.parent_height)
                 time.sleep(0.016)
-            time.sleep(0.8)
+            time.sleep(1.5)
             widened = material_span(run.capture("material-slot-open"), rim_y)
             pointer.button(False)
             time.sleep(0.4)

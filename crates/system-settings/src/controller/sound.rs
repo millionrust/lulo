@@ -94,6 +94,13 @@ fn audio_choice_row(
 }
 
 impl Settings {
+    pub(super) fn set_sound_shows_input(&mut self, input: bool, cx: &mut Context<Self>) {
+        if self.sound_shows_input != input {
+            self.sound_shows_input = input;
+            cx.notify();
+        }
+    }
+
     pub(super) fn apply_sound_policy_change(
         &mut self,
         change: SoundPolicyChange,

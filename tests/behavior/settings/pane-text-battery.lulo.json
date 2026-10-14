@@ -5,11 +5,10 @@
   "observations": {
     "pane": {
       "pane_text": {
-        "labelled": 15,
+        "labelled": 10,
         "labels": [
           "Battery Health",
-          "Power Source",
-          "Status"
+          "Show Detail"
         ]
       }
     }

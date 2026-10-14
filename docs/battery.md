@@ -74,18 +74,44 @@ switch that implies hidden write support.
 
 ## Recent battery history
 
-History is capability-gated by `HasHistory`. The service requests only UPower's
-persistent `charge` series for the previous 24 hours, asks for approximately 96
-points, rejects invalid timestamps and out-of-range or non-finite percentages,
-orders and de-duplicates samples, and enforces a final 96-point bound. It first
-uses the aggregate display device and falls back only to the single physical
-battery, where the series still represents the displayed battery.
+History is capability-gated by `HasHistory`. The service requests UPower's
+persistent `charge` series twice: the previous 24 hours at about 96 points
+(the Last 24 Hours view, 15-minute bars), and the previous 10 days at about
+240 points (Last 10 Days, hourly bars). It rejects invalid timestamps and
+out-of-range or non-finite percentages, orders and de-duplicates samples, and
+bounds each series. It first uses the aggregate display device and falls back
+only to the single physical battery. A failed 10-day read leaves the 24-hour
+view.
 
-The pane downsamples to at most 48 bars while preserving the first and last
-sample. It provides textual minimum, maximum, and latest values and separately
-explains authoritative-but-empty history, unsupported history, and temporary
-read failure. rmac does not persist or synthesize this history and does not
-infer application usage or energy categories from it.
+The pane shows, as macOS 26 does, "Last charged to N%" (the latest charging or
+fully charged sample) with "Today/Yesterday, time", the Battery Level chart
+with a marker under each slot in which the battery charged, and the Screen On
+Usage chart. It still explains unsupported history and temporary read failure.
+
+## Screen On Usage
+
+Nothing samples the screen. The session's lock coordinator
+(`rmac-lock-coordinator`) appends one line to
+`$XDG_STATE_HOME/rmac/screen-on.log` when it starts (`on`), when logind
+announces sleep (`off`) and wake (`on`), and when it announces shutdown
+(`off`). Lines older than 11 days are dropped whenever the file passes 64 KiB.
+A session that ended without an `off` (power loss, a crash) is closed at its
+last UPower battery sample plus ten minutes, or counted as nothing when there
+is none. The chart shows minutes per hour (24 hours) or hours per day (10
+days). Windows records nothing, and has no history group.
+
+## Low Power Mode
+
+Low Power Mode (Never, Always, Only on Battery, Only on Power Adapter) is kept
+in `$XDG_CONFIG_HOME/rmac/low-power-mode` and carried out through
+power-profiles-daemon: power-saver when the choice wants it, balanced when it
+no longer does. Another profile chosen elsewhere (High Power in Control
+Centre) is left alone while Low Power is not wanted. Settings applies a choice
+at once; the shell's status reader applies the two power-source choices again
+whenever the adapter is plugged or unplugged, and once at login, so they work
+with Settings closed. Without a saved choice the pane shows Always when
+power-saver is active and Never otherwise. Windows offers Never and Always
+through its power mode.
 
 ## Explicitly remaining
 

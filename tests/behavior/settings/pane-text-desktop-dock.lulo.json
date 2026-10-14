@@ -9,9 +9,9 @@
         "labels": [
           "Dock",
           "Position on screen",
-          "Hot Corners",
-          "Desktop",
-          "Windows"
+          "Hot Corners…",
+          "Desktop & Stage Manager",
+          "Minimise windows using"
         ],
         "controls": [
           "Automatically hide and show the Dock",

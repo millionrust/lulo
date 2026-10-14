@@ -263,9 +263,20 @@ fn reveal_desktop_moves_windows_by_a_distance_and_crossfades() {
         serde_json::to_string(&faded).unwrap(),
         r#"[{"DoScreenTransition":{"delay_ms":300}}]"#
     );
+    let resized = convert_action_sequence(&domain::Action::ResizeWindow {
+        window: domain::WindowId(7),
+        width: domain::Distance(1199.6),
+        height: domain::Distance(745.0),
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&resized).unwrap(),
+        r#"[{"SetWindowWidth":{"id":7,"change":{"SetFixed":1200}}},{"SetWindowHeight":{"id":7,"change":{"SetFixed":745}}}]"#
+    );
     let supported = action_capabilities();
     assert!(supported.supports(domain::ActionKind::MoveWindowBy));
     assert!(supported.supports(domain::ActionKind::CrossfadeScreen));
+    assert!(supported.supports(domain::ActionKind::ResizeWindow));
 }
 
 #[test]

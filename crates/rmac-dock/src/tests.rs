@@ -393,7 +393,7 @@ fn surface_plan_is_sorted_scaled_and_rejects_unrenderable_outputs() {
 }
 
 #[test]
-fn surface_plan_keeps_reservation_stable_across_magnification_and_autohide() {
+fn surface_plan_keeps_reservation_stable_across_magnification_and_gives_it_back_when_hidden() {
     let compositor = rmac_compositor::Snapshot {
         outputs: vec![output("eDP-1", true)],
         overview_visible: true,
@@ -412,7 +412,8 @@ fn surface_plan_keeps_reservation_stable_across_magnification_and_autohide() {
 
     assert_eq!(surface.base_thickness, 64.0);
     assert_eq!(surface.maximum_thickness, 88.0);
-    assert_eq!(surface.exclusive_zone, 64.0);
+    // macOS gives a hidden Dock's space back to windows.
+    assert_eq!(surface.exclusive_zone, 0.0);
     assert_eq!(surface.reveal_edge_thickness, HIDDEN_EDGE_THICKNESS);
     assert!(!surface.keyboard_interactive);
     assert!(surface.autohide);
@@ -429,7 +430,42 @@ fn surface_plan_keeps_reservation_stable_across_magnification_and_autohide() {
     )
     .expect("surface-provided magnification is valid");
     assert!(layout.items[0].size > surface.magnification.icon_size);
-    assert_eq!(surface.exclusive_zone, surface.base_thickness);
+
+    // Shown, the reservation is the resting shelf and its margin (89 at
+    // the default 64 pt tiles), whatever magnification does.
+    let shown = surface_descriptions(
+        &compositor,
+        &rmac_shell_settings::DockSettings {
+            autohide: false,
+            ..settings.clone()
+        },
+        None,
+        false,
+    )
+    .expect("surface policy is valid")
+    .remove(0);
+    assert_eq!(shown.exclusive_zone, 89.0);
+    assert_eq!(
+        reserved_thickness(&rmac_shell_settings::DockSettings {
+            autohide: false,
+            tile_size: 128.0,
+            ..settings.clone()
+        }),
+        178.0
+    );
+    let reservation = work_area_reservation(
+        &rmac_shell_settings::DockSettings {
+            autohide: false,
+            placement: rmac_shell_settings::DockPlacement::Right,
+            ..settings.clone()
+        },
+        29.0,
+    );
+    assert_eq!(reservation.dock, 89.0);
+    assert_eq!(
+        reservation.dock_edge,
+        rmac_compositor::placement::DockEdge::Right
+    );
 
     let no_reservation = surface_descriptions(
         &compositor,
@@ -984,6 +1020,54 @@ fn drag_reorder_moves_to_a_bounded_persisted_index() {
             .collect::<Vec<_>>(),
         ["terminal.desktop", "notes.desktop", "finder.desktop"]
     );
+}
+
+#[test]
+fn a_drag_onto_the_dock_keeps_the_app_at_the_drop_index() {
+    let pinned = vec![
+        rmac_shell_settings::AppId("finder.desktop".into()),
+        rmac_shell_settings::AppId("notes.desktop".into()),
+    ];
+    let ids = |apps: &[rmac_shell_settings::AppId]| {
+        apps.iter()
+            .map(|app_id| app_id.0.clone())
+            .collect::<Vec<_>>()
+    };
+    let kept = apply_pin_command(
+        &pinned,
+        &PinCommand::PinAt {
+            app_id: "terminal.desktop".into(),
+            index: 1,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        ids(&kept),
+        ["finder.desktop", "terminal.desktop", "notes.desktop"]
+    );
+    // Past the end keeps it last.
+    let last = apply_pin_command(
+        &pinned,
+        &PinCommand::PinAt {
+            app_id: "terminal.desktop".into(),
+            index: usize::MAX,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        ids(&last),
+        ["finder.desktop", "notes.desktop", "terminal.desktop"]
+    );
+    // An app already kept moves rather than appearing twice.
+    let moved = apply_pin_command(
+        &pinned,
+        &PinCommand::PinAt {
+            app_id: "notes".into(),
+            index: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(ids(&moved), ["notes.desktop", "finder.desktop"]);
 }
 
 #[test]

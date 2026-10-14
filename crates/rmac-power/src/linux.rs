@@ -11,6 +11,11 @@ pub(super) const HISTORY_TIMESPAN_SECONDS: u32 = 24 * 60 * 60;
 #[cfg(any(target_os = "linux", test))]
 pub(super) const HISTORY_POINT_LIMIT: usize = 96;
 #[cfg(target_os = "linux")]
+pub(super) const LONG_HISTORY_TIMESPAN_SECONDS: u32 = 10 * 24 * 60 * 60;
+/// One point an hour over the 10 days.
+#[cfg(target_os = "linux")]
+pub(super) const LONG_HISTORY_POINT_LIMIT: usize = 240;
+#[cfg(target_os = "linux")]
 pub(super) const THRESHOLD_VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 #[cfg(target_os = "linux")]
 pub(super) const THRESHOLD_VERIFY_INTERVAL: std::time::Duration =
@@ -261,17 +266,39 @@ pub(super) fn history_from_device(device: &zbus::blocking::Proxy<'_>) -> Option<
             return Some(BatteryHistory {
                 availability: BatteryHistoryAvailability::TemporarilyUnavailable,
                 points: Vec::new(),
+                long_points: Vec::new(),
             });
         }
     };
+    // The 10-day record is optional: a failure leaves the 24-hour view.
+    let long_points = device
+        .call::<_, _, Vec<(u32, f64, u32)>>(
+            "GetHistory",
+            &(
+                "charge",
+                LONG_HISTORY_TIMESPAN_SECONDS,
+                LONG_HISTORY_POINT_LIMIT as u32,
+            ),
+        )
+        .map(|raw| normalize_history_to(raw, LONG_HISTORY_POINT_LIMIT))
+        .unwrap_or_default();
     Some(BatteryHistory {
         availability: BatteryHistoryAvailability::Available,
         points: normalize_history(raw),
+        long_points,
     })
 }
 
 #[cfg(any(target_os = "linux", test))]
 pub(super) fn normalize_history(raw: Vec<(u32, f64, u32)>) -> Vec<BatteryHistoryPoint> {
+    normalize_history_to(raw, HISTORY_POINT_LIMIT)
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn normalize_history_to(
+    raw: Vec<(u32, f64, u32)>,
+    limit: usize,
+) -> Vec<BatteryHistoryPoint> {
     let mut points = raw
         .into_iter()
         .filter(|(timestamp, value, _)| {
@@ -285,8 +312,8 @@ pub(super) fn normalize_history(raw: Vec<(u32, f64, u32)>) -> Vec<BatteryHistory
         .collect::<Vec<_>>();
     points.sort_by_key(|point| point.timestamp);
     points.dedup_by_key(|point| point.timestamp);
-    if points.len() > HISTORY_POINT_LIMIT {
-        points.drain(..points.len() - HISTORY_POINT_LIMIT);
+    if points.len() > limit {
+        points.drain(..points.len() - limit);
     }
     points
 }

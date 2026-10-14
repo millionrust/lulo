@@ -325,6 +325,9 @@ struct StagedFileDrag {
     window: WaylandWindowStatePtr,
     serial: u32,
     paths: Vec<PathBuf>,
+    /// rmac: offer only Copy, for items that must never be moved (an app's
+    /// desktop entry dragged out of Apps or Files' Applications).
+    copy_only: bool,
 }
 
 struct FileDragSource {
@@ -381,6 +384,17 @@ fn find_window(window: AnyWindowHandle) -> Option<WaylandWindowStatePtr> {
 /// Stage an item drag while its button or touch contact is held. The normal
 /// GPUI drag continues inside the window; crossing its edge starts Wayland DnD.
 pub fn stage_external_file_drag(paths: Vec<PathBuf>) -> bool {
+    stage_file_drag(paths, false)
+}
+
+/// rmac: [`stage_external_file_drag`] for items a drop may only copy, never
+/// move: an app's desktop entry dragged to the Dock (which keeps the app)
+/// or to a folder (which gets a copy of the launcher).
+pub fn stage_external_copy_drag(paths: Vec<PathBuf>) -> bool {
+    stage_file_drag(paths, true)
+}
+
+fn stage_file_drag(paths: Vec<PathBuf>, copy_only: bool) -> bool {
     FILE_DRAG_CLIENT.with(|slot| {
         let Some(client) = slot.borrow().upgrade() else {
             return false;
@@ -412,6 +426,7 @@ pub fn stage_external_file_drag(paths: Vec<PathBuf>) -> bool {
             window,
             serial,
             paths,
+            copy_only,
         });
         state.try_start_staged_file_drag(position, false);
         state.file_drag_source.is_some()
@@ -536,7 +551,7 @@ impl WaylandClientState {
         let Some(device) = self.data_device.as_ref() else {
             return;
         };
-        let copy = self.modifiers.alt;
+        let copy = staged.copy_only || self.modifiers.alt;
         let Some((uri_list, gnome_files)) = file_drag_payload(&staged.paths, copy) else {
             return;
         };
@@ -2685,7 +2700,7 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 }));
                 let drag_region =
                     window.hit_test_window_control() == Some(gpui::WindowControlArea::Drag);
-                let files_window = window.is_files_window();
+                let files_window = window.is_item_drag_window();
                 client.borrow_mut().touch = Some(TouchContact {
                     id,
                     window,

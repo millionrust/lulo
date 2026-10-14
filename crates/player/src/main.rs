@@ -131,20 +131,42 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
     cx.activate(true);
 }
 
-/// File ▸ Open…: the portal's open panel, then one window for the choice.
-pub(crate) fn choose_and_open(quit_if_cancelled: bool, cx: &mut App) {
-    cx.spawn(async move |cx| {
-        let chosen = rmac_portal::choose_media_files().await;
-        cx.update(|cx| match chosen {
-            Ok(paths) if !paths.is_empty() => open_window(paths, cx),
-            Ok(_) if quit_if_cancelled && cx.windows().is_empty() => cx.quit(),
-            Ok(_) => {}
-            Err(error) => {
-                eprintln!("rmac-player: {error}");
-                if cx.windows().is_empty() {
-                    cx.quit();
-                }
+/// What to do once the open panel closes.
+#[derive(Debug, PartialEq, Eq)]
+enum PanelOutcome {
+    Open(Vec<PathBuf>),
+    Stay,
+    Quit,
+}
+
+/// A cancelled panel leaves the app running, windowless, like QuickTime
+/// Player (MROBOT-05): File ▸ Open… is still in the menu bar. Only a panel
+/// that could not be shown at all quits an app with no windows.
+fn panel_outcome(chosen: Result<Vec<PathBuf>, String>, has_windows: bool) -> PanelOutcome {
+    match chosen {
+        Ok(paths) if !paths.is_empty() => PanelOutcome::Open(paths),
+        Ok(_) => PanelOutcome::Stay,
+        Err(error) => {
+            eprintln!("rmac-player: {error}");
+            if has_windows {
+                PanelOutcome::Stay
+            } else {
+                PanelOutcome::Quit
             }
+        }
+    }
+}
+
+/// File ▸ Open…: the portal's open panel, then one window for the choice.
+pub(crate) fn choose_and_open(cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let chosen = rmac_portal::choose_media_files()
+            .await
+            .map_err(|error| error.to_string());
+        cx.update(|cx| match panel_outcome(chosen, !cx.windows().is_empty()) {
+            PanelOutcome::Open(paths) => open_window(paths, cx),
+            PanelOutcome::Stay => {}
+            PanelOutcome::Quit => cx.quit(),
         });
     })
     .detach();
@@ -161,7 +183,7 @@ fn main() {
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
             bind_keys(cx);
-            cx.on_action(|_: &OpenFile, cx| choose_and_open(false, cx));
+            cx.on_action(|_: &OpenFile, cx| choose_and_open(cx));
             rmac_ui::install_app_menu(PLAYER, cx);
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
@@ -170,9 +192,37 @@ fn main() {
             })
             .detach();
             if Playlist::new(paths.clone()).is_empty() {
-                choose_and_open(true, cx);
+                choose_and_open(cx);
             } else {
                 open_window(paths, cx);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelling_the_launch_panel_keeps_the_app_running() {
+        assert_eq!(panel_outcome(Ok(Vec::new()), false), PanelOutcome::Stay);
+        assert_eq!(panel_outcome(Ok(Vec::new()), true), PanelOutcome::Stay);
+    }
+
+    #[test]
+    fn a_choice_opens_and_a_failed_panel_quits_only_when_windowless() {
+        let file = PathBuf::from("/tmp/clip.mp4");
+        assert_eq!(
+            panel_outcome(Ok(vec![file.clone()]), false),
+            PanelOutcome::Open(vec![file])
+        );
+        assert_eq!(
+            panel_outcome(Err("no portal".into()), false),
+            PanelOutcome::Quit
+        );
+        assert_eq!(
+            panel_outcome(Err("no portal".into()), true),
+            PanelOutcome::Stay
+        );
+    }
 }

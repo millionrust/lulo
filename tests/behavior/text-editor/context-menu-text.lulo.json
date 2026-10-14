@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "scenario": "text-editor/context-menu-text",
+  "platform": "Lulo local contract",
+  "observations": {
+    "menu": {
+      "menu": {
+        "present": true,
+        "items": ["Select All"]
+      }
+    },
+    "closed": {"menu": {"present": false}}
+  }
+}

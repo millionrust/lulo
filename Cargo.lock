@@ -6892,6 +6892,8 @@ dependencies = [
  "rmac-portal",
  "rmac-print",
  "rmac-print-linux",
+ "rmac-quick-look",
+ "rmac-spelling",
  "rmac-storage",
  "rmac-ui",
  "rmac-windows-resource-build",

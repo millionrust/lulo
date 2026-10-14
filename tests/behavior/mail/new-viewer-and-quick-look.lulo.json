@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "mail/new-viewer-and-quick-look",
+  "observations": {
+    "one": {"windows": {"count": 1, "front": "Mail", "titles": ["Mail"], "fullscreen": false}},
+    "two": {"windows": {"count": 2, "front": "Mail", "titles": ["Mail", "Mail"], "fullscreen": false}},
+    "quick_look": {"windows": {"count": 3, "front": "Quick Look", "titles": ["Quick Look", "Mail", "Mail"], "fullscreen": false}}
+  }
+}

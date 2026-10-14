@@ -15,6 +15,9 @@ pub use protocol::{
 use std::{fmt, io, time::Duration};
 pub use transport::Interrupt;
 use transport::Transport;
+
+/// A message's header block and, when the server sent it, its `RFC822.SIZE`.
+pub type SizedHeaders = (Vec<u8>, Option<u64>);
 use zeroize::Zeroize;
 
 const MAX_IDLE: Duration = Duration::from_secs(25 * 60);
@@ -325,10 +328,7 @@ impl Client {
 
     /// [`Self::fetch_headers`] plus the message's `RFC822.SIZE`, for the
     /// size Mail's list shows before the body is ever downloaded.
-    pub fn fetch_headers_sized(
-        &mut self,
-        uid: u32,
-    ) -> Result<Option<(Vec<u8>, Option<u64>)>, Error> {
+    pub fn fetch_headers_sized(&mut self, uid: u32) -> Result<Option<SizedHeaders>, Error> {
         let responses = self.command(&format!(
             "UID FETCH {uid} (UID RFC822.SIZE BODY.PEEK[HEADER])"
         ))?;

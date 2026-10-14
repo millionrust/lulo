@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "mail/find-in-message",
+  "observations": {
+    "closed": {"mail_viewer": {"find": null, "all_headers": false}},
+    "first": {"mail_viewer": {"find": "1 of 3", "all_headers": false}},
+    "second": {"mail_viewer": {"find": "2 of 3", "all_headers": false}},
+    "back": {"mail_viewer": {"find": "1 of 3", "all_headers": false}},
+    "done": {"mail_viewer": {"find": null, "all_headers": false}}
+  }
+}

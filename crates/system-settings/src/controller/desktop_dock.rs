@@ -294,37 +294,18 @@ impl Settings {
             enabled,
         )]));
 
-            // macOS keeps these behind a "Hot Corners…" sheet; rmac lists the
-            // four pop-ups in the pane. Only actions rmac can perform are
-            // offered (rmac_shell_settings::HotCornerAction).
-            cards.push(section_header("Hot Corners"));
-            let corners = snapshot.settings.hot_corners;
-            let mut corner_rows = Vec::new();
-            for corner in HotCorner::ALL {
-                let current = corner.get(&corners);
-                let choices = rmac_shell_settings::HotCornerAction::ALL
-                    .into_iter()
-                    .map(|action| {
-                        let corner_view = view.clone();
-                        choice(action.title(), action == current, move |_, cx| {
-                            corner_view.update(cx, |settings, cx| {
-                                settings
-                                    .apply_hot_corner_change(HotCornerChange { corner, action }, cx)
-                            });
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                let value = popup_value(&choices, current.title());
-                corner_rows.push(popup_row(
-                    corner.id(),
-                    corner.title(),
-                    None,
-                    value,
-                    choices,
-                    enabled,
-                ));
-            }
-            cards.push(card(corner_rows));
+            // macOS 26 keeps the corners behind "Hot Corners…" at the foot
+            // of the pane.
+            let corners_view = view.clone();
+            cards.push(footer_buttons(vec![push_button(
+                "dock-hot-corners",
+                "Hot Corners…",
+            )
+            .disabled(!enabled)
+            .on_click(move |_, _, cx| {
+                corners_view.update(cx, |settings, cx| settings.set_hot_corners_sheet(true, cx));
+            })
+            .into_any_element()]));
         }
 
         if snapshot.recovered_from_last_good || snapshot.migrated_from.is_some() {
@@ -341,5 +322,79 @@ impl Settings {
             ));
         }
         self.pane(cards)
+    }
+
+    pub(super) fn set_hot_corners_sheet(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.hot_corners_sheet != open {
+            self.hot_corners_sheet = open;
+            cx.notify();
+        }
+    }
+
+    /// The Hot Corners sheet: the four corner pop-ups and Done. Only
+    /// actions Lulo OS can perform are offered
+    /// (`rmac_shell_settings::HotCornerAction`).
+    pub(super) fn render_hot_corners_sheet(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.hot_corners_sheet {
+            return None;
+        }
+        let snapshot = self.shell_settings.as_ref()?;
+        let view = cx.entity();
+        let enabled = !self.shell_settings_busy;
+        let corners = snapshot.settings.hot_corners;
+        let mut corner_rows = Vec::new();
+        for corner in HotCorner::ALL {
+            let current = corner.get(&corners);
+            let choices = rmac_shell_settings::HotCornerAction::ALL
+                .into_iter()
+                .map(|action| {
+                    let corner_view = view.clone();
+                    choice(action.title(), action == current, move |_, cx| {
+                        corner_view.update(cx, |settings, cx| {
+                            settings.apply_hot_corner_change(HotCornerChange { corner, action }, cx)
+                        });
+                    })
+                })
+                .collect::<Vec<_>>();
+            let value = popup_value(&choices, current.title());
+            corner_rows.push(popup_row(
+                corner.id(),
+                corner.title(),
+                None,
+                value,
+                choices,
+                enabled,
+            ));
+        }
+        let body = div()
+            .v_flex()
+            .child(
+                div()
+                    .mb(px(12.0))
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::BOLD)
+                    .text_color(label())
+                    .child("Hot Corners"),
+            )
+            .child(card(corner_rows));
+        let done_view = view.clone();
+        Some(
+            settings_sheet(
+                "hot-corners-sheet",
+                460.0,
+                330.0,
+                None,
+                body.into_any_element(),
+                vec![sheet_default_button(
+                    "hot-corners-done",
+                    "Done",
+                    move |_, cx| {
+                        done_view
+                            .update(cx, |settings, cx| settings.set_hot_corners_sheet(false, cx));
+                    },
+                )],
+            )
+            .into_any_element(),
+        )
     }
 }

@@ -147,6 +147,16 @@ pub(super) fn hour_tick(timestamp: u64) -> String {
     }
 }
 
+/// Whether `timestamp` is a local whole hour divisible by three (the 24-hour
+/// axis's ticks: 12 A, 3, 6, 9, 12 P…).
+pub(super) fn is_three_hour_mark(timestamp: u64) -> bool {
+    use chrono::{Local, TimeZone as _, Timelike as _};
+    Local
+        .timestamp_opt(timestamp as i64, 0)
+        .single()
+        .is_some_and(|at| at.minute() == 0 && at.second() == 0 && at.hour() % 3 == 0)
+}
+
 /// "13 Oct" for the day axis.
 pub(super) fn day_tick(timestamp: u64) -> String {
     use chrono::{Local, TimeZone as _};

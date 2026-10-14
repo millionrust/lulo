@@ -405,6 +405,8 @@ pub(super) struct Settings {
     pub(super) sound_policy_error: Option<SharedString>,
     pub(super) sound_policy_generation: u64,
     pub(super) alert_volume: Entity<SliderState>,
+    /// Sound ▸ Output & Input shows the Input side.
+    pub(super) sound_shows_input: bool,
 
     // Battery and power profiles
     pub(super) power_loading: bool,
@@ -418,6 +420,7 @@ pub(super) struct Settings {
     /// The history shows the last 10 days instead of 24 hours.
     pub(super) battery_history_long: bool,
     pub(super) battery_health_sheet: bool,
+    pub(super) hot_corners_sheet: bool,
 
     // Displays
     pub(super) display_loading: bool,

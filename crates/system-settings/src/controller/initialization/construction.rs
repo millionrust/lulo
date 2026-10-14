@@ -394,6 +394,7 @@ impl Settings {
             sound_policy_error,
             sound_policy_generation: 0,
             alert_volume,
+            sound_shows_input: false,
 
             power_loading: true,
             power_busy: false,
@@ -403,6 +404,7 @@ impl Settings {
             screen_events: Vec::new(),
             battery_history_long: false,
             battery_health_sheet: false,
+            hot_corners_sheet: false,
 
             display_loading: true,
             display_busy: false,

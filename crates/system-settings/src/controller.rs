@@ -97,7 +97,7 @@ use crate::notifications::{policy_with as notification_policy_with, Notification
 use crate::power::{
     apply_charge_threshold, charge_threshold_description, charged_when, day_tick,
     degradation_label as power_degradation_label, format_duration as format_power_duration,
-    hour_tick, last_charge, level_bars, local_day_start,
+    hour_tick, is_three_hour_mark, last_charge, level_bars, local_day_start,
 };
 use crate::service_updates::{
     change_needs_followup as audio_change_needs_followup,

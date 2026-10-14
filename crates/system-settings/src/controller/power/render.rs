@@ -187,11 +187,14 @@ impl Settings {
             );
         }
 
-        let ticks = |every: usize, label: &dyn Fn(u64) -> String| -> Vec<(usize, SharedString)> {
+        // Ticks fall on local midnights (10 days) or every third hour (24
+        // hours), as on the Mac.
+        let ticks = |keep: &dyn Fn(u64) -> bool, label: &dyn Fn(u64) -> String| {
             (0..buckets)
-                .filter(|index| index % every == 0)
-                .map(|index| (index, label(start + index as u64 * bucket).into()))
-                .collect()
+                .map(|index| (index, start + index as u64 * bucket))
+                .filter(|(_, at)| keep(*at))
+                .map(|(index, at)| (index, SharedString::from(label(at))))
+                .collect::<Vec<_>>()
         };
         let level_bars = level_bars(points, start, bucket, buckets);
         let latest = battery.percentage;
@@ -204,9 +207,9 @@ impl Settings {
             })
             .collect();
         let level_ticks = if long {
-            ticks(24, &day_tick)
+            ticks(&|at| local_day_start(at) == at, &day_tick)
         } else {
-            ticks(12, &hour_tick)
+            ticks(&|at| is_three_hour_mark(at), &hour_tick)
         };
         group = group.child(bar_chart(
             "battery-level-chart",
@@ -241,9 +244,15 @@ impl Settings {
             );
             let total: u32 = minutes.iter().sum();
             let usage_ticks = (0..usage_buckets)
-                .filter(|index| if long { index % 2 == 0 } else { index % 3 == 0 })
-                .map(|index| {
-                    let at = start + index as u64 * usage_bucket;
+                .map(|index| (index, start + index as u64 * usage_bucket))
+                .filter(|(index, at)| {
+                    if long {
+                        index % 2 == 0
+                    } else {
+                        is_three_hour_mark(*at)
+                    }
+                })
+                .map(|(index, at)| {
                     let text = if long { day_tick(at) } else { hour_tick(at) };
                     (index, SharedString::from(text))
                 })

@@ -249,7 +249,9 @@ strip = true
 inherits = "release"
 lto = false
 codegen-units = 16
-incremental = true
+# Off: on the shared laptop target its incremental cache grew past 50 GB in
+# a day of agent builds and starved the installer of disk.
+incremental = false
 strip = false
 
 [patch.crates-io]

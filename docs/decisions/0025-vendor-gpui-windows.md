@@ -230,8 +230,9 @@ each: touchpad-like stream, per-frame step 18–27 px (CV 0.12–0.14) before,
 15.6–22.6 px (CV 0.06–0.07) after; glide after the input stops, 0 frames
 before, 83–88 frames (about 1.4 s) after; a notch, one 72 px jump before,
 11–12 eased frames after; mean frame interval 16.7 ms both, max gap
-18.8–19.0 ms after in the last two runs (one 25 ms gap in an earlier one,
-since fixed: a late frame no longer hands out nothing on the next).
+18.8–19.0 ms after in the last two runs (an earlier run had one 25 ms gap
+followed by a frame that handed out nothing; a late frame now steps by its own
+time instead, not yet re-measured on the laptop).
 
 ## Results
 

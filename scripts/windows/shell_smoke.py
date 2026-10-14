@@ -12,7 +12,9 @@ and private profile folders, then checks, with real input:
    tile gets the running dot;
 4. the bar shows Calculator's own menus over the menu pipe, and choosing
    Calculator ▸ About Calculator in the bar opens Calculator's About panel;
-5. a maximised window stops below the bar and above the Dock;
+5. a maximised window stops below the bar and above the Dock, and a
+   third-party window opened at 0,0 and 4000 × 4000 is moved into the work
+   area while a full-screen one is left alone;
 6. Alt+Space opens Spotlight, typing finds Text Editor and Return opens it
    (and, reported but not required, "notepad" finds Windows' Notepad
    through the Apps folder);
@@ -1190,10 +1192,6 @@ def check_shell(
         time.sleep(1.0)
 
         note_memory(shell_pid, "after maximised Notepad")
-        # 5b. A third-party window that opens at 0,0 and 4000 × 4000 is put
-        # inside the work area (macOS's visible frame); a full-screen one is
-        # left alone.
-        check_foreign_windows(screenshots, failures)
         # 6. Spotlight.
         before = len(log.lines())
         key(VK_MENU)
@@ -1294,6 +1292,12 @@ def check_shell(
         print(f"shell: lulo-shell memory after the switcher and Notification Centre closed: {memory}")
         if memory is not None:
             measurements["lulo-shell"]["after_switcher_nc_private_mb"] = memory["private_mb"]
+
+        # 6g. A third-party window that opens at 0,0 and 4000 × 4000 is put
+        # inside the work area (macOS's visible frame); a full-screen one is
+        # left alone. Last, after the memory readings: a full-screen window
+        # makes the bar and the Dock step aside.
+        check_foreign_windows(screenshots, failures)
 
         # 7. Turning Lulo off gives the desktop back.
         stop_session(bin_dir, environment, session, failures)

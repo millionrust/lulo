@@ -634,6 +634,15 @@ installed, launched and uninstalled in the run) must pass before
 description from `docs/release-notes/<version>.md` (first line `# <title>`).
 `dependency-policy` refuses a tag that is not `v` plus the workspace version.
 
+**Ubuntu first, Windows later.** With the repository variable
+`RMAC_WINDOWS_WITH_RELEASE=false`, the tag skips `windows-installer` and
+publishes the Ubuntu release alone with `docs/release-notes/<version>.ubuntu.md`.
+Later, `gh workflow run windows-release.yml --ref dev -f tag=<tag>` builds
+the MSI from that commit (its workspace version must still be the tag's),
+runs the same smoke, attests it, adds it and its `SHA256SUMS` line to the
+Release, and switches the notes to the full `<version>.md`. Delete the
+variable afterwards so the next tag ships both again.
+
 **Dry run first.** `gh workflow run release.yml --ref <branch>` runs every
 job; `attach-release` then assembles the real bundle (tag-named files and
 `SHA256SUMS`) and uploads it as the `release-bundle-dry-run` artifact

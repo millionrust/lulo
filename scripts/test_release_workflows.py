@@ -426,7 +426,67 @@ def test_release_msi_carries_every_app_the_preview_and_apps_json_list():
     )
     apps_json = (REPO_ROOT / "packaging/windows/apps.json").read_text(encoding="utf-8")
     apps = sorted(app["bin"] for app in json.loads(apps_json))
-    assert release == preview == apps
+    later = _windows_exes(
+        _load(REPO_ROOT / ".github/workflows/windows-release.yml")["jobs"]["windows-installer"]
+    )
+    assert release == preview == apps == later
+
+
+def test_ubuntu_first_release_skips_the_msi_and_windows_release_adds_it():
+    jobs = _load(RELEASE)["jobs"]
+    assert jobs["windows-installer"]["if"] == "${{ vars.RMAC_WINDOWS_WITH_RELEASE != 'false' }}"
+    attach = jobs["attach-release"]
+    assert "needs.windows-installer.result == 'skipped' && vars.RMAC_WINDOWS_WITH_RELEASE == 'false'" in attach["if"]
+    steps = {step.get("name", ""): step for step in attach["steps"]}
+    assert steps["Download the Windows installer"]["if"] == "needs.windows-installer.result == 'success'"
+    assert ".ubuntu.md" in steps["Prepare the release notes"]["run"]
+    version = re.search(
+        r'(?ms)^\[workspace\.package\]\s*$.*?^version\s*=\s*"([^"]+)"',
+        (REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8"),
+    ).group(1)
+    assert (REPO_ROOT / f"docs/release-notes/{version}.ubuntu.md").is_file()
+    later = _load(REPO_ROOT / ".github/workflows/windows-release.yml")
+    trigger = later.get("on", later.get(True))
+    assert set(trigger) == {"workflow_dispatch"}
+    publish = later["jobs"]["add-to-release"]
+    script = "\n".join(step.get("run", "") for step in publish["steps"])
+    assert "add-windows-msi.sh prepare" in script and "add-windows-msi.sh publish" in script
+    names = [step.get("name") for step in publish["steps"]]
+    assert names.index("Generate build provenance") < names.index("Upload to the Release")
+
+
+def test_add_windows_msi_replaces_only_the_msi_line(tmp_path):
+    import shutil
+    import subprocess
+
+    if shutil.which("bash") is None or shutil.which("sha256sum") is None:
+        return
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(
+        "#!/bin/sh\n"
+        'case "$1 $2" in\n'
+        '  "release view") case "$*" in *--json*) echo 0;; esac; exit 0;;\n'
+        '  "release download") shift 2; while [ $# -gt 0 ]; do [ "$1" = --dir ] && d=$2; shift; done;\n'
+        '    printf "aa  rmac-apps_0.9.0.beta.2-38_amd64.deb\\nbb  Lulo-Setup-0.9.0-beta.2-x64.msi\\n" > "$d/SHA256SUMS";;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "gh").chmod(0o755)
+    msi = tmp_path / "Lulo-Setup-0.9.0-beta.2-x64.msi"
+    msi.write_bytes(b"msi")
+    out = tmp_path / "out"
+    tools = Path(shutil.which("sha256sum")).parent
+    env = {"PATH": f"{bin_dir}:{tools}:/usr/bin:/bin", "GITHUB_REPOSITORY": "millionrust/lulo"}
+    subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts/release/add-windows-msi.sh"), "prepare", "v0.9.0-beta.2", str(msi), str(out)],
+        check=True, env=env, capture_output=True,
+    )
+    lines = (out / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "aa  rmac-apps_0.9.0.beta.2-38_amd64.deb"
+    assert len(lines) == 2 and lines[1].endswith("  Lulo-Setup-0.9.0-beta.2-x64.msi")
+    assert not lines[1].startswith("bb ")
+    assert (out / msi.name).read_bytes() == b"msi"
 
 
 def test_the_joint_release_needs_the_msi_and_publishes_only_from_a_tag():

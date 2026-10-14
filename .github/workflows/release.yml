@@ -773,13 +773,15 @@ jobs:
 
   windows-installer:
     name: Build the Windows installer
-    # ADR 0023 "Installer". Required since 0.9.0-beta.2, the first release
-    # for Ubuntu and Windows together: attach-release publishes nothing
-    # unless the MSI built and passed its install/launch/uninstall smoke.
-    # windows-preview.yml runs the same steps on demand for fast
-    # iteration; this is the tagged-release copy that signs (when the
-    # owner's Azure Trusted Signing secrets exist) and attaches to the
-    # Release itself.
+    # ADR 0023 "Installer". Since 0.9.0-beta.2 a release ships Ubuntu and
+    # Windows together: when this job runs, attach-release publishes
+    # nothing unless the MSI built and passed its install/launch/uninstall
+    # smoke. Setting the RMAC_WINDOWS_WITH_RELEASE repository variable to
+    # "false" skips it, so the tag publishes the Ubuntu release alone and
+    # windows-release.yml adds the MSI to that Release later (from a later
+    # commit if need be). windows-preview.yml runs the same build on demand
+    # for fast iteration.
+    if: ${{ vars.RMAC_WINDOWS_WITH_RELEASE != 'false' }}
     runs-on: windows-latest
     timeout-minutes: 90
     defaults:
@@ -935,7 +937,9 @@ jobs:
     # rmac-session cannot install without niri and xwayland-satellite, so a
     # Release is only published once their amd64 packages exist too, and
     # never without rmac's own source package, nor (since 0.9.0-beta.2,
-    # released for Ubuntu and Windows together) without the Windows MSI.
+    # released for Ubuntu and Windows together) without the Windows MSI
+    # unless windows-installer was switched off (RMAC_WINDOWS_WITH_RELEASE
+    # = false; the MSI then follows through windows-release.yml).
     # On a workflow_dispatch dry run this job still assembles the whole
     # bundle and checksums and uploads them as the `release-bundle-dry-run`
     # artifact, so the file names and sizes can be checked before tagging;
@@ -944,7 +948,8 @@ jobs:
     needs: [dependency-policy, build-amd64, build-arm64, build-third-party-amd64, build-third-party-arm64, sbom, rmac-source, keyring, windows-installer]
     if: >-
       always() &&
-      needs.windows-installer.result == 'success' &&
+      (needs.windows-installer.result == 'success' ||
+        (needs.windows-installer.result == 'skipped' && vars.RMAC_WINDOWS_WITH_RELEASE == 'false')) &&
       needs.dependency-policy.result == 'success' &&
       needs.build-amd64.result == 'success' &&
       needs.build-third-party-amd64.result == 'success' &&
@@ -1015,6 +1020,7 @@ jobs:
           path: release-assets/keyring
 
       - name: Download the Windows installer
+        if: needs.windows-installer.result == 'success'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: windows-installer
@@ -1044,6 +1050,7 @@ jobs:
       - name: Assemble the release bundle and checksums
         env:
           RELEASE_NAME: ${{ needs.dependency-policy.outputs.release-name }}
+          WINDOWS_RESULT: ${{ needs.windows-installer.result }}
         run: |
           set -euo pipefail
           bundle="$PWD/release-bundle"
@@ -1064,9 +1071,13 @@ jobs:
           # ship as one archive so the Release page stays readable.
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
             -cf - -C release-assets/sbom . | gzip -n > "$bundle/rmac-sbom-${RELEASE_NAME}.tar.gz"
-          msi_count="$(find release-assets/windows-installer -maxdepth 1 -name 'Lulo-Setup-*-x64.msi' | wc -l)"
-          [ "$msi_count" -eq 1 ] || { echo "expected one Windows MSI, found $msi_count" >&2; exit 1; }
-          find release-assets/windows-installer -maxdepth 1 -name 'Lulo-Setup-*-x64.msi' -exec cp -v {} "$bundle/" \;
+          # The MSI, unless windows-installer was switched off for a
+          # Ubuntu-first release (windows-release.yml adds it later).
+          if [ "$WINDOWS_RESULT" = success ]; then
+            msi_count="$(find release-assets/windows-installer -maxdepth 1 -name 'Lulo-Setup-*-x64.msi' | wc -l)"
+            [ "$msi_count" -eq 1 ] || { echo "expected one Windows MSI, found $msi_count" >&2; exit 1; }
+            find release-assets/windows-installer -maxdepth 1 -name 'Lulo-Setup-*-x64.msi' -exec cp -v {} "$bundle/" \;
+          fi
           # The one-command installer for this release: `curl -fsSL
           # .../releases/download/<tag>/install.sh | sh` installs this
           # Release's packages (install.sh's RMAC_RELEASE_TAG; see
@@ -1120,21 +1131,21 @@ jobs:
           ls -l "$bundle"
 
       # docs/release-notes/<version>.md: its first line ("# <title>") is
-      # the Release's title and the rest its description. A release
-      # without one stops here, on a dry run too.
+      # the Release's title and the rest its description. A Ubuntu-first
+      # release (no MSI yet) uses <version>.ubuntu.md; windows-release.yml
+      # switches to the full notes when it adds the MSI. A release without
+      # its notes stops here, on a dry run too.
       - name: Prepare the release notes
         env:
           RELEASE_NAME: ${{ needs.dependency-policy.outputs.release-name }}
+          WINDOWS_RESULT: ${{ needs.windows-installer.result }}
         run: |
           set -euo pipefail
           notes="docs/release-notes/${RELEASE_NAME#v}.md"
-          [ -f "$notes" ] || { echo "missing $notes" >&2; exit 1; }
-          title="$(head -n 1 "$notes")"
-          [[ "$title" == "# "* ]] || { echo "$notes must start with '# <title>'" >&2; exit 1; }
-          mkdir -p release-notes
-          printf '%s\n' "${title#\# }" > release-notes/title.txt
-          tail -n +2 "$notes" | sed '/./,$!d' > release-notes/body.md
-          cat release-notes/title.txt
+          if [ "$WINDOWS_RESULT" != success ]; then
+            notes="docs/release-notes/${RELEASE_NAME#v}.ubuntu.md"
+          fi
+          bash scripts/release/split-release-notes.sh "$notes" release-notes
 
       - name: Upload the dry-run bundle
         if: github.ref_type != 'tag'

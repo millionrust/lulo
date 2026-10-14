@@ -1188,8 +1188,15 @@ class LuloRun:
         into "enter" (ROBOT-11)."""
 
         frame = self.active_frame()
-        names = {name(node) for node in descendants(frame, limit=2000)} if frame is not None else set()
-        return {"badge": any("RPN" in (label or "") for label in names),
+        nodes = list(descendants(frame, limit=2000)) if frame is not None else []
+        names = {name(node) for node in nodes}
+        texts = set(names)
+        for node in nodes:
+            try:
+                texts.add(node.description or "")
+            except Exception:
+                continue
+        return {"badge": any("RPN" in (text or "") for text in texts),
                 "enter_key": "enter" in names, "equals_key": "equals" in names}
 
     def fact_clock_timers(self) -> dict[str, Any]:

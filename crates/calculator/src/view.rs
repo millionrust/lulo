@@ -817,6 +817,9 @@ impl CalculatorView {
                     .id("calculator-rpn-badge")
                     .role(Role::Label)
                     .aria_label(RPN_BADGE)
+                    // A label's text reaches AT-SPI only through a text run,
+                    // as the display's own does.
+                    .a11y_synthetic_children(Self::accessible_display_text(RPN_BADGE.into()))
                     .absolute()
                     .left(px(inset))
                     // Left-aligned just above the entry line; the stack

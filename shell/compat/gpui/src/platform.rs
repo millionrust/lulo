@@ -688,6 +688,9 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn on_moved(&self, callback: Box<dyn FnMut()>);
     fn on_should_close(&self, callback: Box<dyn FnMut() -> bool>);
     fn on_hit_test_window_control(&self, callback: Box<dyn FnMut() -> Option<WindowControlArea>>);
+    /// rmac (ADR 0028): ask which kind of touch drag the element under the
+    /// pointer position takes. Backends without touch ignore it.
+    fn on_hit_test_touch_drag(&self, _callback: Box<dyn FnMut() -> Option<crate::TouchDragMode>>) {}
     fn on_close(&self, callback: Box<dyn FnOnce()>);
     fn on_appearance_changed(&self, callback: Box<dyn FnMut()>);
     fn on_button_layout_changed(&self, _callback: Box<dyn FnMut()>) {}

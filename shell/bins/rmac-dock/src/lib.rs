@@ -3383,6 +3383,9 @@ mod dock {
                                 let press_icon = icon_path.clone();
                                 visual
                                     .cursor_pointer()
+                                    // A finger drags a tile as a held button
+                                    // does (ADR 0028).
+                                    .touch_drag()
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(
@@ -4887,6 +4890,7 @@ mod dock {
             .id("dock-separator-main")
             .role(Role::Button)
             .aria_label("Dock separator")
+            .touch_drag()
             .flex()
             .items_center()
             .justify_center()

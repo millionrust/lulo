@@ -55,6 +55,7 @@ pub(crate) struct Callbacks {
     should_close: Option<Box<dyn FnMut() -> bool>>,
     close: Option<Box<dyn FnOnce()>>,
     hit_test_window_control: Option<Box<dyn FnMut() -> Option<WindowControlArea>>>,
+    hit_test_touch_drag: Option<Box<dyn FnMut() -> Option<gpui::TouchDragMode>>>,
     appearance_changed: Option<Box<dyn FnMut()>>,
     button_layout_changed: Option<Box<dyn FnMut()>>,
 }
@@ -1106,6 +1107,15 @@ impl WaylandWindowStatePtr {
         self.callbacks
             .borrow_mut()
             .hit_test_window_control
+            .as_mut()
+            .and_then(|callback| callback())
+    }
+
+    /// rmac (ADR 0028): how a finger at the last pointer position drags.
+    pub fn hit_test_touch_drag(&self) -> Option<gpui::TouchDragMode> {
+        self.callbacks
+            .borrow_mut()
+            .hit_test_touch_drag
             .as_mut()
             .and_then(|callback| callback())
     }
@@ -2456,6 +2466,10 @@ impl PlatformWindow for WaylandWindow {
 
     fn on_hit_test_window_control(&self, _callback: Box<dyn FnMut() -> Option<WindowControlArea>>) {
         self.0.callbacks.borrow_mut().hit_test_window_control = Some(_callback);
+    }
+
+    fn on_hit_test_touch_drag(&self, callback: Box<dyn FnMut() -> Option<gpui::TouchDragMode>>) {
+        self.0.callbacks.borrow_mut().hit_test_touch_drag = Some(callback);
     }
 
     fn on_appearance_changed(&self, callback: Box<dyn FnMut()>) {

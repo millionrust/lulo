@@ -73,6 +73,8 @@ pub use gpui_component::{ActiveTheme, StyledExt};
 pub use menu_strip::{height as menu_strip_height, MENU_STRIP_HEIGHT};
 pub use menu_target::{register_menu_target, track_key_window};
 pub use rmac_app_menu::Item as MenuItem;
+/// Bigger hit targets while the PC is used by touch (ADR 0028).
+pub use rmac_shell_ui::touch;
 #[cfg(target_os = "linux")]
 pub use runtime::open_outside_click_catcher;
 #[cfg(target_os = "linux")]

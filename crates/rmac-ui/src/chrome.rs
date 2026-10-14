@@ -627,12 +627,17 @@ fn traffic_light(
                     ),
             )
         });
-    div()
-        .id(id)
-        .role(Role::Button)
-        .aria_label(name)
-        .size(px(mac::traffic_light_hit_width()))
-        .flex_none()
+    // On touch the hit box reaches into the gap beside it, never past half
+    // of it, without moving the circles (ADR 0028).
+    let hit = mac::traffic_light_hit_width();
+    let gap = (rmac_design::Metrics::default().traffic_spacing - hit).max(0.0);
+    crate::touch::hit_size(
+        div().id(id).role(Role::Button).aria_label(name),
+        hit,
+        hit,
+        crate::touch::touch_slop().min(gap / 2.0),
+    )
+    .flex_none()
         .flex()
         .items_center()
         .justify_center()

@@ -830,6 +830,8 @@ pub(crate) struct Frame {
     pub(crate) scene: Scene,
     pub(crate) hitboxes: Vec<Hitbox>,
     pub(crate) window_control_hitboxes: Vec<(WindowControlArea, Hitbox)>,
+    /// rmac: elements a finger drags rather than scrolls (ADR 0028).
+    pub(crate) touch_drag_hitboxes: Vec<(HitboxId, crate::TouchDragMode)>,
     pub(crate) deferred_draws: Vec<DeferredDraw>,
     pub(crate) input_handlers: Vec<Option<PlatformInputHandler>>,
     pub(crate) tooltip_requests: Vec<Option<TooltipRequest>>,
@@ -859,6 +861,7 @@ pub(crate) struct PaintIndex {
     mouse_listeners_index: usize,
     input_handlers_index: usize,
     cursor_styles_index: usize,
+    touch_drag_index: usize,
     accessed_element_states_index: usize,
     tab_handle_index: usize,
     line_layout_index: LineLayoutIndex,
@@ -876,6 +879,7 @@ impl Frame {
             scene: Scene::default(),
             hitboxes: Vec::new(),
             window_control_hitboxes: Vec::new(),
+            touch_drag_hitboxes: Vec::new(),
             deferred_draws: Vec::new(),
             input_handlers: Vec::new(),
             tooltip_requests: Vec::new(),
@@ -904,6 +908,7 @@ impl Frame {
         self.cursor_styles.clear();
         self.hitboxes.clear();
         self.window_control_hitboxes.clear();
+        self.touch_drag_hitboxes.clear();
         self.deferred_draws.clear();
         self.tab_stops.clear();
         self.focus = None;
@@ -978,6 +983,32 @@ impl Frame {
     }
 }
 
+fn touch_drag_mode_at(
+    hit: &[HitboxId],
+    marked: &[(HitboxId, crate::TouchDragMode)],
+) -> Option<crate::TouchDragMode> {
+    marked
+        .iter()
+        .filter(|(id, _)| hit.contains(id))
+        .map(|(_, mode)| *mode)
+        .max()
+}
+
+#[cfg(test)]
+mod rmac_touch_tests {
+    use super::*;
+    use crate::TouchDragMode;
+
+    #[test]
+    fn immediate_anywhere_under_the_finger_wins() {
+        let (a, b, c) = (HitboxId(1), HitboxId(2), HitboxId(3));
+        let marked = [(a, TouchDragMode::AfterHold), (b, TouchDragMode::Immediate)];
+        assert_eq!(touch_drag_mode_at(&[c], &marked), None);
+        assert_eq!(touch_drag_mode_at(&[a, c], &marked), Some(TouchDragMode::AfterHold));
+        assert_eq!(touch_drag_mode_at(&[a, b], &marked), Some(TouchDragMode::Immediate));
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 enum InputModality {
     Mouse,
@@ -1039,6 +1070,7 @@ pub struct Window {
     #[cfg(feature = "input-latency-histogram")]
     input_latency_tracker: InputLatencyTracker,
     last_input_modality: InputModality,
+    last_input_touch: bool,
     pub(crate) refreshing: bool,
     /// rmac (ADR 0026): which parts of the window's geometry were read
     /// (`crate::rmac_resize::GEOMETRY_*` bits). A cached view collects the
@@ -1645,6 +1677,15 @@ impl Window {
                     .unwrap_or(None)
             })
         });
+        platform_window.on_hit_test_touch_drag({
+            let mut cx = cx.to_async();
+            Box::new(move || {
+                handle
+                    .update(&mut cx, |_, window, _cx| window.touch_drag_mode())
+                    .log_err()
+                    .flatten()
+            })
+        });
         platform_window.on_move_tab_to_new_window({
             let mut cx = cx.to_async();
             Box::new(move || {
@@ -1750,6 +1791,7 @@ impl Window {
             #[cfg(feature = "input-latency-histogram")]
             input_latency_tracker: InputLatencyTracker::new()?,
             last_input_modality: InputModality::Mouse,
+            last_input_touch: false,
             refreshing: false,
             geometry_reads: Cell::new(0),
             activation_observers: SubscriberSet::new(),
@@ -3200,6 +3242,7 @@ impl Window {
             mouse_listeners_index: self.next_frame.mouse_listeners.len(),
             input_handlers_index: self.next_frame.input_handlers.len(),
             cursor_styles_index: self.next_frame.cursor_styles.len(),
+            touch_drag_index: self.next_frame.touch_drag_hitboxes.len(),
             accessed_element_states_index: self.next_frame.accessed_element_states.len(),
             tab_handle_index: self.next_frame.tab_stops.paint_index(),
             line_layout_index: self.text_system.layout_index(),
@@ -3207,6 +3250,12 @@ impl Window {
     }
 
     pub(crate) fn reuse_paint(&mut self, range: Range<PaintIndex>) {
+        self.next_frame.touch_drag_hitboxes.extend(
+            self.rendered_frame.touch_drag_hitboxes
+                [range.start.touch_drag_index..range.end.touch_drag_index]
+                .iter()
+                .copied(),
+        );
         self.next_frame.cursor_styles.extend(
             self.rendered_frame.cursor_styles
                 [range.start.cursor_styles_index..range.end.cursor_styles_index]
@@ -4339,6 +4388,28 @@ impl Window {
         self.next_frame.window_control_hitboxes.push((area, hitbox));
     }
 
+    /// rmac (ADR 0028): mark a hitbox as one a finger drags rather than
+    /// scrolls. This method should only be called as part of the paint phase.
+    pub fn insert_touch_drag_hitbox(&mut self, mode: crate::TouchDragMode, hitbox: &Hitbox) {
+        self.invalidator.debug_assert_paint();
+        self.next_frame.touch_drag_hitboxes.push((hitbox.id, mode));
+    }
+
+    /// rmac (ADR 0028): how a finger at the last pointer position drags,
+    /// if anything under it is draggable. `Immediate` anywhere under the
+    /// point wins, so a slider's own drag listener does not make it wait.
+    pub fn touch_drag_mode(&self) -> Option<crate::TouchDragMode> {
+        touch_drag_mode_at(
+            &self.mouse_hit_test.ids,
+            &self.rendered_frame.touch_drag_hitboxes,
+        )
+    }
+
+    /// rmac (ADR 0028): whether the latest pointing input was a finger.
+    pub fn last_input_was_touch(&self) -> bool {
+        self.last_input_touch
+    }
+
     /// Sets the key context for the current element. This context will be used to translate
     /// keybindings into actions.
     ///
@@ -4607,6 +4678,12 @@ impl Window {
             _ => self.last_input_modality,
         };
         if self.last_input_modality != old_modality {
+            self.refresh();
+        }
+        // rmac (ADR 0028): touch hit targets grow on the next frame.
+        let touch = crate::last_input_was_touch();
+        if touch != self.last_input_touch {
+            self.last_input_touch = touch;
             self.refresh();
         }
 

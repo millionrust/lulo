@@ -135,7 +135,8 @@ def material_span(image, y: int) -> tuple[int, int] | None:
 
     def differs(x: int) -> bool:
         pixel = image.getpixel((x, y))
-        return sum(abs(a - b) for a, b in zip(pixel, background)) > 12
+        # The glass over the plain nested backdrop is only a few levels off.
+        return sum(abs(a - b) for a, b in zip(pixel, background)) >= 3
 
     left = next((x for x in range(width) if differs(x)), None)
     right = next((x for x in range(width - 1, -1, -1) if differs(x)), None)
@@ -271,8 +272,7 @@ def inner(args: argparse.Namespace) -> int:
         left = (run.width - width) / 2
         offsets = [(left, (dock_top - height) / 2), (left, (run.height - height) / 2)]
         kept_from_apps = None
-        # The shelf's middle row: the material's ends are its rim there, not
-        # its rounded corners.
+        # The shelf's middle row, away from the material's rounded corners.
         rim_y = int(files[1])
         resting = material_span(run.capture("material-resting"), rim_y)
         widened = None

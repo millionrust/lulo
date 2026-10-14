@@ -1035,11 +1035,17 @@ mod dock {
                 #[cfg(windows)]
                 rmac_shell_layer::windows::resize_layer(cx, material, size);
                 #[cfg(not(windows))]
-                let _ = material.update(cx, |_, window, _| {
-                    window.resize(size);
-                    // The new layer size is committed with the next frame.
-                    window.refresh();
-                });
+                {
+                    let _ = material.update(cx, |_, window, _| window.resize(size));
+                    // GPUI applies a layer surface's new size in a task it
+                    // has just queued; draw once that has run, so the size is
+                    // committed now rather than with some later frame.
+                    cx.spawn(async move |cx| {
+                        let _ =
+                            cx.update(|cx| material.update(cx, |_, window, _| window.refresh()));
+                    })
+                    .detach();
+                }
             });
         }
 

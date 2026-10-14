@@ -24,6 +24,8 @@ pub struct Settings {
     pub selected: usize,
     /// `None` follows the locale.
     pub fahrenheit: Option<bool>,
+    /// Settings ▸ General ▸ Other Units; each `None` follows the region.
+    pub units: crate::units::UnitChoices,
 }
 
 impl Settings {

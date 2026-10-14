@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "weather/settings-restore-default-units",
+  "observations": {
+    "chosen": {
+      "weather_settings": {
+        "fahrenheit": true,
+        "units": {"wind": "kn", "precipitation": "in", "pressure": "mmHg", "distance": "mi"}
+      }
+    },
+    "restored": {
+      "weather_settings": {
+        "fahrenheit": null,
+        "units": {"wind": null, "precipitation": null, "pressure": null, "distance": null}
+      }
+    }
+  }
+}

@@ -1180,7 +1180,8 @@ class LuloRun:
         path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/weather.json"
         if not path.exists():
             return {"fahrenheit": None}
-        return {"fahrenheit": json.loads(path.read_text()).get("fahrenheit")}
+        saved = json.loads(path.read_text())
+        return {"fahrenheit": saved.get("fahrenheit"), "units": saved.get("units")}
 
     def fact_files(self) -> dict[str, Any]:
         entries = []

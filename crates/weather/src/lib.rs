@@ -10,4 +10,5 @@ pub mod geocode;
 pub mod metrics;
 pub mod store;
 pub mod summary;
+pub mod units;
 pub mod widget;

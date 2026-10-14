@@ -1,0 +1,17 @@
+{
+  "title": "Weather: Settings ▸ Restore Defaults returns every unit to the region's",
+  "app": "weather",
+  "launch": {},
+  "lulo_only": true,
+  "setup": {
+    "config": {
+      "rmac/weather.json": "{\"fahrenheit\": true, \"units\": {\"wind\": \"kn\", \"precipitation\": \"in\", \"pressure\": \"mmHg\", \"distance\": \"mi\"}}"
+    }
+  },
+  "steps": [
+    {"key": "cmd-,", "settle": 1.0},
+    {"observe": "chosen", "facts": ["weather_settings"]},
+    {"select": "Restore Defaults", "settle": 1.0},
+    {"observe": "restored", "facts": ["weather_settings"]}
+  ]
+}

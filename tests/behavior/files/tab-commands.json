@@ -1,0 +1,11 @@
+{
+  "title": "Files: Show Previous/Next Tab are greyed out with one tab and enabled with two",
+  "app": "files",
+  "lulo_only": true,
+  "launch": {"folder": "."},
+  "steps": [
+    {"observe": "one_tab", "facts": ["menu_items"]},
+    {"key": "cmd-t", "settle": 1.2},
+    {"observe": "two_tabs", "facts": ["menu_items"]}
+  ]
+}

@@ -39,6 +39,11 @@ impl Render for TerminalView {
                 },
                 cx,
             );
+            // Show Previous/Next Tab do nothing with one tab; macOS greys
+            // them out (live robot, ROBOT-10).
+            for action in ["terminal::PrevTab", "terminal::NextTab"] {
+                rmac_ui::set_menu_enabled(action, self.tabs.len() > 1, cx);
+            }
             if let Some(directory) = self.tabs[self.active].working_directory() {
                 crate::working_directory::set_last_front_directory(directory);
             }

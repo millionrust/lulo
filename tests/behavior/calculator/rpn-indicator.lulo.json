@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "calculator/rpn-indicator",
+  "observations": {
+    "basic": {"calculator_rpn": {"badge": false, "enter_key": false, "equals_key": true}},
+    "rpn": {"calculator_rpn": {"badge": true, "enter_key": true, "equals_key": false}},
+    "basic_again": {"calculator_rpn": {"badge": false, "enter_key": false, "equals_key": true}}
+  }
+}

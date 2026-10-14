@@ -32,6 +32,11 @@ use crate::{
 
 /// How long a key stays lit after a hardware key press.
 const KEY_FLASH: Duration = Duration::from_millis(110);
+/// RPN Mode's = key face, and the badge in the display's top-left corner:
+/// how the Mac shows that RPN Mode is on (ROBOT-11).
+const RPN_ENTER_LABEL: &str = "enter";
+const RPN_ENTER_LABEL_SIZE: f32 = 15.0;
+const RPN_BADGE: &str = "RPN";
 
 /// RPN Mode reuses Basic's own `+ − × ÷` keys (see `rpn.rs`); this maps
 /// Basic's operator type to RPN's.
@@ -807,12 +812,33 @@ impl CalculatorView {
             keypad::RESULT_MIN_SIZE,
         );
         div()
+            .child(
+                div()
+                    .id("calculator-rpn-badge")
+                    .role(Role::Label)
+                    .aria_label(RPN_BADGE)
+                    // A label's text reaches AT-SPI only through a text run,
+                    // as the display's own does.
+                    .a11y_synthetic_children(Self::accessible_display_text(RPN_BADGE.into()))
+                    .absolute()
+                    .left(px(inset))
+                    // Left-aligned just above the entry line; the stack
+                    // lines above it are right-aligned.
+                    .top(px(keypad::RESULT_TOP - STACK_LINE_HEIGHT))
+                    .h(px(STACK_LINE_HEIGHT))
+                    .line_height(px(STACK_LINE_HEIGHT))
+                    .text_size(px(11.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.expression))
+                    .child(RPN_BADGE),
+            )
             .children(stack_rows)
             .child(
                 div()
                     .id("calculator-result")
                     .role(Role::Label)
-                    .aria_label("Display")
+                    // VoiceOver hears the mode too, not just sighted users.
+                    .aria_label("Display, RPN Mode")
                     .absolute()
                     .left(px(inset))
                     .right(px(inset))
@@ -928,14 +954,25 @@ impl CalculatorView {
         let flashing = self
             .flash
             .is_some_and(|(flash, _)| flash == FlashKey::Basic(key));
+        let rpn_enter = self.rpn_enabled && key == BasicKey::Equals;
         let face = match (key, key_face(key)) {
             (BasicKey::Clear, _) => KeyFace::Text(self.calculator.clear_label().text()),
+            // RPN Mode: the = key pushes the entry onto the stack, and says
+            // so, as the Mac's does (ROBOT-11: RPN Mode used to look the
+            // same as Basic).
+            _ if rpn_enter => KeyFace::Text(RPN_ENTER_LABEL),
             (_, face) => face,
+        };
+        // "enter" is a word, not a glyph: smaller so it fits the round key.
+        let label_size = if rpn_enter {
+            RPN_ENTER_LABEL_SIZE
+        } else {
+            keypad::LABEL_SIZE
         };
         let face = match face {
             KeyFace::Text(text) => div()
-                .text_size(px(keypad::LABEL_SIZE))
-                .line_height(px(keypad::LABEL_SIZE))
+                .text_size(px(label_size))
+                .line_height(px(label_size))
                 .text_color(rgb(label))
                 .child(text)
                 .into_any_element(),
@@ -951,7 +988,11 @@ impl CalculatorView {
                 keypad::key_name(key).replace(' ', "-")
             )))
             .role(Role::Button)
-            .aria_label(keypad::key_name(key))
+            .aria_label(if rpn_enter {
+                RPN_ENTER_LABEL
+            } else {
+                keypad::key_name(key)
+            })
             .absolute()
             .left(px(x))
             .top(px(y))

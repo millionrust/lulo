@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "files/tab-commands",
+  "observations": {
+    "one_tab": {"menu_items": {"finder::PreviousTab": false, "finder::NextTab": false}},
+    "two_tabs": {"menu_items": {"finder::PreviousTab": true, "finder::NextTab": true}}
+  }
+}

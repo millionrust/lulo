@@ -1,5 +1,9 @@
 {
   "format": 1,
   "scenario": "mail/all-headers",
-  "observations": {}
+  "observations": {
+    "before": {"mail_viewer": {"find": null, "all_headers": false}},
+    "shown": {"mail_viewer": {"find": null, "all_headers": true}},
+    "hidden": {"mail_viewer": {"find": null, "all_headers": false}}
+  }
 }

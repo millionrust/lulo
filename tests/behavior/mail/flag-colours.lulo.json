@@ -1,5 +1,10 @@
 {
   "format": 1,
   "scenario": "mail/flag-colours",
-  "observations": {}
+  "observations": {
+    "before": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "purple": {"mail_messages": {"count": 8, "unread": 2, "flagged": 3}},
+    "green": {"mail_messages": {"count": 8, "unread": 2, "flagged": 3}},
+    "cleared": {"mail_messages": {"count": 8, "unread": 2, "flagged": 2}}
+  }
 }

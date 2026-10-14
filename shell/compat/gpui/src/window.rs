@@ -4694,6 +4694,9 @@ impl Window {
                 }
                 FileDropEvent::Exited => {
                     cx.active_drag.take();
+                    // rmac: redraw so views that showed where the drop would
+                    // land (the Dock's open slot) take it away.
+                    self.refresh();
                     PlatformInput::FileDrop(FileDropEvent::Exited)
                 }
             },

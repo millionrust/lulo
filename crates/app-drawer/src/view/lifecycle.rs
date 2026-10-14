@@ -165,6 +165,7 @@ impl AppDrawer {
             loading: true,
             was_active: false,
             _catalog_watcher: None,
+            #[cfg(windows)]
             dock_drag: None,
             recent_ids: Vec::new(),
             scale_factor: window.scale_factor(),

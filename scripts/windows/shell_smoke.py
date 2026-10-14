@@ -1285,6 +1285,10 @@ def check_shell(
         # lulo-shell hosts; then their memory once they have closed.
         check_switcher(log, bin_dir, environment, screenshots, opened, failures)
         check_notification_centre(log, screenshots, failures)
+        # 6g. Drag-and-drop keeping in the Dock (macOS 26): a running app
+        # dragged across the separator, a reorder, a drag off to remove,
+        # and an app dragged in from Apps.
+        check_dock_drag(log, bin_dir, environment, screenshots, failures)
         time.sleep(5.0)
         memory = memory_mb(shell_pid)
         print(f"shell: lulo-shell memory after the switcher and Notification Centre closed: {memory}")
@@ -1960,6 +1964,165 @@ def check_notification_centre(log: Log, screenshots: Path | None, failures: list
     tap(VK_ESCAPE)
     if panel is not None and log.wait_for(r"^layer rmac-notification-center closed", 5.0, after=before) is None:
         failures.append("Esc did not close Notification Centre")
+
+
+DOCK_TILE = re.compile(r"^dock tile (\S+) .* at (-?\d+),(-?\d+) (\w+)$")
+
+
+def dock_app_id(app_id: str) -> str:
+    return app_id.removesuffix(".desktop").lower()
+
+
+def dock_groups(log: Log) -> tuple[list[tuple[str, int, int]], list[tuple[str, int, int]]]:
+    """The Dock's kept apps and its running apps, from its latest tile
+    trace (`dock tile <id> <name> at x,y <state>` per tile, then Trash).
+    The separator between them shows as a wider step between tiles."""
+    blocks: list[list[tuple[str, int, int]]] = []
+    current: list[tuple[str, int, int]] = []
+    for line in log.lines():
+        if line.startswith("dock tile trash at"):
+            blocks.append(current)
+            current = []
+            continue
+        match = DOCK_TILE.match(line)
+        if match:
+            current.append((dock_app_id(match.group(1)), int(match.group(2)), int(match.group(3))))
+    tiles = blocks[-1] if blocks else []
+    if len(tiles) < 2:
+        return tiles, []
+    steps = [tiles[index + 1][1] - tiles[index][1] for index in range(len(tiles) - 1)]
+    pitch = min(steps)
+    for index, step in enumerate(steps):
+        if step > pitch * 1.3:
+            return tiles[: index + 1], tiles[index + 1 :]
+    return tiles, []
+
+
+def slow_drag(start: tuple[int, int], end: tuple[int, int], hold: float = 0.4) -> None:
+    """A press, a smooth move and a held release, as a hand drags a Dock
+    icon (SendInput through SetCursorPos and mouse_event)."""
+    user32().SetCursorPos(*start)
+    time.sleep(0.2)
+    user32().mouse_event(0x0002, 0, 0, 0, 0)
+    time.sleep(0.1)
+    steps = 30
+    for step in range(1, steps + 1):
+        x = start[0] + (end[0] - start[0]) * step // steps
+        y = start[1] + (end[1] - start[1]) * step // steps
+        user32().SetCursorPos(x, y)
+        time.sleep(0.025)
+    time.sleep(hold)
+    user32().mouse_event(0x0004, 0, 0, 0, 0)
+    time.sleep(0.3)
+
+
+def kept_index(log: Log, app_id: str) -> int | None:
+    kept, _ = dock_groups(log)
+    return next((index for index, (tile, _, _) in enumerate(kept) if tile == app_id), None)
+
+
+def between(tiles: list[tuple[str, int, int]], left: int) -> tuple[int, int]:
+    return (tiles[left][1] + tiles[left + 1][1]) // 2, tiles[left][2]
+
+
+def check_dock_drag(
+    log: Log, bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str]
+) -> None:
+    clock_id = "org.rmac.clock"
+    clock = bin_dir / "rmac-clock.exe"
+    if not clock.exists():
+        print("shell: dock drag: rmac-clock.exe is not in this build; skipped")
+        return
+    process = subprocess.Popen([str(clock)], env=environment)
+    try:
+        running = wait_until(
+            lambda: any(tile == clock_id for tile, _, _ in dock_groups(log)[1]), 30.0
+        )
+        if not running:
+            failures.append("dock drag: Clock never showed in the Dock's running apps")
+            return
+        time.sleep(1.0)
+        # Drag the running Clock left across the separator, between the
+        # first two kept apps: it is kept second.
+        kept, others = dock_groups(log)
+        tile = next(tile for tile in others if tile[0] == clock_id)
+        slow_drag((tile[1], tile[2]), between(kept, 0))
+        if wait_until(lambda: kept_index(log, clock_id) == 1, 10.0) is None:
+            failures.append(
+                f"dock drag: a running Clock dragged between the first two kept apps was not kept "
+                f"second: {[tile for tile, _, _ in dock_groups(log)[0]]}"
+            )
+            return
+        print("shell: dock drag: running Clock dragged across the separator is kept second")
+        save(screenshots, "dock-drag-kept")
+        # Reorder: Files, Clock, Apps, Notes… → between Apps and Notes.
+        kept, _ = dock_groups(log)
+        tile = kept[1]
+        slow_drag((tile[1], tile[2]), between(kept, 2))
+        if wait_until(lambda: kept_index(log, clock_id) == 2, 10.0) is None:
+            failures.append(
+                f"dock drag: dragging the kept Clock one place right did not move it: "
+                f"{[tile for tile, _, _ in dock_groups(log)[0]]}"
+            )
+        else:
+            print("shell: dock drag: the kept Clock reorders by dragging")
+        # Drag it off the Dock and hold: released there it is no longer
+        # kept, and as it runs it stays among the running apps.
+        kept, _ = dock_groups(log)
+        tile = next((tile for tile in kept if tile[0] == clock_id), None)
+        if tile is not None:
+            slow_drag((tile[1], tile[2]), (tile[1], tile[2] - 260), hold=1.0)
+        removed = wait_until(
+            lambda: kept_index(log, clock_id) is None
+            and any(tile == clock_id for tile, _, _ in dock_groups(log)[1]),
+            10.0,
+        )
+        if removed is None:
+            failures.append("dock drag: Clock dragged off the Dock stayed kept or left the Dock")
+        else:
+            print("shell: dock drag: Clock dragged off the Dock is removed and stays running")
+    finally:
+        process.kill()
+        process.wait(timeout=10)
+    # An app dragged out of Apps between the first two kept apps is kept
+    # second.
+    kept, _ = dock_groups(log)
+    apps = next((tile for tile in kept if tile[0] == "org.rmac.appdrawer"), None)
+    if apps is None or len(kept) < 2:
+        failures.append("dock drag: the Dock has no Apps tile to open Apps from")
+        return
+    before = len(log.lines())
+    click(apps[1], apps[2])
+    if log.wait_for(r"^apps first tile ", 15.0, after=before) is None:
+        failures.append("dock drag: Apps did not open from the Dock")
+        return
+    time.sleep(0.8)
+    type_text("Preview")
+    first = log.wait_for(r"^apps first tile org\.rmac\.Preview(?:\.desktop)? at (-?\d+),(-?\d+)", 10.0, after=before)
+    if first is None:
+        failures.append("dock drag: searching Apps for Preview showed no Preview tile first")
+        tap(VK_ESCAPE)
+        return
+    time.sleep(0.5)
+    slow_drag((int(first.group(1)), int(first.group(2))), between(kept, 0), hold=0.6)
+    preview = "org.rmac.preview"
+    kept_second = wait_until(lambda: kept_index(log, preview) == 1, 10.0)
+    save(screenshots, "dock-drag-from-apps")
+    tap(VK_ESCAPE)
+    time.sleep(0.5)
+    if kept_second is None:
+        failures.append(
+            f"dock drag: Preview dragged out of Apps between the first two kept apps was not kept "
+            f"second: {[tile for tile, _, _ in dock_groups(log)[0]]}"
+        )
+        return
+    print("shell: dock drag: Preview dragged out of Apps is kept where it was dropped")
+    # Leave the Dock as it was: drag Preview off again.
+    kept, _ = dock_groups(log)
+    tile = kept[1]
+    slow_drag((tile[1], tile[2]), (tile[1], tile[2] - 260), hold=1.0)
+    if wait_until(lambda: kept_index(log, preview) is None, 10.0) is None:
+        failures.append("dock drag: Preview dragged off the Dock stayed kept")
 
 
 def check_memory_after_use(log: Log, shell_pid: int, measurements: dict, failures: list[str]) -> None:

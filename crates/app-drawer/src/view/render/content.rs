@@ -2,15 +2,19 @@
 
 use super::*;
 
-/// Drag payload for keeping an application in the Dock (§ drag from Apps).
-/// GPUI's Linux backend cannot start a real cross-process Wayland drag
-/// (`drag_endpoint` documents why), so this only ever drives an in-window
-/// drag ghost and the window-relative hint `AppDrawer`'s root listens for
-/// with `on_drag_move`.
+/// Drag payload for keeping an application in the Dock (macOS 26: drag from
+/// Apps to the Dock). On Lulo OS the drag becomes a copy-only Wayland file
+/// drag of the app's desktop entry, which the Dock keeps where it is
+/// dropped; on Windows `AppDrawer`'s root reports it to the Dock in the
+/// same process.
 #[derive(Clone)]
 pub(super) struct DraggedApp {
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(super) app_id: String,
     pub(super) name: SharedString,
+    /// The app's desktop entry.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub(super) path: std::path::PathBuf,
 }
 
 /// The drag ghost macOS shows under the pointer while dragging a Launchpad
@@ -156,6 +160,8 @@ impl AppDrawer {
         let id = app.id.clone();
         div()
             .id(SharedString::from(format!("app-{}", app.path.display())))
+            .role(gpui::Role::Button)
+            .aria_label(app.name.clone())
             .w(px(TILE_W))
             .flex()
             .flex_col()
@@ -174,6 +180,37 @@ impl AppDrawer {
                 element.border_1().border_color(gpui::transparent_black())
             })
             .hover(|hover| hover.bg(mac::hover()))
+            // The Windows CI drags the first app to the Dock from where Apps
+            // says it is (`scripts/windows/shell_smoke.py`).
+            .map(|tile| {
+                #[cfg(windows)]
+                let tile = tile.when(
+                    position == 0 && rmac_shell_layer::windows::trace::enabled(),
+                    |tile| {
+                        let app_id = app.id.clone();
+                        tile.relative().child(
+                            gpui::canvas(
+                                move |bounds, window, _| {
+                                    let center = bounds.center();
+                                    let (x, y) = rmac_shell_layer::windows::trace::screen_point(
+                                        window,
+                                        f32::from(center.x),
+                                        f32::from(center.y),
+                                    );
+                                    rmac_shell_layer::windows::trace::trace_changed(
+                                        "apps first tile",
+                                        || format!("apps first tile {app_id} at {x},{y}"),
+                                    );
+                                },
+                                |_, _, _, _| {},
+                            )
+                            .absolute()
+                            .size_full(),
+                        )
+                    },
+                );
+                tile
+            })
             .child(self.icon_element(app, ICON, cx))
             .child(
                 div()
@@ -205,8 +242,11 @@ impl AppDrawer {
                 DraggedApp {
                     app_id: app.id.clone(),
                     name: app.name.clone(),
+                    path: app.path.clone(),
                 },
                 |drag, _point, _window, cx| {
+                    #[cfg(target_os = "linux")]
+                    gpui_linux::stage_external_copy_drag(vec![drag.path.clone()]);
                     cx.new(|_| DragGhost {
                         name: drag.name.clone(),
                     })
@@ -230,6 +270,8 @@ impl AppDrawer {
         let id = app.id.clone();
         div()
             .id(SharedString::from(format!("recent-{}", app.path.display())))
+            .role(gpui::Role::Button)
+            .aria_label(app.name.clone())
             .w(px(TILE_W))
             .flex()
             .flex_col()
@@ -272,8 +314,11 @@ impl AppDrawer {
                 DraggedApp {
                     app_id: app.id.clone(),
                     name: app.name.clone(),
+                    path: app.path.clone(),
                 },
                 |drag, _point, _window, cx| {
+                    #[cfg(target_os = "linux")]
+                    gpui_linux::stage_external_copy_drag(vec![drag.path.clone()]);
                     cx.new(|_| DragGhost {
                         name: drag.name.clone(),
                     })

@@ -1443,6 +1443,7 @@ class LuloRun:
                     (ox + start[0], oy + start[1]),
                     (ox + end[0], oy + end[1]),
                     OUTPUT_W, OUTPUT_H,
+                    hold=float(step.get("hold", 0.0)),
                 )
             elif "context_in_window" in step:
                 # A right-click at a window-relative point, for surfaces with

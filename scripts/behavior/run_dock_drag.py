@@ -126,6 +126,22 @@ def write_entries(run: run_window_move.Run) -> None:
     )
 
 
+def material_span(image, y: int) -> tuple[int, int] | None:
+    """The shelf material's left and right edge on row `y` of a capture:
+    the outermost pixels that differ from the plain backdrop at the row's
+    ends."""
+    width = image.width
+    background = image.getpixel((5, y))
+
+    def differs(x: int) -> bool:
+        pixel = image.getpixel((x, y))
+        return sum(abs(a - b) for a, b in zip(pixel, background)) > 12
+
+    left = next((x for x in range(width) if differs(x)), None)
+    right = next((x for x in range(width - 1, -1, -1) if differs(x)), None)
+    return (left, right) if left is not None and right is not None else None
+
+
 def drawer_size() -> tuple[float, float]:
     source = (run_window_move.REPO / "crates/app-drawer/src/view.rs").read_text()
     width = float(re.search(r"DRAWER_WIDTH: f32 = ([\d.]+)", source).group(1))
@@ -160,9 +176,7 @@ def inner(args: argparse.Namespace) -> int:
 
         def restart_dock() -> None:
             """Start the Dock again, so it reads the saved settings afresh
-            (persistence across a restart). Nested niri sometimes stops
-            delivering the pointer to a Dock whose shelf length changed
-            while the pointer sat on it; a fresh Dock avoids that."""
+            (persistence across a restart)."""
             docks[-1].terminate()
             docks[-1].wait(timeout=10)
             docks.append(run.spawn([str(Path(args.bin_dir) / "dock")], f"dock-{len(docks)}",
@@ -177,7 +191,11 @@ def inner(args: argparse.Namespace) -> int:
         between_first_two = ((files[0] + apps[0]) / 2, files[1])
 
         # 1. A running app that is not kept, dragged left across the
-        # separator between the first two kept apps, is kept second.
+        # separator between the first two kept apps, is kept second. The
+        # pointer rests on the Dock while the probe opens and the shelf grows
+        # under it: the Dock keeps its windows and still takes the drag.
+        run.pointer.move(*run.parent_point(*files), run.parent_width, run.parent_height)
+        time.sleep(0.5)
         run.spawn([sys.executable, str(Path(__file__).resolve()), "--probe-window"], "probe")
         probe = run.wait_for(lambda: dock_centre(dock_pid(), PROBE_NAME), 30)
         run.check("running probe app shows in the Dock", probe is not None)
@@ -185,24 +203,22 @@ def inner(args: argparse.Namespace) -> int:
             return run.finish()
         run.check("probe starts among the running apps", probe[0] > apps[0], f"{probe}")
         # The shelf grew for the probe; read the kept tiles again.
-        restart_dock()
+        time.sleep(1.0)
         files = dock_centre(dock_pid(), "Files")
         apps = dock_centre(dock_pid(), "Apps")
         probe = dock_centre(dock_pid(), PROBE_NAME)
         between_first_two = ((files[0] + apps[0]) / 2, files[1])
         drag(run, probe, between_first_two)
         kept = run.wait_for(lambda: (p := pinned(run)) and canonical(PROBE_ID) in p and p, 8)
-        run.check("running app dragged across the separator is kept second",
+        run.check("running app dragged across the separator (shelf grown under a "
+                  "resting pointer) is kept second",
                   bool(kept) and kept.index(canonical(PROBE_ID)) == 1, str(kept))
         if not kept:
             return run.finish()
 
-        # 2. Files, Probe, Apps, Notes…: dragging the kept probe past Apps
-        # (between Apps and Notes) moves it one place right. The restarted
-        # Dock still keeps the probe: the drop persisted.
-        restart_dock()
-        run.check("kept app persists across a Dock restart",
-                  (pinned(run) or []).count(canonical(PROBE_ID)) == 1, str(pinned(run)))
+        # 2. Files, Probe, Apps, Notes…: at once (no wait for the Dock to
+        # confirm the drop), dragging the kept probe past Apps (between Apps
+        # and Notes) moves it one place right.
         probe = run.wait_for(lambda: dock_centre(dock_pid(), PROBE_NAME), 10)
         apps = dock_centre(dock_pid(), "Apps")
         notes = dock_centre(dock_pid(), "Notes")
@@ -211,21 +227,20 @@ def inner(args: argparse.Namespace) -> int:
             moved = run.wait_for(
                 lambda: (p := pinned(run)) and canonical(PROBE_ID) in p
                 and p.index(canonical(PROBE_ID)) == 2 and p, 8)
-            run.check("dragging a kept app past its neighbour reorders it", bool(moved),
+            run.check("dragging a kept app right after a drop reorders it", bool(moved),
                       str(pinned(run)))
         else:
             run.check("kept tiles visible for reorder", False, f"{probe} {apps} {notes}")
 
         # 3. Dragged off the Dock and held, it is removed, and as it is
         # still running it stays in the Dock's running apps.
-        restart_dock()
         probe = run.wait_for(lambda: dock_centre(dock_pid(), PROBE_NAME), 10)
         if probe:
             drag(run, probe, (probe[0], probe[1] - 260), hold=1.0)
         removed = run.wait_for(
             lambda: (p := pinned(run)) is not None and canonical(PROBE_ID) not in p, 8)
         run.check("kept app dragged off the Dock is removed", bool(removed), str(pinned(run)))
-        restart_dock()
+        time.sleep(1.0)
         still = run.wait_for(lambda: dock_centre(dock_pid(), PROBE_NAME), 10)
         apps = dock_centre(dock_pid(), "Apps")
         run.check("removed app stays among the running apps",
@@ -256,9 +271,26 @@ def inner(args: argparse.Namespace) -> int:
         left = (run.width - width) / 2
         offsets = [(left, (dock_top - height) / 2), (left, (run.height - height) / 2)]
         kept_from_apps = None
+        rim_y = int(files_box[1] - 6) if files_box else run.height - 80
+        resting = material_span(run.capture("material-resting"), rim_y)
+        widened = None
         for left, top in offsets:
             start = (left + local[0], top + local[1])
-            drag(run, start, ((files[0] + apps[0]) / 2, files[1]), hold=0.6)
+            target = ((files[0] + apps[0]) / 2, files[1])
+            pointer = run.pointer
+            pointer.move(*run.parent_point(*start), run.parent_width, run.parent_height)
+            time.sleep(0.5)
+            pointer.button(True)
+            for step in range(1, 31):
+                part = step / 30
+                pointer.move(*run.parent_point(start[0] + (target[0] - start[0]) * part,
+                                               start[1] + (target[1] - start[1]) * part),
+                             run.parent_width, run.parent_height)
+                time.sleep(0.016)
+            time.sleep(0.8)
+            widened = material_span(run.capture("material-slot-open"), rim_y)
+            pointer.button(False)
+            time.sleep(0.4)
             kept_from_apps = run.wait_for(
                 lambda: (p := pinned(run)) and canonical(SECOND_ID) in p and p, 4)
             if kept_from_apps:
@@ -273,6 +305,16 @@ def inner(args: argparse.Namespace) -> int:
         run.check("app dragged out of Apps is kept where it was dropped",
                   bool(kept_from_apps) and kept_from_apps.index(canonical(SECOND_ID)) == 1,
                   str(kept_from_apps))
+        grown = (widened[1] - widened[0]) - (resting[1] - resting[0]) if resting and widened else None
+        run.check("the shelf's glass widens with the open slot (about one tile)",
+                  grown is not None and 50 <= grown <= 90, f"resting={resting} open={widened}")
+
+        # 5. The kept apps survive a Dock restart.
+        before = pinned(run)
+        restart_dock()
+        run.check("kept apps persist across a Dock restart",
+                  bool(before) and dock_centre(dock_pid(), SECOND_NAME) is not None
+                  and pinned(run) == before, str(pinned(run)))
         return run.finish()
     except Exception as error:  # noqa: BLE001
         run.check("dock drag runner completed", False, repr(error))

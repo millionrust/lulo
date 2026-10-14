@@ -15,18 +15,30 @@
 //! existing, genuinely-working per-window toggles (Show Image Background,
 //! Use Dark Appearance for PDF) exposed as the *default* for new windows,
 //! rather than inventing unmeasured controls.
+//!
+//! The 2026-10-14 robot captured the Mac's Images and PDF panes too; this
+//! adds what Preview can honour from them: Images ▸ When opening files,
+//! and PDF ▸ Add name to annotations (each new annotation's author), Start
+//! on the last viewed page and Opening for the first time ▸ Show as. Left
+//! out: Define 100% scale (Lulo has no reliable physical screen size to
+//! make "size on screen equals size on printout" true) and Use logical
+//! page numbers (Preview does not read PDF page labels).
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
     InteractiveElement as _, IntoElement, ParentElement as _, Render,
     StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
-use rmac_preview::settings_store::{self, Settings};
-use rmac_ui::{Button, Checkbox, Root, StyledExt as _};
+use rmac_preview::settings_store::{self, PdfLayout, Settings};
+use rmac_ui::{
+    AccessibleTextInput as _, Button, Checkbox, InputEvent, InputState, PopUpButton, PopupMenuItem,
+    Root, StyledExt as _, TextField,
+};
 
 use crate::ShowSettings;
 
-const WIDTH: f32 = 456.0;
+// The Mac's Preview Settings window is 500 points wide.
+const WIDTH: f32 = 500.0;
 const HEIGHT: f32 = 300.0;
 
 /// Settings ▸ General ▸ Window background presets. The real Mac's single
@@ -86,6 +98,7 @@ struct SettingsView {
     focus: FocusHandle,
     tab: Tab,
     settings: Settings,
+    annotation_name: gpui::Entity<InputState>,
 }
 
 impl SettingsView {
@@ -95,10 +108,25 @@ impl SettingsView {
         // geometry under `app_id::PREVIEW` (the UIA-06/UIA-09 bug).
         let focus = cx.focus_handle();
         rmac_ui::register_menu_target(window, &focus, cx);
+        let settings = settings_store::load_settings().unwrap_or_default();
+        let name = if settings.annotation_name.is_empty() {
+            default_annotation_name()
+        } else {
+            settings.annotation_name.clone()
+        };
+        let annotation_name = cx.new(|cx| InputState::new(window, cx).default_value(name));
+        cx.subscribe(&annotation_name, |this, input, event: &InputEvent, cx| {
+            if let InputEvent::Change = event {
+                this.settings.annotation_name = input.read(cx).value().to_string();
+                this.save(cx);
+            }
+        })
+        .detach();
         Self {
             focus,
             tab: Tab::General,
-            settings: settings_store::load_settings().unwrap_or_default(),
+            settings,
+            annotation_name,
         }
     }
 
@@ -128,6 +156,10 @@ impl SettingsView {
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
+        crate::OPEN_EACH_IN_OWN_WINDOW.store(
+            self.settings.open_each_in_own_window,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let settings = self.settings.clone();
         cx.background_executor()
             .spawn(async move {
@@ -235,17 +267,98 @@ impl Render for SettingsView {
                         )
                     })
                     .when(tab == Tab::Images, |pane| {
-                        pane.child(
-                            Checkbox::new("preview-settings-show-image-background")
-                                .label("Show image background in new windows")
-                                .checked(show_image_background_default)
-                                .on_change(cx.listener(|this, value: &bool, _, cx| {
-                                    this.set_show_image_background_default(*value, cx);
-                                })),
-                        )
+                        let each = self.settings.open_each_in_own_window;
+                        pane.child("When opening files:")
+                            .child(radio(
+                                "preview-settings-open-together",
+                                "Open groups of files in the same window",
+                                !each,
+                                cx.listener(|this, _, _, cx| {
+                                    this.settings.open_each_in_own_window = false;
+                                    this.save(cx);
+                                }),
+                            ))
+                            .child(radio(
+                                "preview-settings-open-each",
+                                "Open each file in its own window",
+                                each,
+                                cx.listener(|this, _, _, cx| {
+                                    this.settings.open_each_in_own_window = true;
+                                    this.save(cx);
+                                }),
+                            ))
+                            .child(
+                                Checkbox::new("preview-settings-show-image-background")
+                                    .label("Show image background in new windows")
+                                    .checked(show_image_background_default)
+                                    .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                        this.set_show_image_background_default(*value, cx);
+                                    })),
+                            )
                     })
                     .when(tab == Tab::Pdf, |pane| {
+                        let view = cx.entity();
+                        let layout = self.settings.pdf_layout;
                         pane.child(
+                            Checkbox::new("preview-settings-annotation-name")
+                                .label("Add name to annotations")
+                                .checked(self.settings.add_name_to_annotations)
+                                .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                    this.settings.add_name_to_annotations = *value;
+                                    if *value && this.settings.annotation_name.is_empty() {
+                                        this.settings.annotation_name =
+                                            this.annotation_name.read(cx).value().to_string();
+                                    }
+                                    this.save(cx);
+                                })),
+                        )
+                        .child(
+                            div().flex().items_center().gap_2().child("Name:").child(
+                                div()
+                                    .id("preview-settings-annotation-name-field")
+                                    .w(px(220.0))
+                                    .role(gpui::Role::TextInput)
+                                    .aria_label("username")
+                                    .accessible_text_input(&self.annotation_name, cx)
+                                    .child(TextField::new(&self.annotation_name).small()),
+                            ),
+                        )
+                        .child(
+                            Checkbox::new("preview-settings-last-page")
+                                .label("Start on the last viewed page")
+                                .checked(self.settings.start_on_last_viewed_page)
+                                .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                    this.settings.start_on_last_viewed_page = *value;
+                                    this.save(cx);
+                                })),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child("Opening for the first time: Show as")
+                                .child(
+                                    PopUpButton::new("preview-settings-pdf-layout", layout.label())
+                                        .w(px(170.0))
+                                        .dropdown_menu(move |menu, _, _| {
+                                            PdfLayout::ALL.into_iter().fold(menu, |menu, choice| {
+                                                let view = view.clone();
+                                                menu.item(
+                                                    PopupMenuItem::new(choice.label())
+                                                        .checked(choice == layout)
+                                                        .on_click(move |_, _, cx| {
+                                                            view.update(cx, |this, cx| {
+                                                                this.settings.pdf_layout = choice;
+                                                                this.save(cx);
+                                                            });
+                                                        }),
+                                                )
+                                            })
+                                        }),
+                                ),
+                        )
+                        .child(
                             Checkbox::new("preview-settings-dark-appearance-for-pdf")
                                 .label("Use dark appearance for PDF in new windows")
                                 .checked(dark_appearance_for_pdf_default)
@@ -256,4 +369,39 @@ impl Render for SettingsView {
                     }),
             )
     }
+}
+
+/// A radio row: a checkmark beside the chosen one, like the Mac's radio
+/// buttons, with the radio role and state for assistive technology.
+fn radio(
+    id: &'static str,
+    label: &'static str,
+    selected: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .role(gpui::Role::RadioButton)
+        .aria_label(label)
+        .aria_selected(selected)
+        .flex()
+        .items_center()
+        .gap_2()
+        .cursor_pointer()
+        .child(
+            div()
+                .w(px(14.0))
+                .text_color(rmac_ui::mac::accent())
+                .child(if selected { "●" } else { "○" }),
+        )
+        .child(label)
+        .on_click(on_click)
+}
+
+/// The Mac fills the annotation name with the account's full name; Lulo
+/// uses the login name until the person types their own.
+fn default_annotation_name() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_default()
 }

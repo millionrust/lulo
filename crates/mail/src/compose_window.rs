@@ -10,7 +10,7 @@ use gpui::{
 };
 use rmac_editor::InputState;
 use rmac_mail::compose::{
-    addresses, apply_completion, complete, completion_query, format_lines, initial_draft,
+    addresses, apply_completion, complete, completion_query, format_lines, initial_draft_with,
     ComposeKind, LineFormat, Recipient,
 };
 use rmac_mail::Message;
@@ -117,7 +117,10 @@ impl ComposeView {
             .first()
             .map(|account| account.address.as_str())
             .unwrap_or_default();
-        let mut quote = initial_draft(kind, message, from);
+        // Settings ▸ Composing decides how much of the original a reply
+        // quotes; Settings ▸ Signatures adds the signature below.
+        let (settings, _error) = rmac_mail::settings::load();
+        let mut quote = initial_draft_with(kind, message, from, &settings.composing);
         // A `mailto:` launch (MAIL-8, `main.rs`) hands its parsed fields in
         // here instead of deriving them from `kind`/`message`; only the
         // fields it actually set override the blank/quoted draft.
@@ -141,7 +144,6 @@ impl ComposeView {
         // Every new message, reply and forward gets the chosen account's
         // automatic signature (Settings ▸ Signatures, MAIL-8) appended once,
         // right here when the compose window opens.
-        let (settings, _error) = rmac_mail::settings::load();
         let quote = settings.compose_draft_with_signature(quote, from);
         let to = cx.new(|cx| InputState::new(window, cx).placeholder("Add recipients"));
         let cc = cx.new(|cx| InputState::new(window, cx).placeholder("Add Cc recipients"));

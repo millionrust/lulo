@@ -45,6 +45,8 @@ pub struct MailView {
     runtime: Option<Arc<rmac_mail_runtime::Runtime>>,
     /// The conversation list, drawn as its own cached view (SPEED-09).
     list_view: Option<Entity<MailListView>>,
+    /// Settings ▸ Fonts & Colours and Viewing, as last applied.
+    display: rmac_mail::settings::DisplayPrefs,
 }
 
 /// The conversation list as its own GPUI view (SPEED-09). A scroll
@@ -124,6 +126,14 @@ impl MailView {
             })
             .detach();
         }
+        // Settings load off the UI thread; an open window redraws when a
+        // Fonts & Colours or Viewing choice changes.
+        crate::settings_view::load_applied(cx);
+        cx.observe_global::<crate::settings_view::Applied>(|this, cx| {
+            this.display = cx.global::<crate::settings_view::Applied>().0;
+            cx.notify();
+        })
+        .detach();
         let mut view = Self {
             focus: cx.focus_handle(),
             state,
@@ -134,6 +144,7 @@ impl MailView {
             accounts,
             runtime,
             list_view: None,
+            display: rmac_mail::settings::DisplayPrefs::default(),
         };
         view.ensure_body_loaded(cx);
         view
@@ -749,6 +760,7 @@ impl MailView {
 
     fn list(&self, rows: Arc<Vec<Row>>, unread: usize, view: gpui::WeakEntity<Self>) -> AnyElement {
         let count = rows.len();
+        let display = self.display;
         div()
             .id("mail-conversations")
             .role(Role::ListBox)
@@ -824,7 +836,7 @@ impl MailView {
                                     .role(Role::ListBoxOption)
                                     .aria_label(accessible)
                                     .aria_selected(row.selected)
-                                    .h(px(78.0))
+                                    .h(px(display.list_row_height()))
                                     .px(px(13.0))
                                     .pt(px(7.0))
                                     .flex()
@@ -863,12 +875,15 @@ impl MailView {
                                                     .gap(px(5.0))
                                                     .child(
                                                         div()
-                                                            .font_weight(if row.unread {
-                                                                FontWeight::BOLD
-                                                            } else {
-                                                                FontWeight::NORMAL
-                                                            })
-                                                            .text_size(px(13.0))
+                                                            .font_weight(
+                                                                if row.unread && display.unread_bold
+                                                                {
+                                                                    FontWeight::BOLD
+                                                                } else {
+                                                                    FontWeight::NORMAL
+                                                                },
+                                                            )
+                                                            .text_size(px(display.list_font_size))
                                                             .text_color(mac::text())
                                                             .child(row.sender.clone()),
                                                     )
@@ -883,7 +898,7 @@ impl MailView {
                                                 div()
                                                     .flex()
                                                     .gap(px(4.0))
-                                                    .text_size(px(12.0))
+                                                    .text_size(px(display.list_font_size - 1.0))
                                                     .text_color(mac::text())
                                                     .child(row.subject.clone())
                                                     .child(if row.thread_count > 1 {
@@ -893,13 +908,18 @@ impl MailView {
                                                     })
                                                     .child(if row.attachment { "⌁" } else { "" }),
                                             )
-                                            .child(
-                                                div()
-                                                    .text_size(px(11.0))
-                                                    .text_color(mac::text_secondary())
-                                                    .overflow_hidden()
-                                                    .child(row.preview.clone()),
-                                            ),
+                                            .when(display.preview_lines > 0, |column| {
+                                                column.child(
+                                                    div()
+                                                        .text_size(px(display.list_font_size - 2.0))
+                                                        .text_color(mac::text_secondary())
+                                                        .overflow_hidden()
+                                                        .line_clamp(usize::from(
+                                                            display.preview_lines,
+                                                        ))
+                                                        .child(row.preview.clone()),
+                                                )
+                                            }),
                                     )
                                     .on_click(move |_: &ClickEvent, _, cx| {
                                         let _ = view.update(cx, |this, cx| {
@@ -920,20 +940,38 @@ impl MailView {
     }
 
     fn rich_body(&self, body: &RichText) -> AnyElement {
+        // Viewing ▸ "Use dark backgrounds for messages" off: in Dark Mode
+        // the message sits on white paper with black text, as on the Mac.
+        let paper = !self.display.dark_message_backgrounds && mac::is_dark();
+        let text = if paper { mac::black() } else { mac::text() };
         let mut content = div().flex().flex_col().gap(px(11.0));
+        if paper {
+            content = content
+                .p(px(16.0))
+                .rounded(px(mac::radius_card()))
+                .bg(mac::white());
+        }
         for (index, block) in body.blocks.iter().enumerate() {
             let mut line = div()
                 .id(format!("mail-block-{index}"))
                 .flex()
                 .flex_wrap()
-                .text_size(px(13.0))
-                .text_color(mac::text());
+                .text_size(px(self.display.message_font_size))
+                .text_color(text);
             if block.kind == BlockKind::Quote {
+                // Fonts & Colours ▸ "Colour quoted text".
+                let (bar, quote_text) = if self.display.colour_quoted_text {
+                    (mac::system_blue(), mac::system_blue())
+                } else if paper {
+                    (mac::separator(), mac::black())
+                } else {
+                    (mac::separator(), mac::text_secondary())
+                };
                 line = line
                     .border_l_3()
-                    .border_color(mac::separator())
+                    .border_color(bar)
                     .pl(px(10.0))
-                    .text_color(mac::text_secondary());
+                    .text_color(quote_text);
             }
             if block.kind == BlockKind::ListItem {
                 line = line.child("• ");

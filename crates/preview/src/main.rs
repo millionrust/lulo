@@ -545,6 +545,16 @@ fn saved_windows_path() -> PathBuf {
 /// in the file and checked on load, so a hash collision cannot attach another
 /// document's bookmarks.
 fn bookmarks_path(document: &std::path::Path) -> PathBuf {
+    document_state_path(document, "bookmarks")
+}
+
+/// Where `document`'s last viewed page is kept (Settings ▸ PDF ▸ Start on
+/// the last viewed page).
+fn last_page_path(document: &std::path::Path) -> PathBuf {
+    document_state_path(document, "last-pages")
+}
+
+fn document_state_path(document: &std::path::Path, directory: &str) -> PathBuf {
     const FNV_OFFSET: u64 = 0xcbf29ce484222325;
     const FNV_PRIME: u64 = 0x100000001b3;
     let hash = document
@@ -555,8 +565,73 @@ fn bookmarks_path(document: &std::path::Path) -> PathBuf {
             (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
         });
     saved_windows_path()
-        .with_file_name("bookmarks")
+        .with_file_name(directory)
         .join(format!("{hash:016x}.json"))
+}
+
+/// The page `document` was last viewed at, if Preview remembers one.
+pub(crate) fn load_last_page(document: &std::path::Path) -> Option<usize> {
+    let bytes = std::fs::read(last_page_path(document)).ok()?;
+    let (stored_path, page) = serde_json::from_slice::<(PathBuf, usize)>(&bytes).ok()?;
+    (stored_path == document).then_some(page)
+}
+
+/// Records `page` as `document`'s last viewed page on a writer thread that
+/// keeps only the newest page per document, so scrolling never writes on
+/// the UI thread or once per page passed.
+pub(crate) fn remember_last_page(document: PathBuf, page: usize) {
+    use std::sync::{mpsc, Mutex, OnceLock};
+    static WRITER: OnceLock<Mutex<mpsc::Sender<(PathBuf, usize)>>> = OnceLock::new();
+    let writer = WRITER.get_or_init(|| {
+        let (sender, receiver) = mpsc::channel::<(PathBuf, usize)>();
+        let _ = std::thread::Builder::new()
+            .name("preview-last-page".into())
+            .spawn(move || {
+                while let Ok(first) = receiver.recv() {
+                    let mut latest = std::collections::HashMap::from([first]);
+                    while let Ok((document, page)) = receiver.try_recv() {
+                        latest.insert(document, page);
+                    }
+                    for (document, page) in latest {
+                        if let Err(error) = save_last_page(&document, page) {
+                            eprintln!("rmac-preview: could not remember the page: {error}");
+                        }
+                    }
+                }
+            });
+        Mutex::new(sender)
+    });
+    if let Ok(writer) = writer.lock() {
+        let _ = writer.send((document, page));
+    }
+}
+
+fn save_last_page(document: &std::path::Path, page: usize) -> std::io::Result<()> {
+    let path = last_page_path(document);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let bytes = serde_json::to_vec(&(document, page)).map_err(std::io::Error::other)?;
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&temporary, bytes)?;
+    std::fs::rename(temporary, path)
+}
+
+/// Settings ▸ Images ▸ "Open each file in its own window", kept here so a
+/// launch or the Open panel never reads the settings file on the UI thread.
+pub(crate) static OPEN_EACH_IN_OWN_WINDOW: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Opens `paths` as Settings ▸ Images ▸ When opening files says: together
+/// in one window, or each in its own.
+pub(crate) fn open_documents(paths: Vec<PathBuf>, cx: &mut App) {
+    if paths.len() > 1 && OPEN_EACH_IN_OWN_WINDOW.load(std::sync::atomic::Ordering::Relaxed) {
+        for path in paths {
+            open_window(vec![path], cx);
+        }
+    } else {
+        open_window(paths, cx);
+    }
 }
 
 fn load_bookmarks(document: &std::path::Path) -> std::collections::BTreeSet<usize> {
@@ -697,6 +772,12 @@ fn close_all(cx: &mut App) {
 fn restore_kept_windows(initial_paths: Vec<PathBuf>, cx: &mut App) {
     cx.spawn(async move |cx| {
         let restored = blocking::unblock(move || {
+            if let Ok(settings) = rmac_preview::settings_store::load_settings() {
+                OPEN_EACH_IN_OWN_WINDOW.store(
+                    settings.open_each_in_own_window,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+            }
             let path = saved_windows_path();
             let bytes = std::fs::read(&path).ok()?;
             let _ = std::fs::remove_file(path);
@@ -715,7 +796,7 @@ fn restore_kept_windows(initial_paths: Vec<PathBuf>, cx: &mut App) {
                     choose_and_open(true, cx);
                 }
             } else {
-                open_window(initial_paths, cx);
+                open_documents(initial_paths, cx);
             }
         });
     })
@@ -765,7 +846,7 @@ pub(crate) fn choose_and_open(quit_if_cancelled: bool, cx: &mut App) {
     cx.spawn(async move |cx| {
         let chosen = chosen.await;
         cx.update(|cx| match chosen {
-            Ok(paths) if !paths.is_empty() => open_window(paths, cx),
+            Ok(paths) if !paths.is_empty() => open_documents(paths, cx),
             Ok(_) if quit_if_cancelled && cx.windows().is_empty() => cx.quit(),
             Ok(_) => {}
             Err(error) => {
@@ -913,7 +994,7 @@ fn main() {
                     if paths.is_empty() {
                         choose_and_open(false, cx);
                     } else {
-                        open_window(paths, cx);
+                        open_documents(paths, cx);
                     }
                 },
                 cx,

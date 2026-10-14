@@ -2,6 +2,7 @@
 
 use rmac_mail_mime::{quote_forward, quote_reply, valid_address, Draft};
 
+use crate::settings::ComposingSettings;
 use crate::Message;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,6 +122,18 @@ pub fn known_recipients(messages: &[Message]) -> Vec<Recipient> {
 }
 
 pub fn initial_draft(kind: ComposeKind, message: Option<&Message>, from: &str) -> Draft {
+    initial_draft_with(kind, message, from, &ComposingSettings::default())
+}
+
+/// [`initial_draft`] with Settings ▸ Composing applied: "Quote the text of
+/// the original message" and "Increase quote level" decide what a reply
+/// carries of the message it answers.
+pub fn initial_draft_with(
+    kind: ComposeKind,
+    message: Option<&Message>,
+    from: &str,
+    composing: &ComposingSettings,
+) -> Draft {
     let mut draft = Draft {
         from: from.to_owned(),
         ..Draft::default()
@@ -160,10 +173,15 @@ pub fn initial_draft(kind: ComposeKind, message: Option<&Message>, from: &str) -
                     }
                 }
             }
-            draft.text = format!(
-                "\n\n{}",
-                quote_reply(&message.date, &message.sender, &message.body.plain_text())
-            );
+            if composing.quote_original_when_replying {
+                let body = message.body.plain_text();
+                let quoted = if composing.increase_quote_level {
+                    quote_reply(&message.date, &message.sender, &body)
+                } else {
+                    format!("On {}, {} wrote:\n{body}\n", message.date, message.sender)
+                };
+                draft.text = format!("\n\n{quoted}");
+            }
         }
         ComposeKind::Forward => {
             draft.subject = if subject.to_lowercase().starts_with("fwd:") {
@@ -336,6 +354,25 @@ mod tests {
         let forward = initial_draft(ComposeKind::Forward, Some(original), "jacob@example.test");
         assert_eq!(forward.subject, "Fwd: Lunch on Friday?");
         assert!(forward.text.contains("Begin forwarded message:"));
+    }
+
+    #[test]
+    fn composing_settings_decide_what_a_reply_quotes() {
+        let state = MailState::fixture();
+        let original = state.selected_message().unwrap();
+        let mut composing = ComposingSettings {
+            quote_original_when_replying: false,
+            ..ComposingSettings::default()
+        };
+        let bare = initial_draft_with(ComposeKind::Reply, Some(original), "j@x.test", &composing);
+        assert!(bare.text.is_empty());
+        assert_eq!(bare.subject, "Re: Lunch on Friday?");
+        composing.quote_original_when_replying = true;
+        composing.increase_quote_level = false;
+        let flat = initial_draft_with(ComposeKind::Reply, Some(original), "j@x.test", &composing);
+        assert!(flat.text.contains("Anna Kim wrote:"));
+        assert!(flat.text.contains("Hi Jacob,"));
+        assert!(!flat.text.contains("> Hi Jacob,"));
     }
 
     #[test]

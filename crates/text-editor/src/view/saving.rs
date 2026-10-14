@@ -65,11 +65,7 @@ impl EditorView {
         };
         let content = self.save_content(cx);
         let path = directory.join(name);
-        let path = if path.extension().is_none() {
-            path.with_extension(content.default_extension())
-        } else {
-            path
-        };
+        let path = with_default_extension(path, &content);
         let format = self.text_format;
         self.file_busy = true;
         cx.notify();
@@ -255,11 +251,7 @@ impl EditorView {
             // A name typed (or accepted) with no extension gets this plain
             // document's own, the same way the hidden extension in the
             // Save panel's Format popup would on the Mac.
-            let path = if path.extension().is_none() {
-                path.with_extension(content.default_extension())
-            } else {
-                path
-            };
+            let path = with_default_extension(path, &content);
             let result = cx
                 .background_executor()
                 .spawn({

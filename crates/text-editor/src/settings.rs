@@ -79,6 +79,16 @@ pub(crate) struct Settings {
     pub(crate) author_default: String,
     pub(crate) organisation_default: String,
     pub(crate) copyright_default: String,
+    /// Settings ▸ Open and Save ▸ "Display RTF files as RTF code instead
+    /// of formatted text": an `.rtf` then opens as its plain source.
+    pub(crate) display_rtf_as_code: bool,
+    /// "Add ".txt" extension to plain text files": a plain document saved
+    /// under a name typed without an extension gets `.txt`.
+    pub(crate) add_txt_extension: bool,
+    /// Plain Text File Encoding ▸ "Opening files:": `None` is Automatic
+    /// (the byte-order mark decides); a chosen encoding reads unmarked
+    /// files as it.
+    pub(crate) open_encoding: Option<TextEncoding>,
 }
 
 impl Default for Settings {
@@ -113,6 +123,9 @@ impl Default for Settings {
             author_default: String::new(),
             organisation_default: String::new(),
             copyright_default: String::new(),
+            display_rtf_as_code: false,
+            add_txt_extension: true,
+            open_encoding: None,
         }
     }
 }
@@ -149,12 +162,7 @@ fn parse(contents: &str) -> Settings {
             }
             "wrap_to_page" => settings.wrap_to_page = value == "true",
             "default_encoding" => {
-                settings.default_encoding = match value {
-                    "utf8-bom" => TextEncoding::Utf8Bom,
-                    "utf16-le" => TextEncoding::Utf16Le,
-                    "utf16-be" => TextEncoding::Utf16Be,
-                    _ => TextEncoding::Utf8,
-                };
+                settings.default_encoding = encoding_from_key(value).unwrap_or_default();
             }
             "rich_text_default" => settings.rich_text_default = value == "true",
             "rich_text_font" => {
@@ -191,10 +199,32 @@ fn parse(contents: &str) -> Settings {
             "author_default" => settings.author_default = value.to_string(),
             "organisation_default" => settings.organisation_default = value.to_string(),
             "copyright_default" => settings.copyright_default = value.to_string(),
+            "display_rtf_as_code" => settings.display_rtf_as_code = value == "true",
+            "add_txt_extension" => settings.add_txt_extension = value == "true",
+            "open_encoding" => settings.open_encoding = encoding_from_key(value),
             _ => {}
         }
     }
     settings
+}
+
+fn encoding_key(encoding: TextEncoding) -> &'static str {
+    match encoding {
+        TextEncoding::Utf8 => "utf8",
+        TextEncoding::Utf8Bom => "utf8-bom",
+        TextEncoding::Utf16Le => "utf16-le",
+        TextEncoding::Utf16Be => "utf16-be",
+    }
+}
+
+fn encoding_from_key(value: &str) -> Option<TextEncoding> {
+    match value {
+        "utf8" => Some(TextEncoding::Utf8),
+        "utf8-bom" => Some(TextEncoding::Utf8Bom),
+        "utf16-le" => Some(TextEncoding::Utf16Le),
+        "utf16-be" => Some(TextEncoding::Utf16Be),
+        _ => None,
+    }
 }
 
 /// A Properties default for the hand-rolled `key=value` line format: one
@@ -205,18 +235,14 @@ fn one_line(value: &str) -> String {
 }
 
 fn serialize(settings: &Settings) -> String {
-    let encoding = match settings.default_encoding {
-        TextEncoding::Utf8 => "utf8",
-        TextEncoding::Utf8Bom => "utf8-bom",
-        TextEncoding::Utf16Le => "utf16-le",
-        TextEncoding::Utf16Be => "utf16-be",
-    };
+    let encoding = encoding_key(settings.default_encoding);
+    let open_encoding = settings.open_encoding.map_or("automatic", encoding_key);
     let rich_text_font = match settings.rich_text_font {
         RichTextFont::Inter => "inter",
         RichTextFont::JetBrainsMono => "jetbrains-mono",
     };
     format!(
-        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\ncheck_spelling_while_typing_default={}\ncheck_grammar_with_spelling_default={}\ncorrect_spelling_automatically_default={}\nsmart_copy_paste_default={}\nsmart_quotes_default={}\nsmart_dashes_default={}\nsmart_links_default={}\ndata_detectors_default={}\ntext_replacement_default={}\nspelling_rich_text_only={}\nsmart_quotes_rich_text_only={}\nauthor_default={}\norganisation_default={}\ncopyright_default={}\n",
+        "version=1\nwidth_chars={}\nheight_lines={}\nfont_size={}\nwrap_to_page={}\ndefault_encoding={encoding}\nrich_text_default={}\nrich_text_font={rich_text_font}\nrich_text_font_size={}\nshow_ruler_default={}\ncheck_spelling_while_typing_default={}\ncheck_grammar_with_spelling_default={}\ncorrect_spelling_automatically_default={}\nsmart_copy_paste_default={}\nsmart_quotes_default={}\nsmart_dashes_default={}\nsmart_links_default={}\ndata_detectors_default={}\ntext_replacement_default={}\nspelling_rich_text_only={}\nsmart_quotes_rich_text_only={}\nauthor_default={}\norganisation_default={}\ncopyright_default={}\ndisplay_rtf_as_code={}\nadd_txt_extension={}\nopen_encoding={open_encoding}\n",
         settings.width_chars,
         settings.height_lines,
         settings.font_size,
@@ -238,6 +264,8 @@ fn serialize(settings: &Settings) -> String {
         one_line(&settings.author_default),
         one_line(&settings.organisation_default),
         one_line(&settings.copyright_default),
+        settings.display_rtf_as_code,
+        settings.add_txt_extension,
     )
 }
 
@@ -342,6 +370,9 @@ mod tests {
             author_default: "A. Writer".to_string(),
             organisation_default: "Acme".to_string(),
             copyright_default: "\u{a9} 2026 Acme".to_string(),
+            display_rtf_as_code: true,
+            add_txt_extension: false,
+            open_encoding: Some(TextEncoding::Utf16Be),
         };
         assert_eq!(parse(&serialize(&settings)), settings);
         let bounded =
@@ -372,6 +403,15 @@ mod tests {
         // text window is not changed by an install that never touched them.
         assert!(!settings.spelling_rich_text_only);
         assert!(!settings.smart_quotes_rich_text_only);
+    }
+
+    #[test]
+    fn open_and_save_defaults_match_textedit() {
+        let settings = Settings::default();
+        assert!(!settings.display_rtf_as_code);
+        assert!(settings.add_txt_extension);
+        assert_eq!(settings.open_encoding, None);
+        assert_eq!(parse(&serialize(&settings)).open_encoding, None);
     }
 
     #[test]

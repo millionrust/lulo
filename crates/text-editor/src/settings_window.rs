@@ -511,52 +511,111 @@ impl SettingsView {
             )
     }
 
-    fn render_open_and_save(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// An encoding pop-up: `automatic` adds TextEdit's "Automatic" row
+    /// (`None`), the choice "Opening files:" offers.
+    fn encoding_popup(
+        id: &'static str,
+        current: Option<TextEncoding>,
+        automatic: bool,
+        apply: fn(&mut Settings, Option<TextEncoding>),
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let view = cx.entity();
-        let current = self.settings.default_encoding;
+        let label = current.map_or("Automatic", TextEncoding::label);
+        let mut choices: Vec<Option<TextEncoding>> = Vec::new();
+        if automatic {
+            choices.push(None);
+        }
+        choices.extend(
+            [
+                TextEncoding::Utf8,
+                TextEncoding::Utf8Bom,
+                TextEncoding::Utf16Le,
+                TextEncoding::Utf16Be,
+            ]
+            .map(Some),
+        );
+        PopUpButton::new(id, label)
+            .w(px(200.0))
+            .dropdown_menu(move |menu, _, _| {
+                choices.iter().fold(menu, |menu, &choice| {
+                    let view = view.clone();
+                    menu.item(
+                        PopupMenuItem::new(choice.map_or("Automatic", TextEncoding::label))
+                            .checked(choice == current)
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.edit(|settings| apply(settings, choice), cx);
+                                });
+                            }),
+                    )
+                })
+            })
+    }
+
+    fn render_open_and_save(&self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .child(Self::section_label("Plain Text Encoding"))
-            .child("New documents use:")
+            .child(Self::section_label("When Opening a File:"))
+            .child(Self::checkbox_row(
+                "settings-display-rtf-as-code",
+                "Display RTF files as RTF code instead of formatted text",
+                self.settings.display_rtf_as_code,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.display_rtf_as_code = *value, cx);
+                }),
+            ))
+            .child(Self::section_label("When Saving a File:"))
+            .child(Self::checkbox_row(
+                "settings-add-txt-extension",
+                "Add \".txt\" extension to plain text files",
+                self.settings.add_txt_extension,
+                cx.listener(|this, value: &bool, _, cx| {
+                    this.edit(|settings| settings.add_txt_extension = *value, cx);
+                }),
+            ))
+            .child(Self::section_label("Plain Text File Encoding"))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .py_1()
+                    .child(div().w(px(96.0)).child("Opening files:"))
+                    .child(Self::encoding_popup(
+                        "settings-open-encoding",
+                        self.settings.open_encoding,
+                        true,
+                        |settings, choice| settings.open_encoding = choice,
+                        cx,
+                    )),
+            )
             .child(
                 // A pop-up, not a list showing every choice at once
-                // (UIA-09 leftovers — matches the Mac's `AXPopUpButton`
-                // encoding controls, `win-settings-open-save-*` audit
-                // capture).
-                div().mt_2().w_full().child(
-                    PopUpButton::new("settings-default-encoding", current.label())
-                        .w_full()
-                        .dropdown_menu(move |menu, _, _| {
-                            [
-                                TextEncoding::Utf8,
-                                TextEncoding::Utf8Bom,
-                                TextEncoding::Utf16Le,
-                                TextEncoding::Utf16Be,
-                            ]
-                            .into_iter()
-                            .fold(menu, |menu, encoding| {
-                                let view = view.clone();
-                                menu.item(
-                                    PopupMenuItem::new(encoding.label())
-                                        .checked(encoding == current)
-                                        .on_click(move |_, _, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.edit(
-                                                    |settings| settings.default_encoding = encoding,
-                                                    cx,
-                                                );
-                                            });
-                                        }),
-                                )
-                            })
-                        }),
-                ),
+                // (UIA-09 leftovers — matches the Mac's `AXPopUpButton`).
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .py_1()
+                    .child(div().w(px(96.0)).child("Saving files:"))
+                    .child(Self::encoding_popup(
+                        "settings-default-encoding",
+                        Some(self.settings.default_encoding),
+                        false,
+                        |settings, choice| {
+                            settings.default_encoding = choice.unwrap_or_default();
+                        },
+                        cx,
+                    )),
             )
             .child(
                 div()
                     .pt_2()
                     .text_size(px(11.0))
                     .text_color(rmac_ui::mac::text_secondary())
-                    .child("Opening a file still detects its encoding from its contents."),
+                    .child(
+                        "New documents are saved in this encoding; an opened file keeps its own.",
+                    ),
             )
     }
 }

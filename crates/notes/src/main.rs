@@ -34,6 +34,7 @@ mod search_controller;
 mod search_highlight;
 #[cfg(target_os = "linux")]
 mod session_lock_watch;
+mod settings_store;
 mod settings_window;
 mod startup_controller;
 mod status_presentation;
@@ -601,6 +602,17 @@ impl NotesView {
         .detach();
 
         view.start_workers(window, cx);
+
+        // Notes ▸ Settings… choices saved by an earlier session, read off
+        // the UI thread.
+        cx.spawn(async move |this, cx| {
+            let prefs = blocking::unblock(settings_store::load).await;
+            let _ = this.update(cx, |view, cx| {
+                prefs.apply(view);
+                cx.notify();
+            });
+        })
+        .detach();
 
         // The Dock's or the menu bar's Quit, ⌘Q, ⌘Tab's Q and logging out
         // close the window through the compositor; route them through the

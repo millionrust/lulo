@@ -42,8 +42,9 @@ use windows::Win32::Media::KernelStreaming::{
     KSPROPERTY_ONESHOT_DISCONNECT, KSPROPERTY_ONESHOT_RECONNECT, KSPROPERTY_TYPE_GET,
 };
 use windows::Win32::System::Com::StructuredStorage::PropVariantToGUID;
-use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
-use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoIncrementMTAUsage, CoTaskMemFree, CLSCTX_ALL, STGM_READ,
+};
 use zeroize::Zeroize as _;
 
 use crate::macos::sort_devices;
@@ -104,11 +105,24 @@ impl BluetoothService for SystemBluetoothService {
     }
 }
 
-/// WinRT needs an apartment on the calling thread; background pool threads
-/// may be fresh. Repeated calls on one thread are harmless.
+/// WinRT needs the multithreaded apartment. The calls here run on the
+/// Windows thread pool (GPUI's background executor), whose threads Windows
+/// shares with its own work in the process: an apartment left behind on one
+/// of them kept the shell's Open dialog from ever showing (op/win-flakes).
+/// So no thread joins an apartment here: the process keeps the
+/// multithreaded apartment alive once (`CoIncrementMTAUsage`), and a thread
+/// that never initialised COM uses it implicitly. The watchers and event
+/// subscriptions below are multithreaded-apartment objects, usable and
+/// releasable from any such thread for as long as they live.
 fn ensure_apartment() {
-    // SAFETY: a plain WinRT bootstrap call with no pointers or borrows.
-    let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+    static MTA: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    MTA.get_or_init(|| {
+        // SAFETY: a plain COM call; the cookie is kept (never decremented),
+        // so the apartment lives as long as the process.
+        if let Err(error) = unsafe { CoIncrementMTAUsage() } {
+            eprintln!("bluetooth: cannot keep the multithreaded apartment: {error}");
+        }
+    });
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -1425,6 +1439,28 @@ fn appearance_icon(appearance: u16) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bluetooth's WinRT calls work on a thread that joined no apartment
+    /// (the process's kept multithreaded apartment), and leave that thread
+    /// as they found it, so Windows' own work on a shared thread-pool thread
+    /// can still join a single-threaded apartment there (op/win-com).
+    #[test]
+    fn bluetooth_calls_leave_no_apartment_on_their_thread() {
+        use windows::Win32::System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        };
+        std::thread::spawn(|| {
+            // Whatever the machine has: no adapter is a fine answer here.
+            let _ = windows_snapshot();
+            assert!(BluetoothAdapter::GetDeviceSelector().is_ok());
+            // SAFETY: joins and leaves an apartment on this test thread.
+            let joined = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+            assert!(joined.is_ok(), "{joined:?}");
+            unsafe { CoUninitialize() };
+        })
+        .join()
+        .unwrap();
+    }
 
     #[test]
     fn addresses_format_as_six_upper_case_octets() {

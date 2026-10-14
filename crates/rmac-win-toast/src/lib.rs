@@ -40,12 +40,20 @@ pub fn payload(title: &str, body: &str) -> String {
 pub fn show(aumid: &str, title: &str, body: &str) -> bool {
     use windows::core::HSTRING;
     use windows::Data::Xml::Dom::XmlDocument;
-    use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+    use windows::Win32::System::Com::CoIncrementMTAUsage;
     use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
 
-    // SAFETY: initialising the apartment for this thread; a second call
-    // (already initialised) returns an error that is fine to ignore.
-    let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+    // WinRT needs the multithreaded apartment. This runs on whichever thread
+    // the caller is on, often a Windows thread-pool thread shared with
+    // Windows' own work, so it joins no apartment there (one left behind
+    // kept the shell's Open dialog from showing, op/win-flakes): the
+    // process keeps the apartment alive once, and a thread without COM uses
+    // it implicitly.
+    static MTA: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    MTA.get_or_init(|| {
+        // SAFETY: a plain COM call; the cookie is kept for the process.
+        let _ = unsafe { CoIncrementMTAUsage() };
+    });
     let attempt = || -> windows::core::Result<()> {
         let document = XmlDocument::new()?;
         document.LoadXml(&HSTRING::from(payload(title, body)))?;
@@ -75,5 +83,25 @@ mod tests {
     #[test]
     fn control_characters_are_dropped() {
         assert_eq!(xml_escape("a\u{0}b\u{7}c\nd"), "abc\nd");
+    }
+
+    /// A toast leaves the calling thread as it found it: Windows' own work
+    /// on a shared thread-pool thread can still join a single-threaded
+    /// apartment there afterwards (op/win-com).
+    #[cfg(windows)]
+    #[test]
+    fn a_toast_leaves_no_apartment_on_its_thread() {
+        use windows::Win32::System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        };
+        std::thread::spawn(|| {
+            let _ = show("Lulo.Test", "Test", "A toast from the tests");
+            // SAFETY: joins and leaves an apartment on this test thread.
+            let joined = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+            assert!(joined.is_ok(), "{joined:?}");
+            unsafe { CoUninitialize() };
+        })
+        .join()
+        .unwrap();
     }
 }

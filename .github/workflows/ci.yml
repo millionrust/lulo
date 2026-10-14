@@ -463,6 +463,9 @@ jobs:
           # The settings store's own tests assume Unix files; the Windows
           # Dock migration is checked on its own.
           cargo test --locked -p rmac-shell-settings --lib a_windows_dock_saved_before_apps
+          # Bluetooth's WinRT backend leaves no apartment on a pool thread
+          # (op/win-com); its other tests assume BlueZ.
+          cargo test --locked -p rmac-bluetooth --lib win::tests
 
       # The hardware profile (ADR 0027) on a real Windows: it prints what it
       # found and fails when detection is over its 20 ms budget or panics.

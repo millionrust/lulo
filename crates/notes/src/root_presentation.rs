@@ -7,7 +7,7 @@ impl NotesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        self.window_narrow = narrow_window(window);
+        self.window_narrow = toolbar::narrow_window(window);
         if window.is_window_active() {
             self.publish_menu_state(window, cx);
         }

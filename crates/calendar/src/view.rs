@@ -8,10 +8,10 @@ use gpui::{
 use rmac_calendar::{
     current_date,
     editing::{self, Mutation},
-    events_on_day, invitations, is_weekend, month_grid_start, search_events, store,
+    events_on_day, invitations, is_weekend, month_grid_start_on, search_events, store,
     subscription_default_name, unique_calendar_name, validate_calendar_name,
-    validate_subscription_url, Calendar, CalendarColor, Navigator, SearchResult, View,
-    WeekSnapshot,
+    validate_subscription_url, weekday_columns, weekday_offset, Calendar, CalendarColor, Navigator,
+    SearchResult, View, WeekSnapshot,
 };
 use rmac_calendar_store::{TimeValue, Zone};
 use rmac_ui::{
@@ -30,8 +30,6 @@ use crate::{
 const SIDEBAR: f32 = 220.0;
 const TOOLBAR: f32 = 52.0;
 const GUTTER: f32 = 52.0;
-const HOUR: f32 = 48.0;
-const START_HOUR: f32 = 8.0;
 
 /// Which stack a submitted [`Mutation`] belongs to. A fresh edit (`Do`) starts a new
 /// branch of history and clears any pending redos; undoing moves one step onto redo;
@@ -752,7 +750,14 @@ impl CalendarView {
 
     fn new_event(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let now = Utc::now();
-        let hour = (now.hour() + 1).clamp(8, 19);
+        let general = &self.settings.general;
+        let hour = (now.hour() + 1).clamp(
+            general.day_starts_hour,
+            general
+                .day_ends_hour
+                .saturating_sub(1)
+                .max(general.day_starts_hour),
+        );
         self.create_event_at(self.nav.selected, hour, window, cx);
     }
 
@@ -769,9 +774,11 @@ impl CalendarView {
             cx.notify();
             return;
         };
-        let Some((start, end)) = editing::at_day(date, hour) else {
+        let Some((start, _)) = editing::at_day(date, hour) else {
             return;
         };
+        // Settings ▸ General ▸ Default event duration.
+        let end = start + Duration::minutes(i64::from(self.settings.general.default_event_minutes));
         let mut draft = editing::new_event(start, end, false);
         self.settings
             .general
@@ -1080,8 +1087,16 @@ impl CalendarView {
         };
         self.scroll_accumulated += delta;
         if self.scroll_accumulated.abs() >= 80.0 {
-            self.nav
-                .step(if self.scroll_accumulated < 0.0 { 1 } else { -1 });
+            let direction = if self.scroll_accumulated < 0.0 { 1 } else { -1 };
+            // Settings ▸ General ▸ Scroll in week view by: Day rolls the
+            // visible days one at a time instead of turning the week.
+            if self.nav.view == View::Week
+                && self.settings.general.week_scroll == store::WeekScroll::Day
+            {
+                self.nav.roll_week(direction);
+            } else {
+                self.nav.step(direction);
+            }
             self.scroll_accumulated = 0.0;
             cx.notify();
         }
@@ -1310,7 +1325,7 @@ impl CalendarView {
     }
 
     fn mini_month(&self, cx: &mut Context<Self>) -> AnyElement {
-        let first = month_grid_start(self.nav.selected);
+        let first = month_grid_start_on(self.nav.selected, self.nav.first_weekday);
         let selected_month = self.nav.selected.month();
         let today = current_date();
         let mut grid = div()
@@ -1320,7 +1335,8 @@ impl CalendarView {
             .w_full()
             .role(Role::Table)
             .aria_label(self.nav.selected.format("%B %Y").to_string());
-        for title in ["M", "T", "W", "T", "F", "S", "S"] {
+        for weekday in weekday_columns(self.nav.first_weekday) {
+            let title = weekday_initial(weekday);
             grid = grid.child(
                 div()
                     .w(px(26.0))
@@ -1646,6 +1662,13 @@ impl CalendarView {
         let day_width = ((width - GUTTER) / days as f32).max(1.0);
         let grid_top = 60.0;
         let grid_height = (height - grid_top).max(0.0);
+        // Settings ▸ General: the grid fits "Show N hours at a time" from
+        // Day starts at; the hours after Day ends at are shaded.
+        let general = &self.settings.general;
+        let (first_hour, hours_shown) = general.visible_hours();
+        let start_hour = first_hour as f32;
+        let hour_height = (grid_height / hours_shown as f32).max(1.0);
+        let day_ends = general.day_ends_hour as f32;
         let mut week = div()
             .id(if days == 1 {
                 "calendar-day-grid"
@@ -1675,7 +1698,7 @@ impl CalendarView {
                         .clamp(0.0, (days as f32 - 1.0).max(0.0))
                         as i64;
                     let day = first + Duration::days(day_index);
-                    let hour_frac = START_HOUR + (local_y - grid_top) / HOUR;
+                    let hour_frac = start_hour + (local_y - grid_top) / hour_height;
                     let hour = (hour_frac.round() as i64).clamp(0, 23) as u32;
                     this.create_event_at(day, hour, window, cx);
                 } else {
@@ -1729,6 +1752,17 @@ impl CalendarView {
                         .top(px(grid_top))
                         .w(px(day_width))
                         .h(px(grid_height))
+                        .bg(mac::row_alternate()),
+                );
+            } else if day_ends < start_hour + hours_shown as f32 {
+                let top = grid_top + (day_ends - start_hour).max(0.0) * hour_height;
+                week = week.child(
+                    div()
+                        .absolute()
+                        .left(px(x))
+                        .top(px(top))
+                        .w(px(day_width))
+                        .h(px((grid_top + grid_height - top).max(0.0)))
                         .bg(mac::row_alternate()),
                 );
             }
@@ -1790,8 +1824,8 @@ impl CalendarView {
                 );
             }
         }
-        for hour in 8..=20 {
-            let y = grid_top + (hour as f32 - START_HOUR) * HOUR;
+        for hour in first_hour..=first_hour + hours_shown {
+            let y = grid_top + (hour as f32 - start_hour) * hour_height;
             week = week.child(
                 div()
                     .absolute()
@@ -1801,14 +1835,14 @@ impl CalendarView {
                     .h(px(1.0))
                     .bg(mac::separator()),
             );
-            if hour > 8 {
+            if hour > first_hour && hour < 24 {
                 // UIA-04: this always read "9:00" in 24-hour even with a
                 // 12-hour preference; the on-the-hour label now follows
                 // `self.twenty_four_hour` like the event times below.
                 let label = if self.twenty_four_hour {
                     format!("{hour}:00")
                 } else {
-                    NaiveTime::from_hms_opt(hour as u32, 0, 0)
+                    NaiveTime::from_hms_opt(hour, 0, 0)
                         .map(|time| time.format("%-I %p").to_string())
                         .unwrap_or_else(|| format!("{hour}:00"))
                 };
@@ -1839,8 +1873,9 @@ impl CalendarView {
             let columns = slot.columns.max(1) as f32;
             let width = (day_width - 3.0) / columns;
             let x = GUTTER + day as f32 * day_width + slot.column as f32 * width + 1.0;
-            let y = grid_top + (slot.start_second as f32 / 3600.0 - START_HOUR) * HOUR;
-            let h = ((slot.end_second - slot.start_second) as f32 / 3600.0 * HOUR - 2.0).max(18.0);
+            let y = grid_top + (slot.start_second as f32 / 3600.0 - start_hour) * hour_height;
+            let h = ((slot.end_second - slot.start_second) as f32 / 3600.0 * hour_height - 2.0)
+                .max(18.0);
             let color = Self::color(snapshot.calendars[event.calendar].color);
             let event_id = event.id.clone();
             let accessible_name = if event.location.is_empty() {
@@ -1911,8 +1946,8 @@ impl CalendarView {
         if (0..days as i64).contains(&day) {
             let now = chrono::Local::now();
             let hour = now.hour() as f32 + now.minute() as f32 / 60.0;
-            if (START_HOUR..=20.0).contains(&hour) {
-                let y = grid_top + (hour - START_HOUR) * HOUR;
+            if (start_hour..=start_hour + hours_shown as f32).contains(&hour) {
+                let y = grid_top + (hour - start_hour) * hour_height;
                 week = week.child(
                     div()
                         .absolute()
@@ -2079,7 +2114,8 @@ impl CalendarView {
         height: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let first = month_grid_start(self.nav.selected);
+        let first = month_grid_start_on(self.nav.selected, self.nav.first_weekday);
+        let show_week_numbers = self.settings.general.show_week_numbers;
         let last = self
             .nav
             .selected
@@ -2098,7 +2134,8 @@ impl CalendarView {
             .size_full()
             .role(Role::Table)
             .aria_label(self.nav.selected.format("%B %Y").to_string());
-        for (index, name) in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        for (index, name) in weekday_columns(self.nav.first_weekday)
+            .map(weekday_short)
             .into_iter()
             .enumerate()
         {
@@ -2180,6 +2217,24 @@ impl CalendarView {
                         })
                         .child(day.day().to_string()),
                 );
+            if show_week_numbers && index % 7 == 0 {
+                // Advanced ▸ Show week numbers: the row's ISO week, read
+                // from its middle day so a Sunday-first row is not a week
+                // behind.
+                let week_number = (day + Duration::days(3)).iso_week().week();
+                cell = cell.child(
+                    div()
+                        .id(format!("calendar-week-number-{day}"))
+                        .role(Role::Label)
+                        .aria_label(format!("Week {week_number}"))
+                        .absolute()
+                        .left(px(6.0))
+                        .top(px(7.0))
+                        .text_size(px(10.0))
+                        .text_color(mac::text_secondary())
+                        .child(week_number.to_string()),
+                );
+            }
             for (line, event) in events.iter().take(3).enumerate() {
                 let color = Self::color(snapshot.calendars[event.calendar].color);
                 let event_id = event.id.clone();
@@ -2251,6 +2306,7 @@ impl CalendarView {
         let day_width = month_width / 7.0;
         let year = self.nav.selected.year();
         let visible = self.visible_flags();
+        let show_events = self.settings.general.show_events_in_year_view;
         let mut panel = div()
             .id("calendar-year")
             .relative()
@@ -2259,7 +2315,7 @@ impl CalendarView {
             .aria_label(year.to_string());
         for month_index in 0..12 {
             let first = NaiveDate::from_ymd_opt(year, month_index + 1, 1).expect("valid month");
-            let weekday_offset = first.weekday().num_days_from_monday() as usize;
+            let weekday_offset = weekday_offset(first.weekday(), self.nav.first_weekday) as usize;
             let mut card = div()
                 .absolute()
                 .left(px(16.0 + (month_index % 4) as f32 * (month_width + gap_x)))
@@ -2295,7 +2351,11 @@ impl CalendarView {
                             this.show(View::Month, cx);
                         })),
                 );
-            for (column, label) in ["M", "T", "W", "T", "F", "S", "S"].into_iter().enumerate() {
+            for (column, label) in weekday_columns(self.nav.first_weekday)
+                .map(weekday_initial)
+                .into_iter()
+                .enumerate()
+            {
                 card = card.child(
                     div()
                         .absolute()
@@ -2314,7 +2374,12 @@ impl CalendarView {
             let days = (next - first).num_days() as usize;
             for day_index in 0..days {
                 let date = first + Duration::days(day_index as i64);
-                let count = events_on_day(snapshot, &visible, date).len();
+                // Advanced ▸ Show events in year view.
+                let count = if show_events {
+                    events_on_day(snapshot, &visible, date).len()
+                } else {
+                    0
+                };
                 let position = weekday_offset + day_index;
                 let today = date == current_date();
                 card = card.child(
@@ -2997,6 +3062,28 @@ impl CalendarView {
     }
 }
 
+fn weekday_initial(day: chrono::Weekday) -> &'static str {
+    match day {
+        chrono::Weekday::Mon => "M",
+        chrono::Weekday::Tue | chrono::Weekday::Thu => "T",
+        chrono::Weekday::Wed => "W",
+        chrono::Weekday::Fri => "F",
+        chrono::Weekday::Sat | chrono::Weekday::Sun => "S",
+    }
+}
+
+fn weekday_short(day: chrono::Weekday) -> &'static str {
+    match day {
+        chrono::Weekday::Mon => "Mon",
+        chrono::Weekday::Tue => "Tue",
+        chrono::Weekday::Wed => "Wed",
+        chrono::Weekday::Thu => "Thu",
+        chrono::Weekday::Fri => "Fri",
+        chrono::Weekday::Sat => "Sat",
+        chrono::Weekday::Sun => "Sun",
+    }
+}
+
 fn labelled_field(label: &'static str, control: impl IntoElement) -> impl IntoElement {
     div()
         .flex()
@@ -3014,6 +3101,8 @@ fn labelled_field(label: &'static str, control: impl IntoElement) -> impl IntoEl
 impl Render for CalendarView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_menu(cx);
+        self.nav.first_weekday = self.settings.general.first_weekday();
+        self.nav.days_per_week = self.settings.general.days_per_week;
         let size = rmac_ui::window_content_size(window);
         let side = if self.sidebar_visible {
             SIDEBAR + 8.0
@@ -3024,7 +3113,7 @@ impl Render for CalendarView {
         let content_height = (f32::from(size.height) - TOOLBAR - 44.0).max(1.0);
         let origin_x = side;
         let origin_y = TOOLBAR + 44.0;
-        let week_start = self.nav.week_start();
+        let (week_start, week_days) = self.nav.week_columns();
         let snapshot = self.snapshot.clone();
         let body = div()
             .absolute()
@@ -3049,7 +3138,7 @@ impl Render for CalendarView {
                     content_width,
                     content_height,
                     week_start,
-                    7,
+                    week_days,
                     origin_x,
                     origin_y,
                     cx,

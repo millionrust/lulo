@@ -5,13 +5,14 @@ use std::time::Duration;
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, ClickEvent, Context, Entity,
-    EntityInputHandler as _, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, Role, StatefulInteractiveElement as _, Styled as _, Window,
+    EntityInputHandler as _, FocusHandle, Focusable as _, Global, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, Role, StatefulInteractiveElement as _, Styled as _,
+    Window,
 };
 use rmac_editor::InputState;
 use rmac_mail::compose::{
     addresses, apply_completion, complete, completion_query, format_lines, initial_draft_with,
-    ComposeKind, LineFormat, Recipient,
+    quote_text, ComposeKind, LineFormat, Recipient,
 };
 use rmac_mail::Message;
 use rmac_mail_mime::Draft;
@@ -19,9 +20,57 @@ use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, Root, TextField};
 
 use crate::{
     delivery::{ComposeAccount, DeliveryResult, DraftLocation, PendingAttachment},
-    AttachFile, CloseWindow, DecreaseIndentation, DecreaseQuoteLevel, IncreaseIndentation,
-    IncreaseQuoteLevel, SendMessage,
+    AttachFile, CloseWindow, DecreaseIndentation, DecreaseQuoteLevel, Delete, IncreaseIndentation,
+    IncreaseQuoteLevel, PasteAsQuotation, Redo, SaveDraft, SendMessage, StartSpeaking,
+    StopSpeaking, TransformCapitalise, TransformLowercase, TransformUppercase, Undo,
 };
+
+/// View ▸ Cc Address Field and Bcc Address Field: which optional address
+/// rows every compose window shows. The Mac shows Cc and hides Bcc until
+/// asked; a draft that already has Bcc recipients shows it regardless.
+struct ComposeFields {
+    cc: bool,
+    bcc: bool,
+}
+
+impl Global for ComposeFields {}
+
+fn fields(cx: &App) -> (bool, bool) {
+    cx.try_global::<ComposeFields>()
+        .map_or((true, false), |fields| (fields.cc, fields.bcc))
+}
+
+/// Ticks View ▸ Cc/Bcc Address Field to match the current choice.
+pub fn publish_field_state(cx: &mut App) {
+    let (cc, bcc) = fields(cx);
+    rmac_ui::set_menu_checked("mail::ToggleCcField", cc, cx);
+    rmac_ui::set_menu_checked("mail::ToggleBccField", bcc, cx);
+}
+
+/// View ▸ Cc Address Field (`cc`) or Bcc Address Field: show or hide that
+/// row in every compose window.
+pub fn toggle_field(cc: bool, cx: &mut App) {
+    let (current_cc, current_bcc) = fields(cx);
+    let (cc_shown, bcc_shown) = if cc {
+        (!current_cc, current_bcc)
+    } else {
+        (current_cc, !current_bcc)
+    };
+    cx.set_global(ComposeFields {
+        cc: cc_shown,
+        bcc: bcc_shown,
+    });
+    publish_field_state(cx);
+    cx.refresh_windows();
+}
+
+/// Hands an Edit command to the focused text field (gpui-component's
+/// `input::` actions), for the rows Mail's own actions own.
+fn forward_to_text_field(name: &str, window: &mut Window, cx: &mut App) {
+    if let Ok(action) = cx.build_action(name, None) {
+        window.dispatch_action(action, cx);
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AddressField {
@@ -101,6 +150,8 @@ struct ComposeView {
     draft_location: Option<DraftLocation>,
     autosave_generation: u64,
     sent: bool,
+    /// A draft opened with Bcc recipients keeps its Bcc row on screen.
+    show_bcc: bool,
 }
 
 impl ComposeView {
@@ -140,7 +191,22 @@ impl ComposeView {
             if !prefill.text.is_empty() {
                 quote.text = prefill.text;
             }
+            if !prefill.attachments.is_empty() {
+                quote.attachments = prefill.attachments;
+            }
         }
+        // Forward as Attachment carries the original as a part from the
+        // start; it joins the attachment row like any other.
+        let initial_attachments: Vec<PendingAttachment> = std::mem::take(&mut quote.attachments)
+            .into_iter()
+            .map(|attachment| PendingAttachment {
+                filename: attachment.filename,
+                content_type: attachment.content_type,
+                size: attachment.bytes.len(),
+                bytes: std::sync::Arc::new(attachment.bytes),
+            })
+            .collect();
+        let show_bcc = !quote.bcc.is_empty();
         // Every new message, reply and forward gets the chosen account's
         // automatic signature (Settings ▸ Signatures, MAIL-8) appended once,
         // right here when the compose window opens.
@@ -219,6 +285,18 @@ impl ComposeView {
         cx.observe_window_activation(window, |_, window, cx| {
             if window.is_window_active() {
                 rmac_writing_tools::refresh(cx);
+                // Message ▸ Send Again becomes Send in a compose window.
+                rmac_ui::set_menu_label("mail::SendMessage", "Send", cx);
+                for action in [
+                    "mail::SaveDraft",
+                    "mail::PasteAsQuotation",
+                    "mail::SendMessage",
+                    "mail::Undo",
+                    "mail::Redo",
+                    "mail::Delete",
+                ] {
+                    rmac_ui::set_menu_enabled(action, true, cx);
+                }
             }
         })
         .detach();
@@ -237,10 +315,102 @@ impl ComposeView {
             status: None,
             candidates,
             completion: None,
-            attachments: Vec::new(),
+            attachments: initial_attachments,
             draft_location: None,
             autosave_generation: 0,
             sent: false,
+            show_bcc,
+        }
+    }
+
+    /// The address, subject or body field that has keyboard focus.
+    fn focused_field(&self, window: &Window, cx: &App) -> Option<Entity<InputState>> {
+        [&self.to, &self.cc, &self.bcc, &self.subject, &self.body]
+            .into_iter()
+            .find(|input| input.read(cx).focus_handle(cx).is_focused(window))
+            .cloned()
+    }
+
+    /// File ▸ Save (⌘S): writes the draft to Drafts now rather than at the
+    /// next autosave.
+    fn save_now(&mut self, cx: &mut Context<Self>) {
+        if self.sent || !self.worth_saving(cx) {
+            return;
+        }
+        let Some(account) = self.accounts.get(self.selected_account).cloned() else {
+            self.status = Some("Add an Internet Account to save drafts".into());
+            cx.notify();
+            return;
+        };
+        // Any autosave still waiting is superseded by this one.
+        self.autosave_generation = self.autosave_generation.wrapping_add(1);
+        let generation = self.autosave_generation;
+        let from = account.address.clone();
+        let to = addresses(&self.to.read(cx).value()).unwrap_or_default();
+        let cc = addresses(&self.cc.read(cx).value()).unwrap_or_default();
+        let bcc = addresses(&self.bcc.read(cx).value()).unwrap_or_default();
+        let subject = self.subject.read(cx).value().to_string();
+        let body = self.body.read(cx).value().to_string();
+        let attachments = self.attachments.clone();
+        let existing = self.draft_location;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let location = cx
+                .background_executor()
+                .spawn(async move {
+                    crate::delivery::save_draft(
+                        &account,
+                        existing,
+                        &from,
+                        &to,
+                        &cc,
+                        &bcc,
+                        &subject,
+                        &body,
+                        &attachments,
+                    )
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                match location {
+                    Some(location) if this.autosave_generation == generation => {
+                        this.draft_location = Some(location);
+                        this.status = None;
+                    }
+                    Some(_) => {}
+                    None => this.status = Some("Mail could not save the draft".into()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Edit ▸ Paste as Quotation (⇧⌘V): the clipboard's text into the body
+    /// as a quoted block.
+    fn paste_as_quotation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        let quoted = quote_text(&text);
+        let focus = self.body.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        self.body.update(cx, |state, cx| {
+            state.replace_text_in_range(None, &quoted, window, cx);
+        });
+        self.schedule_autosave(cx);
+        cx.notify();
+    }
+
+    fn transform(
+        &mut self,
+        transformation: rmac_ui::TextTransformation,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(field) = self.focused_field(window, cx) {
+            if rmac_ui::transform_selection(&field, transformation, window, cx) {
+                cx.notify();
+            }
         }
     }
 
@@ -676,6 +846,9 @@ impl Render for ComposeView {
             rmac_writing_tools::publish_menu_state(!self.pending && !self.sent, cx);
         }
         let editable = !self.pending && !self.sent;
+        let (cc_field, bcc_field) = fields(cx);
+        let show_cc = cc_field || !self.cc.read(cx).value().trim().is_empty();
+        let show_bcc = bcc_field || self.show_bcc;
         let root = div()
             .size_full()
             .bg(mac::window())
@@ -699,6 +872,37 @@ impl Render for ComposeView {
             .on_action(
                 cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| this.close(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &SaveDraft, _, cx| this.save_now(cx)))
+            .on_action(cx.listener(|this, _: &PasteAsQuotation, window, cx| {
+                this.paste_as_quotation(window, cx)
+            }))
+            // Edit ▸ Undo, Redo and Delete act on the message list in the
+            // viewer; here they edit the focused field.
+            .on_action(cx.listener(|_, _: &Undo, window, cx| {
+                forward_to_text_field("input::Undo", window, cx)
+            }))
+            .on_action(cx.listener(|_, _: &Redo, window, cx| {
+                forward_to_text_field("input::Redo", window, cx)
+            }))
+            .on_action(cx.listener(|_, _: &Delete, window, cx| {
+                forward_to_text_field("input::Delete", window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TransformUppercase, window, cx| {
+                this.transform(rmac_ui::TextTransformation::Uppercase, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TransformLowercase, window, cx| {
+                this.transform(rmac_ui::TextTransformation::Lowercase, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TransformCapitalise, window, cx| {
+                this.transform(rmac_ui::TextTransformation::Capitalise, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &StartSpeaking, window, cx| {
+                let field = this
+                    .focused_field(window, cx)
+                    .unwrap_or_else(|| this.body.clone());
+                rmac_ui::start_speaking(&field, "mail::StopSpeaking", cx);
+            }))
+            .on_action(cx.listener(|_, _: &StopSpeaking, _, _| rmac_ui::stop_speaking()))
             .flex()
             .flex_col()
             .child(
@@ -743,8 +947,12 @@ impl Render for ComposeView {
                     ),
             )
             .child(self.field("To:", &self.to, Some(AddressField::To), cx))
-            .child(self.field("Cc:", &self.cc, Some(AddressField::Cc), cx))
-            .child(self.field("Bcc:", &self.bcc, Some(AddressField::Bcc), cx))
+            .when(show_cc, |root| {
+                root.child(self.field("Cc:", &self.cc, Some(AddressField::Cc), cx))
+            })
+            .when(show_bcc, |root| {
+                root.child(self.field("Bcc:", &self.bcc, Some(AddressField::Bcc), cx))
+            })
             .child(self.field("Subject:", &self.subject, None, cx))
             .when_some(self.attachments_row(cx), |parent, row| parent.child(row))
             .child(

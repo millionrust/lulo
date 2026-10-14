@@ -20,7 +20,7 @@ gpui::actions!(
     mail,
     [
         ToggleThreads,
-        ToggleUnreadFilter,
+        ToggleMessageFilter,
         ToggleRead,
         NextMessage,
         PreviousMessage,
@@ -43,7 +43,148 @@ gpui::actions!(
         IncreaseIndentation,
         DecreaseIndentation,
         IncreaseQuoteLevel,
-        DecreaseQuoteLevel
+        DecreaseQuoteLevel,
+        // MROBOT-03: the rest of Mac Mail's menus.
+        ShowAccounts,
+        OpenMessage,
+        CloseAll,
+        SaveDraft,
+        SaveAs,
+        SaveAttachments,
+        ExportAsPdf,
+        PrintMessage,
+        Redo,
+        PasteAsQuotation,
+        JumpToTop,
+        TransformUppercase,
+        TransformLowercase,
+        TransformCapitalise,
+        StartSpeaking,
+        StopSpeaking,
+        SortByAttachments,
+        SortByDate,
+        SortByFlags,
+        SortByFrom,
+        SortBySubject,
+        SortByTo,
+        SortByUnread,
+        SortAscending,
+        SortDescending,
+        FilterUnread,
+        FilterFlagged,
+        FilterToMe,
+        FilterCcMe,
+        FilterAttachments,
+        ToggleColumnLayout,
+        ToggleBottomPreview,
+        ToggleDateAndTime,
+        ToggleToCcLabel,
+        ToggleContactPhoto,
+        ToggleHighlightConversations,
+        ExpandAllConversations,
+        CollapseAllConversations,
+        ToggleCcField,
+        ToggleBccField,
+        ShowRawSource,
+        ToggleSidebar,
+        ToggleToolbar,
+        GetAllNewMail,
+        MarkAllAsRead,
+        EraseDeletedItems,
+        EraseDeletedItemsNow,
+        EraseJunkMail,
+        GoToFavourite0,
+        GoToFavourite1,
+        GoToFavourite2,
+        GoToFavourite3,
+        MoveToFavourite0,
+        MoveToFavourite2,
+        MoveToFavourite3,
+        PreviousMailbox,
+        NextMailbox,
+        PreviousUnreadMailbox,
+        NextUnreadMailbox,
+        ForwardAsAttachment,
+        Redirect,
+        ClearFlag,
+        MoveAgain,
+        ShowMessageViewer
+    ]
+);
+
+/// How many accounts Get New Mail ▸ and Erase Deleted Items ▸ list, and
+/// how many mailboxes Message ▸ Move to ▸ / Copy to ▸ list: each row needs
+/// an action of its own.
+pub const ACCOUNT_ROWS: usize = 8;
+pub const MAILBOX_ROWS: usize = 24;
+
+gpui::actions!(
+    mail,
+    [
+        GetNewMail0,
+        GetNewMail1,
+        GetNewMail2,
+        GetNewMail3,
+        GetNewMail4,
+        GetNewMail5,
+        GetNewMail6,
+        GetNewMail7,
+        EraseDeletedItemsAccount0,
+        EraseDeletedItemsAccount1,
+        EraseDeletedItemsAccount2,
+        EraseDeletedItemsAccount3,
+        EraseDeletedItemsAccount4,
+        EraseDeletedItemsAccount5,
+        EraseDeletedItemsAccount6,
+        EraseDeletedItemsAccount7,
+        MoveToMailbox0,
+        MoveToMailbox1,
+        MoveToMailbox2,
+        MoveToMailbox3,
+        MoveToMailbox4,
+        MoveToMailbox5,
+        MoveToMailbox6,
+        MoveToMailbox7,
+        MoveToMailbox8,
+        MoveToMailbox9,
+        MoveToMailbox10,
+        MoveToMailbox11,
+        MoveToMailbox12,
+        MoveToMailbox13,
+        MoveToMailbox14,
+        MoveToMailbox15,
+        MoveToMailbox16,
+        MoveToMailbox17,
+        MoveToMailbox18,
+        MoveToMailbox19,
+        MoveToMailbox20,
+        MoveToMailbox21,
+        MoveToMailbox22,
+        MoveToMailbox23,
+        CopyToMailbox0,
+        CopyToMailbox1,
+        CopyToMailbox2,
+        CopyToMailbox3,
+        CopyToMailbox4,
+        CopyToMailbox5,
+        CopyToMailbox6,
+        CopyToMailbox7,
+        CopyToMailbox8,
+        CopyToMailbox9,
+        CopyToMailbox10,
+        CopyToMailbox11,
+        CopyToMailbox12,
+        CopyToMailbox13,
+        CopyToMailbox14,
+        CopyToMailbox15,
+        CopyToMailbox16,
+        CopyToMailbox17,
+        CopyToMailbox18,
+        CopyToMailbox19,
+        CopyToMailbox20,
+        CopyToMailbox21,
+        CopyToMailbox22,
+        CopyToMailbox23
     ]
 );
 
@@ -311,10 +452,50 @@ fn main() {
             rmac_ui::init_application(cx);
             cx.bind_keys([
                 KeyBinding::new("cmd-shift-u", ToggleRead, Some("Mail")),
+                KeyBinding::new("cmd-o", OpenMessage, Some("Mail")),
+                KeyBinding::new("alt-cmd-w", CloseAll, None),
+                KeyBinding::new("cmd-s", SaveDraft, Some("MailCompose")),
+                KeyBinding::new("cmd-shift-s", SaveAs, Some("Mail")),
+                KeyBinding::new("cmd-p", PrintMessage, Some("Mail")),
+                KeyBinding::new("cmd-shift-z", Redo, Some("Mail")),
+                KeyBinding::new("cmd-shift-v", PasteAsQuotation, Some("MailCompose")),
+                KeyBinding::new("alt-cmd-f", Search, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-t", JumpToTop, Some("Mail")),
+                KeyBinding::new("cmd-l", ToggleMessageFilter, Some("Mail")),
+                KeyBinding::new("alt-cmd-b", ToggleBccField, None),
+                KeyBinding::new("alt-cmd-u", ShowRawSource, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Mail")),
+                KeyBinding::new("alt-cmd-t", ToggleToolbar, Some("Mail")),
+                KeyBinding::new("cmd-shift-n", GetAllNewMail, None),
+                KeyBinding::new("cmd-shift-backspace", EraseDeletedItems, Some("Mail")),
+                KeyBinding::new(
+                    "alt-cmd-shift-backspace",
+                    EraseDeletedItemsNow,
+                    Some("Mail"),
+                ),
+                KeyBinding::new("alt-cmd-j", EraseJunkMail, Some("Mail")),
+                KeyBinding::new("cmd-1", GoToFavourite0, Some("Mail")),
+                KeyBinding::new("cmd-2", GoToFavourite1, Some("Mail")),
+                KeyBinding::new("cmd-3", GoToFavourite2, Some("Mail")),
+                KeyBinding::new("cmd-4", GoToFavourite3, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-1", MoveToFavourite0, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-3", MoveToFavourite2, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-4", MoveToFavourite3, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-[", PreviousMailbox, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-]", NextMailbox, Some("Mail")),
+                KeyBinding::new("ctrl-alt-cmd-[", PreviousUnreadMailbox, Some("Mail")),
+                KeyBinding::new("ctrl-alt-cmd-]", NextUnreadMailbox, Some("Mail")),
+                KeyBinding::new("cmd-shift-e", Redirect, Some("Mail")),
+                KeyBinding::new("ctrl-cmd-a", Archive, Some("Mail")),
+                KeyBinding::new("cmd-shift-d", SendMessage, Some("Mail")),
+                KeyBinding::new("cmd-backspace", Delete, Some("Mail")),
+                KeyBinding::new("cmd-0", ShowMessageViewer, None),
                 KeyBinding::new("cmd-shift-l", Flag, Some("Mail")),
                 KeyBinding::new("cmd-shift-j", Junk, Some("Mail")),
                 KeyBinding::new("backspace", Delete, Some("Mail")),
                 KeyBinding::new("cmd-z", Undo, Some("Mail")),
+                KeyBinding::new("cmd-z", Undo, Some("MailCompose")),
+                KeyBinding::new("cmd-shift-z", Redo, Some("MailCompose")),
                 KeyBinding::new("cmd-f", Search, Some("Mail")),
                 KeyBinding::new("ctrl-cmd-m", Move, Some("Mail")),
                 KeyBinding::new("cmd-n", NewMessage, Some("Mail")),
@@ -365,6 +546,15 @@ fn main() {
             ] {
                 rmac_ui::set_menu_enabled(action, false, cx);
             }
+            // Printing goes through the desktop Print portal, which only the
+            // Lulo OS session on Linux has.
+            #[cfg(not(target_os = "linux"))]
+            rmac_ui::set_menu_hidden("mail::PrintMessage", true, cx);
+            cx.on_action(|_: &CloseAll, cx| view::close_all(cx));
+            cx.on_action(|_: &ShowMessageViewer, cx| view::show_viewer(cx));
+            cx.on_action(|_: &ToggleCcField, cx| compose_window::toggle_field(true, cx));
+            cx.on_action(|_: &ToggleBccField, cx| compose_window::toggle_field(false, cx));
+            compose_window::publish_field_state(cx);
             let mut options = rmac_ui::window_options_for_app(MAIL, 1200.0, 750.0, cx);
             options.window_min_size = Some(gpui::size(gpui::px(860.0), gpui::px(540.0)));
             // `view_handle` is an empty slot `start_live_sync` only reads
@@ -395,9 +585,12 @@ fn main() {
                 window.focus(&focus, cx);
                 cx.new(|cx| Root::new(view, window, cx))
             });
-            if let Err(error) = opened {
-                eprintln!("rmac-mail: could not open a window: {error}");
-                cx.quit();
+            match opened {
+                Ok(handle) => view::set_viewer_window(handle.into()),
+                Err(error) => {
+                    eprintln!("rmac-mail: could not open a window: {error}");
+                    cx.quit();
+                }
             }
             if let Some(draft) = mailto_draft {
                 compose_window::open(

@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "mail/mark-all-read",
+  "observations": {
+    "before": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "read": {"mail_messages": {"count": 8, "unread": 0, "flagged": 2}}
+  }
+}

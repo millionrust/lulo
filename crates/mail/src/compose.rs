@@ -11,6 +11,14 @@ pub enum ComposeKind {
     Reply,
     ReplyAll,
     Forward,
+    /// Message ▸ Forward as Attachment: the original rides along whole, as
+    /// a `message/rfc822` part.
+    ForwardAsAttachment,
+    /// Message ▸ Redirect: the original text, unquoted, to new recipients.
+    Redirect,
+    /// Message ▸ Send Again: a sent message reopened with its recipients,
+    /// subject and text, ready to send once more.
+    SendAgain,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -200,8 +208,60 @@ pub fn initial_draft_with(
                 )
             );
         }
+        ComposeKind::ForwardAsAttachment => {
+            draft.subject = if subject.to_lowercase().starts_with("fwd:") {
+                subject.to_owned()
+            } else {
+                format!("Fwd: {subject}")
+            };
+            draft.attachments.push(rmac_mail_mime::Attachment {
+                filename: format!("{}.eml", crate::safe_file_stem(subject)),
+                content_type: "message/rfc822".to_owned(),
+                bytes: crate::message_source(message).into_bytes(),
+                content_id: None,
+            });
+        }
+        ComposeKind::Redirect => {
+            draft.subject = subject.to_owned();
+            draft.text = message.body.plain_text();
+        }
+        ComposeKind::SendAgain => {
+            draft.subject = subject.to_owned();
+            for (list, field) in [
+                (&mut draft.to, &message.to_addresses),
+                (&mut draft.cc, &message.cc_addresses),
+            ] {
+                for address in field.split([',', ';']) {
+                    let address = address
+                        .rsplit_once('<')
+                        .map_or(address, |(_, rest)| rest.trim_end_matches('>'))
+                        .trim();
+                    if valid_address(address) {
+                        list.push(address.to_owned());
+                    }
+                }
+            }
+            draft.text = message.body.plain_text();
+        }
     }
     draft
+}
+
+/// Edit ▸ Paste as Quotation: `text` as a quoted block, one `> ` per line,
+/// ending on a fresh line so typing continues below the quote.
+pub fn quote_text(text: &str) -> String {
+    let mut quoted = String::new();
+    for line in text.trim_end_matches(['\r', '\n']).lines() {
+        let line = line.trim_end_matches('\r');
+        if line.starts_with('>') {
+            quoted.push('>');
+        } else {
+            quoted.push_str("> ");
+        }
+        quoted.push_str(line);
+        quoted.push('\n');
+    }
+    quoted
 }
 
 /// Format ▸ Indentation and Format ▸ Quote Level on a plain-text message
@@ -344,16 +404,39 @@ mod tests {
     fn reply_and_forward_quote_the_selected_message() {
         let state = MailState::fixture();
         let original = state.selected_message().unwrap();
-        let reply = initial_draft(ComposeKind::Reply, Some(original), "jacob@example.test");
+        let reply = initial_draft(ComposeKind::Reply, Some(original), "jacob@example.com");
         assert_eq!(reply.subject, "Re: Lunch on Friday?");
         assert_eq!(reply.to, vec!["anna@example.test"]);
-        let all = initial_draft(ComposeKind::ReplyAll, Some(original), "jacob@example.test");
+        let all = initial_draft(ComposeKind::ReplyAll, Some(original), "jacob@example.com");
         assert_eq!(all.cc, vec!["sam@example.test"]);
         assert!(reply.text.contains("Anna Kim wrote:"));
         assert!(reply.text.contains("> Hi Jacob,"));
-        let forward = initial_draft(ComposeKind::Forward, Some(original), "jacob@example.test");
+        let forward = initial_draft(ComposeKind::Forward, Some(original), "jacob@example.com");
         assert_eq!(forward.subject, "Fwd: Lunch on Friday?");
         assert!(forward.text.contains("Begin forwarded message:"));
+        let attached = initial_draft(
+            ComposeKind::ForwardAsAttachment,
+            Some(original),
+            "jacob@example.com",
+        );
+        assert_eq!(attached.subject, "Fwd: Lunch on Friday?");
+        assert_eq!(attached.attachments.len(), 1);
+        assert_eq!(attached.attachments[0].content_type, "message/rfc822");
+        assert_eq!(attached.attachments[0].filename, "Lunch on Friday?.eml");
+        let redirect = initial_draft(ComposeKind::Redirect, Some(original), "jacob@example.com");
+        assert_eq!(redirect.subject, "Lunch on Friday?");
+        assert!(redirect.to.is_empty());
+        assert!(redirect.text.starts_with("Hi Jacob,"));
+        let again = initial_draft(ComposeKind::SendAgain, Some(original), "jacob@example.com");
+        assert_eq!(again.to, vec!["jacob@example.com"]);
+        assert_eq!(again.cc, vec!["sam@example.test"]);
+    }
+
+    #[test]
+    fn paste_as_quotation_quotes_every_line() {
+        assert_eq!(quote_text("one\r\ntwo\n"), "> one\n> two\n");
+        assert_eq!(quote_text("> already"), ">> already\n");
+        assert_eq!(quote_text(""), "");
     }
 
     #[test]

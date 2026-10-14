@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use gpui::{
     accesskit, div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, AppContext as _,
-    ClickEvent, Context, Entity, FocusHandle, FontWeight, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Window,
+    ClickEvent, Context, Entity, FocusHandle, Focusable as _, FontWeight, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, Role, ScrollHandle, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_editor::InputState;
 use rmac_mail::{
-    compose::ComposeKind, BodyState, MailState, Mailbox, Message, OrganizeAction, SearchScope,
-    SpecialUse,
+    compose::ComposeKind, BodyState, Erase, MailState, Mailbox, Message, OrganizeAction,
+    SearchScope, SpecialUse,
 };
 use rmac_mail_mime::{BlockKind, RichText};
 use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, TextField};
@@ -17,12 +17,22 @@ use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, TextField};
 use crate::{
     compose_window, delivery::ComposeAccount, Archive, CloseWindow, Copy, Delete, Flag, Forward,
     Junk, Move, NewMessage, NextMessage, PreviousMessage, Reply, ReplyAll, Search, ToggleRead,
-    ToggleThreads, ToggleUnreadFilter, Undo,
+    ToggleThreads, Undo,
 };
+
+mod menu;
+mod windows;
+
+pub use menu::{close_all, set_viewer_window, show_viewer};
 
 const SIDEBAR: f32 = 220.0;
 const LIST: f32 = 340.0;
 const TOOLBAR: f32 = 52.0;
+/// Where the toolbar starts while View ▸ Hide Sidebar has moved the window
+/// controls into it.
+const LIGHTS_WIDTH: f32 = 84.0;
+/// One row of View ▸ Use Column Layout's table.
+const COLUMN_ROW: f32 = 26.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControlMode {
@@ -47,6 +57,31 @@ pub struct MailView {
     list_view: Option<Entity<MailListView>>,
     /// Settings ▸ Fonts & Colours and Viewing, as last applied.
     display: rmac_mail::settings::DisplayPrefs,
+    /// View ▸ Hide Sidebar / Hide Toolbar.
+    sidebar_hidden: bool,
+    toolbar_hidden: bool,
+    /// View ▸ Use Column Layout and Show Bottom Preview.
+    column_layout: bool,
+    bottom_preview: bool,
+    /// View ▸ Show Date and Time, Show To/Cc Label, Show Contact Photo and
+    /// Highlight Conversations: what each list row shows.
+    show_date_time: bool,
+    show_to_cc: bool,
+    show_contact_photo: bool,
+    highlight_conversations: bool,
+    /// Mailbox ▸ Erase Deleted Items… / Erase Junk Mail waiting for its
+    /// confirmation.
+    erase_confirm: Option<Erase>,
+    /// A result or failure to show in an alert (a failed save, say).
+    notice: Option<SharedString>,
+    /// The message viewer's scroll position, for Edit ▸ Find ▸ Jump to Top.
+    viewer_scroll: ScrollHandle,
+    /// Whether this window is in front, so the rows a compose window
+    /// re-labels (Send / Send Again) are left alone while it is.
+    active: bool,
+    /// Bumped for each File ▸ Print… the portal must tie to this window.
+    #[cfg(target_os = "linux")]
+    print_generation: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// The conversation list as its own GPUI view (SPEED-09). A scroll
@@ -89,6 +124,7 @@ impl Render for MailListView {
 struct Row {
     id: String,
     sender: String,
+    initials: String,
     subject: String,
     preview: String,
     date: String,
@@ -97,6 +133,21 @@ struct Row {
     attachment: bool,
     thread_count: usize,
     selected: bool,
+    /// View ▸ Show To/Cc Label: "To" or "Cc" when the message was sent to
+    /// one of this person's addresses that way.
+    to_cc: Option<&'static str>,
+    /// View ▸ Highlight Conversations: part of the selected conversation.
+    highlighted: bool,
+}
+
+/// What View ▸ Use Column Layout, Show Contact Photo and the other list
+/// options ask each row to draw.
+#[derive(Clone, Copy)]
+struct RowStyle {
+    columns: bool,
+    contact_photo: bool,
+    /// Settings ▸ Fonts & Colours and Viewing.
+    display: rmac_mail::settings::DisplayPrefs,
 }
 
 impl MailView {
@@ -134,6 +185,18 @@ impl MailView {
             cx.notify();
         })
         .detach();
+        cx.observe_window_activation(window, |this: &mut Self, window, cx| {
+            this.active = window.is_window_active();
+            if this.active {
+                this.sync_menu(cx);
+            }
+        })
+        .detach();
+        let mut state = state;
+        state.my_addresses = accounts
+            .iter()
+            .map(|account| account.address.clone())
+            .collect();
         let mut view = Self {
             focus: cx.focus_handle(),
             state,
@@ -145,6 +208,20 @@ impl MailView {
             runtime,
             list_view: None,
             display: rmac_mail::settings::DisplayPrefs::default(),
+            sidebar_hidden: false,
+            toolbar_hidden: false,
+            column_layout: false,
+            bottom_preview: false,
+            show_date_time: false,
+            show_to_cc: false,
+            show_contact_photo: false,
+            highlight_conversations: false,
+            erase_confirm: None,
+            notice: None,
+            viewer_scroll: ScrollHandle::new(),
+            active: true,
+            #[cfg(target_os = "linux")]
+            print_generation: Arc::new(std::sync::atomic::AtomicU64::new(1)),
         };
         view.ensure_body_loaded(cx);
         view
@@ -175,6 +252,10 @@ impl MailView {
     /// Windows: the account list changed (added or removed in Settings).
     #[cfg(windows)]
     pub fn set_accounts(&mut self, accounts: Vec<ComposeAccount>, cx: &mut Context<Self>) {
+        self.state.my_addresses = accounts
+            .iter()
+            .map(|account| account.address.clone())
+            .collect();
         self.accounts = accounts;
         cx.notify();
     }
@@ -205,23 +286,6 @@ impl MailView {
         cx.notify();
     }
 
-    fn sync_menu(&self, cx: &mut Context<Self>) {
-        rmac_ui::set_menu_checked("mail::ToggleThreads", self.state.threads, cx);
-        rmac_ui::set_menu_checked("mail::ToggleUnreadFilter", self.state.unread_only, cx);
-        rmac_ui::set_menu_enabled("mail::Undo", self.state.can_undo(), cx);
-        rmac_ui::set_menu_enabled("mail::Archive", self.can_archive_selected(), cx);
-        for action in [
-            "mail::Delete",
-            "mail::Junk",
-            "mail::Flag",
-            "mail::Move",
-            "mail::Copy",
-            "mail::ToggleRead",
-        ] {
-            rmac_ui::set_menu_enabled(action, self.state.selected_message().is_some(), cx);
-        }
-    }
-
     /// Whether the selected message's account has an Archive mailbox at
     /// all (iCloud, for example, has none) — decides whether the toolbar's
     /// Archive button is a real action or greyed out.
@@ -249,15 +313,24 @@ impl MailView {
     /// waiting for the next IDLE timeout. A no-op for fixture data, which
     /// never produces a `Persist`.
     fn dispatch_persist(&mut self, cx: &mut Context<Self>) {
-        let Some(persist) = self.state.take_persist() else {
+        let persists = self.state.take_persists();
+        if persists.is_empty() {
             return;
-        };
+        }
         let runtime = self.runtime.clone();
         cx.background_executor()
             .spawn(async move {
-                crate::live::persist(persist.clone());
+                let mut paths: Vec<String> = Vec::new();
+                for persist in persists {
+                    if !paths.contains(&persist.account_path) {
+                        paths.push(persist.account_path.clone());
+                    }
+                    crate::live::persist(persist);
+                }
                 if let Some(runtime) = runtime {
-                    runtime.sync_now(&persist.account_path);
+                    for path in &paths {
+                        runtime.sync_now(path);
+                    }
                 }
             })
             .detach();
@@ -398,7 +471,11 @@ impl MailView {
     fn toolbar(&self, cx: &mut Context<Self>) -> AnyElement {
         let mut bar = div()
             .h(px(TOOLBAR))
-            .pl(px(SIDEBAR + 8.0))
+            .pl(px(if self.sidebar_hidden {
+                LIGHTS_WIDTH
+            } else {
+                SIDEBAR + 8.0
+            }))
             .pr(px(10.0))
             .flex()
             .items_center()
@@ -408,14 +485,14 @@ impl MailView {
         bar = bar.child(self.control(
             "mail-filter",
             "☷",
-            "Filter Unread",
-            if self.state.unread_only {
+            "Filter",
+            if self.state.filter.enabled {
                 ControlMode::Selected
             } else {
                 ControlMode::Enabled
             },
             |this, cx| {
-                this.state.unread_only = !this.state.unread_only;
+                this.state.filter.enabled = !this.state.filter.enabled;
                 this.sync_menu(cx);
                 cx.notify();
             },
@@ -720,6 +797,11 @@ impl MailView {
     /// The rows the conversation list shows, and how many are unread.
     fn list_rows(&self) -> (Arc<Vec<Row>>, usize) {
         let visible = self.state.visible();
+        let selected_thread = self
+            .state
+            .selected_message()
+            .map(|message| message.thread_id.clone());
+        let highlight = self.highlight_conversations && !self.state.threads;
         // `MailState::thread_count` scans every message; calling it once
         // per visible row would make building the list O(n²) in a 10 000
         // -message mailbox (MAIL-10). One pass here keeps it O(n).
@@ -733,12 +815,26 @@ impl MailView {
                 .iter()
                 .map(|&index| {
                     let message = &self.state.messages[index];
+                    let to_cc = if !self.show_to_cc {
+                        None
+                    } else if self.state.addressed_to_me(&message.to_addresses) {
+                        Some("To")
+                    } else if self.state.addressed_to_me(&message.cc_addresses) {
+                        Some("Cc")
+                    } else {
+                        None
+                    };
                     Row {
                         id: message.id.clone(),
                         sender: message.sender.clone(),
+                        initials: message.initials.clone(),
                         subject: message.subject.clone(),
                         preview: message.preview.clone(),
-                        date: message.date.clone(),
+                        date: if self.show_date_time {
+                            message.date_time.clone()
+                        } else {
+                            message.date.clone()
+                        },
                         unread: message.unread,
                         flagged: message.flagged,
                         attachment: message.attachment.is_some(),
@@ -747,6 +843,9 @@ impl MailView {
                             .copied()
                             .unwrap_or(1),
                         selected: self.state.selected.as_deref() == Some(message.id.as_str()),
+                        to_cc,
+                        highlighted: highlight
+                            && selected_thread.as_deref() == Some(message.thread_id.as_str()),
                     }
                 })
                 .collect(),
@@ -760,13 +859,16 @@ impl MailView {
 
     fn list(&self, rows: Arc<Vec<Row>>, unread: usize, view: gpui::WeakEntity<Self>) -> AnyElement {
         let count = rows.len();
-        let display = self.display;
+        let style = RowStyle {
+            columns: self.column_layout,
+            contact_photo: self.show_contact_photo,
+            display: self.display,
+        };
         div()
             .id("mail-conversations")
             .role(Role::ListBox)
             .aria_label(format!("{count} conversations, {unread} unread"))
-            .w(px(LIST))
-            .h_full()
+            .size_full()
             .flex()
             .flex_col()
             .bg(mac::list())
@@ -831,105 +933,34 @@ impl MailView {
                                     row.preview,
                                     if row.attachment { ", 1 attachment" } else { "" }
                                 );
-                                div()
+                                let row_element = div()
                                     .id(format!("mail-message-{}", row.id))
                                     .role(Role::ListBoxOption)
                                     .aria_label(accessible)
                                     .aria_selected(row.selected)
-                                    .h(px(display.list_row_height()))
-                                    .px(px(13.0))
-                                    .pt(px(7.0))
-                                    .flex()
-                                    .gap(px(7.0))
                                     .bg(if row.selected {
                                         mac::accent_subtle()
+                                    } else if row.highlighted {
+                                        mac::hover()
                                     } else {
                                         mac::material_clear()
                                     })
                                     .border_b_1()
-                                    .border_color(mac::separator())
-                                    .child(
-                                        div()
-                                            .w(px(9.0))
-                                            .pt(px(9.0))
-                                            .text_size(px(12.0))
-                                            .text_color(mac::system_blue())
-                                            .child(if row.unread {
-                                                "●"
-                                            } else if row.flagged {
-                                                "⚑"
-                                            } else {
-                                                ""
-                                            }),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .overflow_hidden()
-                                            .flex()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .justify_between()
-                                                    .gap(px(5.0))
-                                                    .child(
-                                                        div()
-                                                            .font_weight(
-                                                                if row.unread && display.unread_bold
-                                                                {
-                                                                    FontWeight::BOLD
-                                                                } else {
-                                                                    FontWeight::NORMAL
-                                                                },
-                                                            )
-                                                            .text_size(px(display.list_font_size))
-                                                            .text_color(mac::text())
-                                                            .child(row.sender.clone()),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_size(px(10.0))
-                                                            .text_color(mac::text_secondary())
-                                                            .child(row.date.clone()),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .gap(px(4.0))
-                                                    .text_size(px(display.list_font_size - 1.0))
-                                                    .text_color(mac::text())
-                                                    .child(row.subject.clone())
-                                                    .child(if row.thread_count > 1 {
-                                                        format!("({})", row.thread_count)
-                                                    } else {
-                                                        String::new()
-                                                    })
-                                                    .child(if row.attachment { "⌁" } else { "" }),
-                                            )
-                                            .when(display.preview_lines > 0, |column| {
-                                                column.child(
-                                                    div()
-                                                        .text_size(px(display.list_font_size - 2.0))
-                                                        .text_color(mac::text_secondary())
-                                                        .overflow_hidden()
-                                                        .line_clamp(usize::from(
-                                                            display.preview_lines,
-                                                        ))
-                                                        .child(row.preview.clone()),
-                                                )
-                                            }),
-                                    )
-                                    .on_click(move |_: &ClickEvent, _, cx| {
-                                        let _ = view.update(cx, |this, cx| {
-                                            this.state.select(&id);
-                                            this.ensure_body_loaded(cx);
-                                            this.dispatch_persist(cx);
-                                            this.sync_menu(cx);
-                                            cx.notify();
-                                        });
-                                    })
+                                    .border_color(mac::separator());
+                                let row_element = if style.columns {
+                                    column_row(row_element, row, style)
+                                } else {
+                                    card_row(row_element, row, style)
+                                };
+                                row_element.on_click(move |_: &ClickEvent, _, cx| {
+                                    let _ = view.update(cx, |this, cx| {
+                                        this.state.select(&id);
+                                        this.ensure_body_loaded(cx);
+                                        this.dispatch_persist(cx);
+                                        this.sync_menu(cx);
+                                        cx.notify();
+                                    });
+                                })
                             })
                             .collect()
                     },
@@ -939,10 +970,10 @@ impl MailView {
             .into_any_element()
     }
 
-    fn rich_body(&self, body: &RichText) -> AnyElement {
+    fn rich_body(body: &RichText, display: &rmac_mail::settings::DisplayPrefs) -> AnyElement {
         // Viewing ▸ "Use dark backgrounds for messages" off: in Dark Mode
         // the message sits on white paper with black text, as on the Mac.
-        let paper = !self.display.dark_message_backgrounds && mac::is_dark();
+        let paper = !display.dark_message_backgrounds && mac::is_dark();
         let text = if paper { mac::black() } else { mac::text() };
         let mut content = div().flex().flex_col().gap(px(11.0));
         if paper {
@@ -956,11 +987,11 @@ impl MailView {
                 .id(format!("mail-block-{index}"))
                 .flex()
                 .flex_wrap()
-                .text_size(px(self.display.message_font_size))
+                .text_size(px(display.message_font_size))
                 .text_color(text);
             if block.kind == BlockKind::Quote {
                 // Fonts & Colours ▸ "Colour quoted text".
-                let (bar, quote_text) = if self.display.colour_quoted_text {
+                let (bar, quote_text) = if display.colour_quoted_text {
                     (mac::system_blue(), mac::system_blue())
                 } else if paper {
                     (mac::separator(), mac::black())
@@ -1011,6 +1042,7 @@ impl MailView {
         };
         let mut body = div()
             .id("mail-viewer-scroll")
+            .track_scroll(&self.viewer_scroll)
             .role(Role::Document)
             .aria_label(format!("{}, {}", message.sender, message.subject))
             .flex_1()
@@ -1022,7 +1054,7 @@ impl MailView {
             .flex_col()
             .gap(px(16.0))
             .bg(mac::window())
-            .child(self.header(message));
+            .child(Self::header(message));
         if !message.body.blocked_remote_images.is_empty() {
             body = body.child(
                 div()
@@ -1036,7 +1068,7 @@ impl MailView {
         }
         match &message.body_state {
             BodyState::Loaded => {
-                body = body.child(self.rich_body(&message.body));
+                body = body.child(Self::rich_body(&message.body, &self.display));
                 if let Some(attachment) = message.attachment.clone() {
                     body = body.child(self.attachment_chip(attachment, cx));
                 }
@@ -1179,7 +1211,7 @@ impl MailView {
         chip.into_any_element()
     }
 
-    fn header(&self, message: &Message) -> AnyElement {
+    fn header(message: &Message) -> AnyElement {
         let mut details = format!("To: {}", message.to);
         if !message.cc.is_empty() {
             details.push_str(&format!("  ·  Cc: {}", message.cc));
@@ -1268,6 +1300,9 @@ impl MailView {
             .on_action(cx.listener(|_, _: &crate::ShowSettings, _, cx| {
                 cx.defer(crate::settings_view::show);
             }))
+            .on_action(
+                cx.listener(|_, _: &crate::ShowAccounts, _, cx| menu::open_internet_accounts(cx)),
+            )
             .child(self.toolbar(cx))
             .child(
                 div()
@@ -1320,25 +1355,10 @@ impl MailView {
                             .text_color(mac::white())
                             .text_size(px(13.0))
                             .child("Add Account…")
+                            // Windows has no Internet Accounts: Mail's own
+                            // Settings ▸ Accounts adds the account there.
                             .on_click(cx.listener(|_, _: &ClickEvent, _, cx| {
-                                // Windows has no Internet Accounts: Mail's
-                                // own Settings ▸ Accounts adds the account.
-                                #[cfg(windows)]
-                                crate::settings_view::show_accounts(cx);
-                                #[cfg(not(windows))]
-                                cx.spawn(async move |_, _| {
-                                    if let Err(error) =
-                                        std::process::Command::new("rmac-system-settings")
-                                            .arg("--pane")
-                                            .arg("internet-accounts")
-                                            .spawn()
-                                    {
-                                        eprintln!(
-                                            "rmac-mail: could not open System Settings: {error}"
-                                        );
-                                    }
-                                })
-                                .detach();
+                                menu::open_internet_accounts(cx)
                             })),
                     ),
             )
@@ -1372,7 +1392,7 @@ impl Render for MailView {
                 .cached(gpui::StyleRefinement::default().size_full())
                 .into_any_element()
         };
-        div()
+        let root = div()
             .size_full()
             .relative()
             .bg(mac::window())
@@ -1423,11 +1443,6 @@ impl Render for MailView {
                 this.sync_menu(cx);
                 cx.notify();
             }))
-            .on_action(cx.listener(|this, _: &ToggleUnreadFilter, _, cx| {
-                this.state.unread_only = !this.state.unread_only;
-                this.sync_menu(cx);
-                cx.notify();
-            }))
             .on_action(cx.listener(|this, _: &ToggleRead, _, cx| {
                 let action = if this
                     .state
@@ -1443,9 +1458,21 @@ impl Render for MailView {
             .on_action(
                 cx.listener(|this, _: &Archive, _, cx| this.perform(OrganizeAction::Archive, cx)),
             )
-            .on_action(
-                cx.listener(|this, _: &Delete, _, cx| this.perform(OrganizeAction::Delete, cx)),
-            )
+            .on_action(cx.listener(|this, _: &Delete, window, cx| {
+                // Edit ▸ Delete edits the search field while it has focus.
+                if this
+                    .search_input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
+                {
+                    if let Ok(action) = cx.build_action("input::Delete", None) {
+                        window.dispatch_action(action, cx);
+                    }
+                } else {
+                    this.perform(OrganizeAction::Delete, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &Junk, _, cx| this.perform(OrganizeAction::Junk, cx)))
             .on_action(cx.listener(|this, _: &Flag, _, cx| this.perform(OrganizeAction::Flag, cx)))
             .on_action(cx.listener(|this, _: &Undo, _, cx| {
@@ -1473,11 +1500,11 @@ impl Render for MailView {
             }))
             .on_action(cx.listener(|this, _: &NextMessage, _, cx| {
                 this.state.select_next(1);
-                cx.notify();
+                this.after_selection(cx);
             }))
             .on_action(cx.listener(|this, _: &PreviousMessage, _, cx| {
                 this.state.select_next(-1);
-                cx.notify();
+                this.after_selection(cx);
             }))
             .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
             .on_action(
@@ -1486,24 +1513,230 @@ impl Render for MailView {
             .on_action(cx.listener(|_, _: &crate::ShowSettings, _, cx| {
                 cx.defer(crate::settings_view::show);
             }))
-            .child(self.toolbar(cx))
-            .child(
-                div()
-                    .absolute()
-                    .left(px(SIDEBAR + 8.0))
-                    .right_0()
-                    .top(px(TOOLBAR))
-                    .bottom_0()
-                    .flex()
-                    .child(div().w(px(LIST)).h_full().flex_none().child(list))
-                    .child(self.viewer(cx)),
-            )
-            .child(self.sidebar(cx))
+            .when(!self.toolbar_hidden, |root| root.child(self.toolbar(cx)))
+            .child(self.content(list, cx))
+            .when(!self.sidebar_hidden, |root| root.child(self.sidebar(cx)))
+            .when(self.sidebar_hidden, |root| {
+                // The window controls move to the top left of the window.
+                let origin = rmac_ui::traffic_lights_origin(true);
+                root.child(
+                    div()
+                        .absolute()
+                        .left(px(origin))
+                        .top(px(origin))
+                        .child(rmac_ui::traffic_lights()),
+                )
+            })
             .when(self.destination_menu, |root| {
                 root.child(self.destinations(cx))
             })
-            .into_any_element()
+            .when_some(self.erase_confirm, |root, erase| {
+                root.child(self.erase_alert(erase, cx))
+            })
+            .when_some(self.notice.clone(), |root, notice| {
+                root.child(self.notice_alert(notice, cx))
+            });
+        self.on_menu_actions(root, cx).into_any_element()
     }
+}
+
+/// The status column every row starts with: unread dot or flag.
+fn status_mark(row: &Row) -> &'static str {
+    if row.unread {
+        "●"
+    } else if row.flagged {
+        "⚑"
+    } else {
+        ""
+    }
+}
+
+fn avatar(initials: &str, size: f32) -> gpui::Div {
+    div()
+        .flex_none()
+        .w(px(size))
+        .h(px(size))
+        .rounded_full()
+        .bg(mac::system_gray())
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(mac::white())
+        .text_size(px(size * 0.4))
+        .font_weight(FontWeight::SEMIBOLD)
+        .child(initials.to_owned())
+}
+
+fn to_cc_badge(label: &'static str) -> gpui::Div {
+    div()
+        .flex_none()
+        .px(px(4.0))
+        .rounded(px(mac::radius_control()))
+        .bg(mac::control_fill())
+        .text_size(px(9.0))
+        .text_color(mac::text_secondary())
+        .child(label)
+}
+
+/// The Mac's default list row: sender and date, subject, two lines of
+/// preview.
+fn card_row(
+    element: gpui::Stateful<gpui::Div>,
+    row: &Row,
+    style: RowStyle,
+) -> gpui::Stateful<gpui::Div> {
+    element
+        .h(px(style.display.list_row_height()))
+        .px(px(13.0))
+        .pt(px(7.0))
+        .flex()
+        .gap(px(7.0))
+        .child(
+            div()
+                .w(px(9.0))
+                .pt(px(9.0))
+                .text_size(px(12.0))
+                .text_color(mac::system_blue())
+                .child(status_mark(row)),
+        )
+        .when(style.contact_photo, |element| {
+            element.child(div().pt(px(2.0)).child(avatar(&row.initials, 30.0)))
+        })
+        .child(
+            div()
+                .flex_1()
+                .overflow_hidden()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .gap(px(5.0))
+                        .child(
+                            div()
+                                .flex()
+                                .gap(px(4.0))
+                                .items_center()
+                                .overflow_hidden()
+                                .child(
+                                    div()
+                                        .font_weight(if row.unread && style.display.unread_bold {
+                                            FontWeight::BOLD
+                                        } else {
+                                            FontWeight::NORMAL
+                                        })
+                                        .text_size(px(style.display.list_font_size))
+                                        .text_color(mac::text())
+                                        .child(row.sender.clone()),
+                                )
+                                .when_some(row.to_cc, |element, label| {
+                                    element.child(to_cc_badge(label))
+                                }),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(px(10.0))
+                                .text_color(mac::text_secondary())
+                                .child(row.date.clone()),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(4.0))
+                        .text_size(px(style.display.list_font_size - 1.0))
+                        .text_color(mac::text())
+                        .child(row.subject.clone())
+                        .child(if row.thread_count > 1 {
+                            format!("({})", row.thread_count)
+                        } else {
+                            String::new()
+                        })
+                        .child(if row.attachment { "⌁" } else { "" }),
+                )
+                .when(style.display.preview_lines > 0, |column| {
+                    column.child(
+                        div()
+                            .text_size(px(style.display.list_font_size - 2.0))
+                            .text_color(mac::text_secondary())
+                            .overflow_hidden()
+                            .line_clamp(usize::from(style.display.preview_lines))
+                            .child(row.preview.clone()),
+                    )
+                }),
+        )
+}
+
+/// View ▸ Use Column Layout: one line per message, in From, Subject and
+/// Date Received columns.
+fn column_row(
+    element: gpui::Stateful<gpui::Div>,
+    row: &Row,
+    style: RowStyle,
+) -> gpui::Stateful<gpui::Div> {
+    let weight = if row.unread && style.display.unread_bold {
+        FontWeight::SEMIBOLD
+    } else {
+        FontWeight::NORMAL
+    };
+    element
+        .h(px(COLUMN_ROW))
+        .px(px(10.0))
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .text_size(px(style.display.list_font_size - 1.0))
+        .text_color(mac::text())
+        .font_weight(weight)
+        .child(
+            div()
+                .flex_none()
+                .w(px(12.0))
+                .text_color(mac::system_blue())
+                .child(status_mark(row)),
+        )
+        .child(
+            div()
+                .flex_none()
+                .w(px(12.0))
+                .text_color(mac::text_secondary())
+                .child(if row.attachment { "⌁" } else { "" }),
+        )
+        .when(style.contact_photo, |element| {
+            element.child(avatar(&row.initials, 18.0))
+        })
+        .child(
+            div()
+                .flex_none()
+                .w(px(170.0))
+                .overflow_hidden()
+                .flex()
+                .gap(px(4.0))
+                .items_center()
+                .child(row.sender.clone())
+                .when_some(row.to_cc, |element, label| {
+                    element.child(to_cc_badge(label))
+                }),
+        )
+        .child(
+            div()
+                .flex_1()
+                .overflow_hidden()
+                .child(if row.thread_count > 1 {
+                    format!("{} ({})", row.subject, row.thread_count)
+                } else {
+                    row.subject.clone()
+                }),
+        )
+        .child(
+            div()
+                .flex_none()
+                .text_size(px(11.0))
+                .text_color(mac::text_secondary())
+                .child(row.date.clone()),
+        )
 }
 
 fn mailbox_icon(mailbox: &Mailbox) -> &'static str {

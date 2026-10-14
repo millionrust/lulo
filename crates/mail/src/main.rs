@@ -312,7 +312,7 @@ fn forward_events(
                 message_id,
             } => {
                 if let Some(handle) = cx.update(|_| view::viewers().into_iter().next()) {
-                    let _ = handle.update(cx, |view: &mut MailView, cx| {
+                    handle.update(cx, |view: &mut MailView, cx| {
                         if let Some(full_id) = view.message_id_for_row(account, message_id) {
                             view.open_message(&full_id, cx);
                         }
@@ -333,7 +333,7 @@ fn refresh_viewers(
     messages: Vec<rmac_mail::Message>,
     cx: &mut gpui::AsyncApp,
 ) {
-    let _ = cx.update(|cx| {
+    cx.update(|cx| {
         for view in view::viewers() {
             let (mailboxes, messages) = (mailboxes.clone(), messages.clone());
             view.update(cx, |view, cx| view.refresh_live(mailboxes, messages, cx));

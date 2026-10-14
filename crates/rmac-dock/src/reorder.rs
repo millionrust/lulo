@@ -24,6 +24,8 @@ pub const SLIDE_MS: u64 = 270;
 pub const SETTLE_MS: u64 = 250;
 /// Removed icon and its label fading out.
 pub const REMOVE_FADE_MS: u64 = 200;
+/// The "Remove" label fading in once removal is armed.
+pub const REMOVE_FADE_IN_MS: u64 = 100;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TileDrop {
@@ -184,6 +186,12 @@ pub fn slot_at(centers: &[f32], pitch: f32, axis: f32) -> Option<usize> {
         .position(|center| (axis - center).abs() <= pitch / 2.0)
 }
 
+/// Opacity of the "Remove" label `elapsed_ms` after removal was armed: it
+/// fades in over [`REMOVE_FADE_IN_MS`], as measured on the Mac.
+pub fn remove_label_opacity(elapsed_ms: u64) -> f32 {
+    (elapsed_ms as f32 / REMOVE_FADE_IN_MS as f32).clamp(0.0, 1.0)
+}
+
 /// Progress of the Mac's spring for icons parting around an open slot: a
 /// critically damped spring that has settled to within half a percent at
 /// `duration_ms`, so it starts faster than an ease-out and lands softly.
@@ -288,6 +296,14 @@ mod tests {
         assert_eq!(slot_at(&centers, 68.0, 135.0), Some(1));
         assert_eq!(slot_at(&centers, 68.0, 20.0), None);
         assert_eq!(slot_at(&centers, 68.0, f32::NAN), None);
+    }
+
+    #[test]
+    fn remove_label_fades_in_over_a_tenth_of_a_second() {
+        assert_eq!(remove_label_opacity(0), 0.0);
+        assert_eq!(remove_label_opacity(50), 0.5);
+        assert_eq!(remove_label_opacity(REMOVE_FADE_IN_MS), 1.0);
+        assert_eq!(remove_label_opacity(10_000), 1.0);
     }
 
     #[test]

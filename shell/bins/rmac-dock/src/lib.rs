@@ -307,6 +307,8 @@ mod dock {
         pointer: (f32, f32),
         grab: (f32, f32),
         icon: Option<PathBuf>,
+        /// When "Remove" appeared (it fades in, as on the Mac).
+        remove_since: Option<u64>,
     }
 
     /// A pressed running app that is not kept, becoming a drag that keeps
@@ -801,6 +803,11 @@ mod dock {
         incoming: Option<IncomingApp>,
         /// App tiles drawn in the last frame: (kept, all apps).
         shelf_counts: (usize, usize),
+        /// The shelf's material (`DockBackdrop`), resized to follow the
+        /// shelf as it is drawn, an open slot included.
+        material: AnyWindowHandle,
+        /// The material size last asked for, as (length, thickness).
+        material_size: Option<(f32, f32)>,
         /// Neighbours sliding into place: (offset along the axis, start ms).
         slides: std::collections::BTreeMap<String, (f32, u64)>,
         /// Kept-app order shown until the settings watcher confirms a drop.
@@ -895,9 +902,11 @@ mod dock {
             display_id: DisplayId,
             surface: DockSurface,
             status: Entity<DockStatus>,
+            material: AnyWindowHandle,
             cx: &mut Context<Self>,
         ) -> Self {
             cx.observe(&status, |_, _, cx| cx.notify()).detach();
+            let surface_thickness = TileMetrics::new(surface.tile_size).shelf_thickness;
             let hidden = surface.fullscreen && !surface.overview_visible;
             if hidden {
                 let id = u64::from(display_id);
@@ -926,6 +935,8 @@ mod dock {
                 keep_drag: None,
                 incoming: None,
                 shelf_counts: (0, 0),
+                material,
+                material_size: Some((surface.shelf_extent, surface_thickness)),
                 slides: std::collections::BTreeMap::new(),
                 pending_pins: None,
                 removing: None,
@@ -1004,6 +1015,38 @@ mod dock {
                 + metrics.shelf_padding
                 + metrics.icon_size / 2.0
                 + index as f32 * (metrics.icon_size + metrics.icon_gap)
+        }
+
+        /// Resize the shelf's material to the shelf just drawn (an app kept
+        /// or quit, a slot open for an app dragged in, a separator drag),
+        /// after this frame, without recreating either window.
+        fn follow_material(&mut self, length: f32, thickness: f32, cx: &mut Context<Self>) {
+            let size = (length.round(), thickness.round());
+            if self.material_size == Some(size) || !(size.0 > 0.0 && size.1 > 0.0) {
+                return;
+            }
+            self.material_size = Some(size);
+            let size = match self.placement {
+                rmac_shell_settings::DockPlacement::Bottom => Size::new(px(size.0), px(size.1)),
+                _ => Size::new(px(size.1), px(size.0)),
+            };
+            let material = self.material;
+            cx.defer(move |cx| {
+                #[cfg(windows)]
+                rmac_shell_layer::windows::resize_layer(cx, material, size);
+                // Lulo OS: the material resizes itself as it draws, until
+                // the compositor has given it this size.
+                #[cfg(not(windows))]
+                let _ = material.update(cx, |view, _, cx| {
+                    if let Ok(backdrop) = view.downcast::<DockBackdrop>() {
+                        backdrop.update(cx, |backdrop, cx| {
+                            backdrop.wanted = Some(size);
+                            backdrop.requests = 0;
+                            cx.notify();
+                        });
+                    }
+                });
+            });
         }
 
         /// The surface position of a tile whose centre is `center` along
@@ -1098,25 +1141,15 @@ mod dock {
             let Some(model) = self.model_snapshot(cx) else {
                 return;
             };
-            let pinned: Vec<String> = model
-                .items
-                .iter()
-                .take_while(|item| item.pinned)
-                .map(|item| item.id.clone())
-                .collect();
-            if self
-                .pending_pins
-                .as_ref()
-                .is_some_and(|(order, _)| *order != pinned)
-            {
-                // A previous drop is still being saved.
-                return;
-            }
+            let pinned: Vec<String> = self.effective_pinned(&model);
             let running: Vec<String> = self
                 .content
                 .applications
                 .iter()
-                .skip(pinned.len())
+                .filter(|entry| match &entry.id {
+                    rmac_dock::presentation::EntryId::Application(id) => !pinned.contains(id),
+                    _ => false,
+                })
                 .filter_map(|entry| match &entry.id {
                     rmac_dock::presentation::EntryId::Application(id) => Some(id.clone()),
                     _ => None,
@@ -1217,6 +1250,22 @@ mod dock {
             cx.notify();
         }
 
+        /// The kept apps as the Dock shows them: the order a drop asked for
+        /// while it is being saved, else the saved order.
+        fn effective_pinned(&self, model: &rmac_dock::Model) -> Vec<String> {
+            self.pending_pins
+                .as_ref()
+                .map(|(order, _)| order.clone())
+                .unwrap_or_else(|| {
+                    model
+                        .items
+                        .iter()
+                        .take_while(|item| item.pinned)
+                        .map(|item| item.id.clone())
+                        .collect()
+                })
+        }
+
         fn finish_keep_drag(&mut self, modifiers: gpui::Modifiers, cx: &mut Context<Self>) {
             let Some(ui) = self.keep_drag.take() else {
                 return;
@@ -1232,14 +1281,9 @@ mod dock {
                 rmac_dock::keep::KeepDrop::NoChange => return,
                 rmac_dock::keep::KeepDrop::Keep { at } => at,
             };
-            let current: Option<Vec<String>> = self.model_snapshot(cx).map(|model| {
-                model
-                    .items
-                    .iter()
-                    .take_while(|item| item.pinned)
-                    .map(|item| item.id.clone())
-                    .collect()
-            });
+            let current = self
+                .model_snapshot(cx)
+                .map(|model| self.effective_pinned(&model));
             if current.as_ref() != Some(&ui.pinned) {
                 eprintln!("the kept apps changed during the drag; the drop was not applied");
                 return;
@@ -1358,21 +1402,9 @@ mod dock {
             let Some(model) = self.model_snapshot(cx) else {
                 return;
             };
-            let pinned: Vec<String> = model
-                .items
-                .iter()
-                .take_while(|item| item.pinned)
-                .map(|item| item.id.clone())
-                .collect();
-            let order = self
-                .pending_pins
-                .as_ref()
-                .map(|(order, _)| order.clone())
-                .unwrap_or_else(|| pinned.clone());
-            if order != pinned {
-                // A previous drop is still being saved.
-                return;
-            }
+            // A drop still being saved is already the order on screen; the
+            // next drag starts from it (no wait for the settings watcher).
+            let pinned: Vec<String> = self.effective_pinned(&model);
             let Some(source) = pinned.iter().position(|id| id == app_id) else {
                 return;
             };
@@ -1401,6 +1433,7 @@ mod dock {
                 pointer: position,
                 grab: (position.0 - tile_origin.0, position.1 - tile_origin.1),
                 icon,
+                remove_since: None,
             });
         }
 
@@ -1419,6 +1452,11 @@ mod dock {
             if !state.active {
                 return;
             }
+            ui.remove_since = match (state.remove_armed, ui.remove_since) {
+                (true, None) => Some(now),
+                (true, since) => since,
+                (false, _) => None,
+            };
             if !was_active {
                 // The label goes away and the drag owns the whole output.
                 self.hovered_item = None;
@@ -1464,14 +1502,9 @@ mod dock {
             self.input_region = None;
             self.slides.clear();
             cx.notify();
-            let current: Option<Vec<String>> = self.model_snapshot(cx).map(|model| {
-                model
-                    .items
-                    .iter()
-                    .take_while(|item| item.pinned)
-                    .map(|item| item.id.clone())
-                    .collect()
-            });
+            let current = self
+                .model_snapshot(cx)
+                .map(|model| self.effective_pinned(&model));
             let command = match ui.drag.finish() {
                 rmac_dock::reorder::TileDrop::Click => {
                     self.activate_entry(&ui.app_id, modifiers, cx);
@@ -2940,18 +2973,24 @@ mod dock {
             }) {
                 self.pending_pins = None;
             }
+            // A drag may start from the order a drop asked for, before the
+            // settings watcher confirms it.
+            let effective_pinned = self
+                .pending_pins
+                .as_ref()
+                .map_or_else(|| model_pinned.clone(), |(order, _)| order.clone());
             // A running app dragged across the separator shows in the kept
             // apps at its open slot (still invisible: it follows the pointer).
             let keep_preview = self.keep_drag.as_ref().and_then(|ui| {
                 let at = ui.drag.state().destination?;
-                (ui.drag.is_active() && ui.pinned == model_pinned).then(|| {
+                (ui.drag.is_active() && ui.pinned == effective_pinned).then(|| {
                     let mut order = ui.pinned.clone();
                     order.insert(at.min(order.len()), ui.app_id.clone());
                     order
                 })
             });
             let shown_pinned: Option<Vec<String>> = match (&self.tile_drag, &self.pending_pins) {
-                (Some(ui), _) if ui.drag.is_active() && ui.pinned == model_pinned => Some(
+                (Some(ui), _) if ui.drag.is_active() && ui.pinned == effective_pinned => Some(
                     ui.drag
                         .preview_order()
                         .into_iter()
@@ -2965,11 +3004,11 @@ mod dock {
             if self
                 .tile_drag
                 .as_ref()
-                .is_some_and(|ui| ui.pinned != model_pinned)
+                .is_some_and(|ui| ui.pinned != effective_pinned)
                 || self
                     .keep_drag
                     .as_ref()
-                    .is_some_and(|ui| ui.pinned != model_pinned)
+                    .is_some_and(|ui| ui.pinned != effective_pinned)
             {
                 // The kept apps changed under the drag: abandon it.
                 self.tile_drag = None;
@@ -2997,6 +3036,17 @@ mod dock {
                     })
                 };
                 let mut kept: Vec<_> = order.iter().filter_map(find).cloned().collect();
+                // A running app the drop no longer keeps moves to the running
+                // apps at once, so the shelf does not shrink and grow back.
+                let released: Vec<_> = entries
+                    .iter()
+                    .filter(|entry| {
+                        entry.activity != rmac_dock::presentation::ActivityIndicator::None
+                            && !matches!(&entry.id, rmac_dock::presentation::EntryId::Application(app_id) if order.contains(app_id))
+                    })
+                    .cloned()
+                    .collect();
+                unpinned.splice(0..0, released);
                 unpinned.retain(|entry| {
                     !matches!(&entry.id, rmac_dock::presentation::EntryId::Application(app_id) if order.contains(app_id))
                 });
@@ -3049,6 +3099,7 @@ mod dock {
                 + 2.0 * metrics.shelf_padding;
             let shelf_start = (axis - shelf_extent) / 2.0;
             self.shelf_start = shelf_start;
+            self.follow_material(shelf_extent, metrics.shelf_thickness, cx);
             self.surface_size = (surface_width, surface_height);
             let trash_center = shelf_extent - metrics.shelf_padding - metrics.icon_size / 2.0;
             // The Windows CI checks click the tiles where the Dock says
@@ -4291,6 +4342,12 @@ mod dock {
                     .filter(|ui| ui.drag.is_active())
                     .map(|ui| {
                         let state = ui.drag.state();
+                        let label_opacity = ui.remove_since.map_or(0.0, |since| {
+                            rmac_dock::reorder::remove_label_opacity(now.saturating_sub(since))
+                        });
+                        if state.remove_armed && label_opacity < 1.0 {
+                            window.request_animation_frame();
+                        }
                         let left = ui.pointer.0 - ui.grab.0;
                         let top = ui.pointer.1 - ui.grab.1;
                         let art = metrics.icon_size * ICON_ART_SCALE;
@@ -4318,6 +4375,7 @@ mod dock {
                                         .w(px(TOOLTIP_WIDTH))
                                         .flex()
                                         .justify_center()
+                                        .opacity(label_opacity)
                                         .child(
                                             div()
                                                 .px_3()
@@ -5861,43 +5919,24 @@ mod dock {
                         (!current.needs_new_surface(&surface))
                             .then_some((current.overview_visible, *foreground))
                     });
-                // Windows resizes the shelf's material in place when only
-                // the shelf's length changed (an app opened or quit): the
-                // Dock's own window, and the work-area strip it holds as an
-                // AppBar, stay, so maximised windows do not jump.
-                #[cfg(windows)]
-                {
-                    let resized = self.windows.get(&uuid).and_then(|(current, _, backdrop)| {
-                        let mut same_length = surface.clone();
-                        same_length.shelf_extent = current.shelf_extent;
-                        (current.shelf_extent != surface.shelf_extent
-                            && !current.needs_new_surface(&same_length))
-                        .then_some(*backdrop)
-                    });
-                    if let Some(backdrop) = resized {
-                        let metrics = TileMetrics::new(surface.tile_size);
-                        let size = match surface.placement {
-                            rmac_shell_settings::DockPlacement::Bottom => {
-                                Size::new(px(surface.shelf_extent), px(metrics.shelf_thickness))
-                            }
-                            _ => Size::new(px(metrics.shelf_thickness), px(surface.shelf_extent)),
-                        };
-                        rmac_shell_layer::windows::resize_layer(cx, backdrop, size);
-                        if let Some((current, _, _)) = self.windows.get_mut(&uuid) {
-                            current.shelf_extent = surface.shelf_extent;
-                        }
+                // Only the shelf's length changed (an app opened or quit, an
+                // app was kept): keep both windows. Recreating them under a
+                // still pointer left the new Dock without pointer focus on
+                // niri, and on Windows moved maximised windows with the
+                // AppBar. The Dock resizes its material itself as it draws
+                // (`Dock::follow_material`).
+                let kept = kept.or_else(|| {
+                    let (current, foreground, _) = self.windows.get(&uuid)?;
+                    let mut same_length = surface.clone();
+                    same_length.shelf_extent = current.shelf_extent;
+                    (!current.needs_new_surface(&same_length))
+                        .then_some((current.overview_visible, *foreground))
+                });
+                if kept.is_some() {
+                    if let Some((current, _, _)) = self.windows.get_mut(&uuid) {
+                        current.shelf_extent = surface.shelf_extent;
                     }
                 }
-                let kept = if cfg!(windows) {
-                    self.windows
-                        .get(&uuid)
-                        .and_then(|(current, foreground, _)| {
-                            (!current.needs_new_surface(&surface))
-                                .then_some((current.overview_visible, *foreground))
-                        })
-                } else {
-                    kept
-                };
                 if let Some((current_overview_visible, foreground)) = kept {
                     if current_overview_visible != surface.overview_visible {
                         let overview_visible = surface.overview_visible;
@@ -5915,7 +5954,7 @@ mod dock {
                     continue;
                 }
                 let backdrop = open_dock_backdrop(display.clone(), &surface, status.clone(), cx);
-                let foreground = open_dock(display, surface.clone(), status.clone(), cx);
+                let foreground = open_dock(display, surface.clone(), status.clone(), backdrop, cx);
                 if let Some((_, previous_foreground, previous_backdrop)) =
                     self.windows.insert(uuid, (surface, foreground, backdrop))
                 {
@@ -5931,10 +5970,31 @@ mod dock {
         status: Entity<DockStatus>,
         blurred: bool,
         tile_size: f32,
+        /// The size the Dock last drew its shelf at (`Dock::follow_material`).
+        #[cfg_attr(windows, allow(dead_code))]
+        wanted: Option<Size<gpui::Pixels>>,
+        /// Requests for `wanted` so far. A size change asked for while an
+        /// earlier one is being configured can be answered with the earlier
+        /// size; asking again settles it, a few times at most.
+        #[cfg_attr(windows, allow(dead_code))]
+        requests: u8,
     }
 
     impl Render for DockBackdrop {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            #[cfg(not(windows))]
+            if let Some(wanted) = self.wanted {
+                let size = window.bounds().size;
+                let off = (f32::from(size.width) - f32::from(wanted.width)).abs() > 0.5
+                    || (f32::from(size.height) - f32::from(wanted.height)).abs() > 0.5;
+                if off && self.requests < 4 {
+                    self.requests += 1;
+                    window.resize(wanted);
+                    // Draw again once GPUI has applied the new layer size,
+                    // which commits it.
+                    window.request_animation_frame();
+                }
+            }
             // An auto-hidden Dock takes its material with it.
             let hidden = self
                 .status
@@ -6029,6 +6089,8 @@ mod dock {
                         status,
                         blurred: true,
                         tile_size: surface_tile_size,
+                        wanted: None,
+                        requests: 0,
                     }
                 })
             },
@@ -6041,6 +6103,7 @@ mod dock {
         display: Rc<dyn PlatformDisplay>,
         surface: DockSurface,
         status: Entity<DockStatus>,
+        material: AnyWindowHandle,
         cx: &mut App,
     ) -> AnyWindowHandle {
         let display_id = display.id();
@@ -6083,7 +6146,7 @@ mod dock {
             },
             {
                 let status = status.clone();
-                move |_, cx| cx.new(|cx| Dock::new(display_id, surface, status, cx))
+                move |_, cx| cx.new(|cx| Dock::new(display_id, surface, status, material, cx))
             },
         )
         .expect("open Dock layer surface");

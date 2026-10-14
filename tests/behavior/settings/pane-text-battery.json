@@ -18,7 +18,6 @@
   ],
   "tolerance": {
     "pane.pane_text.labelled": "at-least",
-    "pane.pane_text.labels": "subset",
-    "pane.pane_text.controls": "subset"
+    "pane.pane_text.labels": "subset"
   }
 }

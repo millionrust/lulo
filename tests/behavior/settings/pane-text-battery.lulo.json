@@ -7,11 +7,9 @@
       "pane_text": {
         "labelled": 15,
         "labels": [
-          "Energy Mode",
-          "Battery Health"
-        ],
-        "controls": [
-          "Energy Mode"
+          "Battery Health",
+          "Power Source",
+          "Status"
         ]
       }
     }

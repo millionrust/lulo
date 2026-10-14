@@ -1226,7 +1226,7 @@ class LuloRun:
             except Exception:
                 continue
         return {"badge": any("RPN" in (text or "") for text in texts),
-                "enter_key": "enter" in names, "equals_key": "equals" in names}
+                "enter_key": "enter" in names, "equals_key": "Equals" in names}
 
     def fact_clock_timers(self) -> dict[str, Any]:
         path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/clock.json"

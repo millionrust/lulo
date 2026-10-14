@@ -141,7 +141,7 @@ layer-shell surfaces (Control Centre, Spotlight) have AT-SPI extents.
 This runs only on frames GPUI already draws (they are drawn only on change)
 and only while an assistive technology has activated the tree; with nobody
 listening nothing is built. `tests/behavior/settings/pane-text-*` check, in
-CI, a minimum number of named rows and the row and control names of eight
+CI, a minimum number of named rows and the row and control names of six
 Settings panes.
 
 What AT-SPI can't do here, because `accesskit_unix` 0.22.1 doesn't

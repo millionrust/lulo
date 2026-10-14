@@ -37,6 +37,11 @@ impl VSyncProvider {
         Self { interval, f }
     }
 
+    /// rmac: the refresh interval, for rmac_smooth_scroll.
+    pub(crate) fn interval(&self) -> Duration {
+        self.interval
+    }
+
     pub(crate) fn wait_for_vsync(&self) {
         let vsync_start = Instant::now();
         let wait_succeeded = (self.f)();

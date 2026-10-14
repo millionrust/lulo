@@ -74,6 +74,8 @@ pub struct WindowsWindowState {
     pub drew_frame: Cell<bool>,
     /// rmac: parks the frame loop while the window draws nothing.
     pub(crate) frame_loop: crate::rmac_frame_loop::FrameLoop,
+    /// rmac: wheel input handed out once per frame (rmac_smooth_scroll).
+    pub(crate) smooth_scroll: crate::rmac_smooth_scroll::SmoothScroll,
     /// rmac: the Mac corners, shadow and hairline (`rmac_window_frame.rs`).
     pub(crate) mac_frame: crate::rmac_window_frame::MacFrame,
 
@@ -188,6 +190,7 @@ impl WindowsWindowState {
             force_render_after_recovery: Cell::new(false),
             drew_frame: Cell::new(false),
             frame_loop: crate::rmac_frame_loop::FrameLoop::new(hwnd),
+            smooth_scroll: Default::default(),
             mac_frame: Default::default(),
             click_state,
             current_cursor: Cell::new(current_cursor),

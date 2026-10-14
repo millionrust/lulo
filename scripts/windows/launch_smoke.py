@@ -53,6 +53,10 @@ creation, first frame, first present), timed from process creation, and
 idle window are grouped by source and printed, so a regression names its
 cause.
 
+With Text Editor in `apps`, `scroll_smoke.py` then checks smooth scrolling
+(ADR 0025 "Smooth scrolling"): once with upstream's immediate line deltas,
+for the numbers, and once as shipped, checked.
+
 With `--world-tick-check`, Clock is launched once more with its World Clock
 redraw period shortened to `WORLD_TICK_SECONDS` (`RMAC_CLOCK_WORLD_TICK_MS`,
 otherwise a minute) and left alone through the same settle and idle window,
@@ -2049,6 +2053,31 @@ def main() -> int:
         for failure in check_files(arguments.bin_dir / "rmac-files.exe"):
             failures += 1
             print(f"rmac-files: FAIL: {failure}")
+
+    if "rmac-text-editor" in arguments.apps:
+        # Smooth scrolling (ADR 0025): upstream's immediate line deltas
+        # first, for the numbers only, then the per-frame scroll, checked.
+        import scroll_smoke  # this script's own folder is on sys.path
+
+        scroll_numbers = {}
+        for before in (True, False):
+            scroll_failures, numbers = scroll_smoke.run(arguments.bin_dir, before)
+            if scroll_failures and not before:
+                # Once more before it counts: on a shared runner the input
+                # was seen to stop reaching the window part-way through
+                # (the `--before` run beside it lost it the same way).
+                for failure in scroll_failures:
+                    print(f"scroll: first attempt: {failure}; trying again")
+                scroll_failures, numbers = scroll_smoke.run(arguments.bin_dir, before)
+            scroll_numbers["before" if before else "after"] = numbers
+            if before:
+                for failure in scroll_failures:
+                    print(f"scroll (before): {failure}")
+                continue
+            for failure in scroll_failures:
+                failures += 1
+                print(f"scroll: FAIL: {failure}")
+        MEASUREMENTS.setdefault("rmac-text-editor", {})["scroll"] = scroll_numbers
 
     if arguments.foreground_check:
         second_app = next(

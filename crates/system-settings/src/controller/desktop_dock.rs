@@ -47,8 +47,32 @@ impl Settings {
         if let Some(detail) = &self.shell_settings_stream_error {
             cards.push(note_card(detail.clone()));
         }
+        // macOS 26 keeps the whole Dock in one group, in this order: Size,
+        // Magnification, Position on screen, Minimise windows using, the
+        // title-bar double-click, then the switches.
         cards.push(first_section_header("Dock"));
-        cards.push(card(vec![
+        let mut dock_rows = vec![
+            // DOCK-01: Size, a plain draggable slider with the live value as
+            // a tooltip, like the Displays pane's Brightness. 32-128 logical
+            // px matches the separator's own drag-to-resize range.
+            value_slider_row(
+                "Size",
+                "dock-size",
+                &self.dock_size_slider,
+                format!("{}", dock.tile_size.round() as i32).into(),
+            ),
+            // DOCK-07: Magnification, Off at the slider's minimum then
+            // continuous, like the Mac's "Off · Small … Large".
+            value_slider_row(
+                "Magnification",
+                "dock-magnification",
+                &self.dock_magnification_slider,
+                if dock.magnification {
+                    format!("{:.2}×", dock.magnification_scale).into()
+                } else {
+                    SharedString::from("Off")
+                },
+            ),
             dock_segment_row(
                 view.clone(),
                 "dock-placement",
@@ -61,6 +85,44 @@ impl Settings {
                 },
                 enabled,
             ),
+            dock_segment_row(
+                view.clone(),
+                "dock-minimize-effect",
+                "Minimise windows using",
+                &DOCK_MINIMIZE_EFFECT_OPTIONS,
+                match dock.minimize_effect {
+                    rmac_shell_settings::DockMinimizeEffect::Genie => Some(0),
+                    rmac_shell_settings::DockMinimizeEffect::Scale => Some(1),
+                },
+                enabled,
+            ),
+        ];
+        // The title-bar double-click is Lulo OS's window manager (niri);
+        // Windows keeps its own title bars.
+        if cfg!(not(windows)) {
+            let double_click = snapshot.settings.double_click_title_bar;
+            let double_click_choices = rmac_shell_settings::DoubleClickTitleBarAction::ALL
+                .into_iter()
+                .map(|value| {
+                    let double_click_view = view.clone();
+                    choice(value.title(), value == double_click, move |_, cx| {
+                        double_click_view.update(cx, |settings, cx| {
+                            settings.apply_double_click_title_bar(value, cx)
+                        });
+                    })
+                })
+                .collect::<Vec<_>>();
+            let double_click_value = popup_value(&double_click_choices, double_click.title());
+            dock_rows.push(popup_row(
+                "double-click-title-bar",
+                "Double-click a window's title bar to",
+                None,
+                double_click_value,
+                double_click_choices,
+                enabled,
+            ));
+        }
+        dock_rows.extend([
             dock_switch_row(
                 view.clone(),
                 "dock-autohide",
@@ -70,43 +132,6 @@ impl Settings {
                 enabled,
                 DockChange::Autohide,
             ),
-            dock_switch_row(
-                view.clone(),
-                "dock-reserve-space",
-                "Reserve screen space",
-                Some("Keep tiled windows outside the visible Dock area.".into()),
-                dock.reserve_space,
-                enabled,
-                DockChange::ReserveSpace,
-            ),
-        ]));
-
-        // DOCK-01: Size, a plain draggable slider with the live value as a
-        // tooltip rather than a trailing number, like the Displays pane's
-        // Brightness. 32-128 logical px matches the separator's own
-        // drag-to-resize range (shell/bins/rmac-dock's DOCK-03).
-        cards.push(card(vec![value_slider_row(
-            "Size",
-            "dock-size",
-            &self.dock_size_slider,
-            format!("{}", dock.tile_size.round() as i32).into(),
-        )]));
-
-        // DOCK-07: Magnification, Off at the slider's minimum then
-        // continuous, like the Mac's "Off · Small … Large" -- replacing
-        // the on/off switch plus a three-preset picker.
-        cards.push(card(vec![value_slider_row(
-            "Magnification",
-            "dock-magnification",
-            &self.dock_magnification_slider,
-            if dock.magnification {
-                format!("{:.2}×", dock.magnification_scale).into()
-            } else {
-                SharedString::from("Off")
-            },
-        )]));
-
-        cards.push(card(vec![
             dock_switch_row(
                 view.clone(),
                 "dock-show-running-indicators",
@@ -125,20 +150,34 @@ impl Settings {
                 enabled,
                 DockChange::ShowRecentApps,
             ),
-        ]));
+        ]);
+        cards.push(card(dock_rows));
 
-        cards.push(card(vec![dock_segment_row(
-            view.clone(),
-            "dock-repeated-click",
-            "Click a focused app again",
-            &DOCK_REPEATED_CLICK_OPTIONS,
-            match dock.repeated_click {
-                rmac_shell_settings::RepeatedClickBehavior::CycleWindows => Some(0),
-                rmac_shell_settings::RepeatedClickBehavior::DoNothing => Some(1),
-                rmac_shell_settings::RepeatedClickBehavior::HideApplication => None,
-            },
-            enabled,
-        )]));
+        // Lulo OS's own Dock choices, which macOS does not have, follow the
+        // Mac's group.
+        cards.push(card(vec![
+            dock_switch_row(
+                view.clone(),
+                "dock-reserve-space",
+                "Reserve screen space",
+                Some("Keep tiled windows outside the visible Dock area.".into()),
+                dock.reserve_space,
+                enabled,
+                DockChange::ReserveSpace,
+            ),
+            dock_segment_row(
+                view.clone(),
+                "dock-repeated-click",
+                "Click a focused app again",
+                &DOCK_REPEATED_CLICK_OPTIONS,
+                match dock.repeated_click {
+                    rmac_shell_settings::RepeatedClickBehavior::CycleWindows => Some(0),
+                    rmac_shell_settings::RepeatedClickBehavior::DoNothing => Some(1),
+                    rmac_shell_settings::RepeatedClickBehavior::HideApplication => None,
+                },
+                enabled,
+            ),
+        ]));
         if dock.repeated_click == rmac_shell_settings::RepeatedClickBehavior::HideApplication {
             cards.push(note_card(
                 "The saved behavior requests application hiding, but niri has no application-hide action. The Dock reports that action as unavailable; choose Cycle Windows or Do Nothing for supported behavior.",
@@ -229,7 +268,7 @@ impl Settings {
         // Lulo OS's window manager (niri and Mission Control); Windows keeps
         // its own title bars and corners, so those sections are left out.
         if cfg!(not(windows)) {
-            cards.push(section_header("Desktop"));
+            cards.push(section_header("Desktop & Stage Manager"));
             let reveal = snapshot.settings.click_wallpaper_to_reveal;
             let reveal_choices = rmac_shell_settings::ClickWallpaperToReveal::ALL
                 .into_iter()
@@ -255,63 +294,18 @@ impl Settings {
             enabled,
         )]));
 
-            // macOS keeps this in a "Windows" group along with several rmac does
-            // not yet implement (prefer tabs, ask to keep changes, tiling drags
-            // -- SET-89). SET-33: only the double-click action is wired so far.
-            cards.push(section_header("Windows"));
-            let double_click = snapshot.settings.double_click_title_bar;
-            let double_click_choices = rmac_shell_settings::DoubleClickTitleBarAction::ALL
-                .into_iter()
-                .map(|value| {
-                    let double_click_view = view.clone();
-                    choice(value.title(), value == double_click, move |_, cx| {
-                        double_click_view.update(cx, |settings, cx| {
-                            settings.apply_double_click_title_bar(value, cx)
-                        });
-                    })
-                })
-                .collect::<Vec<_>>();
-            let double_click_value = popup_value(&double_click_choices, double_click.title());
-            cards.push(card(vec![popup_row(
-                "double-click-title-bar",
-                "Double-click a window's title bar to",
-                None,
-                double_click_value,
-                double_click_choices,
-                enabled,
-            )]));
-
-            // macOS keeps these behind a "Hot Corners…" sheet; rmac lists the
-            // four pop-ups in the pane. Only actions rmac can perform are
-            // offered (rmac_shell_settings::HotCornerAction).
-            cards.push(section_header("Hot Corners"));
-            let corners = snapshot.settings.hot_corners;
-            let mut corner_rows = Vec::new();
-            for corner in HotCorner::ALL {
-                let current = corner.get(&corners);
-                let choices = rmac_shell_settings::HotCornerAction::ALL
-                    .into_iter()
-                    .map(|action| {
-                        let corner_view = view.clone();
-                        choice(action.title(), action == current, move |_, cx| {
-                            corner_view.update(cx, |settings, cx| {
-                                settings
-                                    .apply_hot_corner_change(HotCornerChange { corner, action }, cx)
-                            });
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                let value = popup_value(&choices, current.title());
-                corner_rows.push(popup_row(
-                    corner.id(),
-                    corner.title(),
-                    None,
-                    value,
-                    choices,
-                    enabled,
-                ));
-            }
-            cards.push(card(corner_rows));
+            // macOS 26 keeps the corners behind "Hot Corners…" at the foot
+            // of the pane.
+            let corners_view = view.clone();
+            cards.push(footer_buttons(vec![push_button(
+                "dock-hot-corners",
+                "Hot Corners…",
+            )
+            .disabled(!enabled)
+            .on_click(move |_, _, cx| {
+                corners_view.update(cx, |settings, cx| settings.set_hot_corners_sheet(true, cx));
+            })
+            .into_any_element()]));
         }
 
         if snapshot.recovered_from_last_good || snapshot.migrated_from.is_some() {
@@ -328,5 +322,79 @@ impl Settings {
             ));
         }
         self.pane(cards)
+    }
+
+    pub(super) fn set_hot_corners_sheet(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.hot_corners_sheet != open {
+            self.hot_corners_sheet = open;
+            cx.notify();
+        }
+    }
+
+    /// The Hot Corners sheet: the four corner pop-ups and Done. Only
+    /// actions Lulo OS can perform are offered
+    /// (`rmac_shell_settings::HotCornerAction`).
+    pub(super) fn render_hot_corners_sheet(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.hot_corners_sheet {
+            return None;
+        }
+        let snapshot = self.shell_settings.as_ref()?;
+        let view = cx.entity();
+        let enabled = !self.shell_settings_busy;
+        let corners = snapshot.settings.hot_corners;
+        let mut corner_rows = Vec::new();
+        for corner in HotCorner::ALL {
+            let current = corner.get(&corners);
+            let choices = rmac_shell_settings::HotCornerAction::ALL
+                .into_iter()
+                .map(|action| {
+                    let corner_view = view.clone();
+                    choice(action.title(), action == current, move |_, cx| {
+                        corner_view.update(cx, |settings, cx| {
+                            settings.apply_hot_corner_change(HotCornerChange { corner, action }, cx)
+                        });
+                    })
+                })
+                .collect::<Vec<_>>();
+            let value = popup_value(&choices, current.title());
+            corner_rows.push(popup_row(
+                corner.id(),
+                corner.title(),
+                None,
+                value,
+                choices,
+                enabled,
+            ));
+        }
+        let body = div()
+            .v_flex()
+            .child(
+                div()
+                    .mb(px(12.0))
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::BOLD)
+                    .text_color(label())
+                    .child("Hot Corners"),
+            )
+            .child(card(corner_rows));
+        let done_view = view.clone();
+        Some(
+            settings_sheet(
+                "hot-corners-sheet",
+                460.0,
+                330.0,
+                None,
+                body.into_any_element(),
+                vec![sheet_default_button(
+                    "hot-corners-done",
+                    "Done",
+                    move |_, cx| {
+                        done_view
+                            .update(cx, |settings, cx| settings.set_hot_corners_sheet(false, cx));
+                    },
+                )],
+            )
+            .into_any_element(),
+        )
     }
 }

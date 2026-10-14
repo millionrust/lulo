@@ -20,6 +20,9 @@ pub(super) enum DockChange {
     /// at that scale, so this always sets both `magnification` and
     /// `magnification_scale` together.
     MagnificationLevel(f32),
+    /// "Minimise windows using" (Genie or Scale), shared with the Dock's
+    /// own separator menu.
+    MinimizeEffect(rmac_shell_settings::DockMinimizeEffect),
 }
 
 impl DockChange {
@@ -33,6 +36,7 @@ impl DockChange {
             Self::ShowRunningIndicators(value) => dock.show_running_indicators = value,
             Self::ShowRecentApps(value) => dock.show_recent_apps = value,
             Self::TileSize(value) => dock.tile_size = value,
+            Self::MinimizeEffect(value) => dock.minimize_effect = value,
             Self::MagnificationLevel(value) => {
                 dock.magnification = value > 0.0;
                 if value > 0.0 {

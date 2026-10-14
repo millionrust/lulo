@@ -52,4 +52,45 @@ impl Settings {
         })
         .detach();
     }
+
+    /// Keyboard ▸ Keyboard brightness: the same debounced, generation-
+    /// guarded write, to the keyboard backlight.
+    pub(in crate::controller) fn schedule_keyboard_brightness(
+        &mut self,
+        value: f32,
+        cx: &mut Context<Self>,
+    ) {
+        if self.keyboard_brightness.is_none() {
+            return;
+        }
+        self.keyboard_brightness_generation = self.keyboard_brightness_generation.wrapping_add(1);
+        let generation = self.keyboard_brightness_generation;
+        let percentage = value.round().clamp(0.0, 100.0) as u8;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            cx.background_executor()
+                .timer(Duration::from_millis(80))
+                .await;
+            let still_current = this
+                .update(cx, |this: &mut Settings, _| {
+                    this.keyboard_brightness_generation == generation
+                })
+                .unwrap_or(false);
+            if !still_current {
+                return;
+            }
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_osd::set_keyboard_brightness(percentage) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.keyboard_brightness_generation == generation {
+                    if let Ok(applied) = result {
+                        this.keyboard_brightness = Some(applied);
+                    }
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
 }

@@ -151,10 +151,39 @@ fn execute_brightness(command: Command) -> Result<Presentation, Error> {
 
 /// Set a backlight through logind and wait until sysfs reports the level.
 fn apply_brightness(name: &str, target: u32) -> Result<Backlight, Error> {
-    set_brightness(name, target)?;
+    apply_level(Subsystem::Backlight, name, target)
+}
+
+/// The two sysfs classes logind's `SetBrightness` drives.
+#[derive(Clone, Copy)]
+enum Subsystem {
+    Backlight,
+    Leds,
+}
+
+impl Subsystem {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Backlight => "backlight",
+            Self::Leds => "leds",
+        }
+    }
+
+    /// `/sys/class/<subsystem>`, or the nested behaviour-test session's
+    /// fake sysfs tree (scripts/behavior/fake_hardware.py) when it set
+    /// `LULO_FAKE_SYS_ROOT`. Unset in every real session.
+    fn root(self) -> PathBuf {
+        std::env::var_os("LULO_FAKE_SYS_ROOT")
+            .map(|root| Path::new(&root).join("class").join(self.name()))
+            .unwrap_or_else(|| Path::new("/sys/class").join(self.name()))
+    }
+}
+
+fn apply_level(subsystem: Subsystem, name: &str, target: u32) -> Result<Backlight, Error> {
+    set_brightness(subsystem, name, target)?;
     let deadline = Instant::now() + VERIFY_TIMEOUT;
     loop {
-        let backlight = read_backlight(name)?;
+        let backlight = read_device(subsystem, name)?;
         if backlight.current == target {
             return Ok(backlight);
         }
@@ -175,18 +204,44 @@ pub(super) fn set_brightness_percentage(percentage: u8) -> Result<u8, Error> {
     Ok(apply_brightness(&backlight.name, target)?.percentage())
 }
 
-/// `/sys/class/backlight`, or the nested behaviour-test session's fake
-/// sysfs tree (scripts/behavior/fake_hardware.py) when it set
-/// `LULO_FAKE_SYS_ROOT`. Unset in every real session.
-fn backlight_class_root() -> PathBuf {
-    std::env::var_os("LULO_FAKE_SYS_ROOT")
-        .map(|root| Path::new(&root).join("class/backlight"))
-        .unwrap_or_else(|| PathBuf::from("/sys/class/backlight"))
+/// The keyboard backlight's level in percent (Settings ▸ Keyboard ▸
+/// Keyboard brightness).
+pub(super) fn keyboard_brightness() -> Result<u8, Error> {
+    Ok(keyboard_led()?.percentage())
+}
+
+/// Set the keyboard backlight through logind. Unlike the display, 0 turns
+/// it off, as the Mac's slider does.
+pub(super) fn set_keyboard_brightness_percentage(percentage: u8) -> Result<u8, Error> {
+    let led = keyboard_led()?;
+    let target = if percentage == 0 {
+        0
+    } else {
+        led.level_for_percentage(percentage)
+    };
+    Ok(apply_level(Subsystem::Leds, &led.name, target)?.percentage())
+}
+
+/// The first `*kbd_backlight*` LED, by name.
+fn keyboard_led() -> Result<Backlight, Error> {
+    let directory =
+        fs::read_dir(Subsystem::Leds.root()).map_err(|_| Error::new(Operation::ReadBrightness))?;
+    let mut names = directory
+        .take(256)
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+        .filter(|name| name.contains("kbd_backlight") && valid_device_name(name))
+        .collect::<Vec<_>>();
+    names.sort();
+    let name = names
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::new(Operation::ReadBrightness))?;
+    read_device(Subsystem::Leds, &name)
 }
 
 fn preferred_backlight() -> Result<Backlight, Error> {
-    let directory =
-        fs::read_dir(backlight_class_root()).map_err(|_| Error::new(Operation::ReadBrightness))?;
+    let directory = fs::read_dir(Subsystem::Backlight.root())
+        .map_err(|_| Error::new(Operation::ReadBrightness))?;
     let mut devices = Vec::new();
     for entry in directory.take(MAX_BACKLIGHTS + 1) {
         let entry = entry.map_err(|_| Error::new(Operation::ReadBrightness))?;
@@ -200,7 +255,7 @@ fn preferred_backlight() -> Result<Backlight, Error> {
         if !valid_device_name(&name) {
             return Err(Error::new(Operation::ReadBrightness));
         }
-        devices.push(read_backlight(&name)?);
+        devices.push(read_device(Subsystem::Backlight, &name)?);
     }
     devices
         .into_iter()
@@ -208,11 +263,11 @@ fn preferred_backlight() -> Result<Backlight, Error> {
         .ok_or_else(|| Error::new(Operation::ReadBrightness))
 }
 
-fn read_backlight(name: &str) -> Result<Backlight, Error> {
+fn read_device(subsystem: Subsystem, name: &str) -> Result<Backlight, Error> {
     if !valid_device_name(name) {
         return Err(Error::new(Operation::ReadBrightness));
     }
-    let base = backlight_class_root().join(name);
+    let base = subsystem.root().join(name);
     let current = read_u32(&base.join("brightness"))?;
     let maximum = read_u32(&base.join("max_brightness"))?;
     if maximum == 0 || current > maximum {
@@ -255,7 +310,7 @@ fn backlight_priority(value: &str) -> u8 {
     }
 }
 
-fn set_brightness(device: &str, brightness: u32) -> Result<(), Error> {
+fn set_brightness(subsystem: Subsystem, device: &str, brightness: u32) -> Result<(), Error> {
     let session_id = std::env::var("XDG_SESSION_ID")
         .ok()
         .filter(|value| valid_session_id(value))
@@ -274,7 +329,7 @@ fn set_brightness(device: &str, brightness: u32) -> Result<(), Error> {
         .map_err(|_| Error::new(Operation::ResolveSession))?;
     validate_session(&session)?;
     session
-        .set_brightness("backlight", device, brightness)
+        .set_brightness(subsystem.name(), device, brightness)
         .map_err(|_| Error::new(Operation::ChangeBrightness))
 }
 

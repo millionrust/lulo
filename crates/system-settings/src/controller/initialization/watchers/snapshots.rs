@@ -163,6 +163,23 @@ impl Settings {
         })
         .detach();
 
+        // The keyboard backlight, read once the same way.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_osd::keyboard_brightness() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if let Ok(value) = result {
+                    this.keyboard_brightness = Some(value);
+                    this.keyboard_brightness_slider =
+                        Self::keyboard_brightness_slider(cx, f32::from(value));
+                    this.notify_if_showing(&["Keyboard"], cx);
+                }
+            });
+        })
+        .detach();
+
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             // `rmac_input::snapshot()` shells out to niri (`niri msg`,
             // `niri validate`). GPUI's `background_executor()` is not safe

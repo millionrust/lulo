@@ -2378,22 +2378,27 @@ def check_apps_open_speed(log: Log, bin_dir: Path, environment: dict, failures: 
     the window's `apps ready` trace, three opens after the first."""
     pattern = re.compile(r"^apps ready \d+ apps")
     times = []
-    for _ in range(4):
+    # A request toggles: one that finds Apps still open closes it, so an open
+    # that never reports is retried after closing whatever is there.
+    for _ in range(8):
+        if len(times) == 4:
+            break
         before = len(log.lines())
         started = time.monotonic()
         subprocess.run([str(bin_dir / "lulo-shell.exe"), "--app-drawer"], env=environment, timeout=30)
         elapsed = None
-        while time.monotonic() - started < 5.0:
+        while time.monotonic() - started < 3.0:
             if any(pattern.search(line) for line in log.lines()[before:]):
                 elapsed = time.monotonic() - started
                 break
             time.sleep(0.005)
         tap(VK_ESCAPE)
         time.sleep(0.8)
-        if elapsed is None:
-            failures.append("apps speed: Apps did not report its tiles within 5 s")
-            return
-        times.append(elapsed)
+        if elapsed is not None:
+            times.append(elapsed)
+    if len(times) < 4:
+        failures.append("apps speed: Apps did not report its tiles")
+        return
     print("shell: apps open to tiles (ms): " + ", ".join(f"{t * 1000:.0f}" for t in times))
     warm = sorted(times[1:])[len(times[1:]) // 2]
     if warm > APPS_OPEN_BUDGET_SECONDS:

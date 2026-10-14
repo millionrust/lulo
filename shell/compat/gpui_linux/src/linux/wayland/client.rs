@@ -81,7 +81,7 @@ use super::{
     display::WaylandDisplay,
     touch_gesture::{
         TOUCH_HOLD, TouchGesture, TwoFinger, TwoFingerEvent, TwoFingerKind, classify_touch_hold,
-        classify_touch_motion,
+        classify_touch_motion, trace as touch_trace,
     },
     window::{ImeInput, WaylandWindowStatePtr},
 };
@@ -2480,6 +2480,7 @@ fn touch_click(
     let click_count = state.count_click(button, position);
     let modifiers = state.modifiers;
     drop(state);
+    touch_trace(format_args!("click {button:?} count={click_count} at {position:?}"));
     window.handle_input(PlatformInput::MouseDown(MouseDownEvent {
         button,
         position,
@@ -2502,6 +2503,12 @@ fn end_touch_contact(
 ) {
     let state = client.borrow();
     let modifiers = state.modifiers;
+    touch_trace(format_args!(
+        "end id={} {:?} cancelled={cancelled} after {:?}",
+        contact.id,
+        contact.gesture,
+        contact.started.elapsed()
+    ));
     match contact.gesture {
         TouchGesture::Pending if !cancelled => {
             drop(state);
@@ -2663,6 +2670,11 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 gpui::set_last_input_was_touch(true);
                 let mut state = client.borrow_mut();
                 state.touch_ids.insert(id);
+                touch_trace(format_args!(
+                    "down id={id} at {x:.0},{y:.0} fingers={} suppressed={}",
+                    state.touch_ids.len(),
+                    state.touch_suppressed
+                ));
                 if state.touch_ids.len() == 2 && !state.touch_suppressed {
                     // A second finger on the same window, before the first
                     // has started dragging: a two-finger scroll or pinch.
@@ -2741,6 +2753,7 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 } else {
                     element_drag
                 };
+                touch_trace(format_args!("contact id={id} drag={drag:?} title={drag_region}"));
                 client.borrow_mut().touch = Some(TouchContact {
                     id,
                     window,
@@ -2817,6 +2830,7 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                         contact.drag,
                     );
                     if next != TouchGesture::Pending {
+                        touch_trace(format_args!("id={id} is {next:?}"));
                         contact.gesture = next;
                         if next == TouchGesture::Scroll {
                             phase = TouchPhase::Started;
@@ -2887,6 +2901,7 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 }
             }
             wl_touch::Event::Up { id, .. } => {
+                touch_trace(format_args!("up id={id}"));
                 let mut state = client.borrow_mut();
                 state.staged_file_drag = None;
                 state.touch_ids.remove(&id);
@@ -2912,6 +2927,7 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 }
             }
             wl_touch::Event::Cancel => {
+                touch_trace(format_args!("cancel"));
                 let mut state = client.borrow_mut();
                 state.staged_file_drag = None;
                 state.touch_ids.clear();

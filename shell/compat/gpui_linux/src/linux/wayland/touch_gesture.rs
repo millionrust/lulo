@@ -7,6 +7,7 @@
 //! spreading or closing pinches, and a quick two-finger tap right-clicks.
 //! Three or more fingers are left alone.
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use gpui::{Pixels, Point, TouchDragMode, TouchPhase, point, px};
@@ -24,6 +25,15 @@ pub(super) const TWO_FINGER_SCROLL_SLOP: f32 = 10.0;
 pub(super) const PINCH_SLOP: f32 = 0.08;
 /// A two-finger tap longer than this is not a right-click.
 pub(super) const TWO_FINGER_TAP: Duration = Duration::from_millis(350);
+
+/// `RMAC_TOUCH_TRACE=1` prints each contact's life to stderr, to see what a
+/// touchscreen sends on a real PC. Read once per process.
+pub(super) fn trace(args: std::fmt::Arguments<'_>) {
+    static ON: OnceLock<bool> = OnceLock::new();
+    if *ON.get_or_init(|| std::env::var_os("RMAC_TOUCH_TRACE").is_some()) {
+        eprintln!("rmac-touch: {args}");
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum TouchGesture {

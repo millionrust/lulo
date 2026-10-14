@@ -193,7 +193,8 @@ class Run:
             raise SystemExit("gnome-shell did not start")
         time.sleep(3)
         self.spawn([self.args.probe], "probe",
-                   {"WAYLAND_DISPLAY": DISPLAY, "RMAC_TOUCH_PROBE_LOG": str(self.log)})
+                   {"WAYLAND_DISPLAY": DISPLAY, "RMAC_TOUCH_PROBE_LOG": str(self.log),
+                    "RMAC_TOUCH_TRACE": "1"})
         ready = self.wait_for(lambda: any(" ready " in f" {line} " for line in self.lines()), 40)
         if not ready:
             raise SystemExit("the touch probe did not draw")
@@ -203,6 +204,19 @@ class Run:
         time.sleep(1)
         self.touch = Touch()
         self.step(0.3)
+        # Mutter adds its virtual touchscreen, and the seat's touch
+        # capability, on the first injected touch; the window binds wl_touch
+        # only then, so the first few touches are lost. Tap until one lands.
+        landed = None
+        for attempt in range(1, 21):
+            self.touch.tap(140, 90)
+            if self.named(self.step(0.5), "click", target="tap"):
+                landed = attempt
+                break
+        if not landed:
+            raise SystemExit("no touch reached the probe")
+        print(f"touch reached the probe after {landed} tap(s)", flush=True)
+        time.sleep(0.6)
 
     def run(self) -> int:
         try:

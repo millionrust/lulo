@@ -162,6 +162,10 @@ pub enum Mutation {
         before: IcalEvent,
         after: IcalEvent,
     },
+    /// Several changes made by one command (Edit ▸ Cut or Delete with
+    /// every event selected, Paste of several copied events), applied in
+    /// order and undone as one step.
+    Batch(Vec<Mutation>),
 }
 
 impl Mutation {
@@ -198,16 +202,87 @@ impl Mutation {
                 before: after.clone(),
                 after: before.clone(),
             },
+            Self::Batch(changes) => Self::Batch(changes.iter().rev().map(Self::inverse).collect()),
+        }
+    }
+
+    /// One change for `changes`: the change itself when there is only one,
+    /// so a single-event command keeps its ordinary undo entry.
+    pub fn batch(mut changes: Vec<Mutation>) -> Option<Self> {
+        match changes.len() {
+            0 => None,
+            1 => changes.pop(),
+            _ => Some(Self::Batch(changes)),
         }
     }
 }
 
-pub fn new_event(start: DateTime<Utc>, end: DateTime<Utc>, all_day: bool) -> IcalEvent {
-    let uid = format!(
+fn fresh_uid() -> String {
+    format!(
         "lulo-{}-{}@local",
         Utc::now().timestamp_micros(),
         NEXT_UID.fetch_add(1, Ordering::Relaxed)
-    );
+    )
+}
+
+/// Edit ▸ Duplicate and Paste: a copy of `event` under a new UID, moved
+/// `days` days later (0 for Duplicate, which the Mac places at the same
+/// time). A copied occurrence of a repeating series becomes a copy of the
+/// series, as Calendar's own copy of the master does; an override's
+/// RECURRENCE-ID is dropped so the copy stands on its own.
+pub fn copy_of(event: &IcalEvent, days: i64) -> IcalEvent {
+    let shift = |value: TimeValue| TimeValue {
+        local: value.local + Duration::days(days),
+        zone: value.zone,
+    };
+    let mut copy = event.clone();
+    copy.uid = fresh_uid();
+    copy.start = shift(event.start);
+    copy.end = shift(event.end);
+    copy.recurrence_id = None;
+    copy.rdates = event.rdates.iter().copied().map(shift).collect();
+    copy.exdates = event.exdates.iter().copied().map(shift).collect();
+    copy
+}
+
+/// How many days Paste moves copied events so the earliest lands on
+/// `target`, keeping each event's own time of day and their spacing.
+pub fn paste_offset(events: &[IcalEvent], target: NaiveDate) -> i64 {
+    events
+        .iter()
+        .map(|event| event.start.local.date())
+        .min()
+        .map_or(0, |earliest| (target - earliest).num_days())
+}
+
+/// The plain-text form Copy also puts on the system clipboard, so pasting
+/// into Notes or Mail gives the event's title and time like the Mac does.
+pub fn clipboard_text(events: &[IcalEvent]) -> String {
+    events
+        .iter()
+        .map(|event| {
+            let when = if event.start.zone == Zone::Date {
+                event.start.local.format("%-d %B %Y").to_string()
+            } else {
+                format!(
+                    "{} – {}",
+                    event.start.local.format("%-d %B %Y %H:%M"),
+                    event.end.local.format("%H:%M")
+                )
+            };
+            let location = property(event, "LOCATION");
+            if location.is_empty() {
+                format!("{}\n{when}", event.summary)
+            } else {
+                format!("{}\n{when}\n{location}", event.summary)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+pub fn new_event(start: DateTime<Utc>, end: DateTime<Utc>, all_day: bool) -> IcalEvent {
+    let uid = fresh_uid();
     let zone = if all_day { Zone::Date } else { Zone::Utc };
     IcalEvent {
         uid,
@@ -272,6 +347,7 @@ pub fn apply(change: &Mutation) -> Result<(), String> {
         | Mutation::Modify { source, .. }
         | Mutation::Delete { source, .. } => source,
         Mutation::MoveSource { from, .. } => from,
+        Mutation::Batch(changes) => return changes.iter().try_for_each(apply),
     };
     let eds = Eds::session().map_err(|_| "Calendar service unavailable".to_owned())?;
     let calendar = eds
@@ -326,6 +402,7 @@ pub fn apply(change: &Mutation) -> Result<(), String> {
                 return Err("Couldn't move event".into());
             }
         }
+        Mutation::Batch(_) => unreachable!("a batch returns above"),
     }
     Ok(())
 }
@@ -366,6 +443,11 @@ pub fn apply(change: &Mutation) -> Result<(), String> {
             if store.remove(from, before, "all").is_err() {
                 let _ = store.remove(to, after, "all");
                 return Err("Couldn't move event".into());
+            }
+        }
+        Mutation::Batch(changes) => {
+            for change in changes {
+                apply(change)?;
             }
         }
     }
@@ -683,6 +765,7 @@ impl FakeCalendar {
                 Ok(())
             }
             Mutation::MoveSource { .. } => Err("move not exercised by this fake".into()),
+            Mutation::Batch(changes) => changes.iter().try_for_each(|change| self.apply(change)),
         }
     }
 }
@@ -889,5 +972,83 @@ mod tests {
                 options.iter().map(|option| option.label()).collect();
             assert_eq!(labels.len(), options.len());
         }
+    }
+
+    #[test]
+    fn copy_of_gets_a_new_uid_and_moves_by_whole_days() {
+        let (start, end) = at_day(NaiveDate::from_ymd_opt(2026, 10, 5).unwrap(), 9).unwrap();
+        let mut event = new_event(start, end, false);
+        set_property(&mut event, "LOCATION", "Room 4");
+        let duplicate = copy_of(&event, 0);
+        assert_ne!(duplicate.uid, event.uid);
+        assert_eq!(duplicate.start, event.start);
+        assert_eq!(property(&duplicate, "LOCATION"), "Room 4");
+        let moved = copy_of(&event, 3);
+        assert_eq!(
+            moved.start.local,
+            event.start.local + Duration::days(3),
+            "Paste keeps the time of day"
+        );
+        assert_eq!(moved.end.local - moved.start.local, end - start);
+    }
+
+    #[test]
+    fn paste_offset_lands_the_earliest_copied_event_on_the_target_day() {
+        let day = |d| NaiveDate::from_ymd_opt(2026, 10, d).unwrap();
+        let first = new_event(
+            at_day(day(6), 9).unwrap().0,
+            at_day(day(6), 10).unwrap().0,
+            false,
+        );
+        let second = new_event(
+            at_day(day(8), 9).unwrap().0,
+            at_day(day(8), 10).unwrap().0,
+            false,
+        );
+        assert_eq!(paste_offset(&[second.clone(), first.clone()], day(13)), 7);
+        assert_eq!(paste_offset(&[first], day(1)), -5);
+        assert_eq!(paste_offset(&[], day(1)), 0);
+    }
+
+    #[test]
+    fn a_batch_applies_in_order_and_undoes_as_one_step() {
+        let mut store = FakeCalendar::new();
+        let (start, end) = at_day(NaiveDate::from_ymd_opt(2026, 10, 3).unwrap(), 10).unwrap();
+        let one = new_event(start, end, false);
+        let two = copy_of(&one, 1);
+        let source = "local".to_string();
+        assert!(Mutation::batch(Vec::new()).is_none());
+        let single = Mutation::batch(vec![Mutation::Create {
+            source: source.clone(),
+            event: one.clone(),
+        }])
+        .unwrap();
+        assert!(matches!(single, Mutation::Create { .. }));
+        let paste = Mutation::batch(vec![
+            single,
+            Mutation::Create {
+                source: source.clone(),
+                event: two.clone(),
+            },
+        ])
+        .unwrap();
+        store.apply(&paste).unwrap();
+        assert_eq!(store.events.len(), 2);
+        store.apply(&paste.inverse()).unwrap();
+        assert!(store.events.is_empty());
+        store.apply(&paste.inverse().inverse()).unwrap();
+        assert_eq!(store.events.len(), 2);
+    }
+
+    #[test]
+    fn clipboard_text_lists_title_time_and_location() {
+        let (start, end) = at_day(NaiveDate::from_ymd_opt(2026, 10, 5).unwrap(), 9).unwrap();
+        let mut event = new_event(start, end, false);
+        event.summary = "Stand-up".into();
+        set_property(&mut event, "LOCATION", "Room 4");
+        assert_eq!(
+            clipboard_text(&[event]),
+            "Stand-up\n5 October 2026 09:00 – 10:00\nRoom 4"
+        );
     }
 }

@@ -15,8 +15,8 @@ use rmac_calendar::{
 };
 use rmac_calendar_store::{TimeValue, Zone};
 use rmac_ui::{
-    dialog, dialog_button, mac, AccessibleTextInput as _, ContextMenu, ContextMenuState,
-    DialogButtonKind, InputEvent, InputState, StyledExt as _, TextField,
+    dialog, dialog_button, input_actions, mac, AccessibleTextInput as _, ContextMenu,
+    ContextMenuState, DialogButtonKind, InputEvent, InputState, StyledExt as _, TextField,
 };
 
 use crate::{
@@ -26,6 +26,7 @@ use crate::{
     ShowDay, ShowInspector, ShowInvitations, ShowMonth, ShowSettings, ShowWeek, ShowYear,
     ToggleSidebar, UndoEvent,
 };
+use crate::{CopyEvents, CutEvents, DuplicateEvent, EditEvent, PasteEvents, SelectAllEvents};
 
 const SIDEBAR: f32 = 220.0;
 const TOOLBAR: f32 = 52.0;
@@ -105,6 +106,18 @@ pub struct CalendarView {
     search_results: Vec<SearchResult>,
     search_selected: usize,
     selected: Option<String>,
+    /// Edit ▸ Select All's selection, beside `selected` (the event the
+    /// inspector and the arrow keys follow). Empty for a single selection.
+    multi: std::collections::HashSet<String>,
+    /// Edit ▸ Cut/Copy's events, each with the calendar it came from, for
+    /// Edit ▸ Paste. In-app: other apps get the plain-text summary.
+    event_clipboard: Vec<(usize, rmac_calendar_store::Event)>,
+    /// UIDs of events Paste or Duplicate just created, selected once the
+    /// reload that shows them lands.
+    select_after_load: Vec<String>,
+    /// A text field (the inspector's, search, a sheet's) has focus, so the
+    /// Edit menu's rows act on its text instead of on events.
+    text_focused: bool,
     editor: Option<Editor>,
     undo: Vec<Mutation>,
     redo: Vec<Mutation>,
@@ -166,6 +179,10 @@ impl CalendarView {
             search_results: Vec::new(),
             search_selected: 0,
             selected: None,
+            multi: std::collections::HashSet::new(),
+            event_clipboard: Vec::new(),
+            select_after_load: Vec::new(),
+            text_focused: false,
             editor: None,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -215,6 +232,7 @@ impl CalendarView {
             Ok(snapshot) => {
                 self.set_snapshot(snapshot);
                 self.error = None;
+                self.select_created();
             }
             Err(error) => {
                 // No EDS (or it failed before the first load): show an
@@ -661,7 +679,7 @@ impl CalendarView {
         };
         self.nav.view = View::Day;
         self.nav.selected = result.start.date_naive();
-        self.selected = Some(result.event_id);
+        self.set_selected(Some(result.event_id));
         self.search_open = false;
         self.sync_menu(cx);
         cx.notify();
@@ -727,7 +745,7 @@ impl CalendarView {
             .iter()
             .position(|option| *option == alert_offset)
             .unwrap_or(0);
-        self.selected = Some(event.id.clone());
+        self.set_selected(Some(event.id.clone()));
         self.editor = Some(Editor {
             original: (!fresh).then_some(event.clone()),
             draft,
@@ -1042,7 +1060,7 @@ impl CalendarView {
         // removing the event; keep focus on the main view rather than on
         // the sheet field that just stopped showing.
         self.editor = None;
-        self.selected = None;
+        self.set_selected(None);
         window.focus(&self.focus, cx);
         self.submit(
             Mutation::Delete {
@@ -1053,6 +1071,247 @@ impl CalendarView {
             Direction::Do,
             cx,
         );
+    }
+
+    fn set_selected(&mut self, id: Option<String>) {
+        self.selected = id;
+        self.multi.clear();
+    }
+
+    fn is_selected(&self, id: &str) -> bool {
+        self.selected.as_deref() == Some(id) || self.multi.contains(id)
+    }
+
+    /// The selected events (Select All's, or the one clicked), one per
+    /// stored event: several shown occurrences of one repeating series are
+    /// one event to copy or delete.
+    fn selected_events(&self) -> Vec<rmac_calendar::Event> {
+        // One pass over the snapshot, so a Select All over a year of events
+        // stays linear (this runs on every render, from `sync_menu`).
+        let mut seen = std::collections::HashSet::new();
+        self.snapshot
+            .events
+            .iter()
+            .filter(|event| self.is_selected(&event.id))
+            .filter(|event| {
+                event
+                    .ical
+                    .as_ref()
+                    .is_some_and(|ical| seen.insert((event.calendar, ical.uid.clone())))
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn source_of(&self, calendar: usize) -> Option<String> {
+        self.snapshot
+            .calendars
+            .get(calendar)
+            .and_then(|calendar| calendar.source_uid.clone())
+    }
+
+    /// Hands an Edit row's text twin to a focused text field. The menu
+    /// bar's command reaches Calendar's own handler even while a field has
+    /// focus, so the row acts on that field's text the way the Mac's does.
+    fn forward_to_text(
+        &self,
+        action: Box<dyn gpui::Action>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.text_field_focused(window, cx) {
+            return false;
+        }
+        window.dispatch_action(action, cx);
+        true
+    }
+
+    fn text_field_focused(&self, window: &Window, cx: &gpui::App) -> bool {
+        window
+            .focused(cx)
+            .is_some_and(|focused| focused != self.focus)
+    }
+
+    /// Edit ▸ Copy: the selected events onto Calendar's own clipboard, and
+    /// their title, time and place onto the system clipboard as text.
+    fn copy_events(&mut self, cx: &mut Context<Self>) -> bool {
+        let events = self.selected_events();
+        if events.is_empty() {
+            return false;
+        }
+        self.event_clipboard = events
+            .iter()
+            .filter_map(|event| Some((event.calendar, event.ical.clone()?)))
+            .collect();
+        let text = editing::clipboard_text(
+            &self
+                .event_clipboard
+                .iter()
+                .map(|(_, event)| event.clone())
+                .collect::<Vec<_>>(),
+        );
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        self.sync_menu(cx);
+        true
+    }
+
+    /// Edit ▸ Delete (and the second half of Cut) for a Select All
+    /// selection: every selected event in one undoable step. A single
+    /// selection keeps `delete_selected`'s repeat-scope confirmation.
+    fn delete_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.multi.is_empty() {
+            self.delete_selected(window, cx);
+            return;
+        }
+        if self.busy {
+            return;
+        }
+        let deletes = self
+            .selected_events()
+            .into_iter()
+            .filter(|event| {
+                self.snapshot
+                    .calendars
+                    .get(event.calendar)
+                    .is_some_and(|calendar| calendar.writable)
+            })
+            .filter_map(|event| {
+                Some(Mutation::Delete {
+                    source: self.source_of(event.calendar)?,
+                    event: event.ical?,
+                    scope: "all",
+                })
+            })
+            .collect();
+        let Some(change) = Mutation::batch(deletes) else {
+            return;
+        };
+        self.editor = None;
+        self.set_selected(None);
+        window.focus(&self.focus, cx);
+        self.submit(change, Direction::Do, cx);
+    }
+
+    /// Creates copies of `events` (calendar index, stored event) moved by
+    /// `days`, each in its own calendar when that one can be written and
+    /// in the default calendar otherwise, then selects them.
+    fn create_copies(
+        &mut self,
+        events: Vec<(usize, rmac_calendar_store::Event)>,
+        days: i64,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy {
+            return;
+        }
+        let fallback = self.default_writable_calendar();
+        let mut uids = Vec::new();
+        let creates = events
+            .into_iter()
+            .filter_map(|(calendar, event)| {
+                let writable = self
+                    .snapshot
+                    .calendars
+                    .get(calendar)
+                    .is_some_and(|entry| entry.writable && !entry.removed);
+                let calendar = if writable { calendar } else { fallback? };
+                let copy = editing::copy_of(&event, days);
+                let source = self.source_of(calendar)?;
+                uids.push(copy.uid.clone());
+                Some(Mutation::Create {
+                    source,
+                    event: copy,
+                })
+            })
+            .collect();
+        let Some(change) = Mutation::batch(creates) else {
+            self.error = Some("No writable calendar is available".into());
+            cx.notify();
+            return;
+        };
+        self.select_after_load = uids;
+        self.submit(change, Direction::Do, cx);
+    }
+
+    /// Edit ▸ Paste: the copied events on the selected day, each at its
+    /// own time of day.
+    fn paste_events(&mut self, cx: &mut Context<Self>) {
+        let events = self.event_clipboard.clone();
+        let offset = editing::paste_offset(
+            &events
+                .iter()
+                .map(|(_, event)| event.clone())
+                .collect::<Vec<_>>(),
+            self.nav.selected,
+        );
+        self.create_copies(events, offset, cx);
+    }
+
+    /// Edit ▸ Duplicate: a copy of each selected event at the same time.
+    fn duplicate_events(&mut self, cx: &mut Context<Self>) {
+        let events = self
+            .selected_events()
+            .into_iter()
+            .filter_map(|event| Some((event.calendar, event.ical?)))
+            .collect();
+        self.create_copies(events, 0, cx);
+    }
+
+    /// Edit ▸ Select All: every event the current view shows.
+    fn select_all_events(&mut self, cx: &mut Context<Self>) {
+        let ids = rmac_calendar::events_in_period(
+            &self.snapshot,
+            &self.visible_flags(),
+            self.nav.visible_period(),
+        );
+        self.selected = ids.first().cloned();
+        self.multi = ids.into_iter().collect();
+        self.sync_menu(cx);
+        cx.notify();
+    }
+
+    /// After Paste or Duplicate: select the new events once they show.
+    fn select_created(&mut self) {
+        if self.select_after_load.is_empty() {
+            return;
+        }
+        let uids = std::mem::take(&mut self.select_after_load);
+        let ids: Vec<String> = self
+            .snapshot
+            .events
+            .iter()
+            .filter(|event| {
+                event
+                    .ical
+                    .as_ref()
+                    .is_some_and(|ical| uids.contains(&ical.uid))
+            })
+            .map(|event| event.id.clone())
+            .collect();
+        self.selected = ids.first().cloned();
+        self.multi = if ids.len() > 1 {
+            ids.into_iter().collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+    }
+
+    /// Edit ▸ Edit Event: the selected event's inspector with its title
+    /// ready to type over. Get Info opens the same inspector to read,
+    /// leaving the keyboard on the calendar.
+    fn edit_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.inspect_selected(window, cx);
+        if self.editor.is_some() {
+            // `open_editor` focused the title; select its text there.
+            window.dispatch_action(Box::new(input_actions::SelectAll), cx);
+        }
+    }
+
+    fn get_info(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.inspect_selected(window, cx);
+        if self.editor.is_some() {
+            window.focus(&self.focus, cx);
+        }
     }
 
     fn undo(&mut self, cx: &mut Context<Self>) {
@@ -1098,10 +1357,27 @@ impl CalendarView {
         }
         rmac_ui::set_menu_checked("calendar::ToggleSidebar", self.sidebar_visible, cx);
         rmac_ui::set_menu_checked("calendar::ShowInvitations", self.invitations_open, cx);
-        rmac_ui::set_menu_enabled("calendar::UndoEvent", !self.undo.is_empty(), cx);
-        rmac_ui::set_menu_enabled("calendar::RedoEvent", !self.redo.is_empty(), cx);
-        rmac_ui::set_menu_enabled("calendar::ShowInspector", self.selected.is_some(), cx);
-        rmac_ui::set_menu_enabled("calendar::DeleteEvent", self.selected.is_some(), cx);
+        // With a text field focused the Edit rows act on its text, so they
+        // stay available; otherwise they need a selected event.
+        let text = self.text_focused;
+        let any = self.selected.is_some();
+        let stored = !self.selected_events().is_empty();
+        for (action, enabled) in [
+            ("calendar::UndoEvent", text || !self.undo.is_empty()),
+            ("calendar::RedoEvent", text || !self.redo.is_empty()),
+            ("calendar::CutEvents", text || stored),
+            ("calendar::CopyEvents", text || stored),
+            (
+                "calendar::PasteEvents",
+                text || !self.event_clipboard.is_empty(),
+            ),
+            ("calendar::DeleteEvent", text || any),
+            ("calendar::DuplicateEvent", !text && stored),
+            ("calendar::EditEvent", !text && any),
+            ("calendar::ShowInspector", !text && any),
+        ] {
+            rmac_ui::set_menu_enabled(action, enabled, cx);
+        }
     }
 
     fn color(color: CalendarColor) -> gpui::Hsla {
@@ -1679,7 +1955,7 @@ impl CalendarView {
                     let hour = (hour_frac.round() as i64).clamp(0, 23) as u32;
                     this.create_event_at(day, hour, window, cx);
                 } else {
-                    this.selected = None;
+                    this.set_selected(None);
                     cx.notify();
                 }
             }));
@@ -1766,6 +2042,9 @@ impl CalendarView {
                 week = week.child(
                     div()
                         .id(format!("calendar-allday-event-{}", event.id))
+                        .role(Role::Button)
+                        .aria_label(format!("{}, all day", event.title))
+                        .aria_selected(self.is_selected(&event.id))
                         .absolute()
                         .left(px(GUTTER + offset as f32 * day_width + 2.0))
                         .top(px(37.0))
@@ -1780,7 +2059,7 @@ impl CalendarView {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(event.title.clone())
                         .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
-                            this.selected = Some(event_id.clone());
+                            this.set_selected(Some(event_id.clone()));
                             if e.click_count() >= 2 {
                                 this.inspect_selected(window, cx);
                             }
@@ -1843,6 +2122,7 @@ impl CalendarView {
             let h = ((slot.end_second - slot.start_second) as f32 / 3600.0 * HOUR - 2.0).max(18.0);
             let color = Self::color(snapshot.calendars[event.calendar].color);
             let event_id = event.id.clone();
+            let selected = self.is_selected(&event.id);
             let accessible_name = if event.location.is_empty() {
                 format!(
                     "{}, {}",
@@ -1865,7 +2145,7 @@ impl CalendarView {
                     // it, focused or not.
                     .role(Role::Button)
                     .aria_label(accessible_name)
-                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
+                    .aria_selected(self.is_selected(&event.id))
                     .absolute()
                     .left(px(x))
                     .top(px(y))
@@ -1875,29 +2155,43 @@ impl CalendarView {
                     .overflow_hidden()
                     .pl(px(6.0))
                     .pt(px(2.0))
-                    .bg(color.opacity(if mac::window().l < 0.5 { 0.22 } else { 0.18 }))
+                    // A selected event fills with its calendar's colour, as
+                    // on the Mac, so Edit ▸ Select All shows what it took.
+                    .bg(if selected {
+                        color
+                    } else {
+                        color.opacity(if mac::window().l < 0.5 { 0.22 } else { 0.18 })
+                    })
                     .border_l_3()
                     .border_color(color)
                     .flex()
                     .flex_col()
                     .text_size(px(11.0))
-                    .text_color(mac::text())
+                    .text_color(if selected { mac::white() } else { mac::text() })
                     .child(
                         div()
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(event.title.clone()),
                     )
-                    .child(div().text_color(mac::text_secondary()).child(format!(
-                        "{}{}",
-                        event.start.format(self.time_format_str()),
-                        if event.location.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" · {}", event.location)
-                        }
-                    )))
+                    .child(
+                        div()
+                            .text_color(if selected {
+                                mac::white().opacity(0.85)
+                            } else {
+                                mac::text_secondary()
+                            })
+                            .child(format!(
+                                "{}{}",
+                                event.start.format(self.time_format_str()),
+                                if event.location.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" · {}", event.location)
+                                }
+                            )),
+                    )
                     .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
-                        this.selected = Some(event_id.clone());
+                        this.set_selected(Some(event_id.clone()));
                         if e.click_count() >= 2 {
                             this.inspect_selected(window, cx);
                         }
@@ -2008,7 +2302,7 @@ impl CalendarView {
                     // ACC-32: same fix as the grid's event blocks above.
                     .role(Role::Button)
                     .aria_label(accessible_name)
-                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
+                    .aria_selected(self.is_selected(&event.id))
                     .border_l_3()
                     .border_color(color)
                     .pl(px(9.0))
@@ -2038,7 +2332,7 @@ impl CalendarView {
                             }),
                     )
                     .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
-                        this.selected = Some(event_id.clone());
+                        this.set_selected(Some(event_id.clone()));
                         if e.click_count() >= 2 {
                             this.inspect_selected(window, cx);
                         }
@@ -2188,7 +2482,7 @@ impl CalendarView {
                     // ACC-32: same fix as the week/day grids' event blocks.
                     .role(Role::Button)
                     .aria_label(event.title.clone())
-                    .aria_selected(self.selected.as_deref() == Some(event.id.as_str()))
+                    .aria_selected(self.is_selected(&event.id))
                     .absolute()
                     .left(px(6.0))
                     .right(px(6.0))
@@ -2211,7 +2505,7 @@ impl CalendarView {
                 }
                 let item = item.child(event.title.clone()).on_click(cx.listener(
                     move |this, e: &ClickEvent, window, cx| {
-                        this.selected = Some(event_id.clone());
+                        this.set_selected(Some(event_id.clone()));
                         if e.click_count() >= 2 {
                             this.inspect_selected(window, cx);
                         }
@@ -3013,6 +3307,7 @@ fn labelled_field(label: &'static str, control: impl IntoElement) -> impl IntoEl
 
 impl Render for CalendarView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.text_focused = self.text_field_focused(window, cx);
         self.sync_menu(cx);
         let size = rmac_ui::window_content_size(window);
         let side = if self.sidebar_visible {
@@ -3113,16 +3408,52 @@ impl Render for CalendarView {
             }))
             .on_action(cx.listener(|this, _: &NewEvent, window, cx| this.new_event(window, cx)))
             .on_action(cx.listener(|this, _: &SaveEvent, _, cx| this.save_editor(cx)))
+            .on_action(cx.listener(|this, _: &DeleteEvent, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Delete), window, cx) {
+                    this.delete_events(window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &UndoEvent, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Undo), window, cx) {
+                    this.undo(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &RedoEvent, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Redo), window, cx) {
+                    this.redo(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &CutEvents, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Cut), window, cx)
+                    && this.copy_events(cx)
+                {
+                    this.delete_events(window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &CopyEvents, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Copy), window, cx) {
+                    this.copy_events(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &PasteEvents, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::Paste), window, cx) {
+                    this.paste_events(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SelectAllEvents, window, cx| {
+                if !this.forward_to_text(Box::new(input_actions::SelectAll), window, cx) {
+                    this.select_all_events(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &DuplicateEvent, window, cx| {
+                if !this.text_field_focused(window, cx) {
+                    this.duplicate_events(cx);
+                }
+            }))
             .on_action(
-                cx.listener(|this, _: &DeleteEvent, window, cx| this.delete_selected(window, cx)),
+                cx.listener(|this, _: &EditEvent, window, cx| this.edit_selected(window, cx)),
             )
-            .on_action(cx.listener(|this, _: &UndoEvent, _, cx| this.undo(cx)))
-            .on_action(cx.listener(|this, _: &RedoEvent, _, cx| this.redo(cx)))
-            .on_action(
-                cx.listener(|this, _: &ShowInspector, window, cx| {
-                    this.inspect_selected(window, cx)
-                }),
-            )
+            .on_action(cx.listener(|this, _: &ShowInspector, window, cx| this.get_info(window, cx)))
             .on_action(
                 cx.listener(|this, _: &DismissInspector, window, cx| this.dismiss(window, cx)),
             )

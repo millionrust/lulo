@@ -14,6 +14,10 @@ pub const CALENDAR: &str = "org.rmac.Calendar";
 pub const MAIL: &str = "org.rmac.Mail";
 pub const WEATHER: &str = "org.rmac.Weather";
 pub const PLAYER: &str = "org.rmac.Player";
+/// Archive Utility (`crates/archive-utility`): opened by Files for archives
+/// and from Spotlight, never kept in the Dock or the app list — so not in
+/// `ALL` — but it has its own menus and window title.
+pub const ARCHIVE_UTILITY: &str = "org.rmac.ArchiveUtility";
 /// The Open panel (`crates/rmac-file-chooser`, `org.freedesktop.impl.portal.FileChooser`'s
 /// `OpenFile`). Not a launchable app — never added to `ALL` — but its window
 /// still needs a stable identity for [`is_transient_panel`].
@@ -75,6 +79,7 @@ pub fn window_title(app_id: &str) -> Option<&'static str> {
         MAIL => Some("Mail"),
         WEATHER => Some("Weather"),
         PLAYER => Some("Media Player"),
+        ARCHIVE_UTILITY => Some("Archive Utility"),
         FORCE_QUIT => Some("Force Quit Applications"),
         _ => None,
     }

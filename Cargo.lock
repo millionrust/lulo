@@ -6174,9 +6174,14 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "rmac-archive",
+ "rmac-portal",
+ "rmac-storage",
  "rmac-ui",
  "rmac-windows-resource-build",
  "rust-embed",
+ "serde",
+ "serde_json",
+ "trash",
 ]
 
 [[package]]

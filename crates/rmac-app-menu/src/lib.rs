@@ -2183,16 +2183,24 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
     },
     MenuSpec {
         label: "Edit",
+        // MROBOT-02: the Mac's rows, each on events, or on the focused
+        // text field's text while one has focus (Calendar forwards them).
+        // Mark as Incomplete needs reminders, Sharing Settings…/Stop
+        // Sharing…/Resend Invitations… need CalDAV sharing and invitation
+        // sending, and Show Inspector's floating panel is the same sheet
+        // Get Info opens, so those rows stay out.
         items: &[
             item!("Undo", "calendar::UndoEvent", "⌘Z"),
             item!("Redo", "calendar::RedoEvent", "⇧⌘Z"),
-            item!(
-                "Show Event Info",
-                "calendar::ShowInspector",
-                "⌘I",
-                separator
-            ),
-            item!("Delete Event", "calendar::DeleteEvent", "⌫"),
+            item!("Cut", "calendar::CutEvents", "⌘X", separator),
+            item!("Copy", "calendar::CopyEvents", "⌘C"),
+            item!("Paste", "calendar::PasteEvents", "⌘V"),
+            item!("Delete", "calendar::DeleteEvent", ""),
+            item!("Select All", "calendar::SelectAllEvents", "⌘A"),
+            item!("Duplicate", "calendar::DuplicateEvent", "⌘D"),
+            item!("Edit Event", "calendar::EditEvent", "⌘E", separator),
+            item!("Get Info", "calendar::ShowInspector", "⌘I"),
+            item!("Find", "calendar::Search", "⌘F", separator),
         ],
     },
     MenuSpec {
@@ -2206,7 +2214,6 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
             item!("Previous Period", "calendar::PreviousPeriod", "⌘←"),
             item!("Next Period", "calendar::NextPeriod", "⌘→"),
             item!("Show Sidebar", "calendar::ToggleSidebar", "⌃⌘S", separator),
-            item!("Search", "calendar::Search", "⌘F"),
             item!("Invitations", "calendar::ShowInvitations", "", separator),
         ],
     },
@@ -2783,6 +2790,32 @@ const PLAYER_MENUS: &[MenuSpec] = &[
     },
 ];
 
+// MROBOT-04: Archive Utility, as macOS 26 shows it. Its Edit menu is left
+// out: Archive Utility has no text to edit, and every row of the Mac's is
+// greyed out.
+const ARCHIVE_UTILITY_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!("Settings…", "archive_utility::ShowSettings", "⌘,")],
+    },
+    MenuSpec {
+        label: "File",
+        items: &[
+            item!("Create Archive…", "archive_utility::CreateArchive", "⌘K"),
+            item!(
+                "Expand Archive…",
+                "archive_utility::ExpandArchive",
+                "⌘U",
+                separator
+            ),
+        ],
+    },
+    MenuSpec {
+        label: WINDOW_MENU,
+        items: &[item!("Close", "archive_utility::CloseWindow", "⌘W")],
+    },
+];
+
 fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
     match app_id {
         rmac_apps::identity::FILES => Some(FILES_MENUS),
@@ -2798,6 +2831,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::CLOCK => Some(CLOCK_MENUS),
         rmac_apps::identity::WEATHER => Some(WEATHER_MENUS),
         rmac_apps::identity::PLAYER => Some(PLAYER_MENUS),
+        rmac_apps::identity::ARCHIVE_UTILITY => Some(ARCHIVE_UTILITY_MENUS),
         _ => None,
     }
 }
@@ -2828,6 +2862,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::CLOCK => Some("org.rmac.Clock.Menu"),
         rmac_apps::identity::WEATHER => Some("org.rmac.Weather.Menu"),
         rmac_apps::identity::PLAYER => Some("org.rmac.Player.Menu"),
+        rmac_apps::identity::ARCHIVE_UTILITY => Some("org.rmac.ArchiveUtility.Menu"),
         _ => None,
     }
 }
@@ -2848,6 +2883,7 @@ const MENU_APPS: &[&str] = &[
     rmac_apps::identity::CLOCK,
     rmac_apps::identity::WEATHER,
     rmac_apps::identity::PLAYER,
+    rmac_apps::identity::ARCHIVE_UTILITY,
 ];
 
 /// The app whose menu endpoint owns `name`, if it is one.
@@ -4408,6 +4444,50 @@ mod tests {
             .items
             .iter()
             .any(|item| item.action == "calendar::GoToday"));
+        // MROBOT-02: Edit has the Mac's event rows, in its order.
+        let edit = menus.iter().find(|menu| menu.label == "Edit").unwrap();
+        assert_eq!(
+            edit.items
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Undo",
+                "Redo",
+                "Cut",
+                "Copy",
+                "Paste",
+                "Delete",
+                "Select All",
+                "Duplicate",
+                "Edit Event",
+                "Get Info",
+                "Find"
+            ]
+        );
+    }
+
+    #[test]
+    fn archive_utility_publishes_the_macs_menus() {
+        let actions = spec_actions(ARCHIVE_UTILITY_MENUS);
+        let menus = definition(rmac_apps::identity::ARCHIVE_UTILITY, &actions).unwrap();
+        assert!(validate_menus(&menus).is_ok());
+        assert_eq!(
+            bus_name(rmac_apps::identity::ARCHIVE_UTILITY),
+            Some("org.rmac.ArchiveUtility.Menu")
+        );
+        assert_eq!(
+            app_for_bus_name("org.rmac.ArchiveUtility.Menu"),
+            Some(rmac_apps::identity::ARCHIVE_UTILITY)
+        );
+        let file = menus.iter().find(|menu| menu.label == "File").unwrap();
+        assert_eq!(
+            file.items
+                .iter()
+                .map(|item| (item.label.as_str(), item.shortcut.as_str()))
+                .collect::<Vec<_>>(),
+            [("Create Archive…", "⌘K"), ("Expand Archive…", "⌘U")]
+        );
     }
 
     #[test]

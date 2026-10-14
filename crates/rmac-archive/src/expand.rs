@@ -24,6 +24,22 @@ pub fn expand(
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(Progress),
 ) -> Result<PathBuf, Error> {
+    let parent = match archive.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    expand_into(archive, &parent, cancel, progress)
+}
+
+/// [`expand`], placing the result in `destination` instead of beside the
+/// archive (Archive Utility ▸ Settings ▸ Save expanded files: into a
+/// chosen folder).
+pub fn expand_into(
+    archive: &Path,
+    destination: &Path,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<PathBuf, Error> {
     let format = format_of(archive).ok_or(Error::Unsupported)?;
     let metadata = fs::metadata(archive)?;
     if !metadata.is_file() {
@@ -32,10 +48,7 @@ pub fn expand(
     if !has_signature(archive, format)? {
         return Err(Error::Unsupported);
     }
-    let parent = match archive.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
-        _ => PathBuf::from("."),
-    };
+    let parent = destination.to_path_buf();
     let output_limit = expansion_budget(&parent, format)?;
     let staging = Scratch::directory(&parent, archive, "expanding")?;
     let length = metadata.len();

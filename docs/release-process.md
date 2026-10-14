@@ -624,6 +624,21 @@ do not, since a two-architecture APT repository needs both.
 
 ## Tagging a release
 
+Since 0.9.0-beta.2 a release ships Ubuntu and Windows together: the
+`windows-installer` job (the same 17 exes as `windows-preview.yml`,
+installed, launched and uninstalled in the run) must pass before
+`attach-release` publishes anything. Each Release also carries a stamped
+`install.sh` (`RMAC_RELEASE_TAG` set to the tag, so `curl -fsSL
+.../releases/download/<tag>/install.sh | sh` installs that Release) and
+`uninstall.sh`, one `rmac-sbom-<tag>.tar.gz`, and takes its title and
+description from `docs/release-notes/<version>.md` (first line `# <title>`).
+`dependency-policy` refuses a tag that is not `v` plus the workspace version.
+
+**Dry run first.** `gh workflow run release.yml --ref <branch>` runs every
+job; `attach-release` then assembles the real bundle (tag-named files and
+`SHA256SUMS`) and uploads it as the `release-bundle-dry-run` artifact
+instead of attesting and publishing.
+
 1. Make sure `dev` is what you want to ship, then fast-forward or merge
    into `master`.
 2. `git tag vX.Y.Z` (matching the workspace version in the root

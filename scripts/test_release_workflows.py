@@ -255,7 +255,7 @@ def test_release_attaches_the_source_package_and_the_apt_inputs():
     assert "needs.rmac-source.result == 'success'" in attach["if"]
     steps = {step.get("name", ""): step for step in attach["steps"]}
     assemble = next(step["run"] for name, step in steps.items() if name.startswith("Assemble"))
-    assert 'apt-inputs-${GITHUB_REF_NAME}.tar' in assemble
+    assert 'apt-inputs-${RELEASE_NAME}.tar' in assemble
     assert assemble.index("apt-inputs-") < assemble.index("sha256sum")
     seal = next(step["run"] for name, step in steps.items() if name.startswith("Refuse to change"))
     assert "apt-snapshot-" in seal
@@ -408,3 +408,52 @@ def test_uploaded_asset_names_match_sha256sums_after_github_renames_tildes():
             for line in (bundle / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
         )
         assert listed == [name for name in names if name != "SHA256SUMS"]
+
+
+def _windows_exes(job: dict) -> list[str]:
+    collect = next(step["run"] for step in job["steps"] if step.get("name") == "Collect the built exes")
+    names = [f"rmac-{app}" for app in re.search(r"for app in ([^;]+);", collect).group(1).split()]
+    names += re.findall(r"target/release/(lulo-[a-z]+)\.exe", collect)
+    return sorted(names)
+
+
+def test_release_msi_carries_every_app_the_preview_and_apps_json_list():
+    import json
+
+    release = _windows_exes(_load(RELEASE)["jobs"]["windows-installer"])
+    preview = _windows_exes(
+        _load(REPO_ROOT / ".github/workflows/windows-preview.yml")["jobs"]["build"]
+    )
+    apps_json = (REPO_ROOT / "packaging/windows/apps.json").read_text(encoding="utf-8")
+    apps = sorted(app["bin"] for app in json.loads(apps_json))
+    assert release == preview == apps
+
+
+def test_the_joint_release_needs_the_msi_and_publishes_only_from_a_tag():
+    attach = _load(RELEASE)["jobs"]["attach-release"]
+    assert "needs.windows-installer.result == 'success'" in attach["if"]
+    assert "github.ref_type == 'tag'" not in attach["if"]
+    steps = {step.get("name", ""): step for step in attach["steps"]}
+    for name in ("Refuse to change", "Generate build provenance", "Create or update"):
+        step = next(step for key, step in steps.items() if key.startswith(name))
+        assert step.get("if") == "github.ref_type == 'tag'", name
+    assert steps["Upload the dry-run bundle"]["if"] == "github.ref_type != 'tag'"
+    assemble = next(step["run"] for name, step in steps.items() if name.startswith("Assemble"))
+    assert "Lulo-Setup-*-x64.msi" in assemble
+    assert "rmac-sbom-${RELEASE_NAME}.tar.gz" in assemble
+    notes = steps["Prepare the release notes"]["run"]
+    assert "docs/release-notes/${RELEASE_NAME#v}.md" in notes
+    create = steps["Create or update the GitHub Release"]["run"]
+    assert "--notes-file release-notes/body.md" in create
+    assert "--generate-notes" not in create
+
+
+def test_a_tag_must_name_the_workspace_version():
+    policy = _load(RELEASE)["jobs"]["dependency-policy"]
+    step = next(step for step in policy["steps"] if step.get("id") == "release-name")
+    assert '"$GITHUB_REF_NAME" != "$name"' in step["run"]
+    manifest = (REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    version = re.search(
+        r'(?ms)^\[workspace\.package\]\s*$.*?^version\s*=\s*"([^"]+)"', manifest
+    ).group(1)
+    assert (REPO_ROOT / f"docs/release-notes/{version}.md").is_file()

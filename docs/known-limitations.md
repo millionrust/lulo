@@ -1,5 +1,9 @@
 # Known limitations
 
+This page is for **0.9.0 Beta 2**: the first public beta, released as
+"Lulo 0.9.0 Beta 2 (Ubuntu) + Windows Preview". Lulo OS on Ubuntu is the
+beta; Lulo for Windows is an early preview (see [Windows preview](#windows-preview)).
+
 Lulo OS is under active development and is not yet a supported daily-driver
 release. The application and service domains are broad, but many final claims
 require the selected Linux UI framework, real niri layer surfaces, packaged
@@ -22,26 +26,22 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   open (see `docs/accessibility-audit.md`). A formal, owner-run Orca audit at
   200% text scaling (journey 9) has still not happened — only the owner can
   enable Orca.
-- The signed APT repository is not ready; this Beta ships `.deb` files you
-  install and later remove by hand (see "How to go back" in the release
-  notes). Signed, automatic in-place updates over APT are not part of this
-  release. Clean native install, upgrade, rollback, and uninstall evidence
-  does now exist: the disposable-install GitHub Actions station
-  (`.github/workflows/security-station.yml`, a fresh Ubuntu 26.04 VM) ran
-  the full package lifecycle — baseline install, upgrade, an interrupted
-  rollback and its recovery, remove, purge, reinstall, and a final purge —
-  with user data and the GNOME recovery session intact throughout (see
+- The signed APT repository is not published yet, so Lulo OS does not
+  update itself in this beta. Each release's own `install.sh` installs that
+  release's packages from its GitHub Release ([Install on Ubuntu](install-ubuntu.md));
+  to update, run the next release's install line, and `uninstall.sh`
+  removes Lulo OS. Without `gh`, that installer checks the packages against
+  the Release's `SHA256SUMS` only (fetched over the same HTTPS connection
+  as the script itself); with `gh` installed and logged in it also verifies
+  each package's build-provenance attestation. Clean native install,
+  upgrade, rollback, and uninstall evidence exists from the disposable-install
+  GitHub Actions station (`.github/workflows/security-station.yml`, see
   [security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md),
-  "package-lifecycle"). What's still missing is the owner's reference-laptop
-  run of the same lifecycle on real hardware and a real GitHub Actions
-  Release-tag run, not source or disposable-VM evidence.
-- Two owner-reported desktop/Dock bugs reproduce live but not in the nested
-  test compositor, so they remain open and unverified-fixed: desktop icons
-  can stay hidden until a click after login (parity row DESK-12), and the
-  Dock's Bin icon can vanish and the Dock itself lag/disappear for a moment
-  after a delete while its service keeps running (DOCK-27). Both are narrowed
-  to "live session only" — if you hit either, a relaunch of the affected
-  surface (or `niri msg action` as documented in Troubleshooting) recovers it.
+  "package-lifecycle").
+- One owner-reported Dock bug reproduces live but not in the nested test
+  compositor, so it remains open: the Dock's Bin icon can vanish and the
+  Dock itself lag or disappear for a moment after a delete while its
+  service keeps running (DOCK-27). Logging out and in again recovers it.
 - Critical visual references and all Orca observations still need native
   candidate evidence; no hardware station is yet certified for Alpha, Beta,
   or 1.0. The 8-hour memory soak has run against release binaries on the
@@ -55,7 +55,7 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   has been tested**; treat NVIDIA/proprietary-driver systems as unverified.
   The owner decided on 2026-10-04 to ship Beta 1 without an NVIDIA test,
   because no NVIDIA machine is available; NVIDIA results are a later-Beta item.
-- **Beta 1 is tested on one hardware class only.** The H8 Beta tier names
+- **This beta is tested on one hardware class only.** The H8 Beta tier names
   three stations. The owner has neither an AMD desktop nor an NVIDIA desktop,
   so both are waived for Beta 1 (decision of 2026-10-04). The security-review
   and Beta-candidate verifiers carry the waiver as
@@ -130,17 +130,19 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Feature limits
 
-- Clicking the Dock while a menu (the app/system menu, a status menu,
-  Control Center, or the Notification Center panel) is open doesn't close
-  that menu yet. Clicking the wallpaper, another window, pressing Escape, or
-  switching to a different menu title all close/switch it correctly — only
-  a Dock click doesn't. A fix is in progress (parity row `MENU-15`).
+- Mail's Google and Microsoft sign-in (OAuth in the browser) is built and
+  tested against recorded protocol fixtures, but has not yet been tried
+  against real Google or Microsoft accounts. IMAP/SMTP accounts with an app
+  password are the safer choice for this beta.
 - Open item: the top-bar logo slot still draws the "R" glyph inherited from
   the rmac name. It needs a real Lulo mark before release; that is a design
   task (new artwork), not a text rename, and is intentionally not addressed
   by the rmac-to-Lulo-OS text rename.
 - Lulo OS does not clone Apple services, proprietary assets, iCloud, AirDrop,
-  AppleCare, Time Machine, or Apple account behavior.
+  AppleCare, Time Machine, or Apple account behavior. The macOS panes and
+  menu items that exist only for those services (Apple Account, iCloud,
+  AirDrop, Handoff, Time Machine and similar)
+  are left out on purpose rather than shown as controls that do nothing.
 - System Settings exposes only authorities Linux/niri can support without
   inventing state. Some accessibility, display mirroring, per-device input,
   credential, sharing, and hardware-specific controls remain unavailable.
@@ -188,9 +190,43 @@ accepted for Beta; SR-39 is accepted for Beta too.
   showing banners while the screen is locked, so with the screen reader on,
   a notification's text may be read aloud (SR-38). Current packages fix both.
 
-`install.sh --from-release` now needs `gh` (and `gh auth login`) to verify
-who built the packages. Without it the install stops; `--allow-unattested`
-installs on the release's checksums alone.
+`install.sh --from-release` needs `gh` (and `gh auth login`) to verify who
+built the packages. Without it the install stops; `--allow-unattested`
+installs on the release's checksums alone. A Release's own stamped
+`install.sh`, run with no arguments, verifies with `gh` when it is installed
+and otherwise accepts the checksums, as described under "Release blockers".
+
+## Windows preview
+
+Lulo for Windows is an early preview: it runs on top of Windows 11 (the
+Lulo apps as Windows programs, and an optional layer with Lulo's menu bar,
+Dock and Spotlight over the Windows desktop). It has been tried on one
+Windows 11 laptop and in GitHub's Windows runners; Windows 10 is untested.
+
+- **The installer is unsigned.** No code-signing certificate is bought for
+  this free project, so SmartScreen warns on first run: choose **More info**,
+  then **Run anyway**. The MSI's SHA-256 is in the Release's `SHA256SUMS`
+  and it carries a GitHub build-provenance attestation.
+- **Media Player needs libmpv.** Playback goes through `libmpv-2.dll` beside
+  the app; it is not bundled yet (it needs a pinned LGPL download), so
+  without it Player says it needs libmpv (WIN-OS-88).
+- **Bluetooth** connects only audio devices whose endpoint Windows already
+  has, and there is no "discoverable" switch, because Windows apps cannot
+  make the PC discoverable (WIN-SET-06). Control Centre's Bluetooth module
+  says Unavailable (WIN-OS-63).
+- **Not there yet:** printing (Export as PDF works; WIN-OS-10), spelling
+  underlines (WIN-OS-09), Software Update, and System Settings' Network, VPN,
+  Internet Accounts, Notifications, Focus, Accessibility, Privacy &
+  Security, Printers & Scanners and Lulo Intelligence panes (left out, not
+  faked; WIN-SET-05).
+- **Updates:** install the next release's MSI over this one. Each build's
+  MSI version is `0.9.<commit count>`, so a later release always upgrades an
+  earlier one.
+- **Mail's** Google and Microsoft sign-in has not been tried against real
+  accounts, as on Ubuntu.
+- Some Windows-reserved shortcuts (several Win+Ctrl chords) cannot be used
+  for the Mac's ⌃⌘ shortcuts (WIN-OS-02). Spotlight is Alt+Space, because
+  Win+Space switches the input language.
 
 ## Compatibility limits
 

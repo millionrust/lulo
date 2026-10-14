@@ -385,6 +385,49 @@ class InstallReleaseAttestationTests(unittest.TestCase):
         self.assertNotIn("downloaded", result.stdout)
 
 
+class StampedReleaseInstallerTests(unittest.TestCase):
+    """The copy of install.sh attached to a Release installs that Release."""
+
+    STUBS = (
+        "check_not_root() { :; }\n"
+        "check_platform() { :; }\n"
+        'download_release_packages() { echo "release=$1 unattested=$allow_unattested"; downloaded_package_dir=/x; }\n'
+        "install_local_packages() { :; }\n"
+    )
+
+    def test_the_repository_copy_is_not_stamped(self):
+        self.assertIn('\nRMAC_RELEASE_TAG=""\n', INSTALL.read_text(encoding="utf-8"))
+
+    def test_the_release_workflow_stamps_the_attached_copy(self):
+        release = (Path(__file__).parents[1] / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn("s/^RMAC_RELEASE_TAG=\"\"$/", release)
+        self.assertIn('"$bundle/install.sh"', release)
+        self.assertIn('"$bundle/uninstall.sh"', release)
+
+    def test_a_stamped_copy_installs_its_release_without_arguments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            # No gh on this PATH: the checksums alone are accepted.
+            result = _run_install_function(
+                f'PATH="{temporary}"\nRMAC_RELEASE_TAG="v0.9.0-beta.2"\n{self.STUBS}main'
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("release=v0.9.0-beta.2 unattested=true", result.stdout)
+
+    def test_a_stamped_copy_still_verifies_with_gh_when_present(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _write_stub(Path(temporary) / "gh", "exit 0")
+            result = _run_install_function(
+                f'PATH="{temporary}"\nRMAC_RELEASE_TAG="v0.9.0-beta.2"\n{self.STUBS}main'
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("release=v0.9.0-beta.2 unattested=false", result.stdout)
+
+    def test_an_unstamped_copy_still_refuses_the_unpublished_repository(self):
+        result = _run_install_function(f'RMAC_RELEASE_TAG=""\n{self.STUBS}main')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not published yet", result.stderr)
+
+
 class InstallReleaseAssetNameTests(unittest.TestCase):
     def _asset(self, listing: str, package: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as temporary:

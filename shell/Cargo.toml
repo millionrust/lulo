@@ -7,7 +7,7 @@ members = ["crates/*", "bins/*", "probes/*"]
 exclude = ["compat/gpui", "compat/notify"]
 
 [workspace.package]
-version = "0.9.0-beta.1"
+version = "0.9.0-beta.2"
 edition = "2021"
 rust-version = "1.95.0"
 publish = false
@@ -29,55 +29,55 @@ gpui_platform = { version = "=0.1.0", git = "https://github.com/zed-industries/z
 image = { version = "0.25", default-features = false }
 libc = "=0.2.186"
 raw-window-handle = "=0.6.2"
-rmac-apps = { version = "=0.9.0-beta.1", path = "../crates/rmac-apps" }
-rmac-app-launch = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-launch" }
-rmac-app-menu = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-menu" }
-rmac-appearance = { version = "=0.9.0-beta.1", path = "../crates/rmac-appearance" }
-rmac-appearance-portal = { version = "=0.9.0-beta.1", path = "../crates/rmac-appearance-portal" }
-rmac-archive = { version = "=0.9.0-beta.1", path = "../crates/rmac-archive" }
-rmac-audio = { version = "=0.9.0-beta.1", path = "../crates/rmac-audio" }
-rmac-bluetooth = { version = "=0.9.0-beta.1", path = "../crates/rmac-bluetooth" }
-rmac-calendar-agent = { version = "=0.9.0-beta.1", path = "../crates/calendar-agent" }
-rmac-compositor = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor" }
-rmac-compositor-niri = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor-niri" }
-rmac-compositor-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor-system" }
-rmac-design = { version = "=0.9.0-beta.1", path = "../crates/rmac-design" }
-rmac-desktop = { version = "=0.9.0-beta.1", path = "../crates/rmac-desktop" }
-rmac-desktop-widgets = { version = "=0.9.0-beta.1", path = "../crates/rmac-desktop-widgets" }
-rmac-dock = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock" }
-rmac-dock-runtime = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock-runtime" }
-rmac-dock-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock-system" }
-rmac-hardware = { version = "=0.9.0-beta.1", path = "../crates/rmac-hardware" }
-rmac-locale = { version = "=0.9.0-beta.1", path = "../crates/rmac-locale" }
-rmac-network = { version = "=0.9.0-beta.1", path = "../crates/rmac-network" }
-rmac-pasteboard = { version = "=0.9.0-beta.1", path = "../crates/rmac-pasteboard" }
-rmac-places = { version = "=0.9.0-beta.1", path = "../crates/rmac-places" }
-rmac-places-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-places-system" }
-rmac-power = { version = "=0.9.0-beta.1", path = "../crates/rmac-power" }
-rmac-recent-documents = { version = "=0.9.0-beta.1", path = "../crates/rmac-recent-documents" }
-rmac-process = { version = "=0.9.0-beta.1", path = "../crates/rmac-process" }
-rmac-quick-settings-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-quick-settings-system" }
-rmac-screen-reader = { version = "=0.9.0-beta.1", path = "../crates/rmac-screen-reader" }
-rmac-search = { version = "=0.9.0-beta.1", path = "../crates/rmac-search" }
-rmac-storage = { version = "=0.9.0-beta.1", path = "../crates/rmac-storage" }
-rmac-thumbnails = { version = "=0.9.0-beta.1", path = "../crates/rmac-thumbnails" }
-rmac-osd = { version = "=0.9.0-beta.1", path = "../crates/rmac-osd" }
-rmac-login-items-linux = { version = "=0.9.0-beta.1", path = "../crates/rmac-login-items-linux" }
-rmac-shell-layer = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-layer" }
-rmac-shell-runtime = { version = "=0.9.0-beta.1", path = "../crates/rmac-shell-runtime" }
-rmac-shell-settings = { version = "=0.9.0-beta.1", path = "../crates/rmac-shell-settings" }
-rmac-shell-status = { version = "=0.9.0-beta.1", path = "../crates/rmac-shell-status" }
-rmac-shortcuts = { version = "=0.9.0-beta.1", path = "../crates/rmac-shortcuts" }
-rmac-updates = { version = "=0.9.0-beta.1", path = "../crates/rmac-updates" }
-rmac-sound = { version = "=0.9.0-beta.1", path = "../crates/rmac-sound" }
-rmac-shell-ui = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-ui" }
-rmac-theme = { version = "=0.9.0-beta.1", path = "../crates/rmac-theme" }
-rmac-ui = { version = "=0.9.0-beta.1", path = "../crates/rmac-ui" }
-rmac-wallpaper = { version = "=0.9.0-beta.1", path = "../crates/rmac-wallpaper" }
-rmac-wallpaper-image = { version = "=0.9.0-beta.1", path = "../crates/rmac-wallpaper-image" }
-rmac-wallpaper-runtime = { version = "=0.9.0-beta.1", path = "../crates/rmac-wallpaper-runtime" }
+rmac-apps = { version = "=0.9.0-beta.2", path = "../crates/rmac-apps" }
+rmac-app-launch = { version = "=0.9.0-beta.2", path = "../crates/rmac-app-launch" }
+rmac-app-menu = { version = "=0.9.0-beta.2", path = "../crates/rmac-app-menu" }
+rmac-appearance = { version = "=0.9.0-beta.2", path = "../crates/rmac-appearance" }
+rmac-appearance-portal = { version = "=0.9.0-beta.2", path = "../crates/rmac-appearance-portal" }
+rmac-archive = { version = "=0.9.0-beta.2", path = "../crates/rmac-archive" }
+rmac-audio = { version = "=0.9.0-beta.2", path = "../crates/rmac-audio" }
+rmac-bluetooth = { version = "=0.9.0-beta.2", path = "../crates/rmac-bluetooth" }
+rmac-calendar-agent = { version = "=0.9.0-beta.2", path = "../crates/calendar-agent" }
+rmac-compositor = { version = "=0.9.0-beta.2", path = "../crates/rmac-compositor" }
+rmac-compositor-niri = { version = "=0.9.0-beta.2", path = "../crates/rmac-compositor-niri" }
+rmac-compositor-system = { version = "=0.9.0-beta.2", path = "../crates/rmac-compositor-system" }
+rmac-design = { version = "=0.9.0-beta.2", path = "../crates/rmac-design" }
+rmac-desktop = { version = "=0.9.0-beta.2", path = "../crates/rmac-desktop" }
+rmac-desktop-widgets = { version = "=0.9.0-beta.2", path = "../crates/rmac-desktop-widgets" }
+rmac-dock = { version = "=0.9.0-beta.2", path = "../crates/rmac-dock" }
+rmac-dock-runtime = { version = "=0.9.0-beta.2", path = "../crates/rmac-dock-runtime" }
+rmac-dock-system = { version = "=0.9.0-beta.2", path = "../crates/rmac-dock-system" }
+rmac-hardware = { version = "=0.9.0-beta.2", path = "../crates/rmac-hardware" }
+rmac-locale = { version = "=0.9.0-beta.2", path = "../crates/rmac-locale" }
+rmac-network = { version = "=0.9.0-beta.2", path = "../crates/rmac-network" }
+rmac-pasteboard = { version = "=0.9.0-beta.2", path = "../crates/rmac-pasteboard" }
+rmac-places = { version = "=0.9.0-beta.2", path = "../crates/rmac-places" }
+rmac-places-system = { version = "=0.9.0-beta.2", path = "../crates/rmac-places-system" }
+rmac-power = { version = "=0.9.0-beta.2", path = "../crates/rmac-power" }
+rmac-recent-documents = { version = "=0.9.0-beta.2", path = "../crates/rmac-recent-documents" }
+rmac-process = { version = "=0.9.0-beta.2", path = "../crates/rmac-process" }
+rmac-quick-settings-system = { version = "=0.9.0-beta.2", path = "../crates/rmac-quick-settings-system" }
+rmac-screen-reader = { version = "=0.9.0-beta.2", path = "../crates/rmac-screen-reader" }
+rmac-search = { version = "=0.9.0-beta.2", path = "../crates/rmac-search" }
+rmac-storage = { version = "=0.9.0-beta.2", path = "../crates/rmac-storage" }
+rmac-thumbnails = { version = "=0.9.0-beta.2", path = "../crates/rmac-thumbnails" }
+rmac-osd = { version = "=0.9.0-beta.2", path = "../crates/rmac-osd" }
+rmac-login-items-linux = { version = "=0.9.0-beta.2", path = "../crates/rmac-login-items-linux" }
+rmac-shell-layer = { version = "=0.9.0-beta.2", path = "crates/rmac-shell-layer" }
+rmac-shell-runtime = { version = "=0.9.0-beta.2", path = "../crates/rmac-shell-runtime" }
+rmac-shell-settings = { version = "=0.9.0-beta.2", path = "../crates/rmac-shell-settings" }
+rmac-shell-status = { version = "=0.9.0-beta.2", path = "../crates/rmac-shell-status" }
+rmac-shortcuts = { version = "=0.9.0-beta.2", path = "../crates/rmac-shortcuts" }
+rmac-updates = { version = "=0.9.0-beta.2", path = "../crates/rmac-updates" }
+rmac-sound = { version = "=0.9.0-beta.2", path = "../crates/rmac-sound" }
+rmac-shell-ui = { version = "=0.9.0-beta.2", path = "crates/rmac-shell-ui" }
+rmac-theme = { version = "=0.9.0-beta.2", path = "../crates/rmac-theme" }
+rmac-ui = { version = "=0.9.0-beta.2", path = "../crates/rmac-ui" }
+rmac-wallpaper = { version = "=0.9.0-beta.2", path = "../crates/rmac-wallpaper" }
+rmac-wallpaper-image = { version = "=0.9.0-beta.2", path = "../crates/rmac-wallpaper-image" }
+rmac-wallpaper-runtime = { version = "=0.9.0-beta.2", path = "../crates/rmac-wallpaper-runtime" }
 # The library alone; the Weather app's window stack stays out of the shell.
-rmac-weather = { version = "=0.9.0-beta.1", path = "../crates/weather", default-features = false }
+rmac-weather = { version = "=0.9.0-beta.2", path = "../crates/weather", default-features = false }
 trash = "5"
 unicode-segmentation = "1.13"
 uuid = { version = "1", features = ["v5"] }

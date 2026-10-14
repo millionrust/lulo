@@ -80,6 +80,7 @@ impl Render for Settings {
         let update_info_sheet = self.render_update_info_sheet(cx);
         let update_auto_sheet = self.render_update_auto_sheet(cx);
         let keyboard_shortcuts_sheet = self.render_keyboard_shortcuts_sheet(cx);
+        let battery_health_sheet = self.render_battery_health_sheet(cx);
         let internet_account_sheet = self.render_internet_account_sheet(cx);
         let internet_account_delete = self.render_internet_account_delete(cx);
         let users_overlay = self.render_users_overlay(cx);
@@ -102,6 +103,11 @@ impl Render for Settings {
                 } else if event.keystroke.key == "escape" && this.keyboard_shortcuts_open {
                     cx.stop_propagation();
                     this.close_keyboard_shortcuts(cx);
+                } else if (event.keystroke.key == "escape" || event.keystroke.key == "enter")
+                    && this.battery_health_sheet
+                {
+                    cx.stop_propagation();
+                    this.set_battery_health_sheet(false, cx);
                 } else if event.keystroke.key == "escape" && this.clock_confirmation.is_some() {
                     cx.stop_propagation();
                     this.cancel_clock_confirmation(cx);
@@ -511,6 +517,7 @@ impl Render for Settings {
             .when_some(update_info_sheet, |root, sheet| root.child(sheet))
             .when_some(update_auto_sheet, |root, sheet| root.child(sheet))
             .when_some(keyboard_shortcuts_sheet, |root, sheet| root.child(sheet))
+            .when_some(battery_health_sheet, |root, sheet| root.child(sheet))
             .when_some(internet_account_sheet, |root, sheet| root.child(sheet))
             .when_some(internet_account_delete, |root, alert| root.child(alert))
             .when_some(users_overlay, |root, sheet| root.child(sheet))

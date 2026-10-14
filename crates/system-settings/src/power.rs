@@ -3,13 +3,6 @@ pub(super) struct ChargeThresholdUpdate {
     pub(super) recovery: Option<rmac_power::Snapshot>,
 }
 
-pub(super) fn apply_profile(
-    profile: rmac_power::PowerProfile,
-) -> std::result::Result<rmac_power::Snapshot, rmac_power::Error> {
-    rmac_power::set_profile(profile)?;
-    rmac_power::snapshot()
-}
-
 pub(super) fn apply_charge_threshold(
     threshold: &rmac_power::ChargeThreshold,
     enabled: bool,
@@ -50,22 +43,118 @@ pub(super) fn charge_threshold_description(threshold: &rmac_power::ChargeThresho
     }
 }
 
-pub(super) fn sample_history(
+/// One bar of the Battery Level chart: the charge at the end of its slot,
+/// and whether the battery charged during it (the Mac's charging marker).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LevelBar {
+    pub(super) level: Option<u8>,
+    pub(super) charging: bool,
+}
+
+fn is_charging(state: rmac_power::BatteryState) -> bool {
+    matches!(
+        state,
+        rmac_power::BatteryState::Charging | rmac_power::BatteryState::PendingCharge
+    )
+}
+
+/// `buckets` slots of `bucket_seconds` from `start`; a slot with no sample
+/// carries the last known level forward once the record has begun.
+pub(super) fn level_bars(
     points: &[rmac_power::BatteryHistoryPoint],
-    limit: usize,
-) -> Vec<rmac_power::BatteryHistoryPoint> {
-    if points.len() <= limit {
-        return points.to_vec();
-    }
-    if limit == 0 {
-        return Vec::new();
-    }
-    if limit == 1 {
-        return points.last().copied().into_iter().collect();
-    }
-    (0..limit)
-        .map(|index| points[index * (points.len() - 1) / (limit - 1)])
+    start: u64,
+    bucket_seconds: u64,
+    buckets: usize,
+) -> Vec<LevelBar> {
+    let mut previous = points
+        .iter()
+        .take_while(|point| point.timestamp < start)
+        .last()
+        .map(|point| point.percentage);
+    (0..buckets as u64)
+        .map(|bucket| {
+            let from = start + bucket * bucket_seconds;
+            let to = from + bucket_seconds;
+            let mut charging = false;
+            let mut last = None;
+            for point in points
+                .iter()
+                .filter(|point| point.timestamp >= from && point.timestamp < to)
+            {
+                charging |= is_charging(point.state);
+                last = Some(point.percentage);
+            }
+            let level = last.or(previous);
+            previous = level;
+            LevelBar { level, charging }
+        })
         .collect()
+}
+
+/// The last time the battery charged and the level it reached: the latest
+/// charging (or fully charged) sample.
+pub(super) fn last_charge(points: &[rmac_power::BatteryHistoryPoint]) -> Option<(u8, u64)> {
+    points
+        .iter()
+        .rev()
+        .find(|point| {
+            is_charging(point.state) || point.state == rmac_power::BatteryState::FullyCharged
+        })
+        .map(|point| (point.percentage, point.timestamp))
+}
+
+/// "Today, 8:26 AM", "Yesterday, 10:20 PM" or "12 Oct, 9:05 AM", in local
+/// time, as the Mac writes under "Last charged to".
+pub(super) fn charged_when(timestamp: u64, now: u64) -> String {
+    use chrono::{Local, TimeZone as _};
+    let (Some(at), Some(today)) = (
+        Local.timestamp_opt(timestamp as i64, 0).single(),
+        Local.timestamp_opt(now as i64, 0).single(),
+    ) else {
+        return String::new();
+    };
+    let time = at.format("%-I:%M %p").to_string();
+    match (today.date_naive() - at.date_naive()).num_days() {
+        0 => format!("Today, {time}"),
+        1 => format!("Yesterday, {time}"),
+        _ => format!("{}, {time}", at.format("%-d %b")),
+    }
+}
+
+/// The local midnight at or before `timestamp`.
+pub(super) fn local_day_start(timestamp: u64) -> u64 {
+    use chrono::{Local, TimeZone as _};
+    Local
+        .timestamp_opt(timestamp as i64, 0)
+        .single()
+        .and_then(|at| at.date_naive().and_hms_opt(0, 0, 0))
+        .and_then(|midnight| Local.from_local_datetime(&midnight).earliest())
+        .map_or(timestamp - timestamp % 86_400, |midnight| {
+            midnight.timestamp().max(0) as u64
+        })
+}
+
+/// The Mac's hour axis: "12 A", "3", "6", "9", "12 P"…
+pub(super) fn hour_tick(timestamp: u64) -> String {
+    use chrono::{Local, TimeZone as _, Timelike as _};
+    let Some(at) = Local.timestamp_opt(timestamp as i64, 0).single() else {
+        return String::new();
+    };
+    match at.hour() {
+        0 => "12 A".to_owned(),
+        12 => "12 P".to_owned(),
+        hour => (hour % 12).to_string(),
+    }
+}
+
+/// "13 Oct" for the day axis.
+pub(super) fn day_tick(timestamp: u64) -> String {
+    use chrono::{Local, TimeZone as _};
+    Local
+        .timestamp_opt(timestamp as i64, 0)
+        .single()
+        .map(|at| at.format("%-d %b").to_string())
+        .unwrap_or_default()
 }
 
 pub(super) fn degradation_label(reason: &str) -> String {
@@ -91,21 +180,42 @@ mod tests {
     }
 
     #[test]
-    fn history_sampling_preserves_the_time_range() {
-        let points = (0..100)
-            .map(|timestamp| rmac_power::BatteryHistoryPoint {
-                timestamp,
-                percentage: timestamp as u8,
-                state: rmac_power::BatteryState::Discharging,
-            })
-            .collect::<Vec<_>>();
-        let samples = sample_history(&points, 12);
-        assert_eq!(samples.len(), 12);
-        assert_eq!(samples.first().map(|point| point.timestamp), Some(0));
-        assert_eq!(samples.last().map(|point| point.timestamp), Some(99));
-        assert!(samples
-            .windows(2)
-            .all(|points| points[0].timestamp < points[1].timestamp));
+    fn level_bars_carry_the_charge_and_mark_charging_slots() {
+        use rmac_power::BatteryState::*;
+        let point = |timestamp, percentage, state| rmac_power::BatteryHistoryPoint {
+            timestamp,
+            percentage,
+            state,
+        };
+        let points = [
+            point(50, 90, Discharging),
+            point(120, 80, Discharging),
+            point(250, 85, Charging),
+        ];
+        let bars = level_bars(&points, 100, 100, 3);
+        assert_eq!(
+            bars[0],
+            LevelBar {
+                level: Some(80),
+                charging: false
+            }
+        );
+        assert_eq!(
+            bars[1],
+            LevelBar {
+                level: Some(85),
+                charging: true
+            }
+        );
+        assert_eq!(
+            bars[2],
+            LevelBar {
+                level: Some(85),
+                charging: false
+            }
+        );
+        assert_eq!(level_bars(&points[2..], 0, 100, 1)[0].level, None);
+        assert_eq!(last_charge(&points), Some((85, 250)));
     }
 
     #[test]

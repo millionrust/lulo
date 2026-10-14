@@ -406,6 +406,13 @@ pub(super) struct Settings {
     pub(super) power_busy: bool,
     pub(super) power_generation: u64,
     pub(super) power_refresh_pending: bool,
+    /// Low Power Mode as saved (or inferred from the active profile).
+    pub(super) low_power_mode: rmac_power::low_power::LowPowerMode,
+    /// Screen on/off events for the Screen On Usage chart.
+    pub(super) screen_events: Vec<rmac_power::screen_usage::ScreenEvent>,
+    /// The history shows the last 10 days instead of 24 hours.
+    pub(super) battery_history_long: bool,
+    pub(super) battery_health_sheet: bool,
 
     // Displays
     pub(super) display_loading: bool,

@@ -95,9 +95,9 @@ use crate::navigation::{
 };
 use crate::notifications::{policy_with as notification_policy_with, NotificationPolicyChange};
 use crate::power::{
-    apply_charge_threshold, apply_profile as apply_power_profile, charge_threshold_description,
+    apply_charge_threshold, charge_threshold_description, charged_when, day_tick,
     degradation_label as power_degradation_label, format_duration as format_power_duration,
-    sample_history as sample_battery_history,
+    hour_tick, last_charge, level_bars, local_day_start,
 };
 use crate::service_updates::{
     change_needs_followup as audio_change_needs_followup,

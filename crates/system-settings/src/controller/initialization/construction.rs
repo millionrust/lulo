@@ -395,6 +395,10 @@ impl Settings {
             power_busy: false,
             power_generation: 0,
             power_refresh_pending: false,
+            low_power_mode: rmac_power::low_power::LowPowerMode::Never,
+            screen_events: Vec::new(),
+            battery_history_long: false,
+            battery_health_sheet: false,
 
             display_loading: true,
             display_busy: false,

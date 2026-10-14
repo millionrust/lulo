@@ -128,7 +128,16 @@ impl Settings {
             .when(!self.pane_has_hero(), |pane| {
                 pane.pt(px(style::FIRST_SECTION_TOP))
             })
-            .children(cards)
+            // Each group of rows is an accessibility group, as each form
+            // section is an AXGroup on the Mac, so a screen reader moves
+            // group by group and the rows' titles name their controls
+            // within it.
+            .children(cards.into_iter().enumerate().map(|(index, card)| {
+                div()
+                    .id(("settings-group", index))
+                    .role(gpui::Role::Group)
+                    .child(card)
+            }))
     }
 
     pub(super) fn render_unregistered_category(&self) -> Div {

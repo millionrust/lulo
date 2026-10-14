@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import os
 import json
 import re
 import subprocess
@@ -99,7 +100,11 @@ def dock_centre(dock_pid: int, label: str) -> tuple[float, float] | None:
 
 def drag(run: run_window_move.Run, start: tuple[float, float], end: tuple[float, float],
          hold: float = 0.4) -> None:
-    """A press, a smooth 60 Hz-ish move and a held release."""
+    """Hover, then a press, a smooth 60 Hz-ish move and a held release. The
+    hover lets the surface under the pointer see it enter first, as a hand
+    always does."""
+    run.pointer.move(*run.parent_point(*start), run.parent_width, run.parent_height)
+    time.sleep(0.5)
     run.pointer.drag(run.parent_point(*start), run.parent_point(*end),
                      run.parent_width, run.parent_height, steps=30, step_delay=0.016,
                      grab_delay=0.05, hold=hold)
@@ -145,12 +150,27 @@ def inner(args: argparse.Namespace) -> int:
             return run.finish()
         write_entries(run)
         run.start()
-        dock = next((child for child in run.children
-                     if child.args and Path(child.args[0]).name == "dock"), None)
-        if dock is None:
+        docks = [next((child for child in run.children
+                       if child.args and Path(child.args[0]).name == "dock"), None)]
+        if docks[0] is None:
             raise RuntimeError("nested Dock was not started")
-        files = run.wait_for(lambda: dock_centre(dock.pid, "Files"), 30)
-        apps = run.wait_for(lambda: dock_centre(dock.pid, "Apps"), 10)
+
+        def dock_pid() -> int:
+            return docks[-1].pid
+
+        def restart_dock() -> None:
+            """Start the Dock again, so it reads the saved settings afresh
+            (persistence across a restart). Nested niri sometimes stops
+            delivering the pointer to a Dock whose shelf length changed
+            while the pointer sat on it; a fresh Dock avoids that."""
+            docks[-1].terminate()
+            docks[-1].wait(timeout=10)
+            docks.append(run.spawn([str(Path(args.bin_dir) / "dock")], f"dock-{len(docks)}",
+                                   {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"}))
+            run.wait_for(lambda: dock_centre(dock_pid(), "Files"), 30)
+            time.sleep(1.0)
+        files = run.wait_for(lambda: dock_centre(dock_pid(), "Files"), 30)
+        apps = run.wait_for(lambda: dock_centre(dock_pid(), "Apps"), 10)
         run.check("Dock shows Files and Apps", bool(files and apps), f"{files} {apps}")
         if not (files and apps):
             return run.finish()
@@ -159,11 +179,17 @@ def inner(args: argparse.Namespace) -> int:
         # 1. A running app that is not kept, dragged left across the
         # separator between the first two kept apps, is kept second.
         run.spawn([sys.executable, str(Path(__file__).resolve()), "--probe-window"], "probe")
-        probe = run.wait_for(lambda: dock_centre(dock.pid, PROBE_NAME), 30)
+        probe = run.wait_for(lambda: dock_centre(dock_pid(), PROBE_NAME), 30)
         run.check("running probe app shows in the Dock", probe is not None)
         if probe is None:
             return run.finish()
         run.check("probe starts among the running apps", probe[0] > apps[0], f"{probe}")
+        # The shelf grew for the probe; read the kept tiles again.
+        restart_dock()
+        files = dock_centre(dock_pid(), "Files")
+        apps = dock_centre(dock_pid(), "Apps")
+        probe = dock_centre(dock_pid(), PROBE_NAME)
+        between_first_two = ((files[0] + apps[0]) / 2, files[1])
         drag(run, probe, between_first_two)
         kept = run.wait_for(lambda: (p := pinned(run)) and canonical(PROBE_ID) in p and p, 8)
         run.check("running app dragged across the separator is kept second",
@@ -172,11 +198,14 @@ def inner(args: argparse.Namespace) -> int:
             return run.finish()
 
         # 2. Files, Probe, Apps, Notes…: dragging the kept probe past Apps
-        # (between Apps and Notes) moves it one place right.
-        time.sleep(1.5)  # the Dock reopens its surfaces when the shelf grows
-        probe = run.wait_for(lambda: dock_centre(dock.pid, PROBE_NAME), 10)
-        apps = dock_centre(dock.pid, "Apps")
-        notes = dock_centre(dock.pid, "Notes")
+        # (between Apps and Notes) moves it one place right. The restarted
+        # Dock still keeps the probe: the drop persisted.
+        restart_dock()
+        run.check("kept app persists across a Dock restart",
+                  (pinned(run) or []).count(canonical(PROBE_ID)) == 1, str(pinned(run)))
+        probe = run.wait_for(lambda: dock_centre(dock_pid(), PROBE_NAME), 10)
+        apps = dock_centre(dock_pid(), "Apps")
+        notes = dock_centre(dock_pid(), "Notes")
         if probe and apps and notes:
             drag(run, probe, ((apps[0] + notes[0]) / 2, probe[1]))
             moved = run.wait_for(
@@ -189,15 +218,16 @@ def inner(args: argparse.Namespace) -> int:
 
         # 3. Dragged off the Dock and held, it is removed, and as it is
         # still running it stays in the Dock's running apps.
-        probe = run.wait_for(lambda: dock_centre(dock.pid, PROBE_NAME), 10)
+        restart_dock()
+        probe = run.wait_for(lambda: dock_centre(dock_pid(), PROBE_NAME), 10)
         if probe:
             drag(run, probe, (probe[0], probe[1] - 260), hold=1.0)
         removed = run.wait_for(
             lambda: (p := pinned(run)) is not None and canonical(PROBE_ID) not in p, 8)
         run.check("kept app dragged off the Dock is removed", bool(removed), str(pinned(run)))
-        time.sleep(1.5)
-        still = run.wait_for(lambda: dock_centre(dock.pid, PROBE_NAME), 10)
-        apps = dock_centre(dock.pid, "Apps")
+        restart_dock()
+        still = run.wait_for(lambda: dock_centre(dock_pid(), PROBE_NAME), 10)
+        apps = dock_centre(dock_pid(), "Apps")
         run.check("removed app stays among the running apps",
                   bool(still and apps and still[0] > apps[0]), f"{still}")
 
@@ -216,12 +246,12 @@ def inner(args: argparse.Namespace) -> int:
         if tile is None:
             return run.finish()
         width, height = drawer_size()
-        files = dock_centre(dock.pid, "Files")
-        apps = dock_centre(dock.pid, "Apps")
+        files = dock_centre(dock_pid(), "Files")
+        apps = dock_centre(dock_pid(), "Apps")
         local = centre(tile)
         # Apps is a centred layer surface; niri centres it in the area the
         # Dock leaves, or in the whole output.
-        files_box = accessible_box(dock.pid, "Files")
+        files_box = accessible_box(dock_pid(), "Files")
         dock_top = files_box[1] - 12 if files_box else run.height
         left = (run.width - width) / 2
         offsets = [(left, (dock_top - height) / 2), (left, (run.height - height) / 2)]

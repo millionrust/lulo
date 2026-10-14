@@ -1034,18 +1034,18 @@ mod dock {
             cx.defer(move |cx| {
                 #[cfg(windows)]
                 rmac_shell_layer::windows::resize_layer(cx, material, size);
+                // Lulo OS: the material resizes itself as it draws, until
+                // the compositor has given it this size.
                 #[cfg(not(windows))]
-                {
-                    let _ = material.update(cx, |_, window, _| window.resize(size));
-                    // GPUI applies a layer surface's new size in a task it
-                    // has just queued; draw once that has run, so the size is
-                    // committed now rather than with some later frame.
-                    cx.spawn(async move |cx| {
-                        let _ =
-                            cx.update(|cx| material.update(cx, |_, window, _| window.refresh()));
-                    })
-                    .detach();
-                }
+                let _ = material.update(cx, |view, _, cx| {
+                    if let Ok(backdrop) = view.downcast::<DockBackdrop>() {
+                        backdrop.update(cx, |backdrop, cx| {
+                            backdrop.wanted = Some(size);
+                            backdrop.requests = 0;
+                            cx.notify();
+                        });
+                    }
+                });
             });
         }
 
@@ -3036,6 +3036,17 @@ mod dock {
                     })
                 };
                 let mut kept: Vec<_> = order.iter().filter_map(find).cloned().collect();
+                // A running app the drop no longer keeps moves to the running
+                // apps at once, so the shelf does not shrink and grow back.
+                let released: Vec<_> = entries
+                    .iter()
+                    .filter(|entry| {
+                        entry.activity != rmac_dock::presentation::ActivityIndicator::None
+                            && !matches!(&entry.id, rmac_dock::presentation::EntryId::Application(app_id) if order.contains(app_id))
+                    })
+                    .cloned()
+                    .collect();
+                unpinned.splice(0..0, released);
                 unpinned.retain(|entry| {
                     !matches!(&entry.id, rmac_dock::presentation::EntryId::Application(app_id) if order.contains(app_id))
                 });
@@ -5959,10 +5970,31 @@ mod dock {
         status: Entity<DockStatus>,
         blurred: bool,
         tile_size: f32,
+        /// The size the Dock last drew its shelf at (`Dock::follow_material`).
+        #[cfg_attr(windows, allow(dead_code))]
+        wanted: Option<Size<gpui::Pixels>>,
+        /// Requests for `wanted` so far. A size change asked for while an
+        /// earlier one is being configured can be answered with the earlier
+        /// size; asking again settles it, a few times at most.
+        #[cfg_attr(windows, allow(dead_code))]
+        requests: u8,
     }
 
     impl Render for DockBackdrop {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            #[cfg(not(windows))]
+            if let Some(wanted) = self.wanted {
+                let size = window.bounds().size;
+                let off = (f32::from(size.width) - f32::from(wanted.width)).abs() > 0.5
+                    || (f32::from(size.height) - f32::from(wanted.height)).abs() > 0.5;
+                if off && self.requests < 4 {
+                    self.requests += 1;
+                    window.resize(wanted);
+                    // Draw again once GPUI has applied the new layer size,
+                    // which commits it.
+                    window.request_animation_frame();
+                }
+            }
             // An auto-hidden Dock takes its material with it.
             let hidden = self
                 .status
@@ -6057,6 +6089,8 @@ mod dock {
                         status,
                         blurred: true,
                         tile_size: surface_tile_size,
+                        wanted: None,
+                        requests: 0,
                     }
                 })
             },

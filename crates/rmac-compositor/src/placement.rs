@@ -218,6 +218,9 @@ pub fn frame_actions(window: WindowId, from: LogicalRect, to: LogicalRect) -> Ve
 struct Pending {
     reports: u8,
     fits: u8,
+    /// A new Lulo window: it centres itself just after mapping, so it is
+    /// not touched at all until it has settled.
+    lulo: bool,
 }
 
 /// Follows the compositor and keeps windows in the visible frame.
@@ -255,8 +258,14 @@ impl Placer {
                 Vec::new()
             }
             Event::WindowUpserted { window } => {
-                if self.known.insert(window.id) && !is_lulo_window(window.app_id.as_deref()) {
-                    self.pending.insert(window.id, Pending::default());
+                if self.known.insert(window.id) {
+                    self.pending.insert(
+                        window.id,
+                        Pending {
+                            lulo: is_lulo_window(window.app_id.as_deref()),
+                            ..Pending::default()
+                        },
+                    );
                 }
                 self.place(window.id, state, suspended)
             }
@@ -355,6 +364,12 @@ impl Placer {
         };
         if let Some(pending) = self.pending.get_mut(&id) {
             pending.reports += 1;
+            if pending.lulo {
+                if pending.reports >= NEW_WINDOW_REPORTS {
+                    self.pending.remove(&id);
+                }
+                return Vec::new();
+            }
             let mut actions = Vec::new();
             let target = constrain_new(frame, visible);
             if let Some(target) = target.filter(|_| pending.fits < NEW_WINDOW_FITS) {

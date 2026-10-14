@@ -133,12 +133,22 @@ impl Settings {
                                 .bg(sep())
                                 .mx(px(style::ROW_PADDING)),
                         )
+                        // macOS 26's order: startup, interface effects,
+                        // then volume feedback.
                         .child(
                             row_base()
-                                .child(text_block(
-                                    "Play user interface sound effects".into(),
-                                    Some("Trash, screenshots, devices, and system actions".into()),
-                                ))
+                                .child(text_block("Play sound on startup".into(), None))
+                                .child(login_sound),
+                        )
+                        .child(
+                            div()
+                                .h(px(style::SEPARATOR))
+                                .bg(sep())
+                                .mx(px(style::ROW_PADDING)),
+                        )
+                        .child(
+                            row_base()
+                                .child(text_block("Play user interface sound effects".into(), None))
                                 .child(interface_effects),
                         )
                         .child(
@@ -154,17 +164,6 @@ impl Settings {
                                     None,
                                 ))
                                 .child(volume_feedback),
-                        )
-                        .child(
-                            div()
-                                .h(px(style::SEPARATOR))
-                                .bg(sep())
-                                .mx(px(style::ROW_PADDING)),
-                        )
-                        .child(
-                            row_base()
-                                .child(text_block("Play sound on startup".into(), None))
-                                .child(login_sound),
                         )
                 }),
         );
@@ -191,79 +190,46 @@ impl Settings {
             if let Some(detail) = &self.audio_stream_error {
                 cards.push(note_card(detail.clone()));
             }
-            if self.audio.has_output {
-                let output_view = view.clone();
-                let output_mute = Toggle::new("audio-output-mute")
-                    .checked(self.audio.output.muted)
-                    .on_click(move |muted, _, cx| {
-                        output_view.update(cx, |settings, cx| {
-                            settings.set_audio_muted(rmac_audio::DeviceKind::Output, *muted, cx)
-                        });
+            // macOS 26: an Output / Input switch, then that side's device
+            // list, its volume, Mute and (output) Balance.
+            let tab_view = view.clone();
+            let showing_input = self.sound_shows_input;
+            cards.push(tab_bar(
+                "sound-output-input",
+                &["Output", "Input"],
+                usize::from(showing_input),
+                Rc::new(move |index, _, cx| {
+                    tab_view.update(cx, |settings, cx| {
+                        settings.set_sound_shows_input(index == 1, cx)
                     });
-                let mut output_card = div()
-                    .v_flex()
-                    .mb(px(style::GROUP_GAP))
-                    .rounded(px(style::GROUP_RADIUS))
-                    .bg(card_bg())
-                    .child(slider_row(
-                        "Output volume",
-                        &self.output_volume,
-                        format!("{out}%").into(),
-                    ));
-                if self
-                    .audio
-                    .outputs
-                    .iter()
-                    .any(|device| device.is_default && device.balance.is_some())
-                {
-                    output_card = output_card
-                        .child(
-                            div()
-                                .h(px(style::SEPARATOR))
-                                .bg(sep())
-                                .mx(px(style::ROW_PADDING)),
-                        )
-                        .child(balance_slider_row(&self.output_balance));
-                }
-                output_card = output_card
-                    .child(
-                        div()
-                            .h(px(style::SEPARATOR))
-                            .bg(sep())
-                            .mx(px(style::ROW_PADDING)),
-                    )
-                    .child(
-                        row_base()
-                            .child(tile("icons/volume-2.svg", secondary(), style::ROW_ICON))
-                            .child(text_block("Mute output".into(), None))
-                            .child(output_mute),
-                    );
-                cards.push(output_card);
-            } else {
-                cards.push(note_card("No output device is currently active."));
-            }
-
-            if self.audio.has_input {
-                let mut input_card = div()
-                    .v_flex()
-                    .mb(px(style::GROUP_GAP))
-                    .rounded(px(style::GROUP_RADIUS))
-                    .bg(card_bg())
-                    .child(slider_row(
-                        "Input volume",
-                        &self.input_volume,
-                        format!("{input}%").into(),
-                    ));
-                if self.audio.can_mute_input {
-                    let input_view = view.clone();
-                    let input_mute = Toggle::new("audio-input-mute")
-                        .checked(self.audio.input.muted)
+                }),
+            ));
+            if !showing_input {
+                cards.push(self.audio_device_card(
+                    "Output Device",
+                    &self.audio.outputs,
+                    rmac_audio::DeviceKind::Output,
+                    cx,
+                ));
+                if self.audio.has_output {
+                    let output_view = view.clone();
+                    let output_mute = Toggle::new("audio-output-mute")
+                        .checked(self.audio.output.muted)
                         .on_click(move |muted, _, cx| {
-                            input_view.update(cx, |settings, cx| {
-                                settings.set_audio_muted(rmac_audio::DeviceKind::Input, *muted, cx)
+                            output_view.update(cx, |settings, cx| {
+                                settings.set_audio_muted(rmac_audio::DeviceKind::Output, *muted, cx)
                             });
                         });
-                    input_card = input_card
+                    let mut output_card = div()
+                        .v_flex()
+                        .mb(px(style::GROUP_GAP))
+                        .rounded(px(style::GROUP_RADIUS))
+                        .bg(card_bg())
+                        .child(slider_row(
+                            "Output volume",
+                            &self.output_volume,
+                            format!("{out}%").into(),
+                        ))
                         .child(
                             div()
                                 .h(px(style::SEPARATOR))
@@ -272,39 +238,89 @@ impl Settings {
                         )
                         .child(
                             row_base()
-                                .child(tile("icons/volume-2.svg", secondary(), style::ROW_ICON))
-                                .child(text_block("Mute microphone".into(), None))
-                                .child(input_mute),
+                                .child(text_block("Mute".into(), None))
+                                .child(output_mute),
                         );
+                    if self
+                        .audio
+                        .outputs
+                        .iter()
+                        .any(|device| device.is_default && device.balance.is_some())
+                    {
+                        output_card = output_card
+                            .child(
+                                div()
+                                    .h(px(style::SEPARATOR))
+                                    .bg(sep())
+                                    .mx(px(style::ROW_PADDING)),
+                            )
+                            .child(balance_slider_row(&self.output_balance));
+                    }
+                    cards.push(output_card);
+                } else {
+                    cards.push(note_card("No output device is currently active."));
                 }
-                cards.push(input_card);
+                cards.push(self.audio_route_card(
+                    "Output Ports",
+                    &self.audio.outputs,
+                    rmac_audio::DeviceKind::Output,
+                    cx,
+                ));
             } else {
-                cards.push(note_card("No input device is currently active."));
+                cards.push(self.audio_device_card(
+                    "Input Device",
+                    &self.audio.inputs,
+                    rmac_audio::DeviceKind::Input,
+                    cx,
+                ));
+                if self.audio.has_input {
+                    let mut input_card = div()
+                        .v_flex()
+                        .mb(px(style::GROUP_GAP))
+                        .rounded(px(style::GROUP_RADIUS))
+                        .bg(card_bg())
+                        .child(slider_row(
+                            "Input volume",
+                            &self.input_volume,
+                            format!("{input}%").into(),
+                        ));
+                    if self.audio.can_mute_input {
+                        let input_view = view.clone();
+                        let input_mute = Toggle::new("audio-input-mute")
+                            .checked(self.audio.input.muted)
+                            .on_click(move |muted, _, cx| {
+                                input_view.update(cx, |settings, cx| {
+                                    settings.set_audio_muted(
+                                        rmac_audio::DeviceKind::Input,
+                                        *muted,
+                                        cx,
+                                    )
+                                });
+                            });
+                        input_card = input_card
+                            .child(
+                                div()
+                                    .h(px(style::SEPARATOR))
+                                    .bg(sep())
+                                    .mx(px(style::ROW_PADDING)),
+                            )
+                            .child(
+                                row_base()
+                                    .child(text_block("Mute".into(), None))
+                                    .child(input_mute),
+                            );
+                    }
+                    cards.push(input_card);
+                } else {
+                    cards.push(note_card("No input device is currently active."));
+                }
+                cards.push(self.audio_route_card(
+                    "Input Ports",
+                    &self.audio.inputs,
+                    rmac_audio::DeviceKind::Input,
+                    cx,
+                ));
             }
-            cards.push(self.audio_device_card(
-                "Output Device",
-                &self.audio.outputs,
-                rmac_audio::DeviceKind::Output,
-                cx,
-            ));
-            cards.push(self.audio_device_card(
-                "Input Device",
-                &self.audio.inputs,
-                rmac_audio::DeviceKind::Input,
-                cx,
-            ));
-            cards.push(self.audio_route_card(
-                "Output Ports",
-                &self.audio.outputs,
-                rmac_audio::DeviceKind::Output,
-                cx,
-            ));
-            cards.push(self.audio_route_card(
-                "Input Ports",
-                &self.audio.inputs,
-                rmac_audio::DeviceKind::Input,
-                cx,
-            ));
             cards.push(self.audio_profile_card(cx));
         }
 

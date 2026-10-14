@@ -19,6 +19,7 @@ ashpd.workspace = true
 blocking.workspace = true
 libc.workspace = true
 rmac-dbus.workspace = true
+rmac-power.workspace = true
 zbus.workspace = true
 
 # The Lock Screen policy on Windows (`lock_windows.rs`): the screen saver's

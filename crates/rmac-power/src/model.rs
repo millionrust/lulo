@@ -111,7 +111,11 @@ pub struct BatteryHistoryPoint {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BatteryHistory {
     pub availability: BatteryHistoryAvailability,
+    /// The last 24 hours, oldest first.
     pub points: Vec<BatteryHistoryPoint>,
+    /// The last 10 days, oldest first, at a coarser resolution (the Mac's
+    /// "Last 10 Days" view). Empty when the service keeps no longer record.
+    pub long_points: Vec<BatteryHistoryPoint>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -173,6 +177,11 @@ impl Error {
             operation,
             detail: detail.into(),
         }
+    }
+
+    /// An error from a caller's own step (saving a preference).
+    pub fn from_message(operation: &'static str, detail: impl Into<String>) -> Self {
+        Self::new(operation, detail)
     }
 }
 

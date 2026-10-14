@@ -3,7 +3,7 @@ use std::fmt;
 use crate::watch::system_watch;
 use crate::PairingSession;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Device {
     pub id: String,
     pub name: String,
@@ -12,6 +12,11 @@ pub struct Device {
     pub paired: bool,
     pub trusted: bool,
     pub connected: bool,
+    /// Whether `set_connected` can work for this device. BlueZ connects any
+    /// paired device; Windows lets apps connect only Bluetooth audio.
+    pub can_connect: bool,
+    /// Battery charge in percent, when the device reports one.
+    pub battery: Option<u8>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

@@ -2,13 +2,17 @@
 //! (`Windows.Devices.Bluetooth`, `Windows.Devices.Radios`), paired and
 //! nearby devices as association endpoints (`Windows.Devices.Enumeration`),
 //! and change notifications from device watchers and radio/connection
-//! events. Every call here runs on a background thread; nothing polls.
+//! events. Connecting and disconnecting go through Core Audio's Bluetooth
+//! kernel-streaming one-shot properties, as Windows' own Sound settings do,
+//! so only audio devices can be connected by an app. Battery levels and
+//! container ids come from the devices' Plug and Play nodes. Every call
+//! here runs on a background thread; nothing polls.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 
-use windows::core::{IInspectable, HSTRING};
+use windows::core::{IInspectable, IUnknown, GUID, HSTRING};
 use windows::Devices::Bluetooth::{
     BluetoothAdapter, BluetoothConnectionStatus, BluetoothDevice, BluetoothLEDevice,
 };
@@ -17,8 +21,28 @@ use windows::Devices::Enumeration::{
     DevicePairingRequestedEventArgs, DevicePairingResultStatus, DeviceUnpairingResultStatus,
     DeviceWatcher, DeviceWatcherStatus,
 };
-use windows::Devices::Radios::{Radio, RadioAccessStatus, RadioState};
+use windows::Devices::Radios::{Radio, RadioAccessStatus, RadioKind, RadioState};
 use windows::Foundation::TypedEventHandler;
+use windows::Win32::Devices::DeviceAndDriverInstallation::{
+    CM_Get_DevNode_PropertyW, CM_Get_Device_ID_ListW, CM_Get_Device_ID_List_SizeW,
+    CM_Locate_DevNodeW, CM_GETIDLIST_FILTER_ENUMERATOR, CM_LOCATE_DEVNODE_FLAGS,
+    CM_LOCATE_DEVNODE_NORMAL, CM_LOCATE_DEVNODE_PHANTOM, CR_BUFFER_SMALL, CR_SUCCESS,
+};
+use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_ContainerId;
+use windows::Win32::Devices::Properties::{
+    DEVPKEY_Device_ContainerId, DEVPROPTYPE, DEVPROP_TYPE_BYTE, DEVPROP_TYPE_GUID,
+};
+use windows::Win32::Foundation::DEVPROPKEY;
+use windows::Win32::Media::Audio::{
+    eAll, IDeviceTopology, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE,
+    DEVICE_STATE_ACTIVE, DEVICE_STATE_DISABLED, DEVICE_STATE_UNPLUGGED,
+};
+use windows::Win32::Media::KernelStreaming::{
+    IKsControl, KSPROPSETID_BtAudio, KSIDENTIFIER, KSIDENTIFIER_0, KSIDENTIFIER_0_0,
+    KSPROPERTY_ONESHOT_DISCONNECT, KSPROPERTY_ONESHOT_RECONNECT, KSPROPERTY_TYPE_GET,
+};
+use windows::Win32::System::Com::StructuredStorage::PropVariantToGUID;
+use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 use zeroize::Zeroize as _;
 
@@ -56,13 +80,8 @@ impl BluetoothService for SystemBluetoothService {
         Ok(())
     }
 
-    fn set_connected(&self, _device_id: &str, _connected: bool) -> Result<(), Error> {
-        // WinRT has no general connect/disconnect call for paired devices:
-        // Windows connects profiles (audio, input) itself when they are used.
-        Err(Error::new(
-            "change Bluetooth connection",
-            "Windows does not let apps connect or disconnect Bluetooth devices",
-        ))
+    fn set_connected(&self, device_id: &str, connected: bool) -> Result<(), Error> {
+        windows_set_connected(device_id, connected)
     }
 
     fn pair(&self, device_id: &str, session: &PairingSession) -> Result<Snapshot, Error> {
@@ -132,6 +151,30 @@ fn adapter_radio(adapter: &BluetoothAdapter) -> windows::core::Result<Option<Rad
     )
 }
 
+/// The Bluetooth radio: the default adapter's, or else the first Bluetooth
+/// radio Windows lists, so a radio whose adapter object Windows withholds
+/// (some drivers do while the radio is off) still shows, switched off.
+fn bluetooth_radio(adapter: Option<&BluetoothAdapter>) -> windows::core::Result<Option<Radio>> {
+    if let Some(radio) = adapter.map(adapter_radio).transpose()?.flatten() {
+        return Ok(Some(radio));
+    }
+    let radios = Radio::GetRadiosAsync()?.get()?;
+    for index in 0..radios.Size()? {
+        let radio = radios.GetAt(index)?;
+        if radio.Kind()? == RadioKind::Bluetooth {
+            return Ok(Some(radio));
+        }
+    }
+    Ok(None)
+}
+
+fn radio_name(radio: Option<&Radio>) -> Option<String> {
+    radio
+        .and_then(|radio| radio.Name().ok())
+        .map(|name| name.to_string_lossy())
+        .filter(|name| !name.is_empty())
+}
+
 fn adapter_name(adapter: &BluetoothAdapter, radio: Option<&Radio>) -> Option<String> {
     let device_name = adapter
         .DeviceId()
@@ -141,12 +184,7 @@ fn adapter_name(adapter: &BluetoothAdapter, radio: Option<&Radio>) -> Option<Str
         .map(|name| name.to_string_lossy())
         .ok()
         .filter(|name| !name.is_empty());
-    device_name.or_else(|| {
-        radio
-            .and_then(|radio| radio.Name().ok())
-            .map(|name| name.to_string_lossy())
-            .filter(|name| !name.is_empty())
-    })
+    device_name.or_else(|| radio_name(radio))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -233,15 +271,21 @@ fn low_energy_details(id: &HSTRING) -> windows::core::Result<Details> {
 fn windows_snapshot() -> Result<Snapshot, Error> {
     ensure_apartment();
     let operation = "read Bluetooth state";
-    let Some(adapter) = default_adapter().map_err(map_winrt(operation))? else {
+    // A switched-off radio is still present: its adapter, radio and paired
+    // devices stay listed, with `powered: false`.
+    let adapter = default_adapter().map_err(map_winrt(operation))?;
+    let radio = bluetooth_radio(adapter.as_ref()).map_err(map_winrt(operation))?;
+    if adapter.is_none() && radio.is_none() {
         return Ok(Snapshot::default());
-    };
-    let radio = adapter_radio(&adapter).map_err(map_winrt(operation))?;
+    }
     let powered = match &radio {
         Some(radio) => radio.State().map_err(map_winrt(operation))? == RadioState::On,
         None => false,
     };
-    let adapter_name = adapter_name(&adapter, radio.as_ref());
+    let adapter_name = match &adapter {
+        Some(adapter) => adapter_name(adapter, radio.as_ref()),
+        None => radio_name(radio.as_ref()),
+    };
 
     let mut devices = paired_devices()?;
     let paired_ids = devices
@@ -262,7 +306,9 @@ fn windows_snapshot() -> Result<Snapshot, Error> {
 
 fn paired_devices() -> Result<Vec<Device>, Error> {
     let operation = "list paired Bluetooth devices";
+    let nodes = bluetooth_instance_ids();
     let mut devices = Vec::new();
+    let mut containers = Vec::new();
     for (selector, transport) in selectors(true).map_err(map_winrt(operation))? {
         let found = DeviceInformation::FindAllAsyncAqsFilter(&selector)
             .and_then(|operation| operation.get())
@@ -284,6 +330,14 @@ fn paired_devices() -> Result<Vec<Device>, Error> {
             } else {
                 name
             };
+            let device_nodes = nodes_for_address(&nodes, &details.address);
+            containers.push(container_id(&device_nodes));
+            // A stored level outlives the connection; only a connected
+            // device's level is current.
+            let battery = details
+                .connected
+                .then(|| battery_level(&device_nodes))
+                .flatten();
             // Windows has no separate trust flag: a paired device is
             // allowed to reconnect.
             devices.push(Device {
@@ -294,8 +348,18 @@ fn paired_devices() -> Result<Vec<Device>, Error> {
                 paired: true,
                 trusted: true,
                 connected: details.connected,
+                can_connect: false,
+                battery,
             });
         }
+    }
+    let wanted = containers.iter().flatten().copied().collect::<HashSet<_>>();
+    let connectable = bluetooth_audio_controls(&wanted)
+        .into_iter()
+        .map(|(container, _)| container)
+        .collect::<HashSet<_>>();
+    for (device, container) in devices.iter_mut().zip(containers) {
+        device.can_connect = container.is_some_and(|container| connectable.contains(&container));
     }
     Ok(devices)
 }
@@ -350,6 +414,8 @@ fn nearby_devices(paired_ids: &HashSet<String>) -> Vec<Device> {
                 paired: false,
                 trusted: false,
                 connected: false,
+                can_connect: false,
+                battery: None,
             })
         })
         .collect()
@@ -358,12 +424,16 @@ fn nearby_devices(paired_ids: &HashSet<String>) -> Vec<Device> {
 fn windows_set_powered(powered: bool) -> Result<(), Error> {
     ensure_apartment();
     let operation = "change Bluetooth power";
-    let adapter = default_adapter()
+    let adapter = default_adapter().map_err(map_winrt(operation))?;
+    let radio = bluetooth_radio(adapter.as_ref())
         .map_err(map_winrt(operation))?
-        .ok_or_else(|| Error::new(operation, "no Bluetooth adapter found"))?;
-    let radio = adapter_radio(&adapter)
-        .map_err(map_winrt(operation))?
-        .ok_or_else(|| Error::new(operation, "Windows did not expose the Bluetooth radio"))?;
+        .ok_or_else(|| {
+            if adapter.is_some() {
+                Error::new(operation, "Windows did not expose the Bluetooth radio")
+            } else {
+                Error::new(operation, "no Bluetooth adapter found")
+            }
+        })?;
     let access = Radio::RequestAccessAsync()
         .and_then(|request| request.get())
         .map_err(map_winrt(operation))?;
@@ -681,17 +751,15 @@ fn subscribe(changed: &Notify, rebuild: &Notify) -> windows::core::Result<Subscr
             .push(structural_watcher(selector, changed, rebuild)?);
     }
 
-    if let Some(adapter) = default_adapter()? {
-        if let Some(radio) = adapter_radio(&adapter)? {
-            let notify = changed.clone();
-            let token = radio.StateChanged(&TypedEventHandler::<Radio, IInspectable>::new(
-                move |_, _| {
-                    notify();
-                    Ok(())
-                },
-            ))?;
-            subscriptions.radio = Some((radio, token));
-        }
+    if let Some(radio) = bluetooth_radio(default_adapter()?.as_ref())? {
+        let notify = changed.clone();
+        let token = radio.StateChanged(&TypedEventHandler::<Radio, IInspectable>::new(
+            move |_, _| {
+                notify();
+                Ok(())
+            },
+        ))?;
+        subscriptions.radio = Some((radio, token));
     }
 
     for (selector, transport) in &paired {
@@ -1001,7 +1069,273 @@ fn windows_remove_device(device_id: &str) -> Result<Snapshot, Error> {
     windows_snapshot()
 }
 
+// Connecting: Windows lets apps connect and disconnect only a device's
+// Bluetooth audio. Each audio endpoint of the device (matched by the
+// device's container id) leads through its topology to the Bluetooth
+// audio driver's kernel-streaming filter, which takes the one-shot
+// reconnect and disconnect properties (stereo and hands-free alike).
+
+fn windows_set_connected(device_id: &str, connected: bool) -> Result<(), Error> {
+    ensure_apartment();
+    let operation = if connected {
+        "connect Bluetooth device"
+    } else {
+        "disconnect Bluetooth device"
+    };
+    let details = device_details(&HSTRING::from(device_id), transport_from_id(device_id));
+    let nodes = bluetooth_instance_ids();
+    let container = container_id(&nodes_for_address(&nodes, &details.address))
+        .ok_or_else(|| Error::new(operation, "Windows has no record of this paired device"))?;
+    let controls = bluetooth_audio_controls(&HashSet::from([container]));
+    if controls.is_empty() {
+        return Err(Error::new(
+            operation,
+            "Windows lets apps connect only Bluetooth audio devices; it connects this one itself when it is used",
+        ));
+    }
+    let mut connected_any = false;
+    let mut failure = None;
+    for (_, control) in &controls {
+        match ks_one_shot(control, connected) {
+            Ok(()) => connected_any = true,
+            Err(error) => failure = Some(error),
+        }
+    }
+    match failure {
+        Some(error) if !connected_any => Err(winrt_error(operation, error)),
+        _ => Ok(()),
+    }
+}
+
+fn audio_enumerator() -> windows::core::Result<IMMDeviceEnumerator> {
+    // SAFETY: creates the system's audio endpoint enumerator; the calling
+    // thread has joined the multithreaded apartment.
+    unsafe { CoCreateInstance(&MMDeviceEnumerator, None::<&IUnknown>, CLSCTX_ALL) }
+}
+
+/// The Bluetooth audio filters behind the audio endpoints of the wanted
+/// containers, each with its endpoint's container. A disconnected
+/// headset keeps its endpoints as "unplugged", so those count too.
+fn bluetooth_audio_controls(wanted: &HashSet<GUID>) -> Vec<(GUID, IKsControl)> {
+    if wanted.is_empty() {
+        return Vec::new();
+    }
+    let Ok(enumerator) = audio_enumerator() else {
+        return Vec::new();
+    };
+    let states =
+        DEVICE_STATE(DEVICE_STATE_ACTIVE.0 | DEVICE_STATE_DISABLED.0 | DEVICE_STATE_UNPLUGGED.0);
+    // SAFETY: COM calls on a live enumerator and the collection it returns.
+    let endpoints = unsafe {
+        let Ok(collection) = enumerator.EnumAudioEndpoints(eAll, states) else {
+            return Vec::new();
+        };
+        let count = collection.GetCount().unwrap_or(0);
+        (0..count)
+            .filter_map(|index| collection.Item(index).ok())
+            .collect::<Vec<_>>()
+    };
+    endpoints
+        .iter()
+        .filter_map(|endpoint| {
+            let container = endpoint_container(endpoint).filter(|id| wanted.contains(id))?;
+            let control = endpoint_filter_control(&enumerator, endpoint).ok()?;
+            Some((container, control))
+        })
+        .collect()
+}
+
+fn endpoint_container(endpoint: &IMMDevice) -> Option<GUID> {
+    // SAFETY: COM calls on a live endpoint and its read-only property store;
+    // the PROPVARIANT is owned here and cleared when dropped.
+    unsafe {
+        let store = endpoint.OpenPropertyStore(STGM_READ).ok()?;
+        let value = store.GetValue(&PKEY_Device_ContainerId).ok()?;
+        PropVariantToGUID(&value).ok()
+    }
+}
+
+/// The kernel-streaming filter the endpoint's first connector leads to: on
+/// a Bluetooth endpoint, the Bluetooth audio driver's filter.
+fn endpoint_filter_control(
+    enumerator: &IMMDeviceEnumerator,
+    endpoint: &IMMDevice,
+) -> windows::core::Result<IKsControl> {
+    // SAFETY: COM calls on live objects; the device id string COM returns
+    // is used once and freed here.
+    unsafe {
+        let topology: IDeviceTopology = endpoint.Activate(CLSCTX_ALL, None)?;
+        let connector = topology.GetConnector(0)?;
+        let filter_id = connector.GetDeviceIdConnectedTo()?;
+        let filter = enumerator.GetDevice(filter_id);
+        CoTaskMemFree(Some(filter_id.0.cast_const().cast()));
+        filter?.Activate(CLSCTX_ALL, None)
+    }
+}
+
+/// Sends a Bluetooth audio one-shot property: a get with no data, as the
+/// driver defines it.
+fn ks_one_shot(control: &IKsControl, connect: bool) -> windows::core::Result<()> {
+    let id = if connect {
+        KSPROPERTY_ONESHOT_RECONNECT
+    } else {
+        KSPROPERTY_ONESHOT_DISCONNECT
+    };
+    let property = KSIDENTIFIER {
+        Anonymous: KSIDENTIFIER_0 {
+            Anonymous: KSIDENTIFIER_0_0 {
+                Set: KSPROPSETID_BtAudio,
+                Id: id.0 as u32,
+                Flags: KSPROPERTY_TYPE_GET,
+            },
+        },
+    };
+    let mut returned = 0u32;
+    // SAFETY: `property` and `returned` outlive the call; no data buffer
+    // is passed, and its length is zero.
+    unsafe {
+        control.KsProperty(
+            &property,
+            std::mem::size_of::<KSIDENTIFIER>() as u32,
+            std::ptr::null_mut(),
+            0,
+            &mut returned,
+        )
+    }
+}
+
+// Plug and Play: a remote device's nodes (`BTHENUM\DEV_<address>\...`, its
+// service nodes, and the `BTHLE`/`BTHLEDEVICE` ones for LE) all carry its
+// address in their instance ids, and share its container id.
+
+const BLUETOOTH_ENUMERATORS: [&str; 3] = ["BTHENUM", "BTHLE", "BTHLEDEVICE"];
+
+/// `DEVPKEY_Bluetooth_Battery`: the charge Windows' own Bluetooth page
+/// shows, one byte in percent. The windows crate does not define it.
+const DEVPKEY_BLUETOOTH_BATTERY: DEVPROPKEY = DEVPROPKEY {
+    fmtid: GUID::from_u128(0x104ea319_6ee2_4701_bd47_8ddbf425bbe5),
+    pid: 2,
+};
+
+/// Instance ids of every node, present or not, under the Bluetooth
+/// enumerators. Read once per snapshot.
+fn bluetooth_instance_ids() -> Vec<String> {
+    BLUETOOTH_ENUMERATORS
+        .into_iter()
+        .flat_map(instance_ids)
+        .collect()
+}
+
+fn instance_ids(enumerator: &str) -> Vec<String> {
+    let filter = HSTRING::from(enumerator);
+    // A node can arrive between the size and list calls; the list call
+    // then reports a small buffer and both are read again.
+    for _ in 0..3 {
+        let mut length = 0u32;
+        // SAFETY: `length` outlives the call; the filter is NUL-terminated.
+        let status = unsafe {
+            CM_Get_Device_ID_List_SizeW(&mut length, &filter, CM_GETIDLIST_FILTER_ENUMERATOR)
+        };
+        if status != CR_SUCCESS || length == 0 {
+            return Vec::new();
+        }
+        let mut buffer = vec![0u16; length as usize];
+        // SAFETY: the buffer and its length are passed together.
+        let status =
+            unsafe { CM_Get_Device_ID_ListW(&filter, &mut buffer, CM_GETIDLIST_FILTER_ENUMERATOR) };
+        if status == CR_BUFFER_SMALL {
+            continue;
+        }
+        if status != CR_SUCCESS {
+            return Vec::new();
+        }
+        return parse_multi_string(&buffer);
+    }
+    Vec::new()
+}
+
+/// The device's nodes, its own `DEV_` node first.
+fn nodes_for_address<'a>(ids: &'a [String], address: &str) -> Vec<&'a str> {
+    let Some(key) = address_key(address) else {
+        return Vec::new();
+    };
+    let mut nodes = ids
+        .iter()
+        .filter(|id| id.to_ascii_uppercase().contains(&key))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    nodes.sort_by_key(|id| !id.to_ascii_uppercase().contains("\\DEV_"));
+    nodes
+}
+
+fn locate(id: &str, flags: CM_LOCATE_DEVNODE_FLAGS) -> Option<u32> {
+    let mut node = 0u32;
+    // SAFETY: `node` outlives the call; the id is NUL-terminated.
+    let status = unsafe { CM_Locate_DevNodeW(&mut node, &HSTRING::from(id), flags) };
+    (status == CR_SUCCESS).then_some(node)
+}
+
+/// A fixed-size property of one node, when it has exactly that type.
+fn node_property<T: Copy + Default>(node: u32, key: &DEVPROPKEY, kind: DEVPROPTYPE) -> Option<T> {
+    let mut found = DEVPROPTYPE::default();
+    let mut value = T::default();
+    let mut size = std::mem::size_of::<T>() as u32;
+    // SAFETY: `value` is a plain `T` of `size` bytes and, like `found` and
+    // `size`, outlives the call.
+    let status = unsafe {
+        CM_Get_DevNode_PropertyW(
+            node,
+            key,
+            &mut found,
+            Some((&mut value as *mut T).cast::<u8>()),
+            &mut size,
+            0,
+        )
+    };
+    (status == CR_SUCCESS && found == kind && size as usize == std::mem::size_of::<T>())
+        .then_some(value)
+}
+
+/// The device's container id, from any of its nodes; a disconnected or
+/// switched-off device's nodes may not be present but still answer.
+fn container_id(nodes: &[&str]) -> Option<GUID> {
+    nodes.iter().find_map(|id| {
+        let node = locate(id, CM_LOCATE_DEVNODE_PHANTOM)?;
+        node_property::<GUID>(node, &DEVPKEY_Device_ContainerId, DEVPROP_TYPE_GUID)
+            .filter(|container| *container != GUID::zeroed())
+    })
+}
+
+/// The charge a present node reports (the device node for LE, a service
+/// node such as hands-free for classic devices).
+fn battery_level(nodes: &[&str]) -> Option<u8> {
+    nodes.iter().find_map(|id| {
+        let node = locate(id, CM_LOCATE_DEVNODE_NORMAL)?;
+        node_property::<u8>(node, &DEVPKEY_BLUETOOTH_BATTERY, DEVPROP_TYPE_BYTE)
+            .filter(|percent| *percent <= 100)
+    })
+}
+
 // Pure helpers.
+
+/// The strings of a NUL-separated, double-NUL-terminated list.
+fn parse_multi_string(buffer: &[u16]) -> Vec<String> {
+    buffer
+        .split(|unit| *unit == 0)
+        .take_while(|part| !part.is_empty())
+        .map(String::from_utf16_lossy)
+        .collect()
+}
+
+/// A formatted address (`AA:BB:CC:DD:EE:FF`) as the twelve upper-case hex
+/// digits Plug and Play instance ids use.
+fn address_key(address: &str) -> Option<String> {
+    let key = address.replace(':', "").to_ascii_uppercase();
+    let valid = key.len() == 12
+        && key.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && key != "000000000000";
+    valid.then_some(key)
+}
 
 /// Windows passes numeric-comparison codes as decimal text.
 fn parse_passkey(pin: &str) -> Option<u32> {
@@ -1135,6 +1469,40 @@ mod tests {
         assert_eq!(appearance_icon(0x03c2), Some("input-mouse"));
         assert_eq!(appearance_icon(0x0040), Some("phone"));
         assert_eq!(appearance_icon(0x0000), None);
+    }
+
+    #[test]
+    fn device_id_lists_split_at_nuls() {
+        let buffer = "BTHENUM\\DEV_5CF3708B2EA1\\8&1&0\0BTHLE\\DEV_C12233445566\\9&2\0\0"
+            .encode_utf16()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            parse_multi_string(&buffer),
+            [
+                "BTHENUM\\DEV_5CF3708B2EA1\\8&1&0",
+                "BTHLE\\DEV_C12233445566\\9&2"
+            ]
+        );
+        assert!(parse_multi_string(&[0, 0]).is_empty());
+    }
+
+    #[test]
+    fn nodes_match_by_address_with_the_device_node_first() {
+        let ids = [
+            "BTHENUM\\{0000111E-0000-1000-8000-00805F9B34FB}_VID&0001009E_PID&400F\\7&2&0&5CF3708B2EA1_C00000000",
+            "BTHENUM\\DEV_5CF3708B2EA1\\7&2&0&BLUETOOTHDEVICE_5CF3708B2EA1",
+            "BTHENUM\\DEV_001122334455\\7&2&0&BLUETOOTHDEVICE_001122334455",
+        ]
+        .map(String::from);
+        let nodes = nodes_for_address(&ids, "5C:F3:70:8B:2E:A1");
+        assert_eq!(nodes.len(), 2);
+        assert!(nodes[0].starts_with("BTHENUM\\DEV_5CF3708B2EA1"));
+        assert!(nodes_for_address(&ids, "").is_empty());
+        assert_eq!(address_key("00:00:00:00:00:00"), None);
+        assert_eq!(
+            address_key("5c:f3:70:8b:2e:a1").as_deref(),
+            Some("5CF3708B2EA1")
+        );
     }
 
     #[test]

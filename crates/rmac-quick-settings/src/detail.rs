@@ -323,10 +323,14 @@ pub fn bluetooth_panel(bluetooth: &rmac_bluetooth::Snapshot) -> Panel {
                 glyph: RowGlyph::Bluetooth,
                 on: device.connected,
                 locked: false,
-                action: Some(RowAction::Run(Command::SetBluetoothDeviceConnected {
-                    device: device.id.clone(),
-                    connected: !device.connected,
-                })),
+                // A device the platform cannot connect from an app (on
+                // Windows, anything but Bluetooth audio) is listed only.
+                action: device.can_connect.then(|| {
+                    RowAction::Run(Command::SetBluetoothDeviceConnected {
+                        device: device.id.clone(),
+                        connected: !device.connected,
+                    })
+                }),
             })
             .collect(),
     });
@@ -784,6 +788,8 @@ mod tests {
             paired,
             trusted: paired,
             connected,
+            can_connect: paired,
+            ..Default::default()
         }
     }
 

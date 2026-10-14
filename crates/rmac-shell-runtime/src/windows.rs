@@ -126,10 +126,26 @@ pub(crate) async fn watch(sender: Sender<rmac_shell_status_linux::Event>) -> Res
         watchers.push(changed);
     }
     start();
-    let sources = rmac_shell_status_linux::Sources {
+    // Bluetooth comes from WinRT (`rmac_bluetooth`), with its own change
+    // events (radio on/off, pairing, connections); reading it is heavier
+    // than the other sources, so each kind of change refreshes only its own.
+    let others = rmac_shell_status_linux::Sources {
         bluetooth: false,
         ..rmac_shell_status_linux::Sources::all()
     };
+    let bluetooth_only = rmac_shell_status_linux::Sources {
+        network: false,
+        bluetooth: true,
+        audio: false,
+        power: false,
+    };
+    let (bluetooth_changed, bluetooth_changes) = async_channel::bounded(1);
+    // Held here so the channel stays open if the watch ends (no adapter):
+    // a closed channel would wake this loop for nothing.
+    let _keep_open = bluetooth_changed.clone();
+    let bluetooth = futures_util::FutureExt::fuse(rmac_bluetooth::watch(bluetooth_changed));
+    futures_util::pin_mut!(bluetooth);
+    let mut sources = rmac_shell_status_linux::Sources::all();
     loop {
         if sender
             .send(rmac_shell_status_linux::Event::Refresh(sources))
@@ -139,11 +155,27 @@ pub(crate) async fn watch(sender: Sender<rmac_shell_status_linux::Event>) -> Res
             return Ok(());
         }
         let next = futures_util::FutureExt::fuse(changes.recv());
+        let next_bluetooth = futures_util::FutureExt::fuse(bluetooth_changes.recv());
         let closed = futures_util::FutureExt::fuse(sender.closed());
-        futures_util::pin_mut!(next, closed);
-        futures_util::select! {
-            next = next => if next.is_err() { return Ok(()) },
-            _ = closed => return Ok(()),
+        futures_util::pin_mut!(next, next_bluetooth, closed);
+        loop {
+            futures_util::select! {
+                next = next => {
+                    if next.is_err() {
+                        return Ok(());
+                    }
+                    sources = others;
+                    break;
+                },
+                _ = next_bluetooth => {
+                    sources = bluetooth_only;
+                    break;
+                },
+                // The Bluetooth watch ended (no adapter, or WinRT refused
+                // it); the other sources carry on.
+                _ = bluetooth => {},
+                _ = closed => return Ok(()),
+            }
         }
     }
 }
@@ -198,7 +230,7 @@ impl ServiceReader for WindowsServiceReader {
     }
 
     fn bluetooth(&self) -> Result<rmac_bluetooth::Snapshot, String> {
-        Ok(rmac_bluetooth::Snapshot::default())
+        rmac_bluetooth::snapshot().map_err(|error| error.to_string())
     }
 
     fn audio(&self) -> Result<rmac_audio::Snapshot, String> {

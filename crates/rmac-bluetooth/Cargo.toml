@@ -21,7 +21,9 @@ rmac-dbus.workspace = true
 zbus.workspace = true
 
 # WinRT Bluetooth (Windows.Devices.Bluetooth, Enumeration and Radios) for
-# the Windows backend in src/win.rs.
+# the Windows backend in src/win.rs, plus Core Audio and kernel streaming
+# for connecting audio devices, and Configuration Manager for battery
+# levels and container ids.
 [target.'cfg(windows)'.dependencies]
 futures-util.workspace = true
 windows = { workspace = true, features = [
@@ -29,5 +31,15 @@ windows = { workspace = true, features = [
     "Devices_Enumeration",
     "Devices_Radios",
     "Foundation",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Devices_Properties",
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_KernelStreaming",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
     "Win32_System_WinRT",
+    "Win32_UI_Shell_PropertiesSystem",
 ] }

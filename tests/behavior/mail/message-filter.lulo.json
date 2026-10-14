@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "mail/message-filter",
+  "observations": {
+    "before": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "unread": {"mail_messages": {"count": 3, "unread": 3, "flagged": 0}},
+    "unread_or_flagged": {"mail_messages": {"count": 5, "unread": 3, "flagged": 2}},
+    "all": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}}
+  }
+}

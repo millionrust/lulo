@@ -1,0 +1,13 @@
+{
+  "title": "Mail: View ▸ Expand All Conversations lists every message, Collapse All folds them again",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "collapsed", "facts": ["mail_messages"]},
+    {"menu_action": "mail::ExpandAllConversations"},
+    {"observe": "expanded", "facts": ["mail_messages"]},
+    {"menu_action": "mail::CollapseAllConversations"},
+    {"observe": "collapsed_again", "facts": ["mail_messages"]}
+  ]
+}

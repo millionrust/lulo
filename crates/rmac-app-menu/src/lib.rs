@@ -2216,53 +2216,243 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
     },
 ];
 
+// Mac Mail's menus (tests/robot/mac/Mail.json), minus what has no backend
+// here: tabs, Insert From iPhone, Quick Look, mailbox import/export, local
+// and smart mailboxes, Remind Me, Send Later, follow-ups, muting, flag
+// colours (the cache keeps one flag bit), message size, categories, rules,
+// Contacts and the predicted mailbox. The Move to ▸, Copy to ▸, Get New
+// Mail ▸ and Erase Deleted Items ▸ rows are rebuilt from the live mailbox
+// list (`crates/mail/src/view.rs`); the static child of each keeps the
+// submenu registered until then.
 const MAIL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
-        items: &[item!("Settings…", "mail::ShowSettings", "⌘,")],
+        items: &[
+            item!("Settings…", "mail::ShowSettings", "⌘,"),
+            item!("Accounts…", "mail::ShowAccounts", ""),
+        ],
     },
     MenuSpec {
         label: "File",
         items: &[
             item!("New Message", "mail::NewMessage", "⌘N"),
-            item!("Attach File…", "mail::AttachFile", "⇧⌘A"),
-            item!("Close Window", "mail::CloseWindow", "⌘W", separator),
+            item!("Open Messages", "mail::OpenMessage", "⌘O"),
+            item!("Close", "mail::CloseWindow", "⌘W", separator),
+            item!("Close All", "mail::CloseAll", "⌥⌘W"),
+            item!("Save", "mail::SaveDraft", "⌘S"),
+            item!("Save As…", "mail::SaveAs", "⇧⌘S"),
+            item!("Attach Files…", "mail::AttachFile", "⇧⌘A", separator),
+            item!("Save Attachments…", "mail::SaveAttachments", ""),
+            item!("Export as PDF…", "mail::ExportAsPdf", "", separator),
+            item!("Print…", "mail::PrintMessage", "⌘P", separator),
         ],
     },
     MenuSpec {
         label: "Edit",
         items: &[
             item!("Undo", "mail::Undo", "⌘Z"),
+            item!("Redo", "mail::Redo", "⇧⌘Z"),
+            item!("Cut", "input::Cut", "⌘X", separator),
+            item!("Copy", "input::Copy", "⌘C"),
+            item!("Paste", "input::Paste", "⌘V"),
+            item!("Delete", "mail::Delete", "⌘⌫"),
+            item!("Select All", "input::SelectAll", "⌘A"),
+            item!(
+                "Paste as Quotation",
+                "mail::PasteAsQuotation",
+                "⇧⌘V",
+                separator
+            ),
+            item!(
+                "Paste and Match Style",
+                "rmac_ui::PasteAndMatchStyle",
+                "⌥⇧⌘V"
+            ),
+            submenu!(
+                "Find",
+                "mail::FindMenu",
+                [
+                    item!("Mailbox Search", "mail::Search", "⌥⌘F"),
+                    item!("Jump to Top", "mail::JumpToTop", "⌃⌘T", separator),
+                ],
+                separator
+            ),
+            transformations_submenu!("mail"),
+            speech_submenu!("mail"),
             writing_tools_submenu!("writing_tools", separator),
         ],
     },
     MenuSpec {
         label: "View",
         items: &[
-            item!("Organize by Conversation", "mail::ToggleThreads", ""),
-            item!("Filter Unread", "mail::ToggleUnreadFilter", ""),
-            item!("Search", "mail::Search", "⌘F"),
+            submenu!(
+                "Sort By",
+                "mail::SortByMenu",
+                [
+                    item!("Attachments", "mail::SortByAttachments", ""),
+                    item!("Date", "mail::SortByDate", ""),
+                    item!("Flags", "mail::SortByFlags", ""),
+                    item!("From", "mail::SortByFrom", ""),
+                    item!("Subject", "mail::SortBySubject", ""),
+                    item!("To", "mail::SortByTo", ""),
+                    item!("Unread", "mail::SortByUnread", ""),
+                    item!(
+                        "Oldest Message on Top",
+                        "mail::SortAscending",
+                        "",
+                        separator
+                    ),
+                    item!("Newest Message on Top", "mail::SortDescending", ""),
+                ]
+            ),
+            submenu!(
+                "Filter",
+                "mail::FilterMenu",
+                [
+                    item!("Enable Message Filter", "mail::ToggleMessageFilter", "⌘L"),
+                    item!("Unread", "mail::FilterUnread", "", separator),
+                    item!("Flagged", "mail::FilterFlagged", ""),
+                    item!("To: Me", "mail::FilterToMe", "", separator),
+                    item!("Cc: Me", "mail::FilterCcMe", ""),
+                    item!(
+                        "Only Mail with Attachments",
+                        "mail::FilterAttachments",
+                        "",
+                        separator
+                    ),
+                ]
+            ),
+            item!(
+                "Use Column Layout",
+                "mail::ToggleColumnLayout",
+                "",
+                separator
+            ),
+            item!("Show Bottom Preview", "mail::ToggleBottomPreview", ""),
+            item!("Show Date and Time", "mail::ToggleDateAndTime", ""),
+            item!("Show To/Cc Label", "mail::ToggleToCcLabel", ""),
+            item!("Show Contact Photo", "mail::ToggleContactPhoto", ""),
+            item!(
+                "Highlight Conversations",
+                "mail::ToggleHighlightConversations",
+                "",
+                separator
+            ),
+            item!("Organise by Conversation", "mail::ToggleThreads", ""),
+            item!(
+                "Expand All Conversations",
+                "mail::ExpandAllConversations",
+                ""
+            ),
+            item!(
+                "Collapse All Conversations",
+                "mail::CollapseAllConversations",
+                ""
+            ),
+            item!("Cc Address Field", "mail::ToggleCcField", "", separator),
+            item!("Bcc Address Field", "mail::ToggleBccField", "⌥⌘B"),
+            submenu!(
+                "Message",
+                "mail::ViewMessageMenu",
+                [item!("Raw Source", "mail::ShowRawSource", "⌥⌘U")],
+                separator
+            ),
+            item!("Hide Sidebar", "mail::ToggleSidebar", "⌃⌘S", separator),
+            item!("Hide Toolbar", "mail::ToggleToolbar", "⌥⌘T"),
         ],
     },
     MenuSpec {
         label: "Mailbox",
         items: &[
-            item!("Archive", "mail::Archive", ""),
-            item!("Move to Bin", "mail::Delete", "⌫"),
-            item!("Move to Junk", "mail::Junk", "⇧⌘J"),
-            item!("Move To…", "mail::Move", "⌃⌘M"),
-            item!("Copy To…", "mail::Copy", ""),
+            item!("Get All New Mail", "mail::GetAllNewMail", "⇧⌘N"),
+            item!("Mark All Messages as Read", "mail::MarkAllAsRead", ""),
+            submenu!(
+                "Get New Mail",
+                "mail::GetNewMailMenu",
+                [item!("Account", "mail::GetNewMail0", "")],
+                separator
+            ),
+            submenu!(
+                "Erase Deleted Items",
+                "mail::EraseDeletedItemsMenu",
+                [
+                    item!("In All Accounts…", "mail::EraseDeletedItems", "⇧⌘⌫"),
+                    item!(
+                        "In All Accounts",
+                        "mail::EraseDeletedItemsNow",
+                        "⌥⇧⌘⌫",
+                        alternate
+                    ),
+                    item!("Account…", "mail::EraseDeletedItemsAccount0", "", separator),
+                ],
+                separator
+            ),
+            item!("Erase Junk Mail", "mail::EraseJunkMail", "⌥⌘J"),
+            submenu!(
+                "Go to Favourite Mailbox",
+                "mail::GoToFavouriteMenu",
+                [
+                    item!("All Inboxes", "mail::GoToFavourite0", "⌘1"),
+                    item!("Flagged", "mail::GoToFavourite1", "⌘2"),
+                    item!("Drafts", "mail::GoToFavourite2", "⌘3"),
+                    item!("Sent", "mail::GoToFavourite3", "⌘4"),
+                ],
+                separator
+            ),
+            submenu!(
+                "Move to Favourite Mailbox",
+                "mail::MoveToFavouriteMenu",
+                [
+                    item!("All Inboxes", "mail::MoveToFavourite0", "⌃⌘1"),
+                    item!("Drafts", "mail::MoveToFavourite2", "⌃⌘3"),
+                    item!("Sent", "mail::MoveToFavourite3", "⌃⌘4"),
+                ]
+            ),
+            item!("Go to Previous Mailbox", "mail::PreviousMailbox", "⌃⌘["),
+            // ⌃⌥⌘[ and ⌃⌥⌘] would share Windows' Alt+Shift chord with the
+            // rows beside them, so these two show no hint (Mail still binds
+            // them on Linux).
+            item!(
+                "Go to Previous Unread Mailbox",
+                "mail::PreviousUnreadMailbox",
+                ""
+            ),
+            item!("Go to Next Mailbox", "mail::NextMailbox", "⌃⌘]"),
+            item!("Go to Next Unread Mailbox", "mail::NextUnreadMailbox", ""),
         ],
     },
     MenuSpec {
         label: "Message",
         items: &[
-            item!("Send", "mail::SendMessage", "⇧⌘D"),
+            // "Send" while a compose window is in front (`compose_window.rs`).
+            item!("Send Again", "mail::SendMessage", "⇧⌘D"),
             item!("Reply", "mail::Reply", "⌘R", separator),
             item!("Reply All", "mail::ReplyAll", "⇧⌘R"),
-            item!("Forward", "mail::Forward", "⇧⌘F", separator),
-            item!("Mark as Read or Unread", "mail::ToggleRead", "⇧⌘U"),
-            item!("Flag", "mail::Flag", "⇧⌘L", separator),
+            item!("Forward", "mail::Forward", "⇧⌘F"),
+            item!("Forward as Attachment", "mail::ForwardAsAttachment", ""),
+            item!("Redirect", "mail::Redirect", "⇧⌘E"),
+            item!("Mark as Unread", "mail::ToggleRead", "⇧⌘U", separator),
+            item!("Move to Junk", "mail::Junk", "⇧⌘J"),
+            submenu!(
+                "Flag",
+                "mail::FlagMenu",
+                [
+                    item!("Clear Flag", "mail::ClearFlag", ""),
+                    item!("Toggle Flag", "mail::Flag", "⇧⌘L"),
+                ]
+            ),
+            item!("Archive", "mail::Archive", "⌃⌘A", separator),
+            submenu!(
+                "Move to",
+                "mail::MoveToMenu",
+                [item!("Mailbox", "mail::MoveToMailbox0", "")]
+            ),
+            submenu!(
+                "Copy to",
+                "mail::CopyToMenu",
+                [item!("Mailbox", "mail::CopyToMailbox0", "")]
+            ),
+            item!("Move Again", "mail::MoveAgain", ""),
         ],
     },
     // Mail composes plain text, so Format offers what plain text supports:
@@ -2292,7 +2482,7 @@ const MAIL_MENUS: &[MenuSpec] = &[
     },
     MenuSpec {
         label: WINDOW_MENU,
-        items: &[item!("Close", "rmac_ui::RequestClose", "⌥⌘W")],
+        items: &[item!("Message Viewer", "mail::ShowMessageViewer", "⌘0")],
     },
 ];
 
@@ -4437,6 +4627,59 @@ mod tests {
                 WINDOW_MENU
             ]
         );
+        // MROBOT-03: the Mac's rows, each with its own command and key.
+        let shortcuts = hints(&menus);
+        for (action, shortcut) in [
+            ("mail::Redo", "⇧⌘Z"),
+            ("input::Cut", "⌘X"),
+            ("mail::Delete", "⌘⌫"),
+            ("mail::PasteAsQuotation", "⇧⌘V"),
+            ("mail::Search", "⌥⌘F"),
+            ("mail::SaveAs", "⇧⌘S"),
+            ("mail::PrintMessage", "⌘P"),
+            ("mail::ToggleMessageFilter", "⌘L"),
+            ("mail::ToggleBccField", "⌥⌘B"),
+            ("mail::ShowRawSource", "⌥⌘U"),
+            ("mail::ToggleSidebar", "⌃⌘S"),
+            ("mail::GetAllNewMail", "⇧⌘N"),
+            ("mail::EraseJunkMail", "⌥⌘J"),
+            ("mail::GoToFavourite0", "⌘1"),
+            ("mail::MoveToFavourite0", "⌃⌘1"),
+            ("mail::PreviousMailbox", "⌃⌘["),
+            ("mail::Redirect", "⇧⌘E"),
+            ("mail::Archive", "⌃⌘A"),
+            ("mail::ShowMessageViewer", "⌘0"),
+        ] {
+            assert_eq!(
+                shortcuts.get(action).map(String::as_str),
+                Some(shortcut),
+                "{action}"
+            );
+        }
+        let mailbox = menus.iter().find(|menu| menu.label == "Mailbox").unwrap();
+        let erase = mailbox
+            .items
+            .iter()
+            .find(|item| item.label == "Erase Deleted Items")
+            .unwrap();
+        // "In All Accounts" is the ⌥ alternate of "In All Accounts…".
+        assert_eq!(
+            erase.children[0]
+                .alternate
+                .as_deref()
+                .map(|item| item.action.as_str()),
+            Some("mail::EraseDeletedItemsNow")
+        );
+        let message = menus.iter().find(|menu| menu.label == "Message").unwrap();
+        for submenu in ["Flag", "Move to", "Copy to"] {
+            assert!(
+                message
+                    .items
+                    .iter()
+                    .any(|item| item.label == submenu && item.is_submenu()),
+                "Message ▸ {submenu}"
+            );
+        }
     }
 
     #[test]

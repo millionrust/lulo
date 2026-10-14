@@ -68,8 +68,9 @@ Two small additions to the vendored core (`shell/compat/gpui/src/rmac_touch.rs`)
 
 Marked `touch_drag`: rmac-ui's `Slider` (System Settings and every app), the
 Control Centre Display and Sound sliders, Dock tiles and the Dock separator.
-Items that use `on_drag` (Files rows and sidebar, Launchpad icons, Clock's list) drag after the short
-rest.
+Items that use `on_drag` (Files rows and sidebar, Launchpad icons, Clock's
+list) drag after the short rest. `RMAC_TOUCH_TRACE=1` prints each contact's
+life (down, what it became, how it ended) to stderr, for a real touchscreen.
 
 ### Touch targets grow only while touch is in use
 
@@ -105,7 +106,9 @@ have no virtual touch protocol; `/dev/uinput` is root's). Layer-shell surfaces
 cannot run under Mutter, but they share the backend code path the probe
 exercises. It needs gnome-shell, pipewire and wireplumber, so it runs on the
 reference laptop, not in CI; CI runs the recogniser's unit tests
-(`cargo test -p gpui_linux --lib touch` in shell/).
+(`cargo test -p gpui_linux --lib touch` in shell/). On the laptop it passes
+17/17. GNOME Shell's start-up overview takes every touch, so the runner closes
+it first; niri has no such overview.
 
 ## Not done
 

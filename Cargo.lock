@@ -7882,6 +7882,7 @@ dependencies = [
  "rmac-focus-linux",
  "rmac-focus-settings",
  "rmac-gtk-settings",
+ "rmac-hardware",
  "rmac-input",
  "rmac-intelligence",
  "rmac-keyboard",

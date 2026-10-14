@@ -1725,10 +1725,17 @@ impl InputState {
             self.move_to(offset, None, cx);
         }
 
-        // A custom builder fully replaces the built-in context menu.
-        let menu = if let Some(builder) = self.context_menu_builder.clone() {
-            builder(NativeMenu::new(), window, cx)
-        } else {
+        // A custom builder fully replaces the built-in context menu. It runs
+        // after this update returns: builders read the input (its selection),
+        // and reading an entity while it is being updated panics (MROBOT-01).
+        if let Some(builder) = self.context_menu_builder.clone() {
+            let position = event.position;
+            window.defer(cx, move |window, cx| {
+                builder(NativeMenu::new(), window, cx).show(position, window, cx);
+            });
+            return;
+        }
+        let menu = {
             let is_code_editor = self.mode.is_code_editor();
             if is_code_editor {
                 self.handle_hover_definition(offset, window, cx);
@@ -3425,6 +3432,41 @@ ORDER BY id
                 );
             });
         });
+    }
+
+    /// MROBOT-01: a context-menu builder reads the input it belongs to (its
+    /// selection). Right-clicking used to call the builder inside the input's
+    /// own update, which panicked with "already being updated".
+    #[gpui::test]
+    fn test_context_menu_builder_reads_its_input(cx: &mut TestAppContext) {
+        let input_view = InputView::build(cx, |state| state);
+        let mut cx = VisualTestContext::from_window(input_view.window_handle.into(), cx);
+        let input = input_view.input;
+        let seen: Rc<std::cell::Cell<Option<bool>>> = Rc::default();
+        cx.update(|window, cx| {
+            let field = input.clone();
+            let seen = seen.clone();
+            input.update(cx, |state, cx| {
+                state.set_value("Hello", window, cx);
+                state.context_menu_builder = Some(Rc::new(move |menu, _, cx| {
+                    seen.set(Some(field.read(cx).selected_range().is_empty()));
+                    // Empty: nothing to pop up in a test window.
+                    menu
+                }));
+            });
+        });
+        cx.update(|window, cx| {
+            let event = MouseDownEvent {
+                button: MouseButton::Right,
+                position: gpui::point(px(10.), px(10.)),
+                ..Default::default()
+            };
+            input.update(cx, |state, cx| {
+                state.handle_right_click_menu(&event, 0, window, cx);
+            });
+        });
+        cx.run_until_parked();
+        assert_eq!(seen.get(), Some(true), "the builder ran and read the input");
     }
 
     #[gpui::test]

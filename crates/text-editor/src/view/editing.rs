@@ -621,30 +621,17 @@ impl EditorView {
             },
             cx,
         );
-        // Format ▸ Font's styles and Format ▸ Text belong to rich text; the
-        // Mac greys them out in a plain document.
+        // Format ▸ Text's paragraph rows (alignment, ruler, spacing, lists)
+        // belong to rich text; the Mac greys them out in a plain document.
+        // Format ▸ Font, Writing Direction and Allow Hyphenation stay
+        // enabled there (MROBOT-12); using one makes the document rich
+        // first (`make_rich_for_format`).
         let text_format_enabled = self.rich_text && can_insert;
         for action in [
-            "text_editor::ShowFonts",
-            "text_editor::ToggleBold",
-            "text_editor::ToggleItalic",
-            "text_editor::ToggleUnderline",
-            "text_editor::ShowColours",
-            "text_editor::CopyStyle",
-            "text_editor::HighlightNone",
-            "text_editor::HighlightAccent",
-            "text_editor::HighlightPurple",
-            "text_editor::HighlightPink",
-            "text_editor::HighlightOrange",
-            "text_editor::HighlightMint",
-            "text_editor::HighlightBlue",
             "text_editor::AlignLeft",
             "text_editor::AlignCentre",
             "text_editor::AlignJustify",
             "text_editor::AlignRight",
-            "text_editor::WritingDirectionDefault",
-            "text_editor::WritingDirectionLeftToRight",
-            "text_editor::WritingDirectionRightToLeft",
             "text_editor::ShowRuler",
             "text_editor::CopyRuler",
             "text_editor::PasteRuler",
@@ -653,11 +640,9 @@ impl EditorView {
         ] {
             rmac_ui::set_menu_enabled(action, text_format_enabled, cx);
         }
-        rmac_ui::set_menu_enabled(
-            "text_editor::PasteStyle",
-            text_format_enabled && Self::style_copied(),
-            cx,
-        );
+        for &action in format_extras::PLAIN_FORMAT_ACTIONS {
+            rmac_ui::set_menu_enabled(action, can_insert, cx);
+        }
         self.sync_format_extras_menu(text_format_enabled, cx);
         let (style, paragraph, highlight) = if self.rich_text {
             let editor = self.rich.read(cx);

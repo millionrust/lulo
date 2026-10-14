@@ -891,6 +891,57 @@ impl Render for EditorView {
             }))
             .child(self.writing_tools.clone())
             .when_some(self.render_rich_menu(cx), |d, menu| d.child(menu));
+        // MROBOT-12: Format ▸ Font, Writing Direction and Allow Hyphenation
+        // stay enabled in a plain document, as in TextEdit. Before the row's
+        // own handler runs (capture phase), the document is made rich with
+        // its selection kept, so the attribute applies to that text.
+        macro_rules! make_rich_first {
+            ($element:expr, $($action:ty),+ $(,)?) => {
+                $element$(.capture_action(cx.listener(|this, _: &$action, window, cx| {
+                    this.make_rich_for_format(window, cx)
+                })))+
+            };
+        }
+        let root = make_rich_first!(
+            root,
+            ShowFonts,
+            ToggleBold,
+            ToggleItalic,
+            ToggleUnderline,
+            crate::ToggleOutline,
+            HighlightNone,
+            HighlightAccent,
+            HighlightPurple,
+            HighlightPink,
+            HighlightOrange,
+            HighlightMint,
+            HighlightBlue,
+            crate::ShowStyles,
+            crate::KernDefault,
+            crate::KernNone,
+            crate::KernTighten,
+            crate::KernLoosen,
+            crate::LigaturesDefault,
+            crate::LigaturesNone,
+            crate::LigaturesAll,
+            crate::BaselineDefault,
+            crate::BaselineSuperscript,
+            crate::BaselineSubscript,
+            crate::BaselineRaise,
+            crate::BaselineLower,
+            crate::ToggleTraditionalForm,
+            ShowColours,
+            WritingDirectionDefault,
+            WritingDirectionLeftToRight,
+            WritingDirectionRightToLeft,
+            crate::ToggleHyphenation,
+        )
+        .capture_action(cx.listener(|this, _: &PasteStyle, window, cx| {
+            // Nothing copied: nothing to apply, so the document stays plain.
+            if Self::style_copied() {
+                this.make_rich_for_format(window, cx)
+            }
+        }));
         let view = cx.entity().downgrade();
         rmac_writing_tools::on_actions(root, &self.writing_tools, move |_, cx| {
             let view = view.upgrade()?;

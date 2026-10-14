@@ -6,10 +6,24 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "robot" / "mac"))
+import importlib.util
 
-import common as cm  # noqa: E402
-import diff  # noqa: E402
+ROBOT = Path(__file__).resolve().parent / "robot" / "mac"
+sys.path.insert(0, str(ROBOT))
+
+
+def _load(name: str, file: str):
+    # Loaded by path under a unique name: scripts/inventory has its own
+    # `diff.py`, and the whole suite runs in one interpreter.
+    spec = importlib.util.spec_from_file_location(name, ROBOT / file)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+cm = _load("mac_robot_common", "common.py")
+diff = _load("mac_robot_diff", "diff.py")
 
 
 class ActivationTests(unittest.TestCase):

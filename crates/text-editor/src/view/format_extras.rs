@@ -116,9 +116,31 @@ pub(super) fn normalize_link(typed: &str) -> Option<String> {
     Some(typed.to_owned())
 }
 
-/// The character-attribute rows Format ▸ Font gains here, for enabling and
-/// checkmarks.
-pub(super) const CHARACTER_ACTIONS: [&str; 14] = [
+/// Format rows TextEdit keeps enabled in a plain document (MROBOT-12, the
+/// Mac robot's plain-text Format menu): all of Format ▸ Font, Format ▸ Text
+/// ▸ Writing Direction and Format ▸ Allow Hyphenation. Using one makes the
+/// document rich first (`EditorView::make_rich_for_format`); Copy Style
+/// copies the plain font as it is.
+pub(super) const PLAIN_FORMAT_ACTIONS: &[&str] = &[
+    "text_editor::ShowFonts",
+    "text_editor::ToggleBold",
+    "text_editor::ToggleItalic",
+    "text_editor::ToggleUnderline",
+    "text_editor::HighlightNone",
+    "text_editor::HighlightAccent",
+    "text_editor::HighlightPurple",
+    "text_editor::HighlightPink",
+    "text_editor::HighlightOrange",
+    "text_editor::HighlightMint",
+    "text_editor::HighlightBlue",
+    "text_editor::ShowStyles",
+    "text_editor::ShowColours",
+    "text_editor::CopyStyle",
+    "text_editor::PasteStyle",
+    "text_editor::WritingDirectionDefault",
+    "text_editor::WritingDirectionLeftToRight",
+    "text_editor::WritingDirectionRightToLeft",
+    "text_editor::ToggleHyphenation",
     "text_editor::ToggleOutline",
     "text_editor::KernDefault",
     "text_editor::KernNone",
@@ -344,18 +366,11 @@ impl EditorView {
         cx.notify();
     }
 
-    /// Enable and check Format ▸ Font's attribute rows, Format ▸ Allow
-    /// Hyphenation, File ▸ Show Properties and Edit ▸ Link….
+    /// Check Format ▸ Font's attribute rows and label Format ▸ Allow
+    /// Hyphenation (`PLAIN_FORMAT_ACTIONS` enables them), and enable File ▸
+    /// Show Properties and Edit ▸ Link….
     pub(super) fn sync_format_extras_menu(&self, text_format_enabled: bool, cx: &mut App) {
-        for action in CHARACTER_ACTIONS {
-            rmac_ui::set_menu_enabled(action, text_format_enabled, cx);
-        }
-        for action in [
-            "text_editor::ToggleHyphenation",
-            "text_editor::ShowProperties",
-            "text_editor::EditLink",
-            "text_editor::ShowStyles",
-        ] {
+        for action in ["text_editor::ShowProperties", "text_editor::EditLink"] {
             rmac_ui::set_menu_enabled(action, text_format_enabled, cx);
         }
         let style = if self.rich_text {

@@ -804,6 +804,23 @@ fn the_assist_row_leads_only_its_own_query_and_confident_matches_skip_it() {
 }
 
 #[test]
+fn a_settings_pane_found_by_keyword_is_kept() {
+    // ROBOT-12: "dark mode" is Appearance's keyword. The provider matched
+    // it, but neither "Appearance" nor its subtitle contains the query, so
+    // the engine used to drop the row and Spotlight showed only Search in
+    // Files.
+    let appearance = result("settings", "appearance", Category::Settings, "Appearance");
+    let score = crate::engine::score("dark mode", &appearance, 0);
+    assert!(score.is_some());
+    // A title match still ranks above a keyword-only match.
+    let display = result("settings", "displays", Category::Settings, "Dark Mode");
+    assert!(crate::engine::score("dark mode", &display, 0) > score);
+    // Rows no provider matched by keyword still need the text.
+    let file = result("files", "notes.txt", Category::Files, "notes.txt");
+    assert!(crate::engine::score("dark mode", &file, 0).is_none());
+}
+
+#[test]
 fn scattered_letters_match_titles_but_not_long_secondary_text() {
     // Live robot, 2026-10-13: "notes" also listed Disks, Language Support
     // and Passwords and Keys, whose keyword text holds n…o…t…e…s.

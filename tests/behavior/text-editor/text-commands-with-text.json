@@ -1,0 +1,11 @@
+{
+  "title": "Text Editor: Edit ▸ Transformations and Check Document Now stay enabled while the document has focus and text is selected",
+  "app": "text-editor",
+  "lulo_only": true,
+  "launch": {},
+  "steps": [
+    {"type": "robot"},
+    {"key": "cmd-a", "settle": 0.8},
+    {"observe": "editing", "facts": ["menu_items"]}
+  ]
+}

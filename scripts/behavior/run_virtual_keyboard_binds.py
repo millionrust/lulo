@@ -47,8 +47,10 @@ import wlinput  # noqa: E402
 CLIENT_APP_ID = "org.example.KeyLog"
 
 CONFIG = """
-input {{ keyboard {{ xkb {{ layout "us"; }} }} }}
-hotkey-overlay {{ skip-at-startup; }}
+hotkey-overlay {{
+    skip-at-startup
+}}
+
 binds {{
     Ctrl+F2 {{ spawn "touch" "{marker_f2}"; }}
     Mod+Shift+T {{ spawn "touch" "{marker_t}"; }}
@@ -144,6 +146,10 @@ class Run:
         self.marker_t = self.work / "mod-shift-t.marker"
         config = self.out / "niri.kdl"
         config.write_text(CONFIG.format(marker_f2=self.marker_f2, marker_t=self.marker_t))
+        validate = subprocess.run([self.args.niri, "validate", "-c", str(config)], env=self.env,
+                                  capture_output=True, text=True)
+        self.check("niri accepts the test config", validate.returncode == 0,
+                   "" if validate.returncode == 0 else validate.stderr[-300:])
         before = {p.name for p in self.runtime.glob("wayland-*")}
         self.spawn([self.args.niri, "-c", str(config)], "niri",
                    {"WAYLAND_DISPLAY": sway_display, "LIBGL_ALWAYS_SOFTWARE": "1"})
@@ -161,6 +167,23 @@ class Run:
                    "client", {"GDK_BACKEND": "wayland", "GSK_RENDERER": "cairo"})
         focused = self.wait_for(lambda: (self.niri("focused-window") or {}).get("app_id") == CLIENT_APP_ID, 30)
         self.check("the key-log window has keyboard focus", focused)
+        # Baseline: the bind works from a real keyboard. Keys into the parent
+        # Sway reach niri as ordinary keyboard input.
+        sway_keys = wlinput.Wayland({**self.env, "WAYLAND_DISPLAY": sway_display,
+                                     "RMAC_BEHAVIOR_NESTED": "1"})
+        # Sway gives niri's window keyboard focus a moment after it maps;
+        # a press before that is lost, so try a few times.
+        baseline = None
+        for _attempt in range(3):
+            sway_keys.key("ctrl-f2")
+            baseline = self.wait_for(self.marker_f2.exists, 3)
+            if baseline:
+                break
+        sway_keys.close()
+        self.check("Ctrl+F2 from a real keyboard runs its niri bind (baseline)", baseline)
+        if self.marker_f2.exists():
+            self.marker_f2.unlink()
+        self.key_log.write_text("")
         # Straight into niri: this is the on-screen keyboard's path.
         self.keys = wlinput.Wayland({**self.env, "RMAC_BEHAVIOR_NESTED": "1"})
 

@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "settings/pane-text-keyboard",
+  "platform": "Lulo local contract",
+  "observations": {
+    "pane": {
+      "pane_text": {
+        "labelled": 20,
+        "labels": [
+          "Key repeat rate",
+          "Delay until repeat",
+          "Text Input",
+          "Input Sources"
+        ],
+        "controls": [
+          "Use Num Lock on startup",
+          "Key repeat rate"
+        ]
+      }
+    }
+  }
+}

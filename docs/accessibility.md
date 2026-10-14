@@ -117,6 +117,33 @@ assistive technology is listening.
   sidebar is a list box of clickable places. Search and the rename field
   are named entries with text and caret.
 
+## Drawn text and row controls
+
+The vendored GPUI (`shell/compat/gpui/src/window/a11y.rs`) publishes every
+plain text element it draws (`SharedString`, `&str`, `StyledText`) as a
+static-text node under the nearest accessible element, the way AppKit
+exposes each label as `AXStaticText`. A settings row's title, a pane's
+section heading, a toolbar caption and a column header are therefore
+readable without each call site building a node by hand. Text inside a node
+that already presents it (a named button or menu item, a label, a text
+field) is not repeated; an unnamed button takes its text as its name.
+
+When the tree is finished, each unnamed switch, checkbox, slider or pop-up
+takes the title of its row as its name: the first static text after the
+previous control on the same line (a slider's title may be on the line
+above), else its caption on the right, else the enclosing named group's
+name. A pop-up named only after its value keeps the value as `value` and
+takes the row title as its name, as `AXTitleUIElement` does on macOS.
+Controls built with `rmac-ui` and gpui-component report `disabled` through
+`aria_disabled`, and every window's root node carries the window size so
+layer-shell surfaces (Control Centre, Spotlight) have AT-SPI extents.
+
+This runs only on frames GPUI already draws (they are drawn only on change)
+and only while an assistive technology has activated the tree; with nobody
+listening nothing is built. `tests/behavior/settings/pane-text-*` check, in
+CI, a minimum number of named rows and the row and control names of six
+Settings panes.
+
 What AT-SPI can't do here, because `accesskit_unix` 0.22.1 doesn't
 implement it: insert or replace text (`EditableText`), and expose any
 action other than `click`. A screen-reader user still types, opens (⌘↓ or

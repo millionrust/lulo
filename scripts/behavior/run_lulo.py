@@ -1099,6 +1099,35 @@ class LuloRun:
                     controls[name(node)] = has_state(node, pyatspi.STATE_CHECKED)
         return {"checked": controls}
 
+    PANE_TEXT_ROLES = {"label", "static", "heading", "caption"}
+    PANE_CONTROL_ROLES = {"check box", "toggle button", "switch", "slider", "combo box", "push button", "button",
+                          "radio button", "spin button", "entry", "text"}
+
+    def fact_pane_text(self) -> dict[str, Any]:
+        """Named static text and named controls in the active window, minus
+        the sidebar's rows: what a screen reader can read of a Settings pane
+        (MROBOT-10). `labelled` counts distinct names, `controls` lists the
+        named toggles, sliders and pop-ups, and `unnamed` counts controls
+        with no name at all."""
+        frame = self.active_frame()
+        labels: set[str] = set()
+        controls: set[str] = set()
+        unnamed = 0
+        if frame is not None:
+            for node in descendants(frame, limit=6000):
+                r = role(node)
+                if r not in self.PANE_TEXT_ROLES and r not in self.PANE_CONTROL_ROLES:
+                    continue
+                label = name(node).strip()
+                if label:
+                    labels.add(label)
+                    if r in {"check box", "toggle button", "switch", "slider", "combo box", "spin button"}:
+                        controls.add(label)
+                elif r in self.PANE_CONTROL_ROLES - {"entry", "text"}:
+                    unnamed += 1
+        return {"labelled": len(labels), "labels": sorted(labels), "controls": sorted(controls),
+                "unnamed": unnamed}
+
     def fact_tabs(self) -> dict[str, Any]:
         frame = self.active_frame()
         pyatspi = atspi()
@@ -1229,7 +1258,7 @@ class LuloRun:
             except Exception:
                 continue
         return {"badge": any("RPN" in (text or "") for text in texts),
-                "enter_key": "enter" in names, "equals_key": "equals" in names}
+                "enter_key": "enter" in names, "equals_key": "Equals" in names}
 
     def fact_clock_timers(self) -> dict[str, Any]:
         path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac/clock.json"

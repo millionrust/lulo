@@ -37,6 +37,7 @@ fn capsule_button(
         .id(id)
         .role(Role::Button)
         .aria_label(tooltip)
+        .aria_disabled(!enabled)
         .w(px(CAPSULE_BUTTON))
         .h(px(CAPSULE_BUTTON))
         .flex_none()
@@ -146,16 +147,42 @@ impl FinderView {
                 .disabled(!can_go_forward),
             );
 
+        // Finder's tooltips say "Icon", "List"…; its accessible names, which
+        // VoiceOver reads, are "icon view", "list view" and so on.
         let modes = [
-            ("v-icon", "icons/layout-grid.svg", "Icon", ViewMode::Icon),
-            ("v-list", "icons/list.svg", "List", ViewMode::List),
-            ("v-col", "icons/columns-3.svg", "Columns", ViewMode::Column),
-            ("v-gal", "icons/gallery.svg", "Gallery", ViewMode::Gallery),
+            (
+                "v-icon",
+                "icons/layout-grid.svg",
+                "Icon",
+                ViewMode::Icon,
+                "icon view",
+            ),
+            (
+                "v-list",
+                "icons/list.svg",
+                "List",
+                ViewMode::List,
+                "list view",
+            ),
+            (
+                "v-col",
+                "icons/columns-3.svg",
+                "Columns",
+                ViewMode::Column,
+                "column view",
+            ),
+            (
+                "v-gal",
+                "icons/gallery.svg",
+                "Gallery",
+                ViewMode::Gallery,
+                "gallery view",
+            ),
         ];
         let mut view_control = capsule("view-control")
             .role(Role::RadioGroup)
             .aria_label("View");
-        for (index, (id, glyph, tooltip, mode)) in modes.into_iter().enumerate() {
+        for (index, (id, glyph, tooltip, mode, accessible_name)) in modes.into_iter().enumerate() {
             if index > 0 {
                 let previous = modes[index - 1].3;
                 view_control =
@@ -166,6 +193,7 @@ impl FinderView {
             view_control = view_control.child(rmac_ui::KeyboardAction::new(
                 SharedString::from(format!("{id}-keyboard")),
                 capsule_button(id, glyph, TOOLBAR_GLYPH, tooltip, current, true)
+                    .aria_label(accessible_name)
                     .role(Role::RadioButton)
                     .aria_toggled(if current {
                         Toggled::True

@@ -235,6 +235,16 @@ impl A11y {
         self.nodes.begin_frame(self.window_title.as_ref());
     }
 
+    /// rmac: give the root (window) node the window's size, in physical
+    /// pixels. Wayland has no window position to report, so without node
+    /// bounds a layer-shell surface (Control Centre, Spotlight) had no
+    /// AT-SPI extents at all and a screen reader could not place it.
+    pub(crate) fn set_root_bounds(&mut self, bounds: accesskit::Rect) {
+        if let Some(root) = self.nodes.nodes_stack.first_mut() {
+            root.set_bounds(bounds);
+        }
+    }
+
     /// Finalize the tree and produce a [`TreeUpdate`] for the platform adapter.
     pub(crate) fn end_frame(&mut self) -> TreeUpdate {
         self.nodes.finalize()
@@ -297,6 +307,10 @@ pub(crate) struct A11yNodeBuilder {
     /// pattern, which allows a focused container to act as if a descendant is
     /// focused.
     active_descendant: Option<NodeId>,
+    /// rmac: how many times each (parent, text) pair has been published this
+    /// frame, so repeated identical text under one parent gets distinct,
+    /// stable node ids. See [`Self::push_text_leaf`].
+    text_occurrences: FxHashMap<u64, u32>,
 }
 
 impl A11yNodeBuilder {
@@ -308,7 +322,63 @@ impl A11yNodeBuilder {
             seen_ids: FxHashSet::default(),
             focus: None,
             active_descendant: None,
+            text_occurrences: FxHashMap::default(),
         }
+    }
+
+    /// rmac: publish a plain text element (a `SharedString`, `&str` or
+    /// `StyledText` child) as a static-text node, the way AppKit exposes every
+    /// drawn `NSTextField` label as `AXStaticText`. Without this a settings
+    /// row's title, a toolbar caption or a column header was invisible to
+    /// assistive technology unless its author built a labelled node by hand.
+    ///
+    /// The node becomes a child of the nearest enclosing accessible element.
+    /// Its id hashes that parent, the text and the occurrence count, so it is
+    /// stable across frames while the text stays. Text inside a node that
+    /// already speaks for it (a label, a text field, a named button or menu
+    /// item) is not repeated; an unnamed button takes the text as its name.
+    pub(crate) fn push_text_leaf(&mut self, text: &str, bounds: accesskit::Rect) {
+        let text = text.trim();
+        if text.is_empty() || bounds.width() <= 0.0 || bounds.height() <= 0.0 {
+            return;
+        }
+        let Some(&parent_id) = self.ids_stack.last() else {
+            return;
+        };
+        let Some(parent) = self.nodes_stack.last_mut() else {
+            return;
+        };
+        match text_placement(parent, text) {
+            TextPlacement::Skip => return,
+            TextPlacement::NameParent => {
+                let name = match parent.label() {
+                    Some(existing) => format!("{existing} {text}"),
+                    None => text.to_owned(),
+                };
+                parent.set_label(name);
+                return;
+            }
+            TextPlacement::Child => {}
+        }
+        let mut hasher = std::hash::DefaultHasher::default();
+        parent_id.0.hash(&mut hasher);
+        text.hash(&mut hasher);
+        let key = hasher.finish();
+        let occurrence = self.text_occurrences.entry(key).or_insert(0);
+        let index = *occurrence;
+        *occurrence += 1;
+        let mut hasher = std::hash::DefaultHasher::default();
+        TEXT_NODE_SALT.hash(&mut hasher);
+        key.hash(&mut hasher);
+        index.hash(&mut hasher);
+        let id = NodeId(hasher.finish());
+        if id == ROOT_NODE_ID || self.seen_ids.contains(&id) {
+            return;
+        }
+        let mut node = accesskit::Node::new(accesskit::Role::Label);
+        node.set_value(text.to_owned());
+        node.set_bounds(bounds);
+        self.push_leaf(id, node);
     }
 
     #[must_use]
@@ -389,6 +459,7 @@ impl A11yNodeBuilder {
         self.nodes_stack.push(root_node);
         self.focus = None;
         self.active_descendant = None;
+        self.text_occurrences.clear();
     }
 
     /// Returns whether a node with the given ID has been pushed in this frame.
@@ -477,7 +548,8 @@ impl A11yNodeBuilder {
             _ => self.focus.unwrap_or(ROOT_NODE_ID),
         };
 
-        let nodes = std::mem::take(&mut self.all_nodes);
+        let mut nodes = std::mem::take(&mut self.all_nodes);
+        label_controls_from_row_text(&mut nodes);
         let update = TreeUpdate {
             nodes,
             tree: Some(accesskit::Tree::new(ROOT_NODE_ID)),
@@ -532,6 +604,369 @@ impl A11yNodeBuilder {
         }
 
         update
+    }
+}
+
+/// Salt for static-text node ids, keeping them apart from element ids.
+const TEXT_NODE_SALT: u64 = 0x726d_6163_7465_7874;
+
+/// Where a plain text element's string goes in the tree, given the
+/// accessible node it is drawn inside.
+#[derive(Debug, PartialEq, Eq)]
+enum TextPlacement {
+    /// The parent already presents this text (or presents text itself).
+    Skip,
+    /// The parent is an unnamed control: the text is its name, the way an
+    /// `NSButton`'s title is its `AXTitle`.
+    NameParent,
+    /// A static-text child of the parent.
+    Child,
+}
+
+fn text_placement(parent: &accesskit::Node, text: &str) -> TextPlacement {
+    use accesskit::Role;
+    let role = parent.role();
+    if matches!(
+        role,
+        Role::Label
+            | Role::TextRun
+            | Role::Terminal
+            | Role::Document
+            | Role::TextInput
+            | Role::MultilineTextInput
+            | Role::SearchInput
+            | Role::PasswordInput
+            | Role::NumberInput
+            | Role::EmailInput
+            | Role::UrlInput
+            | Role::PhoneNumberInput
+            | Role::DateInput
+            | Role::DateTimeInput
+            | Role::TimeInput
+            | Role::Image
+    ) {
+        return TextPlacement::Skip;
+    }
+    if parent.label().is_some_and(|label| label.trim() == text)
+        || parent.value().is_some_and(|value| value.trim() == text)
+    {
+        return TextPlacement::Skip;
+    }
+    let names_itself = matches!(
+        role,
+        Role::Button
+            | Role::DefaultButton
+            | Role::Link
+            | Role::Tab
+            | Role::MenuItem
+            | Role::MenuItemCheckBox
+            | Role::MenuItemRadio
+            | Role::CheckBox
+            | Role::Switch
+            | Role::RadioButton
+            | Role::ComboBox
+            | Role::ListBoxOption
+    );
+    if !names_itself {
+        TextPlacement::Child
+    } else if parent.label().is_none()
+        && parent.value().is_none()
+        && text.chars().any(char::is_alphanumeric)
+    {
+        // A glyph (✓, ×, ⌄) is not a name; the row's title names it.
+        TextPlacement::NameParent
+    } else {
+        // A named control's other text (a shortcut, a count, a caption
+        // inside it) is part of the control, not a separate label.
+        TextPlacement::Skip
+    }
+}
+
+/// Controls a settings row's title names, as `AXTitleUIElement` does on
+/// macOS.
+fn takes_row_label(role: accesskit::Role) -> bool {
+    use accesskit::Role;
+    matches!(
+        role,
+        Role::Switch
+            | Role::CheckBox
+            | Role::Slider
+            | Role::SpinButton
+            | Role::ComboBox
+            | Role::ProgressIndicator
+            | Role::Meter
+            | Role::ColorWell
+    )
+}
+
+/// Whether `node` still needs its row's title as its name. A pop-up named
+/// only after its current value (rmac-ui's `PopUpButton`) counts as unnamed:
+/// on macOS the value is `AXValue` and the row title names it.
+fn needs_row_label(node: &accesskit::Node) -> bool {
+    takes_row_label(node.role())
+        && match node.label() {
+            None => true,
+            Some(label) => node.role() == accesskit::Role::ComboBox && node.value() == Some(label),
+        }
+}
+
+/// Controls that end a row: the next control's title comes after them.
+fn ends_row(node: &accesskit::Node) -> bool {
+    use accesskit::Role;
+    takes_row_label(node.role())
+        || matches!(
+            node.role(),
+            Role::Button
+                | Role::DefaultButton
+                | Role::RadioButton
+                | Role::Link
+                | Role::TextInput
+                | Role::SearchInput
+        )
+}
+
+/// rmac: name each unnamed toggle, slider or pop-up after the text of the
+/// row it sits in, so a screen reader says "Play sound on startup, switch,
+/// on" rather than "switch, on". A settings row draws its title as plain
+/// text to the left of the control (a checkbox's caption to its right);
+/// both are siblings of the control under its nearest accessible ancestor
+/// (see [`A11yNodeBuilder::push_text_leaf`]). The first static text after
+/// the previous control and on the control's row wins; failing that, the
+/// first one on its right; failing that, an enclosing named group's name.
+/// Runs once per built frame over the nodes already built.
+fn label_controls_from_row_text(nodes: &mut [(NodeId, accesskit::Node)]) {
+    use accesskit::Role;
+    let has_candidate = nodes.iter().any(|(_, node)| needs_row_label(node));
+    if !has_candidate {
+        return;
+    }
+    let index: FxHashMap<NodeId, usize> = nodes
+        .iter()
+        .enumerate()
+        .map(|(position, (id, _))| (*id, position))
+        .collect();
+    let static_text = |position: usize| -> Option<(&str, accesskit::Rect)> {
+        let node = &nodes[position].1;
+        if node.role() != Role::Label {
+            return None;
+        }
+        Some((node.value()?, node.bounds()?))
+    };
+    let mut names: Vec<(usize, String)> = Vec::new();
+    for (_, parent) in nodes.iter() {
+        if parent.children().is_empty() {
+            continue;
+        }
+        let children: Vec<usize> = parent
+            .children()
+            .iter()
+            .filter_map(|child| index.get(child).copied())
+            .collect();
+        let group_name = if matches!(parent.role(), Role::Group | Role::RadioGroup) {
+            parent.label()
+        } else {
+            None
+        };
+        let mut since = 0;
+        for (slot, &position) in children.iter().enumerate() {
+            let node = &nodes[position].1;
+            if !ends_row(node) {
+                continue;
+            }
+            let row_start = since;
+            since = slot + 1;
+            if !needs_row_label(node) {
+                continue;
+            }
+            let Some(bounds) = node.bounds() else {
+                continue;
+            };
+            let slack = bounds.height().max(16.0);
+            // A slider's title may sit just above it, left-aligned with it,
+            // with the "Slow"/"Fast" ends beside the track; that title wins
+            // over a text beside it. Otherwise the first text beside it on
+            // its line does.
+            let candidates = || {
+                children[row_start..slot]
+                    .iter()
+                    .filter_map(|&p| static_text(p))
+            };
+            let above = (node.role() == Role::Slider)
+                .then(|| {
+                    candidates()
+                        .filter(|(_, text)| {
+                            text.y1 <= bounds.y0 + 1.0
+                                && bounds.y0 - text.y1 <= 0.5 * slack
+                                && text.x0 <= bounds.x0 + 1.0
+                        })
+                        .last()
+                })
+                .flatten();
+            let before = above.or_else(|| {
+                candidates().find(|(_, text)| {
+                    let center = (text.y0 + text.y1) / 2.0;
+                    text.x1 <= bounds.x0 + 1.0
+                        && center >= bounds.y0 - slack
+                        && center <= bounds.y1 + slack
+                })
+            });
+            let after = || {
+                children[slot + 1..]
+                    .iter()
+                    .take_while(|&&p| !ends_row(&nodes[p].1))
+                    .filter_map(|&p| static_text(p))
+                    .find(|(_, text)| {
+                        let center = (text.y0 + text.y1) / 2.0;
+                        text.x0 >= bounds.x1 - 1.0 && center >= bounds.y0 && center <= bounds.y1
+                    })
+            };
+            if let Some(name) = before.or_else(after).map(|(text, _)| text).or(group_name) {
+                names.push((position, name.to_owned()));
+            }
+        }
+    }
+    for (position, name) in names {
+        nodes[position].1.set_label(name);
+    }
+}
+
+#[cfg(test)]
+mod row_text_tests {
+    use super::{TextPlacement, label_controls_from_row_text, text_placement};
+    use accesskit::{Node, NodeId, Rect, Role};
+
+    fn text(value: &str, rect: Rect) -> Node {
+        let mut node = Node::new(Role::Label);
+        node.set_value(value);
+        node.set_bounds(rect);
+        node
+    }
+
+    fn control(role: Role, rect: Rect) -> Node {
+        let mut node = Node::new(role);
+        node.set_bounds(rect);
+        node
+    }
+
+    fn label_of(nodes: &[(NodeId, Node)], id: u64) -> Option<String> {
+        nodes
+            .iter()
+            .find(|(node_id, _)| *node_id == NodeId(id))
+            .and_then(|(_, node)| node.label().map(str::to_owned))
+    }
+
+    #[test]
+    fn a_switch_takes_its_row_title_not_the_next_rows() {
+        let mut root = Node::new(Role::Window);
+        root.set_children(vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4), NodeId(5)]);
+        let mut nodes = vec![
+            (NodeId(0), root),
+            // Title and description on the left, switch centred on the right.
+            (
+                NodeId(1),
+                text(
+                    "Play sound on startup",
+                    Rect::new(20.0, 100.0, 200.0, 116.0),
+                ),
+            ),
+            (
+                NodeId(2),
+                text("Plays a chime", Rect::new(20.0, 118.0, 140.0, 132.0)),
+            ),
+            (
+                NodeId(3),
+                control(Role::Switch, Rect::new(400.0, 108.0, 436.0, 124.0)),
+            ),
+            (
+                NodeId(4),
+                text("Alert volume", Rect::new(20.0, 160.0, 120.0, 176.0)),
+            ),
+            (
+                NodeId(5),
+                control(Role::Slider, Rect::new(200.0, 156.0, 392.0, 180.0)),
+            ),
+        ];
+        label_controls_from_row_text(&mut nodes);
+        assert_eq!(
+            label_of(&nodes, 3).as_deref(),
+            Some("Play sound on startup")
+        );
+        assert_eq!(label_of(&nodes, 5).as_deref(), Some("Alert volume"));
+    }
+
+    #[test]
+    fn a_checkbox_takes_its_caption_on_the_right_and_named_controls_keep_theirs() {
+        let mut root = Node::new(Role::Window);
+        root.set_children(vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4)]);
+        let mut named = control(Role::ComboBox, Rect::new(300.0, 10.0, 380.0, 34.0));
+        named.set_label("Low Power");
+        let mut nodes = vec![
+            (NodeId(0), root),
+            (
+                NodeId(1),
+                text("Energy Mode", Rect::new(20.0, 14.0, 120.0, 30.0)),
+            ),
+            (NodeId(2), named),
+            (
+                NodeId(3),
+                control(Role::CheckBox, Rect::new(20.0, 60.0, 36.0, 76.0)),
+            ),
+            (
+                NodeId(4),
+                text("Show in menu bar", Rect::new(42.0, 60.0, 160.0, 76.0)),
+            ),
+        ];
+        label_controls_from_row_text(&mut nodes);
+        assert_eq!(label_of(&nodes, 2).as_deref(), Some("Low Power"));
+        assert_eq!(label_of(&nodes, 3).as_deref(), Some("Show in menu bar"));
+    }
+
+    #[test]
+    fn a_value_named_pop_up_and_a_slider_take_their_titles() {
+        let mut root = Node::new(Role::Window);
+        root.set_children(vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4), NodeId(5)]);
+        let mut pop_up = control(Role::ComboBox, Rect::new(300.0, 10.0, 380.0, 34.0));
+        pop_up.set_label("Bottom");
+        pop_up.set_value("Bottom");
+        let mut nodes = vec![
+            (NodeId(0), root),
+            (
+                NodeId(1),
+                text("Position on screen", Rect::new(20.0, 14.0, 160.0, 30.0)),
+            ),
+            (NodeId(2), pop_up),
+            (
+                NodeId(3),
+                text("Key repeat rate", Rect::new(20.0, 50.0, 140.0, 66.0)),
+            ),
+            (NodeId(4), text("Slow", Rect::new(20.0, 74.0, 50.0, 90.0))),
+            (
+                NodeId(5),
+                control(Role::Slider, Rect::new(20.0, 70.0, 300.0, 94.0)),
+            ),
+        ];
+        label_controls_from_row_text(&mut nodes);
+        assert_eq!(label_of(&nodes, 2).as_deref(), Some("Position on screen"));
+        assert_eq!(label_of(&nodes, 5).as_deref(), Some("Key repeat rate"));
+    }
+
+    #[test]
+    fn text_placement_names_unnamed_buttons_and_skips_repeats() {
+        let button = Node::new(Role::Button);
+        assert_eq!(text_placement(&button, "Share"), TextPlacement::NameParent);
+        let mut named = Node::new(Role::Button);
+        named.set_label("Refresh");
+        assert_eq!(text_placement(&named, "Refresh"), TextPlacement::Skip);
+        assert_eq!(text_placement(&named, "⌘R"), TextPlacement::Skip);
+        let group = Node::new(Role::Group);
+        assert_eq!(
+            text_placement(&group, "Battery Health"),
+            TextPlacement::Child
+        );
+        let field = Node::new(Role::TextInput);
+        assert_eq!(text_placement(&field, "typed"), TextPlacement::Skip);
+        let check = Node::new(Role::CheckBox);
+        assert_eq!(text_placement(&check, "✓"), TextPlacement::Skip);
     }
 }
 

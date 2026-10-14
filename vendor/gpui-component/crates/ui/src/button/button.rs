@@ -484,6 +484,7 @@ impl RenderOnce for Button {
             })
             .when_some(accessible_name, |this, label| this.aria_label(label))
             .aria_selected(self.selected)
+            .aria_disabled(self.disabled)
             .when(!self.disabled, |this| {
                 this.track_focus(
                     &focus_handle

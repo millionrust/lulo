@@ -71,7 +71,50 @@ impl std::fmt::Display for SaveFailure {
     }
 }
 
+/// Settings ▸ Open and Save choices that decide how a file opens.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct OpenOptions {
+    /// Show an `.rtf` as its RTF source instead of formatted text.
+    pub(super) rtf_as_code: bool,
+    /// "Opening files:" — `None` is Automatic.
+    pub(super) encoding: Option<document::TextEncoding>,
+}
+
+impl OpenOptions {
+    pub(super) fn current() -> Self {
+        let settings = crate::settings::current();
+        Self {
+            rtf_as_code: settings.display_rtf_as_code,
+            encoding: settings.open_encoding,
+        }
+    }
+
+    /// Whether `path` opens as formatted rich text with these options.
+    pub(super) fn opens_rich(self, path: &Path) -> bool {
+        is_rich_text_path(path) && !self.rtf_as_code
+    }
+}
+
+/// The path a save writes when the name was typed without an extension:
+/// `.rtf` for rich text, `.txt` for plain text only while Settings ▸ Open
+/// and Save ▸ "Add ".txt" extension to plain text files" is on.
+pub(super) fn with_default_extension(path: PathBuf, content: &SaveContent) -> PathBuf {
+    with_default_extension_using(path, content, crate::settings::current().add_txt_extension)
+}
+
+fn with_default_extension_using(path: PathBuf, content: &SaveContent, add_txt: bool) -> PathBuf {
+    if path.extension().is_some() || !(content.is_rich() || add_txt) {
+        path
+    } else {
+        path.with_extension(content.default_extension())
+    }
+}
+
 pub(super) fn load_selected_document(path: &Path) -> Result<LoadedFile, String> {
+    load_document_with(path, OpenOptions::current())
+}
+
+pub(super) fn load_document_with(path: &Path, options: OpenOptions) -> Result<LoadedFile, String> {
     let bytes = storage::read_bounded(
         &storage::RealStorage,
         storage::Operation::LoadDocument,
@@ -79,7 +122,7 @@ pub(super) fn load_selected_document(path: &Path) -> Result<LoadedFile, String> 
         document::MAX_DOCUMENT_BYTES,
     )
     .map_err(|_| "Text Editor could not read the selected document".to_string())?;
-    if is_rich_text_path(path) {
+    if options.opens_rich(path) {
         let document = rich::rtf::parse(&bytes)
             .ok_or_else(|| "the RTF document could not be decoded safely".to_string())?;
         Ok(LoadedFile::RichText {
@@ -87,7 +130,7 @@ pub(super) fn load_selected_document(path: &Path) -> Result<LoadedFile, String> 
             original_bytes: bytes,
         })
     } else {
-        document::decode(bytes)
+        document::decode_as(bytes, options.encoding)
             .map(LoadedFile::Plain)
             .map_err(|error| error.to_string())
     }
@@ -327,4 +370,50 @@ pub(super) fn pdf_export_filename(path: Option<&Path>) -> String {
         .filter(|stem| !stem.is_empty())
         .unwrap_or("Untitled");
     format!("{stem}.pdf")
+}
+
+#[cfg(test)]
+mod open_and_save_tests {
+    use super::*;
+
+    #[test]
+    fn rtf_as_code_opens_the_source_as_plain_text() {
+        let directory =
+            std::env::temp_dir().join(format!("rmac-text-editor-rtf-code-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("note.rtf");
+        std::fs::write(&path, b"{\\rtf1\\ansi hello}").unwrap();
+        let formatted = load_document_with(&path, OpenOptions::default()).unwrap();
+        assert!(matches!(formatted, LoadedFile::RichText { .. }));
+        let code = load_document_with(
+            &path,
+            OpenOptions {
+                rtf_as_code: true,
+                encoding: None,
+            },
+        )
+        .unwrap();
+        let LoadedFile::Plain(document) = code else {
+            panic!("RTF as code opens plain");
+        };
+        assert_eq!(document.text, "{\\rtf1\\ansi hello}");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn txt_extension_follows_the_setting() {
+        let plain = SaveContent::Plain(String::new());
+        assert_eq!(
+            with_default_extension_using(PathBuf::from("/d/notes"), &plain, true),
+            PathBuf::from("/d/notes.txt")
+        );
+        assert_eq!(
+            with_default_extension_using(PathBuf::from("/d/notes"), &plain, false),
+            PathBuf::from("/d/notes")
+        );
+        assert_eq!(
+            with_default_extension_using(PathBuf::from("/d/notes.md"), &plain, true),
+            PathBuf::from("/d/notes.md")
+        );
+    }
 }

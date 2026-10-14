@@ -1,0 +1,14 @@
+{
+  "title": "Text Editor: Settings ▸ Open and Save toggles RTF as code and the .txt extension",
+  "app": "text-editor",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"key": "cmd-,", "settle": 1.0},
+    {"select": "Open and Save", "settle": 0.6},
+    {"observe": "defaults", "facts": ["settings_controls"]},
+    {"select": "Display RTF files as RTF code instead of formatted text", "settle": 0.5},
+    {"select": "Add \".txt\" extension to plain text files", "settle": 0.5},
+    {"observe": "toggled", "facts": ["settings_controls"]}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "text-editor/settings-open-and-save",
+  "observations": {
+    "defaults": {
+      "settings_controls": {
+        "checked": {
+          "Display RTF files as RTF code instead of formatted text": false,
+          "Add \".txt\" extension to plain text files": true
+        }
+      }
+    },
+    "toggled": {
+      "settings_controls": {
+        "checked": {
+          "Display RTF files as RTF code instead of formatted text": true,
+          "Add \".txt\" extension to plain text files": false
+        }
+      }
+    }
+  }
+}

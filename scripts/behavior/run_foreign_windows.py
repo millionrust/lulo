@@ -210,11 +210,6 @@ class Run:
         self.env.update({"WAYLAND_DISPLAY": display, "NIRI_SOCKET": str(socket),
                          "RMAC_BEHAVIOR_NESTED": "1"})
         self.env.pop("DISPLAY", None)
-        outputs = self.niri("outputs") or {}
-        logical = (next(iter(outputs.values()), {}) or {}).get("logical") or {}
-        self.output_size = (logical.get("width", 1440), logical.get("height", 900))
-        print(f"nested output {self.output_size}", flush=True)
-
         gpu = {"VK_ICD_FILENAMES": LAVAPIPE}
         for name in ("top-bar", "dock"):
             if (bins / name).exists():
@@ -222,6 +217,12 @@ class Run:
         self.spawn([str(bins / "mission-control"), "--service"], "mission-control", gpu)
         # The bar and the Dock reserve their edges (layer-shell exclusive zones).
         time.sleep(8)
+        # The nested output takes Sway's window size once niri's own window
+        # is configured; read it after that.
+        outputs = self.niri("outputs") or {}
+        logical = (next(iter(outputs.values()), {}) or {}).get("logical") or {}
+        self.output_size = (logical.get("width", 1440), logical.get("height", 900))
+        print(f"nested output {self.output_size}", flush=True)
 
     # -- the checks ---------------------------------------------------------
 
@@ -287,7 +288,10 @@ class Run:
             return window
         window = self.wait_for(maximized, 20)
         frame = self.frame(window) if window else None
-        filled = frame and all(abs(a - b) <= SLACK for a, b in zip(frame, area))
+        # A maximised window is tiled; niri reports its position inside the
+        # working area, so the size is what tells whether it fills the
+        # visible frame or the whole screen.
+        filled = frame and abs(frame[2] - area[2]) <= SLACK and abs(frame[3] - area[3]) <= SLACK
         self.check("the green button fills the visible frame exactly", filled, f"frame {frame} visible {area}")
         gtk.terminate()
         gtk.wait(10)

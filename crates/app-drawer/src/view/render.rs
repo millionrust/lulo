@@ -106,6 +106,11 @@ impl Render for AppDrawer {
                     )
                 })
                 .collect::<Vec<_>>();
+            #[cfg(windows)]
+            {
+                self.virtual_grid(tiles)
+            }
+            #[cfg(not(windows))]
             div()
                 .flex()
                 .flex_wrap()
@@ -314,6 +319,11 @@ impl Render for AppDrawer {
                     .id("grid-scroll")
                     .flex_1()
                     .overflow_y_scroll()
+                    .map(|scroll| {
+                        #[cfg(windows)]
+                        let scroll = scroll.track_scroll(&self.grid_scroll);
+                        scroll
+                    })
                     .px_5()
                     .pb_5()
                     .children(recents)
@@ -331,5 +341,53 @@ impl Render for AppDrawer {
         }
         #[cfg(not(windows))]
         panel
+    }
+}
+
+/// WIN-OS-98: one grid row's height, tiles and the gap below them.
+#[cfg(windows)]
+const GRID_ROW_H: f32 = 104.0;
+
+#[cfg(windows)]
+impl AppDrawer {
+    /// The grid in rows of `cols` tiles, building only the rows in view
+    /// (and one either side): every tile's layout and paint ran on every
+    /// scrolled frame before, about 40 ms a frame on the owner's laptop.
+    /// Rows out of view keep their height as empty spacers, so the scroll
+    /// range and positions do not change. Rows above are counted as if the
+    /// recents block had no height, which only builds a few more.
+    fn virtual_grid(&self, tiles: Vec<impl IntoElement>) -> gpui::AnyElement {
+        let cols = self.cols.max(1);
+        let top = (-f32::from(self.grid_scroll.offset().y)).max(0.0);
+        let viewport = f32::from(self.grid_scroll.bounds().size.height);
+        let viewport = if viewport > 0.0 {
+            viewport
+        } else {
+            super::DRAWER_HEIGHT
+        };
+        let first = ((top / GRID_ROW_H).floor() as usize).saturating_sub(1);
+        let last = ((top + viewport) / GRID_ROW_H).ceil() as usize + 1;
+        let mut tiles = tiles.into_iter();
+        let mut rows = Vec::new();
+        let mut index = 0;
+        loop {
+            let row: Vec<_> = tiles.by_ref().take(cols).collect();
+            if row.is_empty() {
+                break;
+            }
+            let shown = (first..=last).contains(&index);
+            rows.push(
+                div()
+                    .h(px(GRID_ROW_H))
+                    .flex_none()
+                    .flex()
+                    .gap_2()
+                    .justify_center()
+                    .when(shown, |element| element.children(row))
+                    .into_any_element(),
+            );
+            index += 1;
+        }
+        div().v_flex().children(rows).into_any_element()
     }
 }

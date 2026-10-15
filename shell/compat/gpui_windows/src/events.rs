@@ -1379,12 +1379,18 @@ impl WindowsWindowInner {
         // inertia. Without a contact Windows sends the touchpad as
         // high-resolution wheel deltas, which rmac_smooth_scroll hands out
         // per frame and lets glide on.
+        // WIN-OS-98: the owner's Apps window (activatable, so foreground)
+        // got the same: no content update while the fingers moved. Lulo's
+        // shell surfaces are tool windows (`rmac_shell_layer`); they take
+        // the wheel path too.
         let foreground = unsafe { GetForegroundWindow() } == handle;
+        let tool_window =
+            unsafe { get_window_long(handle, GWL_EXSTYLE) } & WS_EX_TOOLWINDOW.0 as isize != 0;
         crate::rmac_smooth_scroll::trace(format_args!(
-            "dm hit test foreground={}",
-            foreground as u8
+            "dm hit test foreground={} tool={}",
+            foreground as u8, tool_window as u8
         ));
-        if !foreground {
+        if !foreground || tool_window {
             return None;
         }
         self.state.direct_manipulation.on_pointer_hit_test(wparam);
@@ -1467,10 +1473,12 @@ impl WindowsWindowInner {
             self.state.renderer.borrow_mut().mark_drawable();
         }
         self.state.drew_frame.set(false);
+        let frame_started = std::time::Instant::now();
         request_frame(RequestFrameOptions {
             require_presentation: false,
             force_render,
         });
+        let frame_ms = frame_started.elapsed().as_secs_f64() * 1000.0;
         let drew = self.state.drew_frame.get();
         crate::rmac_trace::wake("frame", if drew { "drew" } else { "idle" });
         if drew {
@@ -1483,7 +1491,7 @@ impl WindowsWindowInner {
         // after each message) are left out of the trace.
         if drew || scroll_y != 0.0 || pan.y != 0.0 || smooth_active {
             crate::rmac_smooth_scroll::trace(format_args!(
-                "frame drew={} dy={scroll_y:.2} dm={:.2} active={}",
+                "frame drew={} dy={scroll_y:.2} dm={:.2} active={} ms={frame_ms:.2}",
                 drew as u8, pan.y, smooth_active as u8
             ));
         }

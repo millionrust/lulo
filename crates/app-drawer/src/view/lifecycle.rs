@@ -192,6 +192,8 @@ impl AppDrawer {
             recent_ids: Vec::new(),
             #[cfg(windows)]
             ready_traced: std::cell::Cell::new(false),
+            #[cfg(windows)]
+            grid_scroll: gpui::ScrollHandle::new(),
             scale_factor: window.scale_factor(),
         }
     }

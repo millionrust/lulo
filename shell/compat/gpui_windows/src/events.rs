@@ -1395,6 +1395,28 @@ impl WindowsWindowInner {
         self.state.direct_manipulation.update();
 
         let mut events = self.state.direct_manipulation.drain_events();
+        // rmac: Direct Manipulation's touchpad pan, evened out per frame
+        // (rmac_smooth_scroll::PanSmoother, WIN-OS-96).
+        let mut pan = point(0.0f32, 0.0f32);
+        if crate::rmac_smooth_scroll::enabled() {
+            let (mut started, mut ended, mut meta) = (false, false, None);
+            events.retain(|event| match event {
+                PlatformInput::ScrollWheel(scroll) => {
+                    if let ScrollDelta::Pixels(delta) = scroll.delta {
+                        pan.x += f32::from(delta.x);
+                        pan.y += f32::from(delta.y);
+                    }
+                    started |= scroll.touch_phase == TouchPhase::Started;
+                    ended |= scroll.touch_phase == TouchPhase::Ended;
+                    meta = Some((scroll.position, scroll.modifiers));
+                    false
+                }
+                _ => true,
+            });
+            self.state
+                .pan_smoother
+                .frame(pan, started, ended, meta, &mut events);
+        }
         // rmac: this frame's share of queued wheel scrolling.
         events.extend(
             self.state
@@ -1440,10 +1462,11 @@ impl WindowsWindowInner {
             static FIRST_DRAW: std::sync::Once = std::sync::Once::new();
             FIRST_DRAW.call_once(|| crate::rmac_trace::startup("first_frame_drawn"));
         }
-        let smooth_active = self.state.smooth_scroll.is_active();
+        let smooth_active =
+            self.state.smooth_scroll.is_active() || self.state.pan_smoother.is_active();
         crate::rmac_smooth_scroll::trace(format_args!(
-            "frame drew={} dy={scroll_y:.2} active={}",
-            drew as u8, smooth_active as u8
+            "frame drew={} dy={scroll_y:.2} dm={:.2} active={}",
+            drew as u8, pan.y, smooth_active as u8
         ));
         let keeps_drawing = drew
             || self.state.force_render_after_recovery.get()

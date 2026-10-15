@@ -76,6 +76,8 @@ pub struct WindowsWindowState {
     pub(crate) frame_loop: crate::rmac_frame_loop::FrameLoop,
     /// rmac: wheel input handed out once per frame (rmac_smooth_scroll).
     pub(crate) smooth_scroll: crate::rmac_smooth_scroll::SmoothScroll,
+    /// rmac: Direct Manipulation's pan, evened out per frame.
+    pub(crate) pan_smoother: crate::rmac_smooth_scroll::PanSmoother,
     /// rmac: the Mac corners, shadow and hairline (`rmac_window_frame.rs`).
     pub(crate) mac_frame: crate::rmac_window_frame::MacFrame,
 
@@ -191,6 +193,7 @@ impl WindowsWindowState {
             drew_frame: Cell::new(false),
             frame_loop: crate::rmac_frame_loop::FrameLoop::new(hwnd),
             smooth_scroll: Default::default(),
+            pan_smoother: Default::default(),
             mac_frame: Default::default(),
             click_state,
             current_cursor: Cell::new(current_cursor),

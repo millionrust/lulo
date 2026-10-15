@@ -215,7 +215,14 @@ out once per frame, timed by the vblank that woke it:
   contact stops a glide.
 
 Direct Manipulation's pixel pan and system inertia (upstream's
-`direct_manipulation.rs`) are unchanged. While a glide runs the window keeps
+`direct_manipulation.rs`) are kept, but its per-frame steps are evened out
+(`PanSmoother`, WIN-OS-96): Direct Manipulation moves the content by whatever
+touchpad reports landed before each frame's `Update`, so on the owner's ELAN
+touchpad one frame stepped 300 px and the next 2 px. Each frame now hands out
+the pan's velocity over the last four frames, timed by the vblank, with a slow
+correction toward 12 ms of backlog, and drains the rest when the gesture ends;
+the distance is exactly what Direct Manipulation reported. The scroll trace's
+`dm=` field is the raw pan, `dy=` what was dispatched. While a glide runs the window keeps
 its vblanks; it parks as before when it ends. `RMAC_GPUI_SCROLL_TRACE=1`
 prints every wheel message and frame; `RMAC_GPUI_SMOOTH_SCROLL=0` restores
 upstream's behaviour for measurements. `scripts/windows/scroll_smoke.py`

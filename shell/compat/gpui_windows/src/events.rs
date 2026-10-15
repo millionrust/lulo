@@ -119,7 +119,7 @@ impl WindowsWindowInner {
             WM_GPUI_CURSOR_STYLE_CHANGED => self.handle_cursor_changed(lparam),
             WM_GPUI_FORCE_UPDATE_WINDOW => self.draw_window(handle, true),
             WM_GPUI_GPU_DEVICE_LOST => self.handle_device_lost(lparam),
-            DM_POINTERHITTEST => self.handle_dm_pointer_hit_test(wparam),
+            DM_POINTERHITTEST => self.handle_dm_pointer_hit_test(handle, wparam),
             WM_GETOBJECT => self.handle_wm_getobject(wparam, lparam),
             _ => None,
         };
@@ -1371,7 +1371,22 @@ impl WindowsWindowInner {
         Some(0)
     }
 
-    fn handle_dm_pointer_hit_test(&self, wparam: WPARAM) -> Option<isize> {
+    fn handle_dm_pointer_hit_test(&self, handle: HWND, wparam: WPARAM) -> Option<isize> {
+        // rmac (WIN-OS-97): Direct Manipulation only pans a window that is
+        // the foreground one. Lulo's shell surfaces (Apps, Spotlight, the
+        // Dock, Control Centre) are never activated: there it held the whole
+        // gesture back and applied it in one frame at the end, with no
+        // inertia. Without a contact Windows sends the touchpad as
+        // high-resolution wheel deltas, which rmac_smooth_scroll hands out
+        // per frame and lets glide on.
+        let foreground = unsafe { GetForegroundWindow() } == handle;
+        crate::rmac_smooth_scroll::trace(format_args!(
+            "dm hit test foreground={}",
+            foreground as u8
+        ));
+        if !foreground {
+            return None;
+        }
         self.state.direct_manipulation.on_pointer_hit_test(wparam);
         // rmac: fingers on the touchpad stop a wheel glide.
         self.state.smooth_scroll.stop();
@@ -1464,10 +1479,14 @@ impl WindowsWindowInner {
         }
         let smooth_active =
             self.state.smooth_scroll.is_active() || self.state.pan_smoother.is_active();
-        crate::rmac_smooth_scroll::trace(format_args!(
-            "frame drew={} dy={scroll_y:.2} dm={:.2} active={}",
-            drew as u8, pan.y, smooth_active as u8
-        ));
+        // Frames that drew and scrolled nothing (a parked window's check
+        // after each message) are left out of the trace.
+        if drew || scroll_y != 0.0 || pan.y != 0.0 || smooth_active {
+            crate::rmac_smooth_scroll::trace(format_args!(
+                "frame drew={} dy={scroll_y:.2} dm={:.2} active={}",
+                drew as u8, pan.y, smooth_active as u8
+            ));
+        }
         let keeps_drawing = drew
             || self.state.force_render_after_recovery.get()
             || self.state.direct_manipulation.is_gesture_active()

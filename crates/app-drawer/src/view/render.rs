@@ -21,8 +21,8 @@ impl Render for AppDrawer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The panel is always exactly `DRAWER_WIDTH` wide.
         let viewport_width = DRAWER_WIDTH;
-        let usable_width = (viewport_width - 48.0).max(TILE_W);
-        self.cols = ((usable_width / (TILE_W + 8.0)).floor() as usize).max(1);
+        let usable_width = (viewport_width - 36.0).max(TILE_W);
+        self.cols = (((usable_width + 8.0) / (TILE_W + 8.0)).floor() as usize).max(1);
         self.scale_factor = window.scale_factor();
 
         let visible = self.visible_indices(cx);
@@ -54,7 +54,11 @@ impl Render for AppDrawer {
         #[cfg(windows)]
         if !self.loading && !self.apps.is_empty() && !self.ready_traced.replace(true) {
             rmac_shell_layer::windows::trace::trace(|| {
-                format!("apps ready {} apps", self.apps.len())
+                format!(
+                    "apps ready {} apps, {} placeholders",
+                    self.apps.len(),
+                    self.apps.iter().filter(|app| app.icon.is_none()).count()
+                )
             });
         }
         let body: gpui::AnyElement = if self.loading {

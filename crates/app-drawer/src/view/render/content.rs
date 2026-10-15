@@ -68,6 +68,44 @@ fn generic_application_icon() -> Option<&'static std::path::Path> {
     .as_deref()
 }
 
+/// The pixel width of a PNG icon (read from its header once), so a real,
+/// full-size picture is drawn at the tile's full size with no plate and only
+/// a genuinely small legacy icon keeps one (as macOS does for non-Mac icons).
+fn png_edge(path: &std::path::Path) -> Option<u32> {
+    use std::io::Read as _;
+    static EDGES: std::sync::Mutex<Option<std::collections::HashMap<std::path::PathBuf, u32>>> =
+        std::sync::Mutex::new(None);
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
+    {
+        return None;
+    }
+    if let Some(edge) = EDGES
+        .lock()
+        .ok()?
+        .as_ref()
+        .and_then(|edges| edges.get(path))
+    {
+        return Some(*edge);
+    }
+    let mut header = [0u8; 24];
+    std::fs::File::open(path)
+        .ok()?
+        .read_exact(&mut header)
+        .ok()?;
+    let edge = u32::from_be_bytes(header[16..20].try_into().ok()?);
+    EDGES
+        .lock()
+        .ok()?
+        .get_or_insert_with(Default::default)
+        .insert(path.to_path_buf(), edge);
+    Some(edge)
+}
+
+/// Icons this small (32 px or less) are legacy artwork that sits on a plate.
+const SMALL_ICON_PIXELS: u32 = 32;
+
 fn third_party_art_edge(size: f32) -> f32 {
     let scale = rmac_icon::third_party_plate(rmac_icon::IconShape::Other).unwrap_or(1.0);
     icon_plate_edge(size) * scale
@@ -117,6 +155,21 @@ impl AppDrawer {
                     }
                     None => fallback_icon(app, plate_edge, size),
                 })
+                .into_any_element();
+        }
+
+        if let Some(path) = app
+            .icon
+            .as_ref()
+            .filter(|path| png_edge(path).is_some_and(|edge| edge > SMALL_ICON_PIXELS))
+        {
+            return frame
+                .child(
+                    rmac_ui::svg_icon(path.clone(), size, self.scale_factor, cx)
+                        .w(px(size))
+                        .h(px(size))
+                        .object_fit(ObjectFit::Contain),
+                )
                 .into_any_element();
         }
 
@@ -218,7 +271,10 @@ impl AppDrawer {
                     .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::text())
                     .text_center()
-                    .truncate()
+                    .line_height(px(14.0))
+                    .max_h(px(28.0))
+                    .overflow_hidden()
+                    .line_clamp(2)
                     .child(app.name.clone()),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -290,7 +346,10 @@ impl AppDrawer {
                     .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::text())
                     .text_center()
-                    .truncate()
+                    .line_height(px(14.0))
+                    .max_h(px(28.0))
+                    .overflow_hidden()
+                    .line_clamp(2)
                     .child(app.name.clone()),
             )
             .on_click(cx.listener(move |this, _, _, cx| {

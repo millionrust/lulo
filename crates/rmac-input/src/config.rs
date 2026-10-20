@@ -338,8 +338,11 @@ pub(super) fn apply_input(input: &KdlDocument, effective: &mut EffectiveConfig) 
     if let Some(mouse) = input.get("mouse") {
         effective.settings.mouse = PointerSettings::default();
         effective.settings.mouse_scroll_with_middle_button = false;
+        effective.settings.mouse_scroll_factor = 1.0;
         if let Some(children) = mouse.children() {
             read_pointer(children, &mut effective.settings.mouse);
+            effective.settings.mouse_scroll_factor =
+                number(children, "scroll-factor").unwrap_or(1.0);
             effective.settings.mouse_scroll_with_middle_button = string(children, "scroll-method")
                 == Some("on-button-down")
                 && integer(children, "scroll-button") == Some(274);

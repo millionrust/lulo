@@ -405,4 +405,152 @@ impl Settings {
                 .into_any_element(),
         )
     }
+
+    /// Wi-Fi ▸ Advanced…: Known Networks with Auto-Join and Remove, then
+    /// Done, as macOS 26's sheet lists them.
+    pub(in crate::controller) fn render_wifi_advanced_sheet(
+        &self,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.wifi_advanced_sheet {
+            return None;
+        }
+        let view = cx.entity();
+        let busy = self.wifi_busy;
+        let header = div()
+            .flex()
+            .w_full()
+            .child(div().flex_1().child("Network Name"))
+            .child(div().w(px(80.0)).child("Auto-Join"))
+            .child(div().w(px(110.0)).child("Security"))
+            .into_any_element();
+        let rows = self
+            .wifi_saved_networks
+            .iter()
+            .enumerate()
+            .map(|(index, network)| {
+                let toggle_view = view.clone();
+                let remove_view = view.clone();
+                let toggle_network = network.id.clone();
+                let remove_network = network.id.clone();
+                let remove_ssid = SharedString::from(network.ssid.clone());
+                let security = if matches!(
+                    network.id.security(),
+                    rmac_network::WifiSecurity::Open | rmac_network::WifiSecurity::EnhancedOpen
+                ) {
+                    "None"
+                } else if network.id.security() == rmac_network::WifiSecurity::Enterprise {
+                    "WPA2/WPA3 Enterprise"
+                } else {
+                    "WPA2/WPA3 Personal"
+                };
+                well_row(
+                    SharedString::from(format!("wifi-advanced-{index}")),
+                    false,
+                    div()
+                        .flex()
+                        .items_center()
+                        .w_full()
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_size(rmac_ui::text_px(13.0))
+                                .text_color(label())
+                                .child(network.ssid.clone()),
+                        )
+                        .child(div().w(px(80.0)).when_some(network.auto_join, |cell, on| {
+                            cell.child(
+                                Checkbox::new(SharedString::from(format!(
+                                    "wifi-advanced-auto-join-{index}"
+                                )))
+                                .checked(on)
+                                .disabled(busy)
+                                .on_change(
+                                    move |enabled, _, cx| {
+                                        let network = toggle_network.clone();
+                                        let enabled = *enabled;
+                                        toggle_view.update(cx, |settings, cx| {
+                                            settings.set_wifi_auto_join(network, enabled, cx)
+                                        });
+                                    },
+                                ),
+                            )
+                        }))
+                        .child(
+                            div()
+                                .w(px(110.0))
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(secondary())
+                                .child(security),
+                        )
+                        .child(
+                            PopUpButton::new(
+                                SharedString::from(format!("wifi-advanced-more-{index}")),
+                                "Show Detail",
+                            )
+                            .menu_button("icons/ellipsis.svg", 15.0)
+                            .disabled(busy)
+                            .dropdown_menu(move |menu, _, _| {
+                                let remove_view = remove_view.clone();
+                                let remove_network = remove_network.clone();
+                                let remove_ssid = remove_ssid.clone();
+                                menu.item(PopupMenuItem::new("Remove From List").on_click(
+                                    move |_, _, cx| {
+                                        remove_view.update(cx, |settings, cx| {
+                                            settings.request_wifi_forget(
+                                                remove_network.clone(),
+                                                remove_ssid.clone(),
+                                                cx,
+                                            )
+                                        });
+                                    },
+                                ))
+                            }),
+                        ),
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut body = div()
+            .v_flex()
+            .child(
+                div()
+                    .mb(px(6.0))
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::BOLD)
+                    .text_color(label())
+                    .child("Known Networks"),
+            )
+            .child(
+                div()
+                    .mb(px(10.0))
+                    .text_size(rmac_ui::text_px(11.0))
+                    .text_color(secondary())
+                    .child("Networks you have joined. Auto-Join networks are joined on their own when in range."),
+            )
+            .child(well(Some(header), rows, 6, None, None));
+        if let Some(error) = &self.wifi_error {
+            body = body.child(note_card(error.clone()));
+        }
+        let done_view = view.clone();
+        Some(
+            settings_sheet(
+                "wifi-advanced-sheet",
+                560.0,
+                420.0,
+                None,
+                body.into_any_element(),
+                vec![sheet_default_button(
+                    "wifi-advanced-done",
+                    "Done",
+                    move |_, cx| {
+                        done_view.update(cx, |settings, cx| {
+                            settings.set_wifi_advanced_sheet(false, cx)
+                        });
+                    },
+                )],
+            )
+            .into_any_element(),
+        )
+    }
 }

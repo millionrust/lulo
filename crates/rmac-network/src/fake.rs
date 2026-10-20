@@ -78,6 +78,7 @@ impl FakeWifiService {
                 state.saved.push(WifiSavedNetwork {
                     id: network.id.clone(),
                     ssid: network.ssid.clone(),
+                    auto_join: None,
                 });
             }
             state.networks.push(network);
@@ -265,6 +266,7 @@ fn activate(state: &mut FakeState, index: usize) {
         state.saved.push(WifiSavedNetwork {
             id: activated.id.clone(),
             ssid: activated.ssid.clone(),
+            auto_join: None,
         });
     }
 }

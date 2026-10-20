@@ -102,6 +102,28 @@ pub fn connect_with_password(
     SystemWifiService.connect_with_password(network, password, cancellation)
 }
 
+/// Turn Auto-Join on or off for a saved network (Wi-Fi ▸ Advanced… and the
+/// known network's ⋯ menu): NetworkManager's `connection.autoconnect` on
+/// Lulo OS, the profile's `connectionMode` on Windows.
+pub fn set_auto_join(network: &WifiNetworkId, enabled: bool) -> Result<WifiSnapshot, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        linux_set_wifi_auto_join(network, enabled)
+    }
+    #[cfg(windows)]
+    {
+        win_set_wifi_auto_join(network, enabled)
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        let _ = (network, enabled);
+        Err(Error::new(
+            "change Auto-Join",
+            "Auto-Join is not available here",
+        ))
+    }
+}
+
 /// Join a network that does not broadcast its name (Wi-Fi ▸ Other…): open
 /// (`password` None) or Wi-Fi Personal. Lulo OS only.
 pub fn join_hidden(

@@ -333,6 +333,7 @@ impl Settings {
             wifi_forget_confirmation: None,
             wifi_password_prompt: None,
             wifi_other_prompt: None,
+            wifi_advanced_sheet: false,
             wifi_ask_to_join: rmac_network::ask_to_join::AskToJoin::Notify,
             wifi_enterprise_prompt: None,
             wifi_cancellation: None,

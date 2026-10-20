@@ -69,6 +69,7 @@ impl Render for Settings {
         });
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
         let wifi_other_dialog = self.render_wifi_other_dialog(cx);
+        let wifi_advanced_sheet = self.render_wifi_advanced_sheet(cx);
         let wifi_enterprise_dialog = self.render_wifi_enterprise_dialog(cx);
         let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);
         let bluetooth_pairing_dialog = self.render_bluetooth_pairing_dialog(cx);
@@ -112,6 +113,12 @@ impl Render for Settings {
                 {
                     cx.stop_propagation();
                     this.set_battery_health_sheet(false, cx);
+                } else if (event.keystroke.key == "escape" || event.keystroke.key == "enter")
+                    && this.wifi_advanced_sheet
+                    && this.wifi_forget_confirmation.is_none()
+                {
+                    cx.stop_propagation();
+                    this.set_wifi_advanced_sheet(false, cx);
                 } else if (event.keystroke.key == "escape" || event.keystroke.key == "enter")
                     && this.hot_corners_sheet
                 {
@@ -520,6 +527,7 @@ impl Render for Settings {
             })
             .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_other_dialog, |root, dialog| root.child(dialog))
+            .when_some(wifi_advanced_sheet, |root, sheet| root.child(sheet))
             .when_some(wifi_enterprise_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_forget_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_pairing_dialog, |root, dialog| root.child(dialog))

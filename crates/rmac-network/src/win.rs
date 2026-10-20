@@ -429,12 +429,18 @@ fn win_wifi_snapshot() -> Result<WifiSnapshot, Error> {
     let profiles = client.saved_profiles(&interface.guid);
     let count = profiles.len() as u64;
     // Windows lists profiles in connection-preference order; keep it.
-    let saved_networks = normalize_saved_networks(
+    let mut saved_networks = normalize_saved_networks(
         profiles
-            .into_iter()
+            .iter()
             .enumerate()
-            .filter_map(|(index, saved)| saved.id.map(|id| (id, count - index as u64))),
+            .filter_map(|(index, saved)| saved.id.clone().map(|id| (id, count - index as u64))),
     );
+    for saved in &mut saved_networks {
+        saved.auto_join = profiles
+            .iter()
+            .find(|profile| profile.id.as_ref() == Some(&saved.id))
+            .and_then(|profile| profile.auto_join);
+    }
     Ok(WifiSnapshot {
         available: true,
         enabled,
@@ -496,6 +502,8 @@ struct SavedProfile {
     name: Vec<u16>,
     /// The network it joins, when its XML could be read.
     id: Option<WifiNetworkId>,
+    /// `connectionMode` auto (Auto-Join), when the XML could be read.
+    auto_join: Option<bool>,
 }
 
 /// An open WLAN client handle, closed on drop.
@@ -707,10 +715,14 @@ impl Client {
         names
             .into_iter()
             .map(|name| {
-                let id = self
-                    .read_profile_xml(guid, &name)
-                    .and_then(|xml| profile_network(&xml));
-                SavedProfile { name, id }
+                let xml = self.read_profile_xml(guid, &name);
+                let id = xml.as_deref().and_then(profile_network);
+                let auto_join = xml.as_deref().and_then(profile_auto_join);
+                SavedProfile {
+                    name,
+                    id,
+                    auto_join,
+                }
             })
             .collect()
     }
@@ -1581,6 +1593,84 @@ fn security_from_profile(authentication: &str, encryption: &str) -> WifiSecurity
 
 /// The network a WLAN profile joins: its SSID (hex form preferred, as
 /// Windows does) and security class.
+/// Whether a profile joins on its own: `<connectionMode>auto</connectionMode>`.
+fn profile_auto_join(xml: &str) -> Option<bool> {
+    match element(xml, "connectionMode")?.trim() {
+        "auto" => Some(true),
+        "manual" => Some(false),
+        _ => None,
+    }
+}
+
+/// The profile with its `connectionMode` set. The key material stays as
+/// Windows returned it (encrypted for this machine), which `WlanSetProfile`
+/// accepts back unchanged.
+fn with_connection_mode(xml: &str, auto: bool) -> Option<String> {
+    let open = "<connectionMode>";
+    let close = "</connectionMode>";
+    let start = xml.find(open)? + open.len();
+    let end = xml[start..].find(close)? + start;
+    let mode = if auto { "auto" } else { "manual" };
+    Some(format!("{}{mode}{}", &xml[..start], &xml[end..]))
+}
+
+/// Turn Auto-Join on or off for the saved profiles of `network`.
+pub(super) fn win_set_wifi_auto_join(
+    network: &WifiNetworkId,
+    enabled: bool,
+) -> Result<WifiSnapshot, Error> {
+    const OPERATION: &str = "change Auto-Join";
+    let client = Client::open_required(OPERATION)?;
+    let interfaces = client.interfaces(OPERATION)?;
+    let mut changed = 0usize;
+    for interface in &interfaces {
+        for saved in client.saved_profiles(&interface.guid) {
+            if !saved
+                .id
+                .as_ref()
+                .is_some_and(|id| network.matches_profile(id))
+            {
+                continue;
+            }
+            let Some(xml) = client.read_profile_xml(&interface.guid, &saved.name) else {
+                continue;
+            };
+            let Some(updated) = with_connection_mode(&xml, enabled) else {
+                continue;
+            };
+            let mut wide = nul_terminated_str(&updated);
+            let mut reason = 0u32;
+            // SAFETY: `wide` is NUL-terminated and outlives the call;
+            // overwriting replaces the same-named profile in place.
+            let code = unsafe {
+                WlanSetProfile(
+                    client.handle(),
+                    &interface.guid,
+                    0,
+                    PCWSTR(wide.as_ptr()),
+                    PCWSTR::null(),
+                    true,
+                    None,
+                    &mut reason,
+                )
+            };
+            wide.zeroize();
+            if code != 0 {
+                return Err(Error::new(
+                    OPERATION,
+                    reason_text(reason).unwrap_or_else(|| wlan_error_text(code)),
+                ));
+            }
+            changed += 1;
+        }
+    }
+    if changed == 0 {
+        return Err(Error::new(OPERATION, "the network is no longer saved"));
+    }
+    drop(client);
+    win_wifi_snapshot()
+}
+
 fn profile_network(xml: &str) -> Option<WifiNetworkId> {
     let ssid_config = element(xml, "SSIDConfig")?;
     let ssid = element(ssid_config, "SSID")?;
@@ -1865,5 +1955,21 @@ mod win_tests {
             Some("00:1A:2B:3C:4D:5E")
         );
         assert_eq!(hardware_address(&[]), None);
+    }
+}
+
+#[cfg(test)]
+mod auto_join_tests {
+    use super::{profile_auto_join, with_connection_mode};
+
+    #[test]
+    fn connection_mode_reads_and_flips_without_touching_the_key() {
+        let xml = "<WLANProfile><name>Cafe</name><connectionMode>auto</connectionMode>\
+                   <MSM><sharedKey><protected>true</protected><keyMaterial>01000000D08C</keyMaterial>\
+                   </sharedKey></MSM></WLANProfile>";
+        assert_eq!(profile_auto_join(xml), Some(true));
+        let manual = with_connection_mode(xml, false).unwrap();
+        assert_eq!(profile_auto_join(&manual), Some(false));
+        assert!(manual.contains("<keyMaterial>01000000D08C</keyMaterial>"));
     }
 }

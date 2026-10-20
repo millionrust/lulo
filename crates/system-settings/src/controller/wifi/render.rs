@@ -131,6 +131,9 @@ impl Settings {
                     let forget_network = network.id.clone();
                     let forget_ssid = SharedString::from(network.ssid.clone());
                     let forget_view = view.clone();
+                    let auto_join = network.auto_join;
+                    let auto_join_network = network.id.clone();
+                    let auto_join_view = view.clone();
                     let details_view = view.clone();
                     let details_interface =
                         connected.then(|| self.wifi_interface.clone()).flatten();
@@ -164,6 +167,24 @@ impl Settings {
                                 let forget_view = forget_view.clone();
                                 let forget_network = forget_network.clone();
                                 let forget_ssid = forget_ssid.clone();
+                                let mut menu = menu;
+                                if let Some(on) = auto_join {
+                                    let auto_join_view = auto_join_view.clone();
+                                    let auto_join_network = auto_join_network.clone();
+                                    menu = menu.item(
+                                        PopupMenuItem::new("Auto-Join").checked(on).on_click(
+                                            move |_, _, cx| {
+                                                auto_join_view.update(cx, |settings, cx| {
+                                                    settings.set_wifi_auto_join(
+                                                        auto_join_network.clone(),
+                                                        !on,
+                                                        cx,
+                                                    )
+                                                });
+                                            },
+                                        ),
+                                    );
+                                }
                                 let mut menu =
                                     menu.item(PopupMenuItem::new("Forget This Network…").on_click(
                                         move |_, _, cx| {
@@ -340,6 +361,19 @@ impl Settings {
                     true,
                 )]));
             }
+            // Advanced…: the known networks with Auto-Join, as on the Mac.
+            let advanced_view = view.clone();
+            cards.push(footer_buttons(vec![push_button(
+                "wifi-advanced",
+                "Advanced…",
+            )
+            .disabled(self.wifi_saved_networks.is_empty())
+            .on_click(move |_, _, cx| {
+                advanced_view.update(cx, |settings, cx| {
+                    settings.set_wifi_advanced_sheet(true, cx)
+                });
+            })
+            .into_any_element()]));
             cards.push(footnote(if cfg!(windows) {
                 "New WPA Personal and SAE networks ask for their password. Enterprise networks open Windows' network list, which asks for their sign-in."
             } else {

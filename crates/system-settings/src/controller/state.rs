@@ -322,6 +322,7 @@ pub(super) struct Settings {
     pub(super) wifi_forget_confirmation: Option<WifiForgetPrompt>,
     pub(super) wifi_password_prompt: Option<WifiPasswordPrompt>,
     pub(super) wifi_other_prompt: Option<WifiOtherPrompt>,
+    pub(super) wifi_advanced_sheet: bool,
     pub(super) wifi_ask_to_join: rmac_network::ask_to_join::AskToJoin,
     pub(super) wifi_enterprise_prompt: Option<WifiEnterprisePrompt>,
     pub(super) wifi_cancellation: Option<rmac_network::WifiCancellation>,

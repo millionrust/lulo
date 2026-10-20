@@ -2418,6 +2418,7 @@ const MAIL_MENUS: &[MenuSpec] = &[
                         "",
                         separator
                     ),
+                    item!("Only from VIP", "mail::FilterVip", ""),
                 ]
             ),
             item!(
@@ -2491,6 +2492,13 @@ const MAIL_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Erase Junk Mail", "mail::EraseJunkMail", "⌥⌘J"),
+            item!("New Mailbox…", "mail::NewMailbox", "", separator),
+            item!("New Smart Mailbox…", "mail::NewSmartMailbox", ""),
+            item!("Edit Smart Mailbox…", "mail::EditSmartMailbox", ""),
+            item!("Duplicate Smart Mailbox", "mail::DuplicateSmartMailbox", ""),
+            item!("Rename Mailbox…", "mail::RenameMailbox", ""),
+            item!("Delete Mailbox…", "mail::DeleteMailbox", ""),
+            item!("Export Mailbox…", "mail::ExportMailbox", ""),
             submenu!(
                 "Go to Favourite Mailbox",
                 "mail::GoToFavouriteMenu",
@@ -2572,6 +2580,9 @@ const MAIL_MENUS: &[MenuSpec] = &[
                 [item!("Mailbox", "mail::CopyToMailbox0", "")]
             ),
             item!("Move Again", "mail::MoveAgain", ""),
+            item!("Apply Rules", "mail::ApplyRules", "⌥⌘L", separator),
+            item!("Add Sender to Contacts", "mail::AddSenderToContacts", ""),
+            item!("Add Sender to VIPs", "mail::ToggleSenderVip", ""),
         ],
     },
     // Mail composes plain text, so Format offers what plain text supports:
@@ -4907,6 +4918,30 @@ mod tests {
                 "Message ▸ {submenu}"
             );
         }
+        // Mailbox ▸ New, Smart, Rename, Delete and Export Mailbox, in the
+        // Mac's order after Erase Junk Mail.
+        let labels: Vec<&str> = mailbox
+            .items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect();
+        let start = labels
+            .iter()
+            .position(|label| *label == "New Mailbox…")
+            .unwrap();
+        assert_eq!(labels[start - 1], "Erase Junk Mail");
+        assert_eq!(
+            labels[start..start + 7],
+            [
+                "New Mailbox…",
+                "New Smart Mailbox…",
+                "Edit Smart Mailbox…",
+                "Duplicate Smart Mailbox",
+                "Rename Mailbox…",
+                "Delete Mailbox…",
+                "Export Mailbox…",
+            ]
+        );
     }
 
     #[test]

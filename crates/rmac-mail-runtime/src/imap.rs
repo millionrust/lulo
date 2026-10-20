@@ -10,8 +10,8 @@ use rmac_mail_imap::{
     Authentication, Client, Config, Interrupt, MailboxKind, Secret, SyncCursor, TlsMode,
 };
 use rmac_mail_storage::{
-    Change, MailStorage, NewMessage, FLAG_ANSWERED, FLAG_COLOUR_BIT0, FLAG_COLOUR_BIT1,
-    FLAG_COLOUR_BIT2, FLAG_DRAFT, FLAG_FLAGGED, FLAG_SEEN,
+    Change, MailStorage, NewMessage, PendingMailboxOp, FLAG_ANSWERED, FLAG_COLOUR_BIT0,
+    FLAG_COLOUR_BIT1, FLAG_COLOUR_BIT2, FLAG_DRAFT, FLAG_FLAGGED, FLAG_SEEN,
 };
 use uuid::Uuid;
 
@@ -195,6 +195,26 @@ fn uid_set_members(input: &str) -> Vec<i64> {
 }
 
 impl ImapBackend {
+    /// Sends New, Rename and Delete Mailbox, oldest first. A change the
+    /// server refuses (the name is taken, the mailbox is already gone) is
+    /// dropped: the LIST that follows puts the cache back in step.
+    fn replay_mailbox_changes(&mut self, store: &mut MailStorage) -> Result<(), Error> {
+        for pending in store.pending_mailbox_changes()? {
+            let sent = match &pending.op {
+                PendingMailboxOp::Create { name, .. } => self.client.create_mailbox(name),
+                PendingMailboxOp::Rename { from, to, .. } => self.client.rename_mailbox(from, to),
+                PendingMailboxOp::Delete { name, .. } => self.client.delete_mailbox(name),
+            };
+            match sent {
+                Ok(()) | Err(rmac_mail_imap::Error::Rejected(_)) => {
+                    store.acknowledge_mailbox_change(pending.id)?;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
+    }
+
     fn replay(
         &mut self,
         store: &mut MailStorage,
@@ -273,9 +293,10 @@ impl ImapBackend {
         let selected = self.client.select(name, cursor.as_ref())?;
         let uidvalidity = i64::try_from(selected.uid_validity.ok_or(Error::StaleUidValidity)?)
             .map_err(|_| Error::StaleUidValidity)?;
+        // 0 marks a mailbox made in Mail that has not been selected yet.
         if previous
             .as_ref()
-            .is_some_and(|old| old.uidvalidity != uidvalidity)
+            .is_some_and(|old| old.uidvalidity > 0 && old.uidvalidity != uidvalidity)
         {
             return Err(Error::StaleUidValidity);
         }
@@ -383,6 +404,35 @@ impl ImapBackend {
     }
 }
 
+/// Drops cached mailboxes the server no longer lists (deleted or renamed
+/// elsewhere, or a New Mailbox the server refused). A mailbox with a folder
+/// change or message change still to send stays.
+fn forget_vanished_mailboxes(
+    store: &mut MailStorage,
+    listed: &[rmac_mail_imap::Mailbox],
+) -> Result<(), Error> {
+    let names: HashSet<&str> = listed.iter().map(|mailbox| mailbox.name.as_str()).collect();
+    let pending: HashSet<String> = store
+        .pending_mailbox_changes()?
+        .into_iter()
+        .flat_map(|change| match change.op {
+            PendingMailboxOp::Create { name, .. } | PendingMailboxOp::Delete { name, .. } => {
+                vec![name]
+            }
+            PendingMailboxOp::Rename { from, to, .. } => vec![from, to],
+        })
+        .collect();
+    for mailbox in store.all_mailboxes()? {
+        if !names.contains(mailbox.name.as_str())
+            && !mailbox.name.eq_ignore_ascii_case("INBOX")
+            && !pending.contains(&mailbox.name)
+        {
+            store.remove_mailbox(mailbox.id)?;
+        }
+    }
+    Ok(())
+}
+
 /// How many of a mailbox's newest header-only messages the background
 /// prefetch downloads after a sync, matching the Mac's own "recent mail
 /// is ready to read" feel without ever fetching a whole history.
@@ -390,7 +440,9 @@ const PREFETCH_LIMIT: usize = 50;
 
 impl Backend for ImapBackend {
     fn sync(&mut self, store: &mut MailStorage, account: Uuid) -> Result<Vec<NewMail>, Error> {
+        self.replay_mailbox_changes(store)?;
         let mailboxes = self.client.list_mailboxes()?;
+        forget_vanished_mailboxes(store, &mailboxes)?;
         self.trash = mailboxes
             .iter()
             .find(|mailbox| mailbox.kind == MailboxKind::Trash && mailbox.selectable)
@@ -398,6 +450,9 @@ impl Backend for ImapBackend {
         let mut all = Vec::new();
         for mailbox in mailboxes.into_iter().filter(|mailbox| mailbox.selectable) {
             all.extend(self.sync_mailbox(store, account, &mailbox.name, mailbox.kind)?);
+            if let Some(state) = store.mailbox(&mailbox.name)? {
+                store.set_mailbox_delimiter(state.id, mailbox.delimiter)?;
+            }
         }
         // IDLE always watches Inbox, regardless of LIST order.
         self.client.select("INBOX", None)?;
@@ -631,6 +686,115 @@ mod tests {
         assert_eq!(store.cached_uids(inbox.id).unwrap(), vec![8]);
         drop(backend);
         server.join().unwrap();
+        drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Mailbox ▸ New, Rename and Delete Mailbox reach the server before
+    /// LIST. A refused rename is dropped and LIST puts the cache back: the
+    /// server's name returns and the local-only one goes.
+    #[test]
+    fn sync_sends_mailbox_changes_and_follows_the_server_list() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let config = Arc::new(
+                ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(
+                        vec![CertificateDer::from(CERT)],
+                        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(KEY)),
+                    )
+                    .unwrap(),
+            );
+            let mut stream = StreamOwned::new(ServerConnection::new(config).unwrap(), socket);
+            send(&mut stream, "* OK ready\r\n");
+            let mut seen = Vec::new();
+            while let Some(command) = line(&mut stream) {
+                let (tag, rest) = command.trim_end().split_once(' ').unwrap();
+                seen.push(rest.to_owned());
+                let reply = match rest {
+                    "CAPABILITY" => format!("* CAPABILITY IMAP4rev1 MOVE UIDPLUS\r\n{tag} OK done\r\n"),
+                    "CREATE \"Work/Receipts\"" | "DELETE \"Spam2\"" => format!("{tag} OK done\r\n"),
+                    "RENAME \"Bills\" \"Invoices\"" => format!("{tag} NO [ALREADYEXISTS] taken\r\n"),
+                    "LIST \"\" \"*\"" => format!(
+                        "* LIST () \"/\" INBOX\r\n* LIST () \"/\" Work\r\n* LIST () \"/\" Work/Receipts\r\n* LIST () \"/\" Bills\r\n{tag} OK done\r\n"
+                    ),
+                    "SELECT \"INBOX\"" => format!("* 0 EXISTS\r\n* OK [UIDVALIDITY 42] valid\r\n{tag} OK done\r\n"),
+                    "SELECT \"Work\"" => format!("* 0 EXISTS\r\n* OK [UIDVALIDITY 44] valid\r\n{tag} OK done\r\n"),
+                    "SELECT \"Work/Receipts\"" => format!("* 0 EXISTS\r\n* OK [UIDVALIDITY 45] valid\r\n{tag} OK done\r\n"),
+                    "SELECT \"Bills\"" => format!("* 0 EXISTS\r\n* OK [UIDVALIDITY 60] valid\r\n{tag} OK done\r\n"),
+                    "UID FETCH 1:* (UID FLAGS)" => format!("{tag} OK done\r\n"),
+                    _ => panic!("unexpected fixture command: {rest}"),
+                };
+                send(&mut stream, &reply);
+            }
+            seen
+        });
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(CertificateDer::from(CA)).unwrap();
+        let client = Client::connect_with_roots(
+            &Config {
+                host: "127.0.0.1".into(),
+                port,
+                tls: TlsMode::Implicit,
+                timeout: Duration::from_secs(3),
+            },
+            roots,
+        )
+        .unwrap();
+        let mut backend = ImapBackend {
+            client,
+            trash: None,
+        };
+        let root = std::env::temp_dir().join(format!("mail-imap-folders-{}", Uuid::new_v4()));
+        let account = Uuid::new_v4();
+        let mut store = MailStorage::open(&root, account).unwrap();
+        let inbox = store.upsert_mailbox("INBOX", 42, Some("\\Inbox")).unwrap();
+        store.set_mailbox_delimiter(inbox, Some('/')).unwrap();
+        let work = store.upsert_mailbox("Work", 44, None).unwrap();
+        store.set_mailbox_delimiter(work, Some('/')).unwrap();
+        let bills = store.upsert_mailbox("Bills", 60, None).unwrap();
+        let spam = store.upsert_mailbox("Spam2", 61, None).unwrap();
+        let receipts = store
+            .queue_mailbox_change(rmac_mail_storage::MailboxChange::Create {
+                parent: Some(work),
+                name: "Receipts".into(),
+            })
+            .unwrap();
+        store
+            .queue_mailbox_change(rmac_mail_storage::MailboxChange::Rename {
+                mailbox_id: bills,
+                name: "Invoices".into(),
+            })
+            .unwrap();
+        store
+            .queue_mailbox_change(rmac_mail_storage::MailboxChange::Delete { mailbox_id: spam })
+            .unwrap();
+        assert!(backend.sync(&mut store, account).unwrap().is_empty());
+        assert!(store.pending_mailbox_changes().unwrap().is_empty());
+        let names: Vec<String> = store
+            .all_mailboxes()
+            .unwrap()
+            .into_iter()
+            .map(|mailbox| mailbox.name)
+            .collect();
+        assert!(names.contains(&"Work/Receipts".to_owned()));
+        assert!(names.contains(&"Bills".to_owned()));
+        assert!(!names.contains(&"Invoices".to_owned()));
+        assert!(!names.contains(&"Spam2".to_owned()));
+        // The new mailbox learned its UIDVALIDITY on its first SELECT.
+        let created = store.mailbox_by_id(receipts).unwrap().unwrap();
+        assert_eq!(created.uidvalidity, 45);
+        drop(backend);
+        let seen = server.join().unwrap();
+        let position = |wanted: &str| seen.iter().position(|command| command == wanted).unwrap();
+        assert!(position("CREATE \"Work/Receipts\"") < position("LIST \"\" \"*\""));
+        assert!(position("DELETE \"Spam2\"") < position("LIST \"\" \"*\""));
         drop(store);
         let _ = std::fs::remove_dir_all(root);
     }

@@ -1307,6 +1307,23 @@ class LuloRun:
                         "flagged": sum("flagged," in name(item) for item in rows)}
         return {"count": 0, "unread": 0, "flagged": 0}
 
+    def fact_mail_mailboxes(self) -> dict[str, Any]:
+        """Mail's sidebar: every mailbox row's name (unread counts left off),
+        and which one is open."""
+        frame = self.active_frame()
+        names, selected = [], None
+        pyatspi = atspi()
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            if role(node) == "list box" and name(node) == "Mailboxes":
+                for row in descendants(node, limit=400):
+                    if role(row) in ("list item", "table row") and name(row):
+                        label = re.sub(r", \d+ unread$", "", name(row))
+                        names.append(label)
+                        if has_state(row, pyatspi.STATE_SELECTED):
+                            selected = label
+                break
+        return {"names": names, "selected": selected}
+
     def fact_mail_viewer(self) -> dict[str, Any]:
         """Mail's message viewer: the find bar's "2 of 5" (or "Not found"),
         and whether View ▸ Message ▸ All Headers shows its header block."""

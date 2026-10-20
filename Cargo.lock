@@ -6350,6 +6350,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-contacts"
+version = "0.9.0-beta.2"
+dependencies = [
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-dbus"
 version = "0.9.0-beta.2"
 dependencies = [
@@ -6839,6 +6848,7 @@ dependencies = [
  "raw-window-handle",
  "rmac-accounts",
  "rmac-accounts-linux",
+ "rmac-contacts",
  "rmac-editor",
  "rmac-mail-graph",
  "rmac-mail-imap",

@@ -88,7 +88,7 @@ enum ViewOption {
 }
 
 /// A home for saved files when the panel opens: the person's Documents.
-fn save_directory() -> PathBuf {
+pub(super) fn save_directory() -> PathBuf {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
@@ -101,7 +101,7 @@ fn save_directory() -> PathBuf {
     }
 }
 
-fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(super) fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use rmac_storage::Backend as _;
     rmac_storage::FileSystem.write_atomic(path, bytes)
 }
@@ -320,6 +320,8 @@ impl MailView {
         }
         self.publish_dynamic_rows(syncing, cx);
         self.sync_tools_menu(cx);
+        self.sync_mailbox_menu(cx);
+        self.sync_people_menu(cx);
     }
 
     /// Message ▸ Move to ▸ / Copy to ▸, Mailbox ▸ Get New Mail ▸ and Erase

@@ -3,10 +3,22 @@
   "scenario": "files/batch-rename",
   "platform": "Lulo local contract",
   "observations": {
-    "asked": {"dialog": {"present": true}},
+    "asked": {
+      "dialog": {
+        "present": true
+      }
+    },
     "renamed": {
-      "dialog": {"present": false},
-      "files": {"entries": ["keep.txt", "pear 1.txt", "pear 2.txt"]}
+      "dialog": {
+        "present": false
+      },
+      "files": {
+        "entries": [
+          "1.txt",
+          "2.txt",
+          "keep.txt"
+        ]
+      }
     }
   }
 }

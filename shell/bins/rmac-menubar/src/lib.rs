@@ -3817,7 +3817,7 @@ mod bar {
         /// icons the bar draws (`top_bar_indicator_labels`), then Spotlight,
         /// Control Centre and the clock.
         fn status_targets(&self, cx: &App) -> Vec<StatusTarget> {
-            let snapshot = &self.status.read(cx).update.snapshot;
+            let snapshot = &self.status.read(cx).update.snapshot.status;
             let mut targets: Vec<StatusTarget> = top_bar_indicator_labels(snapshot)
                 .into_iter()
                 .filter(|indicator| indicator.kind != TopBarIndicatorKind::Notifications)

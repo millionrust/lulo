@@ -384,6 +384,7 @@ mod tests {
             windows: active_window
                 .map(|id| rmac_compositor::Window {
                     id: rmac_compositor::WindowId(id),
+                    always_on_top: false,
                     title: None,
                     app_id: Some("org.rmac.Test".into()),
                     pid: None,

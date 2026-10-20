@@ -13,7 +13,7 @@
 //! `$XDG_RUNTIME_DIR/rmac` tells the menu bar a recording is running, so it
 //! can show the stop button.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// The recording frame rate: smooth, and cheap enough for the target PCs.
 pub const FRAME_RATE: u32 = 30;
@@ -134,11 +134,12 @@ pub fn state_text(started_unix_ms: u64, path: &Path) -> String {
     format!("{started_unix_ms}\n{}\n", path.display())
 }
 
-pub fn parse_state(text: &str) -> Option<(u64, PathBuf)> {
+#[cfg(test)]
+pub fn parse_state(text: &str) -> Option<(u64, std::path::PathBuf)> {
     let mut lines = text.lines();
     let started = lines.next()?.trim().parse().ok()?;
     let path = lines.next()?.trim();
-    (!path.is_empty()).then(|| (started, PathBuf::from(path)))
+    (!path.is_empty()).then(|| (started, std::path::PathBuf::from(path)))
 }
 
 #[cfg(target_os = "linux")]
@@ -157,7 +158,7 @@ mod linux {
     use zbus::blocking::{Connection, Proxy};
     use zbus::zvariant::{OwnedObjectPath, Value};
 
-    use super::{parse_state, pipeline_arguments, state_text, Crop, Encoder};
+    use super::{pipeline_arguments, state_text, Crop, Encoder};
 
     const BUS: &str = "org.gnome.Mutter.ScreenCast";
     const ROOT: &str = "/org/gnome/Mutter/ScreenCast";
@@ -358,17 +359,12 @@ mod linux {
             let _ = fs::remove_file(file);
         }
     }
-
-    /// The running recording the state file describes, if its recorder
-    /// still lives (a crashed session leaves a stale file).
-    pub fn read_state() -> Option<(u64, PathBuf)> {
-        let text = fs::read_to_string(state_path()?).ok()?;
-        parse_state(&text)
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]

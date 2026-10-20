@@ -1265,14 +1265,12 @@ fn open_app_expose(after: Option<async_channel::Receiver<()>>, cx: &mut Context<
         cx.background_executor()
             .timer(Duration::from_millis(150))
             .await;
-        let _ = cx
-            .background_executor()
-            .spawn(async {
-                std::process::Command::new("/usr/libexec/rmac/rmac-mission-control")
-                    .arg("app-windows")
-                    .status()
-            })
-            .await;
+        let _ = blocking::unblock(|| {
+            std::process::Command::new("/usr/libexec/rmac/rmac-mission-control")
+                .arg("app-windows")
+                .status()
+        })
+        .await;
     })
     .detach();
 }

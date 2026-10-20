@@ -4228,7 +4228,13 @@ impl PreviewView {
                         }
                         Some(backup)
                     } else if let Some((kind, pixels)) = image_save {
-                        render::write_image(&pixels, kind, &temporary)?;
+                        if kind.is_writable() {
+                            render::write_image(&pixels, kind, &temporary)?;
+                        } else {
+                            // SVG, Photoshop and RAW can’t be written back:
+                            // Save As writes the format the new name asks for.
+                            render::export_image_to(&pixels, &destination, &temporary)?;
+                        }
                         None
                     } else {
                         std::fs::copy(&source, &temporary).map_err(|error| error.to_string())?;
@@ -8204,7 +8210,19 @@ impl Render for PreviewView {
                 this.markup_shown = !this.markup_shown;
                 cx.notify();
             }))
-            .on_action(cx.listener(|this, _: &SaveMarkup, _, cx| this.save_markup(cx)))
+            .on_action(cx.listener(|this, _: &SaveMarkup, window, cx| {
+                // SVG, Photoshop and RAW pictures have no way to be written
+                // back as themselves: Save asks where to put a PNG instead.
+                let read_only = this.slot().is_some_and(|slot| {
+                    slot.edited()
+                        && matches!(slot.kind(), Some(Kind::Image(kind)) if !kind.is_writable())
+                });
+                if read_only {
+                    this.save_as(window, cx);
+                } else {
+                    this.save_markup(cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &RevertMarkup, _, cx| this.revert_markup(cx)))
             .on_action(cx.listener(|this, _: &UndoMarkup, _, cx| {
                 match this.slot().and_then(Slot::kind) {

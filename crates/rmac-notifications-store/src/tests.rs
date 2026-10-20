@@ -277,6 +277,42 @@ fn per_app_sound_policy_reaches_authoritative_delivery() {
 }
 
 #[test]
+fn muted_app_delivers_quietly_to_history_until_the_mute_ends() {
+    let policy = AppPolicy {
+        muted_until: 100,
+        ..AppPolicy::default()
+    };
+    let post = |now| {
+        let mut server = Server::new(10, TimeoutPolicy::default());
+        let request = protocol::portal(PortalInput {
+            app_id: "org.example.Chat".into(),
+            id: "one".into(),
+            title: Some("Message".into()),
+            ..PortalInput::default()
+        })
+        .unwrap();
+        server
+            .post(request, Time(1), policy.delivery_at(false, now))
+            .unwrap()
+    };
+    let muted = post(99);
+    assert!(!muted.delivery.banner);
+    assert!(!muted.delivery.sound);
+    assert!(muted.delivery.history);
+    let after = post(100);
+    assert!(after.delivery.banner);
+    assert!(after.delivery.sound);
+    assert!(policy.muted_at(99) && !policy.muted_at(100));
+}
+
+#[test]
+fn a_policy_saved_before_mute_existed_loads_unmuted() {
+    let policy: AppPolicy = serde_json::from_str(r#"{"enabled":true,"banners":false}"#).unwrap();
+    assert_eq!(policy.muted_until, 0);
+    assert!(!policy.banners);
+}
+
+#[test]
 fn process_scoped_id_reuse_does_not_replace_another_source() {
     let mut center = Center::default();
     let first = notification("org.example.Chat", "one", 10, false);

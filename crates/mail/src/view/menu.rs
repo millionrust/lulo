@@ -321,6 +321,7 @@ impl MailView {
         self.publish_dynamic_rows(syncing, cx);
         self.sync_tools_menu(cx);
         self.sync_mailbox_menu(cx);
+        self.sync_people_menu(cx);
     }
 
     /// Message ▸ Move to ▸ / Copy to ▸, Mailbox ▸ Get New Mail ▸ and Erase

@@ -8,6 +8,7 @@
 
 pub mod ics;
 pub mod mailto;
+pub mod rules;
 pub mod settings;
 pub mod smart;
 
@@ -54,6 +55,9 @@ pub struct RealMailbox {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Mailbox {
     AllInboxes,
+    /// Every message from a VIP (Message ▸ Add Sender to VIPs). Listed only
+    /// while there is at least one VIP, as on the Mac.
+    Vips,
     Flagged,
     Drafts,
     Sent,
@@ -66,6 +70,7 @@ impl Mailbox {
     pub fn label(&self) -> String {
         match self {
             Self::AllInboxes => "All Inboxes".to_owned(),
+            Self::Vips => "VIPs".to_owned(),
             Self::Flagged => "Flagged".to_owned(),
             Self::Drafts => "Drafts".to_owned(),
             Self::Sent => "Sent".to_owned(),
@@ -85,7 +90,9 @@ impl Mailbox {
     /// The sidebar group header: "Favourites", or the real account's address.
     pub fn account(&self) -> &str {
         match self {
-            Self::AllInboxes | Self::Flagged | Self::Drafts | Self::Sent => "Favourites",
+            Self::AllInboxes | Self::Vips | Self::Flagged | Self::Drafts | Self::Sent => {
+                "Favourites"
+            }
             Self::Real(real) => &real.account_label,
             Self::Smart(_) => "Smart Mailboxes",
         }
@@ -110,6 +117,7 @@ fn mailbox_key(mailbox: &Mailbox) -> (Option<Uuid>, i64) {
     match mailbox {
         Mailbox::AllInboxes => (None, -1),
         Mailbox::Flagged => (None, -2),
+        Mailbox::Vips => (None, -5),
         Mailbox::Drafts => (None, -3),
         Mailbox::Sent => (None, -4),
         Mailbox::Real(real) => (Some(real.account), real.mailbox_id),
@@ -409,6 +417,8 @@ pub struct MessageFilter {
     pub to_me: bool,
     pub cc_me: bool,
     pub attachments: bool,
+    /// "Only from VIP".
+    pub vip: bool,
 }
 
 impl Default for MessageFilter {
@@ -420,6 +430,7 @@ impl Default for MessageFilter {
             to_me: false,
             cc_me: false,
             attachments: false,
+            vip: false,
         }
     }
 }
@@ -522,6 +533,12 @@ pub struct MailState {
     /// Bumped whenever a message changes here (read marks, organise
     /// actions, undo, erase), so a second viewer window can follow.
     pub revision: u64,
+    /// The local contacts store (`rmac-contacts`), for VIPs, rules and
+    /// Add Sender to Contacts.
+    pub people: rmac_contacts::Contacts,
+    /// `people`'s VIP addresses, lower-cased, so the VIPs mailbox costs a
+    /// hash lookup per message.
+    vip_addresses: std::collections::HashSet<String>,
 }
 
 impl MailState {
@@ -548,6 +565,8 @@ impl MailState {
             next_copy: 0,
             last_persist: Vec::new(),
             revision: 0,
+            people: rmac_contacts::Contacts::default(),
+            vip_addresses: std::collections::HashSet::new(),
         };
         // Highlights the first row without marking it read: opening Mail
         // must never silently consume someone's unread count.
@@ -793,6 +812,8 @@ impl MailState {
             next_copy: 0,
             last_persist: Vec::new(),
             revision: 0,
+            people: rmac_contacts::Contacts::default(),
+            vip_addresses: std::collections::HashSet::new(),
         }
     }
 
@@ -854,6 +875,7 @@ impl MailState {
         let smart = self.smart_mailboxes();
         self.mailboxes = mailboxes;
         self.messages = messages;
+        self.sync_vip_mailbox();
         if !smart.is_empty() {
             self.set_smart_mailboxes(smart);
         }
@@ -898,11 +920,139 @@ impl MailState {
         match mailbox {
             Mailbox::AllInboxes => message.mailbox.special_use() == Some(SpecialUse::Inbox),
             Mailbox::Flagged => message.flagged,
+            Mailbox::Vips => self.is_vip(&message.sender_address),
             Mailbox::Drafts => message.mailbox.special_use() == Some(SpecialUse::Drafts),
             Mailbox::Sent => message.mailbox.special_use() == Some(SpecialUse::Sent),
             Mailbox::Smart(smart) => smart.matches(message, smart::now()),
             real => &message.mailbox == real,
         }
+    }
+
+    /// Whether `address` (bare or "Name <address>") is a VIP's.
+    pub fn is_vip(&self, address: &str) -> bool {
+        !self.vip_addresses.is_empty()
+            && self
+                .vip_addresses
+                .contains(&rmac_contacts::bare_address(address).to_ascii_lowercase())
+    }
+
+    /// Replaces the contacts store (loaded off the UI thread, or changed by
+    /// Add Sender to Contacts / VIPs) and shows or hides the VIPs mailbox.
+    pub fn set_people(&mut self, people: rmac_contacts::Contacts) {
+        self.vip_addresses = people.vip_addresses();
+        self.people = people;
+        self.sync_vip_mailbox();
+        self.revision += 1;
+    }
+
+    /// The VIPs row sits under All Inboxes while there is any VIP.
+    fn sync_vip_mailbox(&mut self) {
+        let listed = self
+            .mailboxes
+            .iter()
+            .position(|mailbox| *mailbox == Mailbox::Vips);
+        match (self.vip_addresses.is_empty(), listed) {
+            (false, None) => {
+                let at = self
+                    .mailboxes
+                    .iter()
+                    .position(|mailbox| *mailbox == Mailbox::AllInboxes)
+                    .map_or(0, |index| index + 1);
+                self.mailboxes.insert(at, Mailbox::Vips);
+            }
+            (true, Some(index)) => {
+                self.mailboxes.remove(index);
+                if self.mailbox == Mailbox::Vips {
+                    self.mailbox = Mailbox::AllInboxes;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Mail ▸ Settings ▸ Rules on `ids` (new mail as it arrives, or the
+    /// selection for Message ▸ Apply Rules): every matching rule's actions,
+    /// through the same organise actions and journal entries as the menu
+    /// commands. Not undoable, as on the Mac. Returns how many messages a
+    /// rule acted on.
+    pub fn apply_rules(&mut self, rules: &[rules::Rule], ids: &[String]) -> usize {
+        if rules.is_empty() || ids.is_empty() {
+            return 0;
+        }
+        let selection = self.selected.clone();
+        let mut persists = Vec::new();
+        let mut acted = 0;
+        for id in ids {
+            let Some(message) = self.messages.iter().find(|message| &message.id == id) else {
+                continue;
+            };
+            let actions: Vec<rules::Action> = rules::actions_for(rules, message, &self.people)
+                .into_iter()
+                .cloned()
+                .collect();
+            let unread = message.unread;
+            let mut changed = false;
+            for action in actions {
+                let organize = match &action {
+                    rules::Action::MoveMessage { to } => {
+                        self.rule_target(to).map(OrganizeAction::Move)
+                    }
+                    rules::Action::CopyMessage { to } => {
+                        self.rule_target(to).map(OrganizeAction::Copy)
+                    }
+                    rules::Action::MarkAsFlagged { .. } => {
+                        action.flag_colour().map(OrganizeAction::FlagColour)
+                    }
+                    rules::Action::MarkAsRead => unread.then_some(OrganizeAction::MarkRead),
+                    rules::Action::DeleteMessage => Some(OrganizeAction::Delete),
+                    rules::Action::StopEvaluatingRules => None,
+                };
+                let Some(organize) = organize else {
+                    continue;
+                };
+                self.selected = Some(id.clone());
+                if self.apply(organize) {
+                    changed = true;
+                    persists.append(&mut self.last_persist);
+                }
+            }
+            acted += usize::from(changed);
+        }
+        self.undo = None;
+        self.redo = None;
+        let visible = self.visible();
+        self.selected = selection
+            .filter(|id| visible.iter().any(|&index| &self.messages[index].id == id))
+            .or_else(|| {
+                visible
+                    .first()
+                    .map(|&index| self.messages[index].id.clone())
+            });
+        self.last_persist = persists;
+        acted
+    }
+
+    /// The real mailbox a rule names, by account and mailbox name.
+    pub fn rule_target(&self, target: &rules::MailboxRef) -> Option<Mailbox> {
+        self.mailboxes
+            .iter()
+            .find(|mailbox| {
+                matches!(mailbox, Mailbox::Real(real)
+                    if real.account_label == target.account && real.name == target.name)
+            })
+            .cloned()
+    }
+
+    /// The id of the message `(account, row_id)` names, for a new-mail
+    /// event.
+    pub fn id_for_row(&self, account: Uuid, row_id: i64) -> Option<String> {
+        self.messages
+            .iter()
+            .find(|message| {
+                message.row_id == Some(row_id)
+                    && matches!(&message.mailbox, Mailbox::Real(real) if real.account == account)
+            })
+            .map(|message| message.id.clone())
     }
 
     /// The real mailbox playing one special-use role for `account`, if its
@@ -1008,7 +1158,10 @@ impl MailState {
         let addressed = !(filter.to_me || filter.cc_me)
             || filter.to_me && self.addressed_to_me(&message.to_addresses)
             || filter.cc_me && self.addressed_to_me(&message.cc_addresses);
-        include && addressed && (!filter.attachments || message.attachment.is_some())
+        include
+            && addressed
+            && (!filter.attachments || message.attachment.is_some())
+            && (!filter.vip || self.is_vip(&message.sender_address))
     }
 
     pub fn addressed_to_me(&self, addresses: &str) -> bool {
@@ -1480,7 +1633,7 @@ impl MailState {
             Mailbox::AllInboxes => SpecialUse::Inbox,
             Mailbox::Drafts => SpecialUse::Drafts,
             Mailbox::Sent => SpecialUse::Sent,
-            Mailbox::Flagged | Mailbox::Real(_) | Mailbox::Smart(_) => return None,
+            Mailbox::Flagged | Mailbox::Vips | Mailbox::Real(_) | Mailbox::Smart(_) => return None,
         };
         self.find_special(real.account, special)
             .filter(|target| target.special_use() != real.special_use)
@@ -2215,5 +2368,75 @@ mod tests {
             "From: Ada <a@example.test>\nSubject: Hi\n there\nX-Priority: 1"
         );
         assert_eq!(header_block("Subject: only"), "Subject: only");
+    }
+
+    #[test]
+    fn vips_mailbox_appears_with_the_first_vip_and_filters_by_sender() {
+        let mut state = MailState::fixture();
+        assert!(!state.mailboxes.contains(&Mailbox::Vips));
+        let mut people = rmac_contacts::Contacts::default();
+        people.set_vip("Anna Kim", "anna@example.test", true);
+        state.set_people(people);
+        assert_eq!(state.mailboxes[1], Mailbox::Vips);
+        state.select_mailbox(Mailbox::Vips);
+        let shown: Vec<&str> = state
+            .visible()
+            .into_iter()
+            .map(|index| state.messages[index].id.as_str())
+            .collect();
+        assert_eq!(shown, vec!["anna"]);
+        state.select_mailbox(Mailbox::AllInboxes);
+        state.filter.enabled = true;
+        state.filter.unread = false;
+        state.filter.vip = true;
+        assert_eq!(state.visible().len(), 1);
+        // A refresh from storage keeps the row; removing the last VIP drops it.
+        let (mailboxes, messages) = (
+            MailState::fixture().mailboxes,
+            MailState::fixture().messages,
+        );
+        state.refresh_live(mailboxes, messages);
+        assert!(state.mailboxes.contains(&Mailbox::Vips));
+        state.mailbox = Mailbox::Vips;
+        let mut people = state.people.clone();
+        people.set_vip("", "anna@example.test", false);
+        state.set_people(people);
+        assert!(!state.mailboxes.contains(&Mailbox::Vips));
+        assert_eq!(state.mailbox, Mailbox::AllInboxes);
+    }
+
+    #[test]
+    fn rules_move_and_flag_matching_mail_and_skip_the_rest() {
+        let mut state = MailState::fixture();
+        let rules = vec![rules::Rule {
+            description: "Statements".to_owned(),
+            conditions: vec![rules::Condition {
+                field: rules::Field::Subject,
+                operator: rules::Operator::Contains,
+                value: "statement".to_owned(),
+            }],
+            actions: vec![
+                rules::Action::MarkAsFlagged {
+                    colour: "Blue".to_owned(),
+                },
+                rules::Action::MoveMessage {
+                    to: rules::MailboxRef {
+                        account: "Google".to_owned(),
+                        name: "Receipts".to_owned(),
+                    },
+                },
+            ],
+            ..rules::Rule::default()
+        }];
+        let ids = vec!["bank".to_owned(), "anna".to_owned()];
+        assert_eq!(state.apply_rules(&rules, &ids), 1);
+        let bank = state.messages.iter().find(|m| m.id == "bank").unwrap();
+        assert_eq!(bank.mailbox.label(), "Receipts");
+        assert!(bank.flagged);
+        assert_eq!(bank.flag_colour(), FlagColour::Blue);
+        let anna = state.messages.iter().find(|m| m.id == "anna").unwrap();
+        assert_eq!(anna.mailbox.label(), "Inbox");
+        assert!(!state.can_undo(), "rules are not undoable");
+        assert_eq!(state.selected.as_deref(), Some("anna"));
     }
 }

@@ -90,10 +90,11 @@ enum Pane {
     Viewing,
     Composing,
     Signatures,
+    Rules,
 }
 
 impl Pane {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::General,
         Self::Accounts,
         Self::JunkMail,
@@ -101,6 +102,7 @@ impl Pane {
         Self::Viewing,
         Self::Composing,
         Self::Signatures,
+        Self::Rules,
     ];
 
     fn label(self) -> &'static str {
@@ -112,6 +114,7 @@ impl Pane {
             Self::Viewing => "Viewing",
             Self::Composing => "Composing",
             Self::Signatures => "Signatures",
+            Self::Rules => "Rules",
         }
     }
 }
@@ -176,6 +179,8 @@ struct SettingsView {
     /// however many mail accounts (zero, one or several) the person
     /// actually has.
     accounts: Vec<ComposeAccount>,
+    /// Settings ▸ Rules, made the first time the pane opens.
+    rules_pane: Option<gpui::Entity<crate::rules_view::RulesPane>>,
     /// Windows adds and removes accounts here (`accounts_win`); Lulo OS does
     /// it in System Settings.
     #[cfg(windows)]
@@ -195,6 +200,7 @@ impl SettingsView {
             settings,
             save_error: error.map(SharedString::from),
             accounts: delivery::accounts(),
+            rules_pane: None,
             #[cfg(windows)]
             accounts_view: None,
         }
@@ -221,26 +227,33 @@ impl SettingsView {
             .border_color(mac::separator())
             .children(Pane::ALL.into_iter().enumerate().map(|(index, pane)| {
                 let selected = self.pane == pane;
-                // The strip itself carries the real tab semantics (role and
-                // selected state) the way Finder's own window-tab strip does
-                // (`crates/finder/src/view/chrome_presentation/menus_tabs.rs`):
-                // `Button::selected` is purely a visual highlight with no
-                // accessibility signal of its own, so without this wrapper
-                // AT-SPI never reported which Settings pane was showing.
+                // The tab itself carries the tab semantics (role and selected
+                // state) the way Finder's own window-tab strip does
+                // (`crates/finder/src/view/chrome_presentation/menus_tabs.rs`).
+                // A compact text tab: eight bordered buttons no longer fit the
+                // Mac's 775-point window once Rules joined them.
                 div()
                     .id(("mail-settings-tab", index))
+                    .flex_none()
                     .role(Role::Tab)
                     .aria_label(pane.label())
                     .aria_selected(selected)
-                    .child(
-                        Button::new(("mail-settings-tab-button", index), pane.label())
-                            .small()
-                            .selected(selected)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.pane = pane;
-                                cx.notify();
-                            })),
-                    )
+                    .h(px(26.0))
+                    .px(px(9.0))
+                    .flex()
+                    .items_center()
+                    .rounded(px(mac::radius_control()))
+                    .text_size(px(12.0))
+                    .when(selected, |tab| {
+                        tab.bg(mac::control_fill())
+                            .font_weight(FontWeight::SEMIBOLD)
+                    })
+                    .hover(|tab| tab.bg(mac::hover()))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.pane = pane;
+                        cx.notify();
+                    }))
+                    .child(pane.label())
             }))
             .into_any_element()
     }
@@ -731,6 +744,9 @@ impl SettingsView {
 impl Render for SettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = self.pane;
+        if pane == Pane::Rules && self.rules_pane.is_none() {
+            self.rules_pane = Some(cx.new(crate::rules_view::RulesPane::new));
+        }
         div()
             .size_full()
             .v_flex()
@@ -790,6 +806,7 @@ impl Render for SettingsView {
                         Pane::Viewing => parent.child(self.viewing_pane(cx)),
                         Pane::Composing => parent.child(self.composing_pane(cx)),
                         Pane::Signatures => parent.child(self.signatures_pane(cx)),
+                        Pane::Rules => parent.children(self.rules_pane.clone()),
                     }),
             )
     }

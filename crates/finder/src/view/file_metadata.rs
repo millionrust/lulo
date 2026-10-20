@@ -134,9 +134,76 @@ pub(super) fn write_file_comment(path: &Path, comment: &str) -> Result<(), Strin
     }
 }
 
+// Get Info ▸ Open with: the application one file opens with when it is not
+// the type's default. Linux has no per-document handler of its own, so Files
+// keeps the choice beside the file and honours it whenever it opens it.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+const OPEN_WITH_XATTR: &str = "user.rmac.open-with";
+#[cfg(any(target_os = "linux", all(test, unix)))]
+const MAX_APPLICATION_ID: usize = 255;
+
+/// This file's own Open with choice, as a desktop-entry ID.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+pub(super) fn read_open_with(path: &Path) -> Option<String> {
+    let mut buffer = [0u8; MAX_APPLICATION_ID];
+    let length = rustix::fs::getxattr(path, OPEN_WITH_XATTR, &mut buffer).ok()?;
+    let id = std::str::from_utf8(&buffer[..length]).ok()?.trim();
+    (!id.is_empty() && id.ends_with(".desktop") && !id.contains('/')).then(|| id.to_owned())
+}
+
+#[cfg(not(any(target_os = "linux", all(test, unix))))]
+pub(super) fn read_open_with(_path: &Path) -> Option<String> {
+    None
+}
+
+/// Store (`Some`) or forget this file's own Open with choice.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+pub(super) fn write_open_with(path: &Path, application_id: Option<&str>) -> Result<(), String> {
+    match application_id {
+        Some(id) if id.len() <= MAX_APPLICATION_ID && !id.contains('/') => rustix::fs::setxattr(
+            path,
+            OPEN_WITH_XATTR,
+            id.as_bytes(),
+            rustix::fs::XattrFlags::empty(),
+        )
+        .map_err(|error| error.to_string()),
+        Some(_) => Err("the application cannot be recorded".to_owned()),
+        None => match rustix::fs::removexattr(path, OPEN_WITH_XATTR) {
+            Ok(()) => Ok(()),
+            Err(_) if read_open_with(path).is_none() => Ok(()),
+            Err(error) => Err(error.to_string()),
+        },
+    }
+}
+
+#[cfg(not(any(target_os = "linux", all(test, unix))))]
+pub(super) fn write_open_with(_path: &Path, _application_id: Option<&str>) -> Result<(), String> {
+    Err("Open with is available in the supported Linux session".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_remembers_its_own_open_with_choice() {
+        let path =
+            std::env::temp_dir().join(format!("rmac-open-with-{}.txt", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"body").unwrap();
+        assert_eq!(read_open_with(&path), None);
+        if write_open_with(&path, Some("org.lulo.TextEdit.desktop")).is_ok() {
+            assert_eq!(
+                read_open_with(&path).as_deref(),
+                Some("org.lulo.TextEdit.desktop")
+            );
+            write_open_with(&path, None).unwrap();
+            assert_eq!(read_open_with(&path), None);
+        }
+        assert!(write_open_with(&path, Some("../evil")).is_err());
+        write_open_with(&path, None).unwrap();
+        let _ = std::fs::remove_file(path);
+    }
 
     #[test]
     fn tag_names_are_spelt_as_finder_shows_them() {

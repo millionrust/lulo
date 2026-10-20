@@ -448,6 +448,18 @@ pub(super) fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
     v
 }
 
+/// The account name for `uid`, or the number when it has none.
+#[cfg(unix)]
+pub(super) fn account_name(uid: libc::uid_t) -> String {
+    user_name(uid).unwrap_or_else(|| uid.to_string())
+}
+
+/// The group name for `gid`, or the number when it has none.
+#[cfg(unix)]
+pub(super) fn group_account_name(gid: libc::gid_t) -> String {
+    group_name(gid).unwrap_or_else(|| gid.to_string())
+}
+
 /// The account name for `uid` from the system user database.
 #[cfg(unix)]
 fn user_name(uid: libc::uid_t) -> Option<String> {

@@ -203,9 +203,7 @@ impl Render for DraggedListColumn {
 }
 
 /// Drag payload: the divider at a column's left edge, dragged to resize it. Nothing accepts it as a drop; its moves set the width live.
-pub(super) struct ResizingListColumn {
-    pub(super) column: ListColumn,
-}
+pub(super) struct ResizingListColumn;
 
 /// A divider drag shows nothing under the pointer; the column itself moves.
 pub(super) struct EmptyDragView;
@@ -368,7 +366,7 @@ impl FinderView {
                             this.start_column_resize(column, f32::from(event.position.x));
                         }),
                     )
-                    .on_drag(ResizingListColumn { column }, |_, _, _, cx| {
+                    .on_drag(ResizingListColumn, |_, _, _, cx| {
                         cx.new(|_| EmptyDragView)
                     }),
             )

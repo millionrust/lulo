@@ -423,6 +423,12 @@ impl FinderView {
             let total = paths.len();
             let mut failures = Vec::new();
             for path in paths {
+                // Get Info ▸ Open with: a file's own choice wins over the
+                // type's default; if it cannot open, the default still does.
+                #[cfg(target_os = "linux")]
+                if open_with_own_choice(path.clone()).await == Some(true) {
+                    continue;
+                }
                 if let Err(error) = rmac_app_launch::open_item(path).await {
                     failures.push(error.to_string());
                 }
@@ -498,6 +504,29 @@ impl FinderView {
 /// `navigate` itself checks whether the folder actually exists.
 fn network_path(runtime_dir: Option<std::ffi::OsString>) -> Option<PathBuf> {
     runtime_dir.map(|dir| PathBuf::from(dir).join("gvfs"))
+}
+
+/// Open `path` with the application its Get Info ▸ Open with chose, when it
+/// has one that is still installed and compatible. `None` means it has no
+/// usable choice of its own.
+#[cfg(target_os = "linux")]
+async fn open_with_own_choice(path: PathBuf) -> Option<bool> {
+    let read_path = path.clone();
+    let application_id =
+        blocking::unblock(move || super::file_metadata::read_open_with(&read_path)).await?;
+    let association = rmac_app_launch::file_association(path.clone()).await.ok()?;
+    if !association
+        .handlers
+        .iter()
+        .any(|handler| handler.id == application_id)
+    {
+        return None;
+    }
+    Some(
+        rmac_app_launch::open_file_with(path, association.mime_type, application_id, false, false)
+            .await
+            .is_ok(),
+    )
 }
 
 #[cfg(test)]

@@ -23,6 +23,7 @@ mod finder_behaviour;
 mod finder_style;
 mod gallery_presentation;
 mod go_to_folder_controller;
+mod info_window;
 mod inspector_window;
 mod item_operations;
 mod lifecycle_controller;

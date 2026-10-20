@@ -924,6 +924,21 @@ impl NotesView {
                     .role(Role::ListBox)
                     .aria_label(if search_active { "Results" } else { "Notes" })
                     .track_focus(&self.focus.clone().tab_stop(true).tab_index(0))
+                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        let key = &event.keystroke;
+                        let plain = !key.modifiers.platform
+                            && !key.modifiers.control
+                            && !key.modifiers.alt
+                            && !key.modifiers.shift;
+                        let delta = match key.key.as_str() {
+                            "down" if plain => 1,
+                            "up" if plain => -1,
+                            _ => return,
+                        };
+                        if this.select_adjacent_note(delta, window, cx) {
+                            cx.stop_propagation();
+                        }
+                    }))
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()

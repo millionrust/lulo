@@ -103,6 +103,72 @@ impl NotesView {
         }
     }
 
+    /// Up/Down in the note list selects the neighbouring note (NOTES-07).
+    /// Returns whether the key was used.
+    pub(super) fn select_adjacent_note(
+        &mut self,
+        delta: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.is_interactive_ready()
+            || self.gallery_view
+            || self.attachments_browser_visible
+            || !self.search_query.read(cx).value().trim().is_empty()
+        {
+            return false;
+        }
+        let tag = self
+            .smart_folder_filter
+            .and_then(|id| {
+                self.session
+                    .smart_folders()
+                    .into_iter()
+                    .find(|folder| folder.id == id)
+            })
+            .map(|folder| folder.tag.to_lowercase());
+        let ids: Vec<NoteId> = self
+            .session
+            .visible_notes()
+            .into_iter()
+            .filter(|note| {
+                tag.as_deref().is_none_or(|tag| {
+                    note.lock.is_none() && note.tags.iter().any(|t| t.to_lowercase() == tag)
+                })
+            })
+            .map(|note| note.id)
+            .collect();
+        if ids.is_empty() {
+            return false;
+        }
+        let current = self
+            .session
+            .selected_note_id()
+            .and_then(|id| ids.iter().position(|candidate| *candidate == id));
+        let next = adjacent_index(current, ids.len(), delta);
+        if Some(next) != current {
+            self.select_note(ids[next], window, cx);
+            if !self.group_notes_by_date {
+                // Unsectioned rows have a fixed height: keep the new row visible.
+                let row_top = LIST_TOP_PADDING + next as f32 * NOTE_ROW_HEIGHT;
+                let viewport = f32::from(self.note_list_scroll.bounds().size.height);
+                let top = -f32::from(self.note_list_scroll.offset().y);
+                let target = if row_top < top {
+                    Some(row_top - LIST_TOP_PADDING)
+                } else if viewport > 0.0 && row_top + NOTE_ROW_HEIGHT > top + viewport {
+                    Some(row_top + NOTE_ROW_HEIGHT - viewport)
+                } else {
+                    None
+                };
+                if let Some(target) = target {
+                    self.note_list_scroll
+                        .set_offset(gpui::point(px(0.0), px(-target.max(0.0))));
+                }
+            }
+        }
+        true
+    }
+
     /// The id of the note currently shown in the (single, shared) editor,
     /// used by `quick_note.rs`/`note_window.rs` to decide whether a resume
     /// landed on a real note.
@@ -1509,5 +1575,29 @@ impl NotesView {
     pub(super) fn dismiss_notes_help(&mut self, cx: &mut Context<Self>) {
         self.notes_help = None;
         cx.notify();
+    }
+}
+
+/// Index reached by Up/Down from `current` in a list of `len` rows, clamped
+/// at both ends like the Mac's list.
+fn adjacent_index(current: Option<usize>, len: usize, delta: isize) -> usize {
+    match current {
+        Some(index) => index.saturating_add_signed(delta).min(len - 1),
+        None if delta > 0 => 0,
+        None => len - 1,
+    }
+}
+
+#[cfg(test)]
+mod adjacent_tests {
+    use super::adjacent_index;
+
+    #[test]
+    fn arrows_clamp_at_the_ends() {
+        assert_eq!(adjacent_index(Some(0), 3, -1), 0);
+        assert_eq!(adjacent_index(Some(0), 3, 1), 1);
+        assert_eq!(adjacent_index(Some(2), 3, 1), 2);
+        assert_eq!(adjacent_index(None, 3, 1), 0);
+        assert_eq!(adjacent_index(None, 3, -1), 2);
     }
 }

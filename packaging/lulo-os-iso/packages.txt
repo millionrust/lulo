@@ -15,6 +15,7 @@ sudo
 locales
 tzdata
 dbus-user-session
+systemd-resolved
 bash-completion
 
 # Boot: BIOS GRUB in the image, UEFI GRUB swapped in by the installer
@@ -31,6 +32,7 @@ plymouth
 calamares
 qt6-wayland
 rsync
+squashfs-tools
 ntfs-3g
 dosfstools
 exfatprogs

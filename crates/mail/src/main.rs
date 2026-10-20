@@ -13,7 +13,6 @@ use gpui::{App, AssetSource, KeyBinding, SharedString};
 use rmac_mail::compose::ComposeKind;
 use rmac_mail::MailState;
 use rmac_ui::app_id::MAIL;
-#[cfg(any(target_os = "linux", windows))]
 use view::MailView;
 
 gpui::actions!(

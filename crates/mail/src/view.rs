@@ -25,7 +25,9 @@ mod tools;
 mod windows;
 
 pub use menu::close_all;
-pub use tools::{open_viewer, show_viewer, viewers};
+#[cfg(any(target_os = "linux", windows))]
+pub use tools::viewers;
+pub use tools::{open_viewer, show_viewer};
 
 const SIDEBAR: f32 = 220.0;
 const LIST: f32 = 340.0;

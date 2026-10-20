@@ -80,6 +80,43 @@ pub fn discover_entries(ids: &[String]) -> io::Result<Vec<Application>> {
     }
 }
 
+/// The entry a window with `app_id` belongs to: the entry whose desktop ID
+/// it is, else the one whose `StartupWMClass` names it (an XWayland window's
+/// `WM_CLASS`). Reads only the entries' `[Desktop Entry]` groups until one
+/// matches. For a surface that meets one unknown window, such as the menu
+/// bar naming the frontmost app.
+pub fn discover_for_window(app_id: &str) -> io::Result<Option<Application>> {
+    if let Some(found) = discover_entries(&[app_id.to_owned()])?.into_iter().next() {
+        return Ok(Some(found));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Ok(None)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let environment = Environment::current();
+        for directory in environment.application_dirs() {
+            let mut files = Vec::new();
+            collect_desktop_files(&directory, &directory, &mut files);
+            files.sort();
+            for (id, path) in files {
+                let Ok(contents) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                if !crate::window_class::entry_claims(&desktop_group(&contents), app_id) {
+                    continue;
+                }
+                if let Some(application) = parse_desktop_entry(&id, &path, &contents, &environment)
+                {
+                    return Ok(Some(application));
+                }
+            }
+        }
+        Ok(None)
+    }
+}
+
 /// Resolve the shared-mime-info type, current default, and visible compatible
 /// applications for one local file.
 ///

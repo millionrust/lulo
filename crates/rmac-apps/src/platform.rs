@@ -89,7 +89,7 @@ impl Environment {
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
             .or(home_data);
-        let data_dirs = std::env::var_os("XDG_DATA_DIRS")
+        let mut data_dirs: Vec<PathBuf> = std::env::var_os("XDG_DATA_DIRS")
             .filter(|value| !value.is_empty())
             .map(|value| std::env::split_paths(&value).collect())
             .unwrap_or_else(|| {
@@ -102,6 +102,21 @@ impl Environment {
                     ]
                 }
             });
+        // Flatpak exports its apps' entries (named by app id, which is also
+        // their windows' app id) here; a session started without Flatpak's
+        // profile script lacks them in XDG_DATA_DIRS.
+        if !cfg!(windows) {
+            let flatpak = home
+                .iter()
+                .map(|home| home.join(".local/share/flatpak/exports/share"))
+                .chain([PathBuf::from("/var/lib/flatpak/exports/share")])
+                .collect::<Vec<_>>();
+            for directory in flatpak {
+                if !data_dirs.contains(&directory) {
+                    data_dirs.push(directory);
+                }
+            }
+        }
         let desktops = std::env::var("XDG_CURRENT_DESKTOP")
             .unwrap_or_default()
             .split(':')
@@ -237,6 +252,9 @@ pub(super) fn parse_desktop_entry(
     let categories = split_list(values.get("Categories"));
     let mime_types = bounded_mime_types(values.get("MimeType"));
     let actions = desktop_actions(contents, &values, &name, path, environment);
+    if let Some(class) = values.get("StartupWMClass") {
+        crate::window_class::register_window_class(class, id);
+    }
     Some(Application {
         id: id.to_string(),
         name,

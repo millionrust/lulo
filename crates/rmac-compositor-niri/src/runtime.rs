@@ -207,6 +207,9 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
         domain::Action::CrossfadeScreen { delay_ms } => wire::Action::DoScreenTransition {
             delay_ms: Some(*delay_ms),
         },
+        domain::Action::QuitApplication { window } => {
+            wire::Action::CloseWindow { id: Some(window.0) }
+        }
         // `convert_action_sequence` sends the height too.
         domain::Action::ResizeWindow { window, width, .. } => wire::Action::SetWindowWidth {
             id: Some(window.0),

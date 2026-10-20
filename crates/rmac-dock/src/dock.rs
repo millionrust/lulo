@@ -193,7 +193,7 @@ impl Model {
                 parked
                     .app_id
                     .as_deref()
-                    .is_some_and(|app_id| canonical_app_id(app_id) == canonical)
+                    .is_some_and(|app_id| window_app_id(app_id) == canonical)
             }) {
                 return Activation::RestoreWindow {
                     window: parked.window,
@@ -644,7 +644,7 @@ pub(super) fn minimized_items(
             let application = window
                 .app_id
                 .as_deref()
-                .map(canonical_app_id)
+                .map(window_app_id)
                 .and_then(|canonical| applications.get(&canonical).copied());
             MinimizedItem {
                 window: window.id,
@@ -694,7 +694,7 @@ pub(super) fn window_groups(
         else {
             continue;
         };
-        let canonical = canonical_app_id(app_id);
+        let canonical = window_app_id(app_id);
         if canonical.is_empty() || is_system_dialog(&canonical) {
             continue;
         }
@@ -761,6 +761,15 @@ pub(super) fn build_item(
             .map(|application| application.mime_types.clone())
             .unwrap_or_default(),
     }
+}
+
+/// The desktop identity of a window: its app id, or the entry whose
+/// `StartupWMClass` claims it (an XWayland window's `WM_CLASS`), so the app
+/// gets its own tile, name and icon (`rmac_apps::window_class`).
+pub(super) fn window_app_id(app_id: &str) -> String {
+    rmac_apps::desktop_id_for_window_class(app_id)
+        .map(|desktop_id| canonical_app_id(&desktop_id))
+        .unwrap_or_else(|| canonical_app_id(app_id))
 }
 
 pub(super) fn canonical_app_id(app_id: &str) -> String {

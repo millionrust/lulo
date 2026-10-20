@@ -27,6 +27,7 @@ pub enum ActionKind {
     MoveWindowBy,
     CrossfadeScreen,
     ResizeWindow,
+    QuitApplication,
 }
 
 /// Target region for [`Action::TileWindow`]: the halves offered by the green
@@ -283,6 +284,13 @@ pub enum Action {
         width: Distance,
         height: Distance,
     },
+    /// Ask the app that owns `window` to quit the way an app without a Quit
+    /// command can be asked: every top-level window of its process is told
+    /// to close (it may ask to save). On niri, which lists every toplevel,
+    /// it closes `window`; callers close the app's other windows too.
+    QuitApplication {
+        window: WindowId,
+    },
 }
 
 impl Action {
@@ -308,6 +316,7 @@ impl Action {
             Self::MoveWindowBy { .. } => ActionKind::MoveWindowBy,
             Self::CrossfadeScreen { .. } => ActionKind::CrossfadeScreen,
             Self::ResizeWindow { .. } => ActionKind::ResizeWindow,
+            Self::QuitApplication { .. } => ActionKind::QuitApplication,
         }
     }
 }

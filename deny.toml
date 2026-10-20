@@ -16,9 +16,6 @@ unsound = "all"
 ignore = [
     { id = "RUSTSEC-2026-0194", reason = "quick-xml is build-only through wayland-scanner and parses trusted protocol XML; remove when wayland-scanner supports quick-xml >=0.41" },
     { id = "RUSTSEC-2026-0195", reason = "quick-xml is build-only through wayland-scanner and parses trusted protocol XML; remove when wayland-scanner supports quick-xml >=0.41" },
-    { id = "RUSTSEC-2026-0367", reason = "zip: only the extract() helpers keep SUID/SGID bits; rmac-archive never calls them and masks every mode to 0o777 (expand.rs); remove when zip >=9 is adopted" },
-    { id = "RUSTSEC-2026-0368", reason = "zip: only ZipArchive::extract is affected; rmac-archive never calls it and expands entries itself, confining links (expand.rs tests); remove when zip >=9 is adopted" },
-    { id = "RUSTSEC-2026-0369", reason = "zip: only the extract() helpers are affected; rmac-archive never calls them and applies modes itself; remove when zip >=9 is adopted" },
 ]
 
 [licenses]

@@ -76,6 +76,8 @@ pub(crate) struct MonitorView {
     /// View ▸ Sample Process (MON-10/14): whether a sample is currently
     /// being collected off the UI thread.
     sample_in_progress: bool,
+    /// When the processes were last sampled.
+    last_refresh: Option<std::time::Instant>,
 }
 
 impl MonitorView {
@@ -141,13 +143,20 @@ impl MonitorView {
             signal_sheet: None,
             signal_feedback: None,
             sample_in_progress: false,
+            last_refresh: None,
         };
         view.refresh(cx);
 
         // An inactive window has no graph to update and no timer to run.
+        // The new window's own first activation comes moments after the
+        // sample above: a second full sample of every process then only
+        // delayed the first frame (WIN-OS-99).
         cx.observe_window_activation(window, move |view, window, cx| {
             let _ = wake.try_send(());
-            if refreshing(window) {
+            let fresh = view
+                .last_refresh
+                .is_some_and(|at| at.elapsed() < ACTIVATION_RESAMPLE_AFTER);
+            if refreshing(window) && !fresh {
                 view.refresh(cx);
                 cx.notify();
             }
@@ -221,6 +230,7 @@ impl MonitorView {
 
     /// Refresh the table snapshot and recompute the summary aggregates.
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.last_refresh = Some(std::time::Instant::now());
         self.sampler.refresh(&self.table, cx);
         self.fetch_windowed_pids(cx);
         if self.dock_icon_mode != crate::dock_icon::DockIconMode::Application {
@@ -1089,6 +1099,9 @@ fn hide_linux_only_commands(cx: &mut gpui::App) {
 /// Whether this window is one to keep fresh: the active window, and on Windows
 /// also not minimised (a minimised window stays the thread's "active" window,
 /// yet nobody can see what a refresh would draw).
+/// An activation this soon after a sample shows that sample.
+const ACTIVATION_RESAMPLE_AFTER: Duration = Duration::from_millis(500);
+
 fn refreshing(window: &Window) -> bool {
     window.is_window_active() && !window_is_minimised(window)
 }

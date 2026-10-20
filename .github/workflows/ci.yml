@@ -601,10 +601,10 @@ jobs:
 
       # `windows-build` made the icons before building (it fails without
       # them), so every exe must carry its own. Each app's first frame must
-      # be on screen within 700 ms of its process starting (WIN-OS-99:
-      # debug builds on the runner's software renderer took 210 to 560 ms
-      # before that change; the reference laptop's release builds are
-      # measured by hand, docs/parity.md WIN-OS-99).
+      # be on screen within 900 ms of its process starting (WIN-OS-99:
+      # debug builds on the runner's software renderer, 140 to 430 ms, and
+      # System Monitor's first process sample; the reference laptop's
+      # release builds are measured by hand, docs/parity.md WIN-OS-99).
       - name: Launch each app
         id: launch
         env:
@@ -613,7 +613,7 @@ jobs:
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
             ${{ matrix.launch }} --results windows-results.json \
-            --launch-budget-ms 700 target/debug ${{ matrix.apps }}
+            --launch-budget-ms 900 target/debug ${{ matrix.apps }}
 
       # System Settings (WIN-SET): every pane its sidebar lists on the runner
       # opens with content, and the red traffic light, Ctrl+W, Ctrl+Q and

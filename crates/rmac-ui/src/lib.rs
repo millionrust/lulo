@@ -181,12 +181,6 @@ pub fn application() -> gpui::Application {
     gpui_platform::application()
 }
 
-#[cfg(windows)]
-mod fonts_windows;
-
-#[cfg(test)]
-mod tests;
-
 /// With `RMAC_GPUI_STARTUP_TRACE=1` on Windows, print one start-up phase on
 /// the clock `gpui_windows` uses for its own phases (milliseconds since
 /// Windows created the process), so an app can name the work between them
@@ -208,3 +202,9 @@ pub fn trace_mark(event: &str) {
     #[cfg(not(target_os = "linux"))]
     let _ = event;
 }
+
+#[cfg(windows)]
+mod fonts_windows;
+
+#[cfg(test)]
+mod tests;

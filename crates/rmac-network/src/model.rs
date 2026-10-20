@@ -102,6 +102,9 @@ pub struct WifiNetwork {
 pub struct WifiSavedNetwork {
     pub id: WifiNetworkId,
     pub ssid: String,
+    /// Whether the system joins it on its own (the Mac's Auto-Join); None
+    /// where the platform does not report it.
+    pub auto_join: Option<bool>,
 }
 
 impl WifiNetwork {

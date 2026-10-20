@@ -207,6 +207,9 @@ pub struct InputSettings {
     pub keyboard: KeyboardSettings,
     pub mouse: PointerSettings,
     pub mouse_scroll_with_middle_button: bool,
+    /// niri's mouse `scroll-factor` (Mouse ▸ Scrolling speed); 1.0 is
+    /// libinput's own speed. See [`Supported::mouse_scroll_factor`].
+    pub mouse_scroll_factor: f64,
     pub touchpad: TouchpadSettings,
     pub trackpoint: PointerSettings,
     pub trackpoint_scroll_with_middle_button: bool,
@@ -230,6 +233,7 @@ impl Default for InputSettings {
             keyboard: KeyboardSettings::default(),
             mouse: PointerSettings::default(),
             mouse_scroll_with_middle_button: false,
+            mouse_scroll_factor: 1.0,
             touchpad: TouchpadSettings::default(),
             trackpoint: PointerSettings::default(),
             trackpoint_scroll_with_middle_button: false,
@@ -257,6 +261,9 @@ pub struct Supported {
     pub mouse_left_handed: bool,
     pub mouse_middle_emulation: bool,
     pub mouse_scroll_with_middle_button: bool,
+    /// [`InputSettings::mouse_scroll_factor`] (niri only; Windows scrolls
+    /// by [`InputSettings::wheel_scroll_lines`]).
+    pub mouse_scroll_factor: bool,
     /// The touchpad section applies at all: false on Windows when no
     /// Precision Touchpad is present. Each touchpad field also has its own
     /// flag below.
@@ -293,6 +300,7 @@ impl Default for Supported {
             mouse_left_handed: true,
             mouse_middle_emulation: true,
             mouse_scroll_with_middle_button: true,
+            mouse_scroll_factor: true,
             touchpad: true,
             touchpad_enabled: true,
             touchpad_natural_scroll: true,

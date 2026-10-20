@@ -280,11 +280,18 @@ pub(super) fn linux_snapshot() -> Result<WifiSnapshot, Error> {
         .get_property::<String>("Interface")
         .map_err(|error| Error::new("read Wi-Fi interface", error.to_string()))?;
     let profiles = linux_wifi_profiles(&connection)?;
-    let saved_networks = normalize_saved_networks(
+    let mut saved_networks = normalize_saved_networks(
         profiles
             .iter()
             .map(|profile| (profile.id.clone(), profile.timestamp)),
     );
+    // Profiles are newest first: the newest one for a network decides.
+    for saved in &mut saved_networks {
+        saved.auto_join = profiles
+            .iter()
+            .find(|profile| profile.id == saved.id)
+            .map(|profile| profile.auto_join);
+    }
     let raw = linux_wifi_access_points(&connection, &device)?
         .into_iter()
         .map(|access_point| RawNetwork {
@@ -324,6 +331,8 @@ pub(super) struct WifiProfileRecord {
     id: WifiNetworkId,
     connection_path: zbus::zvariant::OwnedObjectPath,
     timestamp: u64,
+    /// `connection.autoconnect` (NetworkManager's default is true).
+    auto_join: bool,
 }
 
 #[cfg(target_os = "linux")]
@@ -413,10 +422,15 @@ pub(super) fn linux_wifi_profiles(
         let Some((id, timestamp)) = wifi_profile_identity(&settings) else {
             continue;
         };
+        let auto_join = settings
+            .get("connection")
+            .and_then(|connection| property::<bool>(connection, "autoconnect"))
+            .unwrap_or(true);
         profiles.push(WifiProfileRecord {
             id,
             connection_path: path,
             timestamp,
+            auto_join,
         });
     }
     profiles.sort_by(|left, right| {
@@ -1718,4 +1732,76 @@ pub(super) fn linux_join_hidden_wifi(
         network,
         Some(cancellation),
     )
+}
+
+/// Turn Auto-Join on or off for every saved profile of `network`
+/// (`connection.autoconnect`).
+///
+/// NetworkManager's `Update` replaces the whole profile, so a profile with
+/// a system-stored password is first read back with its secrets
+/// (`GetSecrets`) and updated with them, as `nmcli connection modify`
+/// does; if the secrets cannot be read the profile is left untouched
+/// rather than saved without its password.
+#[cfg(target_os = "linux")]
+pub(super) fn linux_set_wifi_auto_join(
+    network: &WifiNetworkId,
+    enabled: bool,
+) -> Result<WifiSnapshot, Error> {
+    use zbus::zvariant::OwnedValue;
+
+    let operation = "change Auto-Join";
+    let connection = system_connection("connect to NetworkManager")?;
+    let profiles = linux_wifi_profiles(&connection)?
+        .into_iter()
+        .filter(|profile| profile.id == *network)
+        .collect::<Vec<_>>();
+    if profiles.is_empty() {
+        return Err(Error::new(operation, "the network is no longer saved"));
+    }
+    for profile in profiles {
+        let proxy = zbus::blocking::Proxy::new(
+            &connection,
+            "org.freedesktop.NetworkManager",
+            profile.connection_path.as_str(),
+            "org.freedesktop.NetworkManager.Settings.Connection",
+        )
+        .map_err(|error| Error::new(operation, error.to_string()))?;
+        let mut settings = proxy
+            .call::<_, _, HashMap<String, HashMap<String, OwnedValue>>>("GetSettings", &())
+            .map_err(|error| Error::new(operation, error.to_string()))?;
+        if settings.contains_key(SECURITY_SETTING_NAME) {
+            let secrets = proxy
+                .call::<_, _, HashMap<String, HashMap<String, OwnedValue>>>(
+                    "GetSecrets",
+                    &(SECURITY_SETTING_NAME,),
+                )
+                .map_err(|_| {
+                    Error::new(
+                        operation,
+                        "the network's password could not be read, so its profile was not changed",
+                    )
+                })?;
+            merge_secrets(&mut settings, secrets);
+        }
+        let connection_setting = settings.entry("connection".to_owned()).or_default();
+        connection_setting.insert("autoconnect".to_owned(), OwnedValue::from(enabled));
+        proxy
+            .call::<_, _, ()>("Update", &(settings,))
+            .map_err(|error| Error::new(operation, error.to_string()))?;
+    }
+    linux_snapshot()
+}
+
+#[cfg(target_os = "linux")]
+const SECURITY_SETTING_NAME: &str = "802-11-wireless-security";
+
+/// Put `secrets` back into the settings they were read from.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn merge_secrets(
+    settings: &mut HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>,
+    secrets: HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>,
+) {
+    for (setting, values) in secrets {
+        settings.entry(setting).or_default().extend(values);
+    }
 }

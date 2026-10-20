@@ -48,6 +48,12 @@ pub struct IdlePolicy {
     pub lock_after_seconds: Option<u32>,
     #[serde(default)]
     pub suspend_after_seconds: Option<u32>,
+    /// Lock Screen ▸ Turn display off on battery when inactive.
+    #[serde(default)]
+    pub display_off_on_battery_seconds: Option<u32>,
+    /// Lock Screen ▸ Turn display off on power adapter when inactive.
+    #[serde(default)]
+    pub display_off_on_adapter_seconds: Option<u32>,
 }
 
 impl Default for IdlePolicy {
@@ -56,6 +62,8 @@ impl Default for IdlePolicy {
             version: 1,
             lock_after_seconds: Some(5 * 60),
             suspend_after_seconds: None,
+            display_off_on_battery_seconds: None,
+            display_off_on_adapter_seconds: None,
         }
     }
 }
@@ -69,6 +77,13 @@ impl IdlePolicy {
             || self
                 .suspend_after_seconds
                 .is_some_and(|seconds| !(MIN_SUSPEND_SECONDS..=MAX_IDLE_SECONDS).contains(&seconds))
+            || [
+                self.display_off_on_battery_seconds,
+                self.display_off_on_adapter_seconds,
+            ]
+            .into_iter()
+            .flatten()
+            .any(|seconds| !(MIN_IDLE_SECONDS..=MAX_IDLE_SECONDS).contains(&seconds))
         {
             return Err(Error {
                 operation: Operation::ValidateIdlePolicy,
@@ -173,30 +188,123 @@ pub fn request() -> Result<(), Error> {
     }
 }
 
+/// Run swayidle for the policy. When the display-off timeouts differ for
+/// battery and power adapter, a power-source change (a UPower event, not a
+/// poll) restarts swayidle with the other one.
 #[cfg(target_os = "linux")]
 pub fn supervise_idle(policy_path: &Path) -> Result<(), Error> {
     let policy = read_idle_policy(policy_path)?;
-    if policy.lock_after_seconds.is_none() && policy.suspend_after_seconds.is_none() {
-        loop {
-            std::thread::park();
-        }
-    }
-    let arguments = idle_arguments(policy);
-    let status = Command::new(SWAYIDLE)
-        .args(arguments)
-        .stdin(Stdio::null())
-        .status()
-        .map_err(|error| Error::io(Operation::SpawnIdleManager, error))?;
-    if status.success() {
-        Ok(())
+    let follows_power =
+        policy.display_off_on_battery_seconds != policy.display_off_on_adapter_seconds;
+    let (changes, power_events) = std::sync::mpsc::channel::<()>();
+    if follows_power {
+        std::thread::spawn(move || {
+            let (sender, receiver) = async_channel::bounded(4);
+            std::thread::spawn(move || {
+                let _ = async_io::block_on(rmac_power::watch(sender));
+            });
+            while receiver.recv_blocking().is_ok() {
+                if changes.send(()).is_err() {
+                    return;
+                }
+            }
+        });
     } else {
-        Err(Error::failed(Operation::WaitForIdleManager))
+        drop(changes);
+    }
+    let mut on_battery = current_on_battery();
+    loop {
+        let arguments = idle_arguments(policy, on_battery);
+        if arguments.len() == 1 {
+            // Nothing to time out: wait for the power source to matter.
+            if power_events.recv().is_err() {
+                loop {
+                    std::thread::park();
+                }
+            }
+            on_battery = current_on_battery();
+            continue;
+        }
+        let mut child = Command::new(SWAYIDLE)
+            .args(arguments)
+            .stdin(Stdio::null())
+            .spawn()
+            .map_err(|error| Error::io(Operation::SpawnIdleManager, error))?;
+        loop {
+            if let Some(status) = child
+                .try_wait()
+                .map_err(|error| Error::io(Operation::WaitForIdleManager, error))?
+            {
+                return if status.success() {
+                    Ok(())
+                } else {
+                    Err(Error::failed(Operation::WaitForIdleManager))
+                };
+            }
+            if !follows_power {
+                let status = child
+                    .wait()
+                    .map_err(|error| Error::io(Operation::WaitForIdleManager, error))?;
+                return if status.success() {
+                    Ok(())
+                } else {
+                    Err(Error::failed(Operation::WaitForIdleManager))
+                };
+            }
+            // A power event, or a quiet minute to notice swayidle exiting.
+            match power_events.recv_timeout(std::time::Duration::from_secs(60)) {
+                Ok(()) => {
+                    let now = current_on_battery();
+                    if now != on_battery {
+                        on_battery = now;
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break;
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    let status = child
+                        .wait()
+                        .map_err(|error| Error::io(Operation::WaitForIdleManager, error))?;
+                    return if status.success() {
+                        Ok(())
+                    } else {
+                        Err(Error::failed(Operation::WaitForIdleManager))
+                    };
+                }
+            }
+        }
     }
 }
 
+#[cfg(target_os = "linux")]
+fn current_on_battery() -> bool {
+    rmac_power::snapshot()
+        .ok()
+        .and_then(|snapshot| snapshot.battery)
+        .is_some_and(|battery| battery.on_battery)
+}
+
 #[cfg(any(target_os = "linux", test))]
-fn idle_arguments(policy: IdlePolicy) -> Vec<String> {
+const DISPLAY_OFF_ACTION: &str = "/usr/bin/niri msg action power-off-monitors";
+
+#[cfg(any(target_os = "linux", test))]
+fn idle_arguments(policy: IdlePolicy, on_battery: bool) -> Vec<String> {
     let mut arguments = vec!["-w".to_owned()];
+    // niri powers the displays back on at the next input.
+    let display_off = if on_battery {
+        policy.display_off_on_battery_seconds
+    } else {
+        policy.display_off_on_adapter_seconds
+    };
+    if let Some(timeout) = display_off {
+        arguments.extend([
+            "timeout".to_owned(),
+            timeout.to_string(),
+            DISPLAY_OFF_ACTION.to_owned(),
+        ]);
+    }
     if let Some(timeout) = policy.lock_after_seconds {
         arguments.extend([
             "timeout".to_owned(),
@@ -940,12 +1048,16 @@ mod tests {
                 version: 1,
                 lock_after_seconds: None,
                 suspend_after_seconds: None,
+                display_off_on_battery_seconds: None,
+                display_off_on_adapter_seconds: None,
             }
             .validate(),
             Ok(IdlePolicy {
                 version: 1,
                 lock_after_seconds: None,
                 suspend_after_seconds: None,
+                display_off_on_battery_seconds: None,
+                display_off_on_adapter_seconds: None,
             })
         );
         for policy in [
@@ -953,21 +1065,29 @@ mod tests {
                 version: 0,
                 lock_after_seconds: Some(300),
                 suspend_after_seconds: None,
+                display_off_on_battery_seconds: None,
+                display_off_on_adapter_seconds: None,
             },
             IdlePolicy {
                 version: 1,
                 lock_after_seconds: Some(MIN_IDLE_SECONDS - 1),
                 suspend_after_seconds: None,
+                display_off_on_battery_seconds: None,
+                display_off_on_adapter_seconds: None,
             },
             IdlePolicy {
                 version: 1,
                 lock_after_seconds: Some(MAX_IDLE_SECONDS + 1),
                 suspend_after_seconds: None,
+                display_off_on_battery_seconds: None,
+                display_off_on_adapter_seconds: None,
             },
             IdlePolicy {
                 version: 1,
                 lock_after_seconds: Some(300),
                 suspend_after_seconds: Some(MIN_SUSPEND_SECONDS - 1),
+                display_off_on_battery_seconds: None,
+                display_off_on_adapter_seconds: None,
             },
         ] {
             assert_eq!(
@@ -1000,11 +1120,16 @@ mod tests {
     #[test]
     fn idle_commands_are_fixed_and_timeouts_are_numeric_arguments() {
         assert_eq!(
-            idle_arguments(IdlePolicy {
-                version: 1,
-                lock_after_seconds: Some(60),
-                suspend_after_seconds: Some(900),
-            }),
+            idle_arguments(
+                IdlePolicy {
+                    version: 1,
+                    lock_after_seconds: Some(60),
+                    suspend_after_seconds: Some(900),
+                    display_off_on_battery_seconds: None,
+                    display_off_on_adapter_seconds: None,
+                },
+                false
+            ),
             vec![
                 "-w".to_owned(),
                 "timeout".to_owned(),
@@ -1014,6 +1139,24 @@ mod tests {
                 "900".to_owned(),
                 SUSPEND_ACTION.to_owned(),
             ]
+        );
+    }
+
+    #[test]
+    fn display_off_follows_the_power_source() {
+        let policy = IdlePolicy {
+            lock_after_seconds: None,
+            display_off_on_battery_seconds: Some(120),
+            display_off_on_adapter_seconds: Some(600),
+            ..IdlePolicy::default()
+        };
+        assert_eq!(
+            idle_arguments(policy, true),
+            ["-w", "timeout", "120", DISPLAY_OFF_ACTION]
+        );
+        assert_eq!(
+            idle_arguments(policy, false),
+            ["-w", "timeout", "600", DISPLAY_OFF_ACTION]
         );
     }
 

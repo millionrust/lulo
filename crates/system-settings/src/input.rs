@@ -30,6 +30,12 @@ pub(super) enum InputChange {
     TrackpointAccelProfile(rmac_input::AccelProfile),
     TrackpointScrollWithMiddleButton(bool),
     TouchEnabled(bool),
+    /// Mouse ▸ Scrolling speed: niri's mouse `scroll-factor`.
+    MouseScrollFactor(f64),
+    /// Mouse ▸ Scrolling speed on Windows: lines per wheel notch.
+    WheelScrollLines(u32),
+    /// Mouse ▸ Double-click speed (Windows).
+    DoubleClickMs(u32),
 }
 
 impl InputChange {
@@ -71,26 +77,38 @@ impl InputChange {
                 settings.trackpoint_scroll_with_middle_button = value
             }
             Self::TouchEnabled(value) => settings.touch.enabled = value,
+            Self::MouseScrollFactor(value) => settings.mouse_scroll_factor = value,
+            Self::WheelScrollLines(value) => settings.wheel_scroll_lines = Some(value),
+            Self::DoubleClickMs(value) => settings.double_click_ms = Some(value),
         }
     }
 }
 
 pub(super) type InputOption = (&'static str, InputChange);
 
-pub(super) const KEYBOARD_DELAYS: [InputOption; 5] = [
-    ("Short", InputChange::KeyboardRepeatDelay(200)),
-    ("300", InputChange::KeyboardRepeatDelay(300)),
-    ("500", InputChange::KeyboardRepeatDelay(500)),
-    ("750", InputChange::KeyboardRepeatDelay(750)),
-    ("Long", InputChange::KeyboardRepeatDelay(1_000)),
+/// The Mac's six Delay until repeat stops (SET-46): macOS's own
+/// `InitialKeyRepeat` values (15, 25, 35, 68, 94, 120 × 15 ms), Short first.
+pub(super) const KEYBOARD_DELAYS: [InputOption; 6] = [
+    ("Short", InputChange::KeyboardRepeatDelay(225)),
+    ("375", InputChange::KeyboardRepeatDelay(375)),
+    ("525", InputChange::KeyboardRepeatDelay(525)),
+    ("1020", InputChange::KeyboardRepeatDelay(1_020)),
+    ("1410", InputChange::KeyboardRepeatDelay(1_410)),
+    ("Long", InputChange::KeyboardRepeatDelay(1_800)),
 ];
 
-pub(super) const KEYBOARD_RATES: [InputOption; 5] = [
-    ("Slow", InputChange::KeyboardRepeatRate(10)),
-    ("20", InputChange::KeyboardRepeatRate(20)),
-    ("30", InputChange::KeyboardRepeatRate(30)),
-    ("40", InputChange::KeyboardRepeatRate(40)),
-    ("Fast", InputChange::KeyboardRepeatRate(60)),
+/// The Mac's eight Key repeat rate stops (SET-46), from macOS's
+/// `KeyRepeat` intervals in characters per second (its Off stop, no repeat
+/// at all, is not offered: niri and Windows need a rate). Slow first.
+pub(super) const KEYBOARD_RATES: [InputOption; 8] = [
+    ("Slow", InputChange::KeyboardRepeatRate(1)),
+    ("2", InputChange::KeyboardRepeatRate(2)),
+    ("4", InputChange::KeyboardRepeatRate(4)),
+    ("6", InputChange::KeyboardRepeatRate(6)),
+    ("11", InputChange::KeyboardRepeatRate(11)),
+    ("17", InputChange::KeyboardRepeatRate(17)),
+    ("25", InputChange::KeyboardRepeatRate(25)),
+    ("Fast", InputChange::KeyboardRepeatRate(33)),
 ];
 
 /// The `options` index whose preset is closest to `value`, so the
@@ -157,6 +175,65 @@ pub(super) const MOUSE_SPEEDS: [InputOption; 5] = [
     ("0.5", InputChange::MouseAccelSpeed(0.5)),
     ("Fast", InputChange::MouseAccelSpeed(1.0)),
 ];
+
+/// Mouse ▸ Scrolling speed (Lulo OS): niri's `scroll-factor`, Slow first.
+pub(super) const MOUSE_SCROLL_FACTORS: [InputOption; 7] = [
+    ("Slow", InputChange::MouseScrollFactor(0.25)),
+    ("0.5", InputChange::MouseScrollFactor(0.5)),
+    ("0.75", InputChange::MouseScrollFactor(0.75)),
+    ("1", InputChange::MouseScrollFactor(1.0)),
+    ("1.5", InputChange::MouseScrollFactor(1.5)),
+    ("2", InputChange::MouseScrollFactor(2.0)),
+    ("Fast", InputChange::MouseScrollFactor(3.0)),
+];
+
+/// Mouse ▸ Scrolling speed (Windows): lines per wheel notch, Slow first.
+pub(super) const WHEEL_SCROLL_LINES: [InputOption; 7] = [
+    ("Slow", InputChange::WheelScrollLines(1)),
+    ("2", InputChange::WheelScrollLines(2)),
+    ("3", InputChange::WheelScrollLines(3)),
+    ("5", InputChange::WheelScrollLines(5)),
+    ("7", InputChange::WheelScrollLines(7)),
+    ("10", InputChange::WheelScrollLines(10)),
+    ("Fast", InputChange::WheelScrollLines(15)),
+];
+
+/// Mouse ▸ Double-click speed (Windows), Slow (a long interval) first, as
+/// the Mac's slider runs.
+pub(super) const DOUBLE_CLICK_SPEEDS: [InputOption; 7] = [
+    ("Slow", InputChange::DoubleClickMs(900)),
+    ("750", InputChange::DoubleClickMs(750)),
+    ("600", InputChange::DoubleClickMs(600)),
+    ("500", InputChange::DoubleClickMs(500)),
+    ("400", InputChange::DoubleClickMs(400)),
+    ("300", InputChange::DoubleClickMs(300)),
+    ("Fast", InputChange::DoubleClickMs(200)),
+];
+
+/// The index of the preset nearest `value` among options built from one
+/// numeric change kind.
+pub(super) fn nearest_numeric(options: &[InputOption], value: f64) -> usize {
+    options
+        .iter()
+        .enumerate()
+        .min_by(|(_, (_, a)), (_, (_, b))| {
+            (option_value(*a) - value)
+                .abs()
+                .total_cmp(&(option_value(*b) - value).abs())
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(0)
+}
+
+fn option_value(change: InputChange) -> f64 {
+    match change {
+        InputChange::MouseScrollFactor(value) => value,
+        InputChange::WheelScrollLines(value) | InputChange::DoubleClickMs(value) => {
+            f64::from(value)
+        }
+        _ => 0.0,
+    }
+}
 
 pub(super) const TRACKPOINT_SPEEDS: [InputOption; 5] = [
     ("Slow", InputChange::TrackpointAccelSpeed(-1.0)),
@@ -273,18 +350,18 @@ mod tests {
     /// still draws a thumb instead of an empty track.
     #[test]
     fn keyboard_slider_indices_pick_the_nearest_preset() {
-        assert_eq!(keyboard_rate_slider_index(10), 0); // Slow
+        assert_eq!(keyboard_rate_slider_index(1), 0); // Slow
         assert_eq!(keyboard_rate_slider_index(60), KEYBOARD_RATES.len() - 1); // Fast
-        assert_eq!(keyboard_rate_slider_index(26), 2); // nearer 30 (index 2) than 20 (index 1)
+        assert_eq!(keyboard_rate_slider_index(24), 6); // nearer 25 than 17
 
         // Delay runs the opposite way from KEYBOARD_DELAYS: index 0 is the
-        // Mac's "Long" end (1000 ms, KEYBOARD_DELAYS' last entry) and the
-        // last index is "Short" (200 ms, KEYBOARD_DELAYS' first entry).
-        assert_eq!(keyboard_delay_slider_index(1_000), 0); // Long
+        // Mac's "Long" end (1800 ms, KEYBOARD_DELAYS' last entry) and the
+        // last index is "Short" (225 ms, KEYBOARD_DELAYS' first entry).
+        assert_eq!(keyboard_delay_slider_index(1_800), 0); // Long
         assert_eq!(
             keyboard_delay_slider_index(200),
             KEYBOARD_DELAYS.len() - 1 // Short
         );
-        assert_eq!(keyboard_delay_slider_index(600), 2); // between 500 and 750
+        assert_eq!(keyboard_delay_slider_index(600), 3); // nearest 525
     }
 }

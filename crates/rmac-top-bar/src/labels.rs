@@ -23,17 +23,24 @@ pub fn clock_label(
         rmac_shell_settings::ClockFormat::TwelveHour => false,
         rmac_shell_settings::ClockFormat::TwentyFourHour => true,
     };
-    let time_format = match (twenty_four_hour, settings.show_seconds) {
-        (true, true) => "%H:%M:%S",
-        (true, false) => "%H:%M",
-        (false, true) => "%-I:%M:%S %p",
-        (false, false) => "%-I:%M %p",
+    let time_format = match (twenty_four_hour, settings.show_seconds, settings.show_am_pm) {
+        (true, true, _) => "%H:%M:%S",
+        (true, false, _) => "%H:%M",
+        (false, true, true) => "%-I:%M:%S %p",
+        (false, false, true) => "%-I:%M %p",
+        (false, true, false) => "%-I:%M:%S",
+        (false, false, false) => "%-I:%M",
     };
     let time = now.format(time_format).to_string();
-    let visible = if settings.show_date {
-        format!("{}  {time}", now.format("%a %b %-d"))
-    } else {
-        time
+    let date_format = match (settings.show_date, settings.show_weekday) {
+        (true, true) => Some("%a %b %-d"),
+        (true, false) => Some("%b %-d"),
+        (false, true) => Some("%a"),
+        (false, false) => None,
+    };
+    let visible = match date_format {
+        Some(format) => format!("{}  {time}", now.format(format)),
+        None => time,
     };
     ClockLabel {
         visible,

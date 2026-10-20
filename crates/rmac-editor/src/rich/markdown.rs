@@ -398,8 +398,8 @@ fn closing(text: &str, open: usize, delimiter: &str, word_bound: bool) -> Option
             let doubled = single && rest[1..].starts_with(marker);
             let before = text[..at].chars().next_back();
             let follow = rest[delimiter.len()..].chars().next();
-            let flanks = !before.is_some_and(char::is_whitespace)
-                && !(word_bound && follow.is_some_and(char::is_alphanumeric));
+            let flanks = !(before.is_some_and(char::is_whitespace)
+                || word_bound && follow.is_some_and(char::is_alphanumeric));
             if !doubled && flanks {
                 return Some(at);
             }

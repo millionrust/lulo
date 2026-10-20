@@ -1425,6 +1425,9 @@ def launch(
     environment["RMAC_MENU_STRIP_TRACE"] = "1"
     environment["RMAC_GPUI_STARTUP_TRACE"] = "1"
     environment["RMAC_GPUI_WAKE_TRACE"] = "1"
+    # Clock's World Clock second hand sweeps while its window is active
+    # (CLOCK-10); the idle readings are for the minute redraw alone.
+    environment["RMAC_CLOCK_SECOND_HAND"] = "still"
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
     log = profile / "output.log"

@@ -731,6 +731,9 @@ def app_environment(environ: dict[str, str], app_temp: Path, ready_file: Path) -
         directory.mkdir(exist_ok=True)
         environment[key] = str(directory)
     environment[READY_FILE_ENV] = str(ready_file)
+    # Clock's World Clock second hand sweeps while its window is active
+    # (CLOCK-10); the 0.3% budget is for the minute redraw alone.
+    environment["RMAC_CLOCK_SECOND_HAND"] = "still"
     return environment
 
 

@@ -146,6 +146,11 @@ def isolated_environment(work: Path) -> dict[str, str]:
         "WLR_RENDERER": "pixman",
         "LIBGL_ALWAYS_SOFTWARE": "1",
         "RMAC_BEHAVIOR_NESTED": "1",
+        # Clock's World Clock second hand sweeps at about 30 frames a second
+        # while its window is active (CLOCK-10). Nested runs hold it still so
+        # idle measurements and screenshots see the minute redraw;
+        # run_clock_sweep.py turns it on.
+        "RMAC_CLOCK_SECOND_HAND": "still",
     })
     for icd in sorted(Path("/usr/share/vulkan/icd.d").glob("*lvp*.json")):
         env["VK_ICD_FILENAMES"] = str(icd)

@@ -63,12 +63,20 @@ const WORLD_TICK_MS: u64 = 60_000;
 /// Lulo itself.
 const WORLD_TICK_ENV: &str = "RMAC_CLOCK_WORLD_TICK_MS";
 
-/// Whether the second hand sweeps. The Windows redraw-count check sets
-/// [`WORLD_TICK_ENV`] to count the minute redraws alone, so the sweep is off
-/// there.
+/// `RMAC_CLOCK_SECOND_HAND=still` holds the second hand still. The idle-CPU
+/// checks set it (and the Windows redraw-count check sets [`WORLD_TICK_ENV`])
+/// because they measure the minute redraw, and a sweeping hand is an
+/// animation, not idleness.
+const SECOND_HAND_ENV: &str = "RMAC_CLOCK_SECOND_HAND";
+
+/// Whether the second hand may sweep at all (see [`SECOND_HAND_ENV`]).
 fn second_hand_sweeps() -> bool {
     static SWEEP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *SWEEP.get_or_init(|| SHOW_SECOND_HAND && std::env::var_os(WORLD_TICK_ENV).is_none())
+    *SWEEP.get_or_init(|| {
+        SHOW_SECOND_HAND
+            && std::env::var_os(WORLD_TICK_ENV).is_none()
+            && std::env::var(SECOND_HAND_ENV).map_or(true, |value| value != "still")
+    })
 }
 
 /// The World Clock's redraw period in milliseconds, read once.
@@ -185,6 +193,8 @@ pub(crate) struct ClockView {
     ticker_wake: async_channel::Sender<()>,
     /// A second-hand frame is already scheduled (CLOCK-10).
     hand_chain: bool,
+    /// The second hand sweeps in this frame: the window is the active one.
+    sweeping: bool,
     zone: Zone,
     zones: HashMap<&'static str, Zone>,
     land: Option<Arc<Land>>,
@@ -259,6 +269,7 @@ impl ClockView {
             _state_watcher: state_watcher,
             ticker_wake,
             hand_chain: false,
+            sweeping: false,
             zone: tz::local_zone(),
             zones: HashMap::new(),
             land: Land::parse(LAND_SVG).map(Arc::new),
@@ -1104,7 +1115,7 @@ impl ClockView {
                         m::FACE_TOP + m::FACE_DIAMETER / 2.0,
                         m::FACE_DIAMETER,
                         wall,
-                        second_hand_sweeps().then_some(now),
+                        self.sweeping.then_some(now),
                         sun.is_day(city.latitude, city.longitude),
                     ))
                     .children(lines.into_iter().enumerate().map(|(line, (text, color))| {
@@ -2439,7 +2450,10 @@ impl Render for ClockView {
         let now = now_millis();
         if self.tab == Tab::World {
             self.ensure_map(width, window.scale_factor(), now, cx);
-            if second_hand_sweeps() && !self.hand_chain {
+            // Only the active window animates: a background or hidden Clock
+            // costs nothing, here and on Windows.
+            self.sweeping = second_hand_sweeps() && window.is_window_active();
+            if self.sweeping && !self.hand_chain {
                 self.hand_chain = true;
                 let view = cx.entity().downgrade();
                 window.on_next_frame(move |window, cx| {

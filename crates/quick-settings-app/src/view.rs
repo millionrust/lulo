@@ -228,10 +228,9 @@ pub(crate) fn initial_surface_height(display: bool, hidden_pills: usize) -> f32 
         banners: 0,
         hidden_pills,
         edit_rows: 1,
-        // Dark Mode and Screenshot always, Low Power on a battery PC (a
-        // guess until power-profiles-daemon answers), Screen Mirroring when
-        // its sender is installed.
-        circles: 2 + usize::from(hardware_now().battery) + usize::from(mirroring_available()),
+        // Dark Mode and Screenshot always, Screen Mirroring when its sender
+        // is installed; Low Power joins once power-profiles-daemon answers.
+        circles: 2 + usize::from(mirroring_available()),
     }
     .surface_height() as f32
 }

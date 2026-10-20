@@ -85,6 +85,21 @@ fn pinned_order_leads_and_running_windows_group_by_desktop_identity() {
 }
 
 #[test]
+fn an_xwayland_window_joins_the_entry_that_claims_its_class() {
+    rmac_apps::register_window_class("jetbrains-idea-docktest", "idea-docktest.desktop");
+    let catalog = [application("idea-docktest.desktop", "IntelliJ IDEA")];
+    let compositor = rmac_compositor::Snapshot {
+        windows: vec![window(1, "jetbrains-idea-docktest", true, false, 20)],
+        ..Default::default()
+    };
+    let model = Model::build(&[], &Default::default(), &catalog, &compositor);
+    assert_eq!(model.items.len(), 1);
+    assert_eq!(model.items[0].name, "IntelliJ IDEA");
+    assert!(model.items[0].running);
+    assert!(model.items[0].launchable);
+}
+
+#[test]
 fn unpinned_running_apps_do_not_reorder_when_focus_changes() {
     let catalog = [
         application("alacritty.desktop", "Alacritty"),

@@ -36,8 +36,8 @@ mod linux_wayland {
     use gpui_platform::application;
     use rmac_compositor::reveal::{self, Revealed};
     use rmac_compositor::{
-        frame_to_percent, window_logical_rect, Action, Distance, OutputId, Snapshot,
-        TileHistoryStore, TileRegion, WindowId, WorkspaceId,
+        window_logical_rect, Action, Distance, OutputId, Snapshot, TileHistoryStore, TileRegion,
+        WindowId, WorkspaceId,
     };
     use rmac_shell_settings::{ClickWallpaperToReveal, HotCornerSettings};
     use rmac_shell_ui::tokens;
@@ -55,10 +55,6 @@ mod linux_wayland {
     /// The height rmac's menu bar reserves (rmac-menubar BAR_HEIGHT). The
     /// Mac measures its wallpaper-click reveal from below the menu bar.
     const MENU_BAR_HEIGHT: f64 = 29.0;
-    /// The Dock's reservation (rmac-dock EXCLUSIVE_ZONE, WIN-02). Fill,
-    /// Centre and the halves (WIN-01) measure their working area between
-    /// this and the menu bar, above.
-    const DOCK_HEIGHT: f64 = 89.0;
     /// niri's window-movement animation (shell.kdl: 300 ms). Under Reduce
     /// Motion the screen holds this long while windows move, then
     /// crossfades; Mission Control waits this long for windows coming back.
@@ -129,6 +125,9 @@ mod linux_wayland {
         /// Tells the window placer (`crate::placement`) when windows are
         /// pushed aside on purpose, so it leaves them there.
         reveal_guard: crate::placement::RevealGuard,
+        /// What the menu bar and the Dock reserve (Desktop & Dock), which
+        /// Fill, Centre, the halves and Zoom measure their percentages in.
+        reservation: rmac_compositor::placement::Reservation,
     }
 
     impl Service {
@@ -150,6 +149,10 @@ mod linux_wayland {
                 window_pictures: HashMap::new(),
                 tile_history: TileHistoryStore::load_default(),
                 reveal_guard,
+                reservation: rmac_compositor::placement::Reservation {
+                    menu_bar: MENU_BAR_HEIGHT,
+                    ..Default::default()
+                },
             };
             service.refresh_catalog(cx);
             service
@@ -182,7 +185,7 @@ mod linux_wayland {
         /// tiling action keeps the frame from before the first, so 🌐⌃R
         /// always lands back on the window's original size.
         fn record_tile_history(&mut self, snapshot: &Snapshot, window: WindowId) {
-            let Some(percent) = tile_history_percent(snapshot, window) else {
+            let Some(percent) = tile_history_percent(snapshot, window, &self.reservation) else {
                 return;
             };
             self.tile_history.record(window, percent);
@@ -412,6 +415,7 @@ mod linux_wayland {
     fn tile_history_percent(
         snapshot: &Snapshot,
         window: WindowId,
+        reservation: &rmac_compositor::placement::Reservation,
     ) -> Option<rmac_compositor::FramePercent> {
         let window = snapshot
             .windows
@@ -428,19 +432,18 @@ mod linux_wayland {
             .outputs
             .iter()
             .find(|output| Some(&output.id) == workspace.output.as_ref())?;
-        let logical = output.logical.as_ref()?;
         let position = window.layout.tile_position_in_view?;
         let size = window.layout.tile_size;
-        frame_to_percent(
-            logical.size.width,
-            logical.size.height,
-            MENU_BAR_HEIGHT,
-            DOCK_HEIGHT,
-            position.x,
-            position.y,
-            size.width,
-            size.height,
-        )
+        // The live reservation: the Dock's size, edge and hiding change the
+        // working area niri measures percentages in.
+        let insets = reservation.insets(&output.id, &snapshot.outputs);
+        let area = rmac_compositor::placement::visible_frame(output, insets)?;
+        Some(rmac_compositor::FramePercent {
+            x: (position.x - area.x) / area.width * 100.0,
+            y: (position.y - area.y) / area.height * 100.0,
+            width: size.width / area.width * 100.0,
+            height: size.height / area.height * 100.0,
+        })
     }
 
     /// Under Reduce Motion, hold the screen while niri moves the windows and
@@ -2013,12 +2016,13 @@ mod linux_wayland {
                                 crate::placement::MENU_BAR_HEIGHT,
                             );
                             let _ = placement_tx
-                                .send(crate::placement::Input::Dock(reservation))
+                                .send(crate::placement::Input::Dock(reservation.clone()))
                                 .await;
                             cx.update(|cx| {
                                 configured.update(cx, |service, _| {
                                     service.corners = corners;
                                     service.click_to_reveal = click_to_reveal;
+                                    service.reservation = reservation.clone();
                                 });
                                 reconcile_corners(&configured, cx);
                             });

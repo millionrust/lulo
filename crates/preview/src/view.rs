@@ -2421,7 +2421,7 @@ impl PreviewView {
                         .min(min)
                         .max(max)
                         .step(0.01)
-                        .default_value(0.0)
+                        .default_value(0.0_f32)
                 });
                 cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
                     if let SliderEvent::Change(value) = event {
@@ -3414,7 +3414,7 @@ impl PreviewView {
     fn reset_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.adjust_colour_values = ColourAdjust::default();
         for slider in &self.adjust_colour_sliders {
-            slider.update(cx, |state, cx| state.set_value(0.0, window, cx));
+            slider.update(cx, |state, cx| state.set_value(0.0_f32, window, cx));
         }
         self.adjust_colour_generation += 1;
         if let Some(old) = self.adjust_colour_preview.take() {

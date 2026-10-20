@@ -294,7 +294,7 @@ class VersionPolicyTests(unittest.TestCase):
             architecture="amd64",
             dependencies=native.resolved_static_dependencies(session, "0.9.0~beta.1-38"),
         ).decode("utf-8")
-        self.assertIn("niri (>= 26.04+lulo1-3)", control)
+        self.assertIn("niri (>= 26.04+lulo1-4)", control)
         self.assertIn("xwayland-satellite (>= 0.8.2+lulo1-1)", control)
 
 

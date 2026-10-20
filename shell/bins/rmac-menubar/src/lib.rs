@@ -1671,6 +1671,13 @@ mod bar {
             self.start_confirmation(menu_model::POWER_DIALOG_ACTION.to_owned(), cx);
         }
 
+        /// ⇧⌘Q (KB-01): the Log Out confirmation, shown where the system
+        /// menu opens, with the same countdown as choosing Log Out….
+        fn open_log_out_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.open_menu(0, SYSTEM_MENU_ID.to_owned(), window, cx);
+            self.start_confirmation("system::logout".to_owned(), cx);
+        }
+
         fn open_menu(
             &mut self,
             index: usize,
@@ -6911,6 +6918,7 @@ mod bar {
             watch_power_dialog_requests(cx);
             watch_restart_to_update_requests(cx);
             watch_menu_focus_requests(cx);
+            watch_log_out_requests(cx);
             start(cx);
         });
     }
@@ -6924,6 +6932,7 @@ mod bar {
         {
             system::requests::register("menu-bar-focus", begin_menu_keyboard_on_first_bar);
             system::requests::register("shutdown-dialog", show_power_dialog);
+            system::requests::register("log-out-dialog", show_log_out_dialog);
         }
         {
             let status = start_status(cx);
@@ -7218,6 +7227,45 @@ mod bar {
             }
         }
         eprintln!("Ctrl+F2 has no menu bar to move keyboard focus to");
+    }
+
+    /// `⇧⌘Q` (KB-01): niri's bind spawns `rmac-shortcut-dispatch
+    /// log-out-dialog`; the watch waits on the socket, nothing polls.
+    #[cfg(target_os = "linux")]
+    fn watch_log_out_requests(cx: &mut App) {
+        let (sender, requests) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let id = rmac_shortcuts::ShortcutId("log-out-dialog".to_owned());
+                if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                    eprintln!("Shift+Command+Q cannot open the Log Out dialog: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = requests.recv().await {
+                if matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                    cx.update(show_log_out_dialog);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Opens the Log Out confirmation on the first menu bar that can take it.
+    fn show_log_out_dialog(cx: &mut App) {
+        for handle in cx.windows() {
+            let Some(bar) = handle.downcast::<TopBar>() else {
+                continue;
+            };
+            if bar
+                .update(cx, |bar, window, cx| bar.open_log_out_dialog(window, cx))
+                .is_ok()
+            {
+                return;
+            }
+        }
+        eprintln!("Shift+Command+Q has no menu bar to open the Log Out dialog in");
     }
 
     /// Shows the dialog on the first menu bar that can take it.

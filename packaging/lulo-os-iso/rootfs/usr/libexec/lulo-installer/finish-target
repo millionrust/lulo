@@ -1,0 +1,20 @@
+#!/bin/sh
+# Calamares shellprocess@lulo_finish (ADR 0029), in the installed system.
+set -eu
+
+# UEFI: some firmware forgets its boot entries (after a BIOS update, or a
+# CMOS reset). Put the signed shim where firmware looks for removable media
+# too, so Lulo OS still starts with Secure Boot on. A fallback that is
+# already there (Windows keeps one) is left alone.
+esp=/boot/efi/EFI
+if [ -d /sys/firmware/efi ] && [ -f "$esp/ubuntu/shimx64.efi" ] \
+    && [ ! -e "$esp/BOOT/BOOTX64.EFI" ] && [ ! -e "$esp/Boot/bootx64.efi" ]; then
+    mkdir -p "$esp/BOOT"
+    cp "$esp/ubuntu/shimx64.efi" "$esp/BOOT/BOOTX64.EFI"
+    cp "$esp/ubuntu/grubx64.efi" "$esp/BOOT/grubx64.efi"
+    [ -f "$esp/ubuntu/mmx64.efi" ] && cp "$esp/ubuntu/mmx64.efi" "$esp/BOOT/mmx64.efi"
+fi
+
+# The installer's own files.
+rm -rf /usr/share/lulo-installer /etc/calamares
+rm -rf /usr/libexec/lulo-installer

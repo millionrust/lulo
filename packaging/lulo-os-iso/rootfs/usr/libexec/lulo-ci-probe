@@ -1,0 +1,115 @@
+#!/bin/bash
+# Lulo OS image test probe (ADR 0029). Runs only inside the CI's QEMU, which
+# sets the fw_cfg entry opt/org.lulo.ci to the test mode ("live", "install"
+# or "installed"). Prints "LULO-CI: ..." progress lines on the first serial
+# port and copies the installer's log to the second, for
+# scripts/iso/qemu_iso_test.py.
+set -u
+
+fw=/sys/firmware/qemu_fw_cfg/by_name/opt/org.lulo.ci/raw
+
+if [ "${1:-}" = --check ]; then
+    modprobe qemu_fw_cfg 2>/dev/null || true
+    [ -r "$fw" ]
+    exit
+fi
+
+mode=$(tr -dc 'a-z' < "$fw")
+serial=/dev/ttyS0
+logport=/dev/ttyS1
+stty -F "$serial" 115200 raw -echo 2>/dev/null || true
+stty -F "$logport" 115200 raw -echo 2>/dev/null || true
+say() { printf 'LULO-CI: %s\n' "$*" > "$serial"; }
+
+secure_boot=0
+if command -v mokutil >/dev/null 2>&1 && mokutil --sb-state 2>/dev/null | grep -q 'SecureBoot enabled'; then
+    secure_boot=1
+fi
+firmware=bios
+[ -d /sys/firmware/efi ] && firmware=uefi
+live=0
+grep -qw 'boot=casper' /proc/cmdline && live=1
+say "boot mode=$mode firmware=$firmware secureboot=$secure_boot live=$live kernel=$(uname -r)"
+
+session_user() {
+    # The first user (uid >= 999, the casper live user is 999) running niri.
+    local pid uid
+    for pid in $(pgrep -x niri 2>/dev/null); do
+        uid=$(stat -c %u "/proc/$pid" 2>/dev/null) || continue
+        if [ "$uid" -ge 999 ]; then
+            getent passwd "$uid" | cut -d: -f1
+            return 0
+        fi
+    done
+    return 1
+}
+
+running() { pgrep -u "$1" -x "$2" >/dev/null 2>&1; }
+
+report_failure_context() {
+    say "context: $(systemctl is-system-running 2>/dev/null) failed-units=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | tr '\n' ',')"
+    journalctl -b -p warning --no-pager -o short-monotonic 2>/dev/null | tail -n 150 > "$logport"
+}
+
+user=""
+for _ in $(seq 1 450); do
+    if user=$(session_user) && running "$user" rmac-top-bar && running "$user" rmac-dock; then
+        break
+    fi
+    user=""
+    sleep 2
+done
+if [ -z "$user" ]; then
+    say "session-timeout processes=$(ps -eo comm= | grep -E '^(niri|rmac-|gdm|gnome-shell)' | sort -u | tr '\n' ',')"
+    report_failure_context
+    exit 1
+fi
+uid=$(id -u "$user")
+home=$(getent passwd "$user" | cut -d: -f6)
+surfaces=$(pgrep -u "$user" -a 2>/dev/null | awk '{print $2}' | xargs -n1 basename 2>/dev/null \
+    | grep -E '^rmac-' | sort -u | tr '\n' ',')
+pinned=0
+grep -q '"org.lulo.Installer"' "$home/.config/rmac/shell.json" 2>/dev/null && pinned=1
+installer_entry=0
+[ -f /usr/share/applications/org.lulo.Installer.desktop ] && installer_entry=1
+say "session-up user=$user uid=$uid installer-pinned=$pinned installer-entry=$installer_entry surfaces=$surfaces"
+
+if [ "$mode" != install ]; then
+    report_failure_context
+    say "done"
+    exit 0
+fi
+
+# Open "Install Lulo OS" in the live session the way its Dock tile does.
+runtime=/run/user/$uid
+socket=$(find "$runtime" -maxdepth 1 -name 'wayland-*' -type s 2>/dev/null | sort | head -n 1)
+desktop_exec=$(sed -n 's/^Exec=//p' /usr/share/applications/org.lulo.Installer.desktop)
+runuser -u "$user" -- env XDG_RUNTIME_DIR="$runtime" WAYLAND_DISPLAY="$socket" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" XDG_SESSION_TYPE=wayland \
+    "$desktop_exec" > /dev/null 2>&1 &
+launcher=$!
+for _ in $(seq 1 60); do
+    pgrep -x calamares >/dev/null && break
+    sleep 1
+done
+if ! pgrep -x calamares >/dev/null; then
+    say "installer-missing"
+    report_failure_context
+    exit 1
+fi
+say "installer-launched exec=$desktop_exec"
+
+# Mirror the Calamares session log to the second serial port while it runs.
+(
+    for _ in $(seq 1 60); do
+        for log in /root/.cache/calamares/session.log "$home/.cache/calamares/session.log"; do
+            if [ -f "$log" ]; then
+                exec tail -n +1 -F "$log" > "$logport"
+            fi
+        done
+        sleep 1
+    done
+) &
+wait "$launcher"
+status=$?
+say "installer-exit status=$status"

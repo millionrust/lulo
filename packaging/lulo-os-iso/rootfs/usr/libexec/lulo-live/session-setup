@@ -1,0 +1,30 @@
+#!/bin/sh
+# lulo-live-session.service (ADR 0029): the live user starts in the Lulo
+# session with "Install Lulo OS" in the Dock and no setup assistant.
+set -eu
+
+user=lulo
+if [ -r /etc/casper.conf ]; then
+    # shellcheck disable=SC1091
+    . /etc/casper.conf
+    user=${USERNAME:-lulo}
+fi
+home=$(getent passwd "$user" | cut -d: -f6)
+[ -n "$home" ] && [ -d "$home" ] || exit 0
+group=$(id -gn "$user")
+
+# GDM opens the Lulo session (packaging/rmac-session/rmac.desktop).
+mkdir -p /var/lib/AccountsService/users
+printf '[User]\nSession=rmac\nSystemAccount=false\n' \
+    > "/var/lib/AccountsService/users/$user"
+
+config=$home/.config/rmac
+install -d -o "$user" -g "$group" "$home/.config" "$config"
+if [ ! -e "$config/shell.json" ]; then
+    install -o "$user" -g "$group" -m 0644 /usr/share/lulo-live/shell.json "$config/shell.json"
+fi
+# The setup assistant is for the installed system's first login.
+if [ ! -e "$config/setup-assistant-complete" ]; then
+    printf 'skipped\n' > "$config/setup-assistant-complete"
+    chown "$user:$group" "$config/setup-assistant-complete"
+fi

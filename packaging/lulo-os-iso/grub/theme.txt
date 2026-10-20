@@ -1,0 +1,53 @@
+# Lulo OS GRUB theme (ADR 0029). Original Lulo artwork only (docs/brand.md).
+title-text: ""
+desktop-image: "background.png"
+desktop-color: "#10162f"
+terminal-font: "Lulo Regular 16"
+terminal-left: "10%"
+terminal-top: "20%"
+terminal-width: "80%"
+terminal-height: "60%"
+
++ image {
+    left = 50%-150
+    top = 16%
+    file = "lockup.png"
+}
+
++ boot_menu {
+    left = 25%
+    top = 38%
+    width = 50%
+    height = 40%
+    item_font = "Lulo Regular 24"
+    item_color = "#c9cee6"
+    selected_item_font = "Lulo Regular 24"
+    selected_item_color = "#ffffff"
+    item_height = 44
+    item_padding = 12
+    item_spacing = 8
+    icon_width = 0
+    icon_height = 0
+    scrollbar = false
+}
+
++ label {
+    id = "__timeout__"
+    left = 0
+    top = 86%
+    width = 100%
+    align = "center"
+    font = "Lulo Regular 16"
+    color = "#9aa3c7"
+    text = "Starting in %d seconds"
+}
+
++ label {
+    left = 0
+    top = 92%
+    width = 100%
+    align = "center"
+    font = "Lulo Regular 16"
+    color = "#7d86ad"
+    text = "Use the arrow keys to choose, then press Enter"
+}

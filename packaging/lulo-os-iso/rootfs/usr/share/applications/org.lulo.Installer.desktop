@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Install Lulo OS
+GenericName=Installer
+Comment=Install Lulo OS on this computer, next to Windows or in its place
+Exec=/usr/libexec/lulo-installer/launch
+Icon=lulo-installer
+Terminal=false
+StartupNotify=true
+Categories=System;
+Keywords=install;installer;setup;dual boot;windows;

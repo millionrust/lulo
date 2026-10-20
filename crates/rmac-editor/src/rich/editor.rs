@@ -572,11 +572,7 @@ impl RichTextEditor {
 
     /// Format ▸ Text ▸ Writing Direction ▸ Selection: embed the selection
     /// left to right or right to left, or remove the embedding.
-    pub fn set_selection_direction(
-        &mut self,
-        direction: WritingDirection,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_selection_direction(&mut self, direction: WritingDirection, cx: &mut Context<Self>) {
         self.change_char_style(cx, move |style| style.embedding = direction);
     }
 
@@ -1737,10 +1733,11 @@ impl RichTextEditor {
         let style_here = self.document.style_at(start);
         self.document
             .replace_text(start..start + local, "", &style_here);
-        self.document.update_paragraph_style(start..start, |paragraph| {
-            paragraph.list = Some(list);
-            paragraph.checked = checked;
-        });
+        self.document
+            .update_paragraph_style(start..start, |paragraph| {
+                paragraph.list = Some(list);
+                paragraph.checked = checked;
+            });
         self.selection = start..start;
         self.reversed = false;
         self.typing_style = None;

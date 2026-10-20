@@ -682,8 +682,7 @@ pub(crate) fn layout_paragraph(
                             (start < end).then(|| text_run(style, end - start, params))
                         })
                         .collect();
-                    let shaped =
-                        text_system.layout_line(&text[stretch.clone()], size, &runs, None);
+                    let shaped = text_system.layout_line(&text[stretch.clone()], size, &runs, None);
                     let stretch_rtl = level_at(stretch.start) % 2 == 1;
                     let mut glyphs = 0_usize;
                     for (byte, glyph_x) in logical_stops(&shaped, stretch_rtl) {
@@ -1102,7 +1101,11 @@ impl ParagraphLayout {
             let (left, right) = line.runs.iter().fold((Pixels::MAX, px(0.0)), |acc, run| {
                 (acc.0.min(run.x), acc.1.max(run.x + run.width))
             });
-            return if self.rtl { left - beyond } else { right + beyond };
+            return if self.rtl {
+                left - beyond
+            } else {
+                right + beyond
+            };
         }
         // At a direction change the caret stays with the text before it
         // when that text reads in the paragraph's own direction.

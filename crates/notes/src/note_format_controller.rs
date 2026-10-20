@@ -156,11 +156,7 @@ pub(super) fn checklist_bulk(document: &Document, action: ChecklistBulkAction) -
 /// The document with paragraph `index` swapped with its neighbour above
 /// (`up`) or below, when both are list items; and where `index` went.
 fn moved_list_item(document: &Document, index: usize, up: bool) -> Option<(Document, usize)> {
-    let other = if up {
-        index.checked_sub(1)?
-    } else {
-        index + 1
-    };
+    let other = if up { index.checked_sub(1)? } else { index + 1 };
     if other >= document.paragraph_count()
         || document.paragraph(index).style().list.is_none()
         || document.paragraph(other).style().list.is_none()
@@ -584,10 +580,12 @@ mod tests {
             body_markdown(&checklist_bulk(&body, ChecklistBulkAction::DeleteTicked)),
             "First\n- [ ] two\n\n- [ ] five"
         );
-        assert!(!body_markdown(&checklist_bulk(&body, ChecklistBulkAction::TickAll))
-            .contains("[ ]"));
-        assert!(!body_markdown(&checklist_bulk(&body, ChecklistBulkAction::UntickAll))
-            .contains("[x]"));
+        assert!(
+            !body_markdown(&checklist_bulk(&body, ChecklistBulkAction::TickAll)).contains("[ ]")
+        );
+        assert!(
+            !body_markdown(&checklist_bulk(&body, ChecklistBulkAction::UntickAll)).contains("[x]")
+        );
     }
 
     #[test]

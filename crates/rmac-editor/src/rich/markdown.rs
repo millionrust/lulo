@@ -203,8 +203,12 @@ const TOKENS: [(&str, TokenApply); 6] = [
     (":center:", |style| style.alignment = Alignment::Center),
     (":right:", |style| style.alignment = Alignment::Right),
     (":justify:", |style| style.alignment = Alignment::Justified),
-    (":rtl:", |style| style.direction = WritingDirection::RightToLeft),
-    (":ltr:", |style| style.direction = WritingDirection::LeftToRight),
+    (":rtl:", |style| {
+        style.direction = WritingDirection::RightToLeft
+    }),
+    (":ltr:", |style| {
+        style.direction = WritingDirection::LeftToRight
+    }),
     (":mono:", |style| style.role = ParagraphRole::Monostyled),
 ];
 
@@ -466,7 +470,11 @@ fn html_span(text: &str, open: usize) -> Option<(&str, &str, usize)> {
         if rest.starts_with(CLOSE) {
             depth -= 1;
             if depth == 0 {
-                return Some((&text[css_start..css_end], &text[inner_start..at], at + CLOSE.len()));
+                return Some((
+                    &text[css_start..css_end],
+                    &text[inner_start..at],
+                    at + CLOSE.len(),
+                ));
             }
             at += CLOSE.len();
             continue;
@@ -810,7 +818,11 @@ fn write_run(
     let (lead, core, trail) = if escape || as_code {
         ("", text, "")
     } else {
-        (&text[..core_start], &text[core_start..core_end], &text[core_end..])
+        (
+            &text[..core_start],
+            &text[core_start..core_end],
+            &text[core_end..],
+        )
     };
     let mut inner = if as_code {
         format!("`{text}`")
@@ -962,7 +974,13 @@ mod tests {
 
     #[test]
     fn plain_notes_are_stored_as_their_own_text() {
-        for body in ["", "Buy milk", "one\ntwo\n\nfour", "a\n", "10:30 at 192.168.1.1:5555"] {
+        for body in [
+            "",
+            "Buy milk",
+            "one\ntwo\n\nfour",
+            "a\n",
+            "10:30 at 192.168.1.1:5555",
+        ] {
             stable(body);
             assert_eq!(read(body).text(), body);
         }
@@ -974,7 +992,10 @@ mod tests {
         assert_eq!(document.text(), "Title\nHeading\nSub\nBody bold it gone");
         assert_eq!(document.paragraph(0).style().role, ParagraphRole::Title);
         assert_eq!(document.paragraph(1).style().role, ParagraphRole::Heading);
-        assert_eq!(document.paragraph(2).style().role, ParagraphRole::Subheading);
+        assert_eq!(
+            document.paragraph(2).style().role,
+            ParagraphRole::Subheading
+        );
         assert!(document.paragraph(0).style_of_char_at(0).bold);
         assert_eq!(document.paragraph(0).style_of_char_at(0).size, 20.0);
         let body = document.paragraph(3);
@@ -990,7 +1011,10 @@ mod tests {
         let paragraph = document.paragraph(0);
         assert_eq!(paragraph.text(), "u h x^2^ H::2::O");
         assert!(paragraph.style_of_char_at(0).underline);
-        assert_eq!(paragraph.style_of_char_at(2).highlight, Some(NOTES_HIGHLIGHT));
+        assert_eq!(
+            paragraph.style_of_char_at(2).highlight,
+            Some(NOTES_HIGHLIGHT)
+        );
         // Inside a word, `^` and `::` are just text (a version, a path).
         assert_eq!(paragraph.style_of_char_at(5).superscript, 0);
         let separated = read("x ^2^ and ::n::");
@@ -1017,7 +1041,9 @@ mod tests {
 
     #[test]
     fn lists_checklists_and_quotes_round_trip() {
-        stable("- [ ] Buy milk\n- [x] Eggs\n- dash\n* bullet\n1. one\n2. two\n  - nested\n> quoted");
+        stable(
+            "- [ ] Buy milk\n- [x] Eggs\n- dash\n* bullet\n1. one\n2. two\n  - nested\n> quoted",
+        );
         let document = read("- [x] Eggs\n  * deep");
         let eggs = document.paragraph(0).style();
         assert_eq!(eggs.list, Some(ListKind::Checkbox));
@@ -1036,8 +1062,14 @@ mod tests {
     fn monostyled_paragraphs_are_a_fenced_block() {
         let markdown = "Before\n```\nfn main() {\n    let x = 1;\n}\n```\nAfter";
         let document = read(markdown);
-        assert_eq!(document.text(), "Before\nfn main() {\n    let x = 1;\n}\nAfter");
-        assert_eq!(document.paragraph(2).style().role, ParagraphRole::Monostyled);
+        assert_eq!(
+            document.text(),
+            "Before\nfn main() {\n    let x = 1;\n}\nAfter"
+        );
+        assert_eq!(
+            document.paragraph(2).style().role,
+            ParagraphRole::Monostyled
+        );
         assert_eq!(
             document.paragraph(2).style_of_char_at(0).family.as_deref(),
             Some("Menlo")
@@ -1072,7 +1104,10 @@ mod tests {
         );
         let back = read(&markdown);
         assert_eq!(back.text(), "red big");
-        assert_eq!(back.paragraph(0).style_of_char_at(0).color, Some(Rgb::from_u32(0xff0000)));
+        assert_eq!(
+            back.paragraph(0).style_of_char_at(0).color,
+            Some(Rgb::from_u32(0xff0000))
+        );
         assert_eq!(back.paragraph(0).style_of_char_at(4).size, 24.0);
         stable(&markdown);
     }

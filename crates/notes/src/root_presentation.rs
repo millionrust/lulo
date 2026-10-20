@@ -536,12 +536,10 @@ impl NotesView {
             }))
             .on_action(cx.listener(|this, _: &ShowFonts, window, cx| this.show_fonts(window, cx)))
             .on_action(cx.listener(|this, _: &ShowColours, _, cx| this.show_colours(cx)))
-            .on_action(cx.listener(|this, _: &ConfirmLink, window, cx| {
-                this.confirm_link(window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &CancelLink, window, cx| {
-                this.cancel_link(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &ConfirmLink, window, cx| this.confirm_link(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &CancelLink, window, cx| this.cancel_link(window, cx)))
             .on_action(cx.listener(|this, _: &CopyStyle, _, cx| this.copy_style(cx)))
             .on_action(cx.listener(|this, _: &PasteStyle, window, cx| this.paste_style(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleSuperscript, window, cx| {
@@ -568,24 +566,36 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &AlignRight, window, cx| {
                 this.set_text_alignment(Alignment::Right, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &ParagraphDirectionDefault, window, cx| {
-                this.set_paragraph_direction(WritingDirection::Default, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ParagraphDirectionLeftToRight, window, cx| {
-                this.set_paragraph_direction(WritingDirection::LeftToRight, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &ParagraphDirectionRightToLeft, window, cx| {
-                this.set_paragraph_direction(WritingDirection::RightToLeft, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &SelectionDirectionDefault, window, cx| {
-                this.set_selection_direction(WritingDirection::Default, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &SelectionDirectionLeftToRight, window, cx| {
-                this.set_selection_direction(WritingDirection::LeftToRight, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &SelectionDirectionRightToLeft, window, cx| {
-                this.set_selection_direction(WritingDirection::RightToLeft, window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &ParagraphDirectionDefault, window, cx| {
+                    this.set_paragraph_direction(WritingDirection::Default, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ParagraphDirectionLeftToRight, window, cx| {
+                    this.set_paragraph_direction(WritingDirection::LeftToRight, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ParagraphDirectionRightToLeft, window, cx| {
+                    this.set_paragraph_direction(WritingDirection::RightToLeft, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectionDirectionDefault, window, cx| {
+                    this.set_selection_direction(WritingDirection::Default, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectionDirectionLeftToRight, window, cx| {
+                    this.set_selection_direction(WritingDirection::LeftToRight, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectionDirectionRightToLeft, window, cx| {
+                    this.set_selection_direction(WritingDirection::RightToLeft, window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &MathsResultsOff, _, cx| {
                 this.set_maths_results_mode(MathsResultsMode::Off, cx)
             }))

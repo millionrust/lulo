@@ -85,8 +85,9 @@ impl NotesView {
             .map(|offset| offset..offset + query.len())
             .collect();
         // One undoable edit; each match keeps its own style.
-        self.body
-            .update(cx, |editor, cx| editor.replace_ranges(&ranges, &replacement, cx));
+        self.body.update(cx, |editor, cx| {
+            editor.replace_ranges(&ranges, &replacement, cx)
+        });
         let _ = window;
         self.schedule_current_edit(cx);
         self.recompute_note_find_matches(cx);

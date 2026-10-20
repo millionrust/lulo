@@ -111,7 +111,14 @@ impl NotesView {
             return;
         };
         let range = start..start + word.len();
-        if self.body.read(cx).document().style_of_char_at(start).link.is_some() {
+        if self
+            .body
+            .read(cx)
+            .document()
+            .style_of_char_at(start)
+            .link
+            .is_some()
+        {
             return;
         }
         let target: Arc<str> = Arc::from(target);
@@ -145,7 +152,9 @@ impl NotesView {
         let body = self.body.clone();
         if !self.text_assist.check_spelling_while_typing {
             self.spell_task = None;
-            body.update(cx, |editor, cx| editor.set_misspelled(revision, Vec::new(), cx));
+            body.update(cx, |editor, cx| {
+                editor.set_misspelled(revision, Vec::new(), cx)
+            });
             return;
         }
         let checker = Arc::clone(&self.spell_checker);

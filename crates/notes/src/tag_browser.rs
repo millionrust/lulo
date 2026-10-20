@@ -132,7 +132,11 @@ impl NotesView {
             })
             .map(|folder| folder.tag.to_lowercase());
         let in_smart_folder = smart_tag.as_deref().is_none_or(|tag| {
-            note.lock.is_none() && note.tags.iter().any(|note_tag| note_tag.to_lowercase() == tag)
+            note.lock.is_none()
+                && note
+                    .tags
+                    .iter()
+                    .any(|note_tag| note_tag.to_lowercase() == tag)
         });
         let in_tags = self
             .tag_selection
@@ -174,36 +178,38 @@ impl NotesView {
     pub(super) fn render_tag_browser(&self, cx: &mut Context<Self>) -> AnyElement {
         let tags = self.library_tags();
         let selection = self.tag_selection.clone();
-        let pill = |id: gpui::ElementId,
-                    label: SharedString,
-                    selected: bool,
-                    tag: Option<String>,
-                    cx: &mut Context<Self>| {
-            div()
-                .id(id)
-                .role(Role::ListBoxOption)
-                .aria_label(label.clone())
-                .aria_selected(selected)
-                .px(px(8.0))
-                .h(px(22.0))
-                .flex()
-                .items_center()
-                .rounded(px(mac::radius_pill()))
-                .text_size(rmac_ui::text_px(12.0))
-                .when(selected, |pill| {
-                    pill.bg(sidebar_selection()).text_color(sidebar_selected_text())
-                })
-                .when(!selected, |pill| {
-                    pill.bg(mac::control_fill())
-                        .text_color(sidebar_text())
-                        .hover(|hover| hover.bg(mac::hover()))
-                })
-                .child(label)
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.toggle_tag(tag.clone(), window, cx)
-                }))
-                .into_any_element()
-        };
+        let pill =
+            |id: gpui::ElementId,
+             label: SharedString,
+             selected: bool,
+             tag: Option<String>,
+             cx: &mut Context<Self>| {
+                div()
+                    .id(id)
+                    .role(Role::ListBoxOption)
+                    .aria_label(label.clone())
+                    .aria_selected(selected)
+                    .px(px(8.0))
+                    .h(px(22.0))
+                    .flex()
+                    .items_center()
+                    .rounded(px(mac::radius_pill()))
+                    .text_size(rmac_ui::text_px(12.0))
+                    .when(selected, |pill| {
+                        pill.bg(sidebar_selection())
+                            .text_color(sidebar_selected_text())
+                    })
+                    .when(!selected, |pill| {
+                        pill.bg(mac::control_fill())
+                            .text_color(sidebar_text())
+                            .hover(|hover| hover.bg(mac::hover()))
+                    })
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.toggle_tag(tag.clone(), window, cx)
+                    }))
+                    .into_any_element()
+            };
         let mut pills = Vec::with_capacity(tags.len() + 1);
         if !tags.is_empty() {
             pills.push(pill(

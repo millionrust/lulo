@@ -926,7 +926,10 @@ impl NotesView {
         let paragraph = self.body.read(cx).paragraph_style_at_selection();
         let char_style = self.body.read(cx).style_at_selection();
         for (action, direction) in [
-            ("notes::ParagraphDirectionDefault", WritingDirection::Default),
+            (
+                "notes::ParagraphDirectionDefault",
+                WritingDirection::Default,
+            ),
             (
                 "notes::ParagraphDirectionLeftToRight",
                 WritingDirection::LeftToRight,
@@ -939,7 +942,10 @@ impl NotesView {
             rmac_ui::set_menu_checked(action, paragraph.direction == direction, cx);
         }
         for (action, direction) in [
-            ("notes::SelectionDirectionDefault", WritingDirection::Default),
+            (
+                "notes::SelectionDirectionDefault",
+                WritingDirection::Default,
+            ),
             (
                 "notes::SelectionDirectionLeftToRight",
                 WritingDirection::LeftToRight,
@@ -968,7 +974,11 @@ impl NotesView {
         ] {
             rmac_ui::set_menu_checked(action, body_focused && paragraph.list == Some(list), cx);
         }
-        rmac_ui::set_menu_checked("notes::InsertBlockQuote", body_focused && paragraph.quote, cx);
+        rmac_ui::set_menu_checked(
+            "notes::InsertBlockQuote",
+            body_focused && paragraph.quote,
+            cx,
+        );
         rmac_ui::set_menu_label(
             "notes::ToggleChecklistDone",
             if paragraph.list == Some(ListKind::Checkbox) && paragraph.checked {
@@ -1078,10 +1088,8 @@ impl NotesView {
         rmac_ui::set_menu_enabled(
             "notes::CreateSmartFolderFromSelection",
             ready
-                && (matches!(
-                    self.tag_selection,
-                    Some(tag_browser::TagSelection::Tags(_))
-                ) || !self.tags.read(cx).selected_range().is_empty()),
+                && (matches!(self.tag_selection, Some(tag_browser::TagSelection::Tags(_)))
+                    || !self.tags.read(cx).selected_range().is_empty()),
             cx,
         );
         rmac_ui::set_menu_enabled(

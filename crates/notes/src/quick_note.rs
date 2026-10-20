@@ -106,7 +106,8 @@ impl Render for QuickNoteWindowView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The note this window shows is "the last Quick Note" to resume.
         if let Some(note) = self.pane.read(cx).note() {
-            self.main.update(cx, |notes, _| notes.quick_note_id = Some(note));
+            self.main
+                .update(cx, |notes, _| notes.quick_note_id = Some(note));
         }
         div()
             .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {

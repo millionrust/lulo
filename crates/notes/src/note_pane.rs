@@ -6,9 +6,9 @@
 //! a pane with nothing unsaved follows changes made elsewhere.
 
 use gpui::{
-    div, px, AppContext as _, Context, Entity, FocusHandle,
-    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, Render, Role,
-    StatefulInteractiveElement as _, Styled as _, Window,
+    div, px, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
+    KeyDownEvent, ParentElement as _, Render, Role, StatefulInteractiveElement as _, Styled as _,
+    Window,
 };
 use rmac_editor::rich::{ListKind, ParagraphRole, RichTextEditor, RichTextEvent};
 use rmac_editor::InputState;

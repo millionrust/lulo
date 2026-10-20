@@ -90,12 +90,7 @@ impl NoteWindowView {
             .read(cx)
             .session
             .snapshot()
-            .and_then(|snapshot| {
-                snapshot
-                    .notes
-                    .iter()
-                    .find(|note| Some(note.id) == note_id)
-            })
+            .and_then(|snapshot| snapshot.notes.iter().find(|note| Some(note.id) == note_id))
             .map(|note| crate::input_support::display_title(&note.title).to_string())
             .unwrap_or_else(|| "Note".to_owned())
     }

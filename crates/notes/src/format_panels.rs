@@ -135,8 +135,7 @@ impl NotesView {
             return;
         };
         if self.body_format_editable() {
-            self.body
-                .update(cx, |editor, cx| editor.set_size(size, cx));
+            self.body.update(cx, |editor, cx| editor.set_size(size, cx));
         }
     }
 
@@ -301,9 +300,8 @@ impl NotesView {
             )
             .child(
                 div().flex().justify_end().child(
-                    rmac_ui::dialog_button("fonts-done", "Done", Primary).on_click(
-                        cx.listener(|this, _, window, cx| this.close_panels(window, cx)),
-                    ),
+                    rmac_ui::dialog_button("fonts-done", "Done", Primary)
+                        .on_click(cx.listener(|this, _, window, cx| this.close_panels(window, cx))),
                 ),
             );
         rmac_ui::dialog("fonts-panel", card)
@@ -338,7 +336,9 @@ impl NotesView {
                     } else {
                         mac::separator()
                     })
-                    .on_click(cx.listener(move |this, _, _, cx| this.apply_colour(Some(color), cx))),
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.apply_colour(Some(color), cx)),
+                    ),
             );
         }
         let card = Self::panel_card(296.0)
@@ -371,7 +371,10 @@ impl NotesView {
         Some(
             gpui::deferred(
                 gpui::anchored()
-                    .position(gpui::point(caret.origin.x, caret.origin.y + caret.size.height + px(4.0)))
+                    .position(gpui::point(
+                        caret.origin.x,
+                        caret.origin.y + caret.size.height + px(4.0),
+                    ))
                     .child(
                         div()
                             .id("maths-suggestion")

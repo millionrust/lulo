@@ -1545,16 +1545,8 @@ const NOTES_MENUS: &[MenuSpec] = &[
                         [
                             item!("Paragraph", "notes::WritingDirectionParagraphLabel", ""),
                             item!("Default", "notes::ParagraphDirectionDefault", ""),
-                            item!(
-                                "Left to Right",
-                                "notes::ParagraphDirectionLeftToRight",
-                                ""
-                            ),
-                            item!(
-                                "Right to Left",
-                                "notes::ParagraphDirectionRightToLeft",
-                                ""
-                            ),
+                            item!("Left to Right", "notes::ParagraphDirectionLeftToRight", ""),
+                            item!("Right to Left", "notes::ParagraphDirectionRightToLeft", ""),
                             item!(
                                 "Selection",
                                 "notes::WritingDirectionSelectionLabel",
@@ -1562,16 +1554,8 @@ const NOTES_MENUS: &[MenuSpec] = &[
                                 separator
                             ),
                             item!("Default", "notes::SelectionDirectionDefault", ""),
-                            item!(
-                                "Left to Right",
-                                "notes::SelectionDirectionLeftToRight",
-                                ""
-                            ),
-                            item!(
-                                "Right to Left",
-                                "notes::SelectionDirectionRightToLeft",
-                                ""
-                            ),
+                            item!("Left to Right", "notes::SelectionDirectionLeftToRight", ""),
+                            item!("Right to Left", "notes::SelectionDirectionRightToLeft", ""),
                         ],
                         separator
                     ),

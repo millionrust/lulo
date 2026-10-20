@@ -11,7 +11,8 @@
           "Clock"
         ],
         "controls": [
-          "Clock Options…"
+          "Wi-Fi",
+          "Sound"
         ]
       }
     }

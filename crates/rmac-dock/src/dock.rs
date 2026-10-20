@@ -197,6 +197,7 @@ impl Model {
             stacks: project_stacks(stacks, places),
             minimized,
             repeated_click: settings.repeated_click,
+            documents: BTreeMap::new(),
         }
     }
 

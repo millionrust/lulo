@@ -12,6 +12,76 @@ pub struct ResolvedStack {
     pub available: bool,
 }
 
+/// The System Settings tile's panes (DOCK-32), alphabetical as the Mac's
+/// tile lists them: (label, `--pane` id). Panes that exist only on some
+/// PCs (Battery, Trackpad, Touchscreen) are left out: the Dock does not
+/// know this PC's hardware, and the sidebar's own list does.
+const SETTINGS_PANES: [(&str, &str); 30] = [
+    ("About", "about"),
+    ("Accessibility", "accessibility"),
+    ("Appearance", "appearance"),
+    ("Bluetooth", "bluetooth"),
+    ("Date & Time", "date-time"),
+    ("Desktop & Dock", "desktop-dock"),
+    ("Displays", "displays"),
+    ("Focus", "focus"),
+    ("Internet Accounts", "internet-accounts"),
+    ("Keyboard", "keyboard"),
+    ("Language & Region", "language-region"),
+    ("Lock Screen", "lock-screen"),
+    ("Login Items", "login-items"),
+    ("Login Password", "login-password"),
+    ("Lulo Intelligence", "intelligence"),
+    ("Menu Bar", "menu-bar"),
+    ("Mouse", "mouse"),
+    ("Network", "network"),
+    ("Notifications", "notifications"),
+    ("Printers & Scanners", "printers-scanners"),
+    ("Privacy & Security", "privacy-security"),
+    ("Sharing", "sharing"),
+    ("Software Update", "software-update"),
+    ("Sound", "sound"),
+    ("Spotlight", "spotlight"),
+    ("Storage", "storage"),
+    ("Users & Groups", "users-groups"),
+    ("VPN", "vpn"),
+    ("Wallpaper", "wallpaper"),
+    ("Wi\u{2011}Fi", "wifi"),
+];
+
+/// The System Settings tile's pane commands (DOCK-32); none for any other
+/// app, or where Settings launches without a command line.
+fn settings_pane_commands(item: &Item) -> Vec<ApplicationCommand> {
+    if canonical_app_id(&item.id) != canonical_app_id(rmac_apps::identity::SYSTEM_SETTINGS) {
+        return Vec::new();
+    }
+    let Some(rmac_apps::LaunchSpec::Command {
+        program,
+        working_dir,
+        terminal,
+        ..
+    }) = &item.launch
+    else {
+        return Vec::new();
+    };
+    SETTINGS_PANES
+        .iter()
+        .map(|(name, pane)| ApplicationCommand {
+            id: format!("settings-pane-{pane}"),
+            name: (*name).to_owned(),
+            action: ContextAction::LaunchNew {
+                app_id: item.id.clone(),
+                spec: rmac_apps::LaunchSpec::Command {
+                    program: program.clone(),
+                    args: vec!["--pane".to_owned(), (*pane).to_owned()],
+                    working_dir: working_dir.clone(),
+                    terminal: *terminal,
+                },
+            },
+        })
+        .collect()
+}
+
 /// Finder's tile commands (DOCK-05): (row id, label, `rmac-files` flag).
 const FINDER_COMMANDS: [(&str, &str, &str); 3] = [
     ("files-find", "Find\u{2026}", "--find"),
@@ -358,6 +428,7 @@ impl Model {
                         spec: command.launch.clone(),
                     },
                 })
+                .chain(settings_pane_commands(item))
                 .collect(),
             windows,
             show_in_finder: item

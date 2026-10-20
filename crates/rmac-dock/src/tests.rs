@@ -906,6 +906,50 @@ fn context_menu_offers_pin_for_an_unpinned_running_app() {
 }
 
 #[test]
+fn the_settings_tile_lists_its_panes_alphabetically() {
+    let settings = rmac_apps::identity::SYSTEM_SETTINGS;
+    let catalog = [
+        application(settings, "System Settings"),
+        application("music.desktop", "Music"),
+    ];
+    let model = Model::build(
+        &[
+            rmac_shell_settings::AppId(settings.into()),
+            rmac_shell_settings::AppId("music.desktop".into()),
+        ],
+        &Default::default(),
+        &catalog,
+        &rmac_compositor::Snapshot::default(),
+    );
+    let menu = model.context_menu(settings).expect("Settings is kept");
+    let names = menu
+        .application_commands
+        .iter()
+        .map(|command| command.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names.first(), Some(&"About"));
+    assert_eq!(names.last(), Some(&"Wi\u{2011}Fi"));
+    let mut sorted = names.clone();
+    sorted.sort_by_key(|name| name.to_lowercase());
+    assert_eq!(names, sorted);
+    let ContextAction::LaunchNew { spec, .. } = &menu.application_commands[0].action else {
+        panic!("a pane row launches Settings");
+    };
+    assert!(matches!(
+        spec,
+        rmac_apps::LaunchSpec::Command { args, .. } if args == &["--pane", "about"]
+    ));
+    assert!(rmac_dock_menu_session_opens(&menu));
+    // Every other app keeps its own commands only.
+    let music = model.context_menu("music.desktop").expect("Music is kept");
+    assert!(music.application_commands.is_empty());
+}
+
+fn rmac_dock_menu_session_opens(menu: &ContextMenu) -> bool {
+    crate::menu::Session::context(menu).is_ok()
+}
+
+#[test]
 fn finder_context_menu_always_offers_a_new_window_and_no_options_or_quit() {
     let catalog = [application(rmac_apps::identity::FILES, "Files")];
     // Not running: a generic app's `context_menu().open` would still be

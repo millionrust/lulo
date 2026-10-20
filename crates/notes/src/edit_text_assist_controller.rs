@@ -164,7 +164,7 @@ impl NotesView {
                 .background_executor()
                 .spawn(async move { misspelled_ranges(&text, caret, checker.as_ref()) })
                 .await;
-            let _ = body.update(cx, |editor, cx| editor.set_misspelled(revision, ranges, cx));
+            body.update(cx, |editor, cx| editor.set_misspelled(revision, ranges, cx));
         }));
     }
 
@@ -217,7 +217,9 @@ mod tests {
         let text = "hello wrold, don't it. helo";
         assert_eq!(misspelled_ranges(text, 0, &Words), [6..11, 23..27]);
         // The caret at the end of "helo": still being typed.
-        assert_eq!(misspelled_ranges(text, text.len(), &Words), [6..11]);
+        let typing = misspelled_ranges(text, text.len(), &Words);
+        assert_eq!(typing.len(), 1);
+        assert_eq!(typing[0], 6..11);
         // Words with digits (codes, versions) are never marked.
         assert!(misspelled_ranges("v2beta abc123", 0, &Words).is_empty());
     }

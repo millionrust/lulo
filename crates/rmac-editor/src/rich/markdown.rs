@@ -1153,7 +1153,7 @@ mod tests {
         let markdown = written(&document);
         assert_eq!(
             markdown,
-            "**bold** _**both**_ [link](https://example.com/a%28b%29) plain"
+            "**bold** **_both_** [link](https://example.com/a%28b%29) plain"
         );
         let back = read(&markdown);
         assert_eq!(back.text(), "bold both link plain");

@@ -147,8 +147,10 @@ class Scenario:
             self.errors.append("rmac-emoji --insert did not paste into the Text Editor")
         baseline = self.line_pixels()
 
+        pressed = time.monotonic()
         key("ctrl-cmd-space")
-        opened = wait_until(self.panel_open, 10)
+        opened = wait_until(self.panel_open, 10, 0.05)
+        self.facts["open_seconds"] = round(time.monotonic() - pressed, 2)
         self.facts["opens"] = bool(opened)
         if not opened:
             self.errors.append("⌃⌘Space did not open the Emoji & Symbols panel")

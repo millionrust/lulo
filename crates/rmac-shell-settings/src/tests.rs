@@ -673,7 +673,12 @@ fn control_centre_edit_controls_round_trip_and_default_to_every_control() {
     settings.control_centre.hidden_controls = vec!["screenshot".into()];
     store.save(&settings).unwrap();
     assert_eq!(
-        store.load().unwrap().settings.control_centre.hidden_controls,
+        store
+            .load()
+            .unwrap()
+            .settings
+            .control_centre
+            .hidden_controls,
         ["screenshot"]
     );
     std::fs::remove_dir_all(root).unwrap();

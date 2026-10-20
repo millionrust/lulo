@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-No user-visible changes recorded yet since 0.9.0-beta.1.
+No user-visible changes recorded yet since 0.9.0-beta.2.
+
+## 0.9.0-beta.2 - 2026-10-14
+
+The first public beta, for Ubuntu and Windows ("Lulo 0.9.0 Beta 2 (Ubuntu)
++ Windows Preview"): `.deb` packages with a one-command installer, and an
+unsigned Windows MSI. See [0.9.0-beta.2 release notes](release-notes/0.9.0-beta.2.md),
+[Install on Ubuntu](install-ubuntu.md) and [Install on Windows](install-windows.md).
 
 ## 0.9.0-beta.1 - 2026-09-24
 

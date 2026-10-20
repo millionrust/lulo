@@ -74,6 +74,10 @@ pub struct WindowsWindowState {
     pub drew_frame: Cell<bool>,
     /// rmac: parks the frame loop while the window draws nothing.
     pub(crate) frame_loop: crate::rmac_frame_loop::FrameLoop,
+    /// rmac: wheel input handed out once per frame (rmac_smooth_scroll).
+    pub(crate) smooth_scroll: crate::rmac_smooth_scroll::SmoothScroll,
+    /// rmac: Direct Manipulation's pan, evened out per frame.
+    pub(crate) pan_smoother: crate::rmac_smooth_scroll::PanSmoother,
     /// rmac: the Mac corners, shadow and hairline (`rmac_window_frame.rs`).
     pub(crate) mac_frame: crate::rmac_window_frame::MacFrame,
 
@@ -188,6 +192,8 @@ impl WindowsWindowState {
             force_render_after_recovery: Cell::new(false),
             drew_frame: Cell::new(false),
             frame_loop: crate::rmac_frame_loop::FrameLoop::new(hwnd),
+            smooth_scroll: Default::default(),
+            pan_smoother: Default::default(),
             mac_frame: Default::default(),
             click_state,
             current_cursor: Cell::new(current_cursor),
@@ -661,6 +667,12 @@ impl PlatformWindow for WindowsWindow {
 
     fn resize(&mut self, size: Size<Pixels>) {
         let hwnd = self.0.hwnd;
+        // rmac: measure the frame now. The cached offset was taken when the
+        // window was made; a Lulo layer surface (`rmac-shell-layer`) drops
+        // the resize frame afterwards, and the stale 8 px a side made every
+        // resize 16 px wider than asked, past the right edge for Control
+        // Centre, which grows to its content after it is placed.
+        self.state.border_offset.update(hwnd).log_err();
         let bounds = gpui::bounds(self.bounds().origin, size).to_device_pixels(self.scale_factor());
         let rect = calculate_window_rect(bounds, &self.state.border_offset);
 

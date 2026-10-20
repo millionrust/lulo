@@ -1609,10 +1609,25 @@ impl Wallpaper {
             trace_changed("desktop active", || {
                 format!("desktop {}", if active { "active" } else { "inactive" })
             });
-            let menu = self.desk.menu.is_some();
-            trace_changed("desktop menu", || {
-                format!("desktop menu {}", if menu { "open" } else { "closed" })
+            // The open menu's rows, for shell_smoke's check that the
+            // desktop's menu is Lulo OS's.
+            let menu = self.desk.menu.is_some().then(|| {
+                self.main_rows(cx)
+                    .iter()
+                    .map(|row| row.label.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
             });
+            trace_changed("desktop menu", || match &menu {
+                Some(rows) => format!("desktop menu open: {rows}"),
+                None => "desktop menu closed".to_owned(),
+            });
+            let panel = match &self.desk.panel {
+                Some(Panel::Info(_)) => "info",
+                Some(Panel::ViewOptions) => "view options",
+                None => "none",
+            };
+            trace_changed("desktop panel", || format!("desktop panel {panel}"));
             let renaming = self.desk.rename.is_some();
             trace_changed("desktop rename", || {
                 format!(

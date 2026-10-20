@@ -5,6 +5,19 @@ Versions follow [Cargo/semver](https://semver.org) pre-release syntax
 (`X.Y.Z-beta.N`); see [docs/beta-checklist.md](docs/beta-checklist.md) for
 what each release gate actually verified before a tag went out.
 
+## [0.9.0-beta.2] - 2026-10-14
+
+The first public beta, for Ubuntu and Windows: "Lulo 0.9.0 Beta 2
+(Ubuntu) + Windows Preview". See
+[docs/release-notes/0.9.0-beta.2.md](docs/release-notes/0.9.0-beta.2.md).
+Highlights: touchscreen input, the rustls 0.23.46 security update, big speed gains on low-spec PCs (faster app start-up, panels in
+about 25-30 ms, the Dock at login, smooth large folders), Dock drag to keep
+and rearrange, Mac-accurate context menus, corners and shadows, many System
+Settings and app menu gaps closed, optional on-device Lulo Intelligence
+(Writing Tools, Spotlight requests, voice), and the Windows preview: the
+Lulo apps plus the Lulo layer (menu bar, Dock, Spotlight) on Windows 11, in
+an unsigned per-user MSI.
+
 ## [0.9.0-beta.1] - 2026-09-24
 
 First public Beta. See

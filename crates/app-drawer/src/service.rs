@@ -492,6 +492,44 @@ pub fn start(cx: &mut GpuiApp) {
         active: None,
         next_token: 0,
     });
+    prewarm(cx);
+}
+
+/// Read the catalog once while the shell is idle, and again only when
+/// Windows reports a change in the folders it came from, so Apps opens
+/// with its tiles known. Nothing runs on the UI thread and nothing polls.
+#[cfg(windows)]
+fn prewarm(cx: &mut GpuiApp) {
+    let (changed, changes) = async_channel::bounded(1);
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        // Let the shell's own start-up finish first.
+        cx.background_executor()
+            .timer(std::time::Duration::from_secs(3))
+            .await;
+        let _watcher = blocking::unblock(move || {
+            rmac_apps::watch_catalog(move || crate::catalog::signal_change(&changed)).ok()
+        })
+        .await;
+        loop {
+            let (apps, error) = blocking::unblock(crate::catalog::scan).await;
+            if error.is_none() {
+                cx.update(|cx| crate::catalog::store(&apps, cx));
+            }
+            if changes.recv().await.is_err() {
+                break;
+            }
+            // Coalesce a burst (an installer writes many shortcuts).
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(500))
+                    .await;
+                if changes.try_recv().is_err() {
+                    break;
+                }
+            }
+        }
+    })
+    .detach();
 }
 
 /// Open Apps, or close the one already open, as the Dock's Apps tile and

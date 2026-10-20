@@ -50,6 +50,12 @@ RMAC_KEYRING_URL="${RMAC_REPOSITORY_URI}rmac-archive-keyring-latest.deb"
 # run and points at --from-release instead.
 RMAC_ARCHIVE_KEYRING_FINGERPRINT="TODO_REPLACE_WITH_THE_REAL_ARCHIVE_FINGERPRINT"
 
+# Empty here. The copy of this script attached to a GitHub Release names
+# that Release (release.yml stamps it), so that copy installs it with no
+# arguments while the signed repository is not published yet:
+#   curl -fsSL https://github.com/millionrust/lulo/releases/download/<tag>/install.sh | sh
+RMAC_RELEASE_TAG=""
+
 # The GitHub repository that `--from-release` downloads .debs from, and that
 # `gh attestation verify` checks build provenance against.
 RMAC_GITHUB_REPOSITORY="millionrust/lulo"
@@ -441,6 +447,23 @@ main() {
 
     if [ "$allow_unattested" = true ] && [ "$mode" != release ]; then
         fail "--allow-unattested applies only to --from-release"
+    fi
+
+    # A Release's own install.sh, run with no arguments before the signed
+    # repository exists: install that Release. Without gh, its packages are
+    # checked against the same Release's SHA256SUMS, fetched over the same
+    # HTTPS connection this script itself came from.
+    if [ "$mode" = repo ] && [ -n "$RMAC_RELEASE_TAG" ]; then
+        case "$RMAC_ARCHIVE_KEYRING_FINGERPRINT" in
+            TODO_*)
+                mode="release"
+                release_tag="$RMAC_RELEASE_TAG"
+                if ! command -v gh >/dev/null 2>&1; then
+                    allow_unattested=true
+                fi
+                echo "install.sh: installing Lulo OS $RMAC_RELEASE_TAG from its GitHub Release."
+                ;;
+        esac
     fi
 
     check_not_root

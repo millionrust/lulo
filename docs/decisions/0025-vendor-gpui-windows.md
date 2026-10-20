@@ -196,6 +196,51 @@ implements the core's `PlatformWindow::set_frame_style`: a rounded
 again on resize and after a device loss) and an owned, layered, click-through tool window
 for the shadow and hairline, updated from `WM_WINDOWPOSCHANGED` and `WM_ACTIVATE` only.
 
+### Smooth scrolling
+
+`src/rmac_smooth_scroll.rs` (WIN-OS-95). Upstream handed every `WM_MOUSEWHEEL`
+to GPUI as `ScrollDelta::Lines` the moment it arrived: a mouse notch jumped
+three lines in one frame, and a precision touchpad's legacy wheel messages
+(small deltas at about 125 Hz) landed two in one 60 Hz frame and three in
+another, so the scroll stepped unevenly and stopped dead when the fingers
+lifted. Wheel input is now queued in logical pixels (24 px a line) and handed
+out once per frame, timed by the vblank that woke it:
+
+- a notch eases out over about 120 ms (time constant 37 ms); a notch the other
+  way cancels the rest;
+- a stream of high-resolution deltas is handed out at its own velocity over
+  the last 100 ms, with a slow correction toward one frame of backlog, and
+  glides on when it stops with `gpui_linux`'s momentum (decay 325 ms, from the
+  last 60 ms of motion; ADR 0013). A click or a new Direct Manipulation
+  contact stops a glide.
+
+Direct Manipulation's pixel pan and system inertia (upstream's
+`direct_manipulation.rs`) are kept, but its per-frame steps are evened out
+(`PanSmoother`, WIN-OS-96): Direct Manipulation moves the content by whatever
+touchpad reports landed before each frame's `Update`, so on the owner's ELAN
+touchpad one frame stepped 300 px and the next 2 px. Each frame now hands out
+the pan's velocity over the last four frames, timed by the vblank, with a slow
+correction toward 12 ms of backlog, and drains the rest when the gesture ends;
+the distance is exactly what Direct Manipulation reported. The scroll trace's
+`dm=` field is the raw pan, `dy=` what was dispatched. While a glide runs the window keeps
+its vblanks; it parks as before when it ends. `RMAC_GPUI_SCROLL_TRACE=1`
+prints every wheel message and frame; `RMAC_GPUI_SMOOTH_SCROLL=0` restores
+upstream's behaviour for measurements. `scripts/windows/scroll_smoke.py`
+(run by `launch_smoke.py` with Text Editor) injects a touchpad-like stream and
+three notches and checks that the scroll moves on every frame, without frame
+gaps above 1.5 vsync intervals (on a hardware GPU; CI's WARP only reports
+them), and keeps moving after the input stops.
+
+Measured on the owner's test laptop (AMD Radeon, 60 Hz, CI debug build), the
+same injected input before (`RMAC_GPUI_SMOOTH_SCROLL=0`) and after, two runs
+each: touchpad-like stream, per-frame step 18–27 px (CV 0.12–0.14) before,
+15.6–22.6 px (CV 0.06–0.07) after; glide after the input stops, 0 frames
+before, 83–88 frames (about 1.4 s) after; a notch, one 72 px jump before,
+11–12 eased frames after; mean frame interval 16.7 ms both, max gap
+18.8–19.0 ms after in the last two runs (an earlier run had one 25 ms gap
+followed by a frame that handed out nothing; a late frame now steps by its own
+time instead, not yet re-measured on the laptop).
+
 ## Results
 
 CI `windows-latest`, debug builds, 20 s idle window after a 10 s settle.

@@ -624,6 +624,30 @@ do not, since a two-architecture APT repository needs both.
 
 ## Tagging a release
 
+Since 0.9.0-beta.2 a release ships Ubuntu and Windows together: the
+`windows-installer` job (the same 17 exes as `windows-preview.yml`,
+installed, launched and uninstalled in the run) must pass before
+`attach-release` publishes anything. Each Release also carries a stamped
+`install.sh` (`RMAC_RELEASE_TAG` set to the tag, so `curl -fsSL
+.../releases/download/<tag>/install.sh | sh` installs that Release) and
+`uninstall.sh`, one `rmac-sbom-<tag>.tar.gz`, and takes its title and
+description from `docs/release-notes/<version>.md` (first line `# <title>`).
+`dependency-policy` refuses a tag that is not `v` plus the workspace version.
+
+**Ubuntu first, Windows later.** With the repository variable
+`RMAC_WINDOWS_WITH_RELEASE=false`, the tag skips `windows-installer` and
+publishes the Ubuntu release alone with `docs/release-notes/<version>.ubuntu.md`.
+Later, `gh workflow run windows-release.yml --ref dev -f tag=<tag>` builds
+the MSI from that commit (its workspace version must still be the tag's),
+runs the same smoke, attests it, adds it and its `SHA256SUMS` line to the
+Release, and switches the notes to the full `<version>.md`. Delete the
+variable afterwards so the next tag ships both again.
+
+**Dry run first.** `gh workflow run release.yml --ref <branch>` runs every
+job; `attach-release` then assembles the real bundle (tag-named files and
+`SHA256SUMS`) and uploads it as the `release-bundle-dry-run` artifact
+instead of attesting and publishing.
+
 1. Make sure `dev` is what you want to ship, then fast-forward or merge
    into `master`.
 2. `git tag vX.Y.Z` (matching the workspace version in the root

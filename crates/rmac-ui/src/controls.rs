@@ -1668,15 +1668,19 @@ impl RenderOnce for Slider {
             Some(name) => slider.accessible_name(name.clone()),
             None => slider,
         };
+        // A finger slides the thumb straight away instead of scrolling the
+        // page (ADR 0028).
         match self.accessible_name {
             Some(name) => div()
                 .id(("slider-label", self.state.entity_id()))
                 .role(Role::Group)
                 .aria_label(name)
+                .touch_drag()
                 .refine_style(&self.style)
                 .child(slider)
                 .into_any_element(),
             None => div()
+                .touch_drag()
                 .refine_style(&self.style)
                 .child(slider)
                 .into_any_element(),

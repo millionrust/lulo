@@ -17,6 +17,7 @@ mod glyphs;
 mod input_support;
 mod library_actions;
 mod markdown_presentation;
+mod maths_results;
 mod note_context_menu;
 mod note_find_controller;
 mod note_format_controller;
@@ -360,6 +361,7 @@ struct NotesView {
     copied_style: Option<CopiedStyle>,
     /// Format ▸ Maths Results / the toolbar's maths-results button.
     maths_results_mode: MathsResultsMode,
+    maths_prev_len: usize,
     /// View ▸ Show Highlights: whether Format ▸ Font ▸ Highlight spans draw
     /// their yellow background. The `==marker==` stays in the body either
     /// way; this only hides the visual effect.
@@ -529,6 +531,7 @@ impl NotesView {
             smart_tags: false,
             copied_style: None,
             maths_results_mode: MathsResultsMode::default(),
+            maths_prev_len: 0,
             show_highlights: true,
             light_background_default: false,
             keyring: NotesKeyring::new(),

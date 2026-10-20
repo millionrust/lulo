@@ -204,6 +204,7 @@ impl NotesView {
             |this, field, event: &InputEvent, window, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.schedule_current_edit(cx);
+                    this.insert_maths_result(window, cx);
                     if this.body_format_editable() {
                         rmac_ui::text_assist::on_text_changed(
                             field,

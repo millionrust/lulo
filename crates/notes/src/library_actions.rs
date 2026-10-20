@@ -1442,6 +1442,36 @@ impl NotesView {
         cx.notify();
     }
 
+    /// Insert Results: typing `=` after an expression at the end of a line
+    /// appends the computed result. Only fires when the body grew by the
+    /// typed `=`, so deleting back to an `=` never re-inserts.
+    pub(super) fn insert_maths_result(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (text, cursor) = {
+            let body = self.body.read(cx);
+            (body.value().to_string(), body.selected_range())
+        };
+        let previous = std::mem::replace(&mut self.maths_prev_len, text.len());
+        if self.maths_results_mode != MathsResultsMode::InsertResults
+            || !self.body_format_editable()
+            || cursor.start != cursor.end
+            || text.len() != previous + 1
+            || text[..cursor.end].chars().next_back() != Some('=')
+            || text[cursor.end..]
+                .chars()
+                .next()
+                .is_some_and(|c| c != '\n')
+        {
+            return;
+        }
+        let line_start = text[..cursor.end].rfind('\n').map_or(0, |i| i + 1);
+        let Some(result) = crate::maths_results::result_for_line(&text[line_start..cursor.end])
+        else {
+            return;
+        };
+        self.body
+            .update(cx, |state, cx| state.replace(result, window, cx));
+    }
+
     pub(super) fn toggle_show_highlights(&mut self, cx: &mut Context<Self>) {
         self.show_highlights = !self.show_highlights;
         cx.notify();

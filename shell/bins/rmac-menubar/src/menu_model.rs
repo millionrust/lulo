@@ -383,9 +383,6 @@ pub enum WindowCommand {
     /// their positions; Lulo does not reposition windows yet, so this
     /// reuses Bring All to Front's raise.
     ArrangeInFront,
-    /// Window ▸ Cycle Through Windows: focus the app's next window after
-    /// the one the menu opened over, wrapping to the first.
-    CycleWindows,
     Focus(rmac_compositor::WindowId),
 }
 
@@ -484,7 +481,6 @@ impl WindowCommand {
             Self::ReturnToPreviousSize => "restore-size",
             Self::BringAllToFront => "bring-all-to-front",
             Self::ArrangeInFront => "arrange-in-front",
-            Self::CycleWindows => "cycle",
             Self::AlwaysOnTop => "always-on-top",
             Self::RemoveFromSet => "remove-from-set",
             Self::FullScreenTileUnavailable => "full-screen-tile",
@@ -534,7 +530,6 @@ impl WindowCommand {
             "restore-size" => Self::ReturnToPreviousSize,
             "bring-all-to-front" => Self::BringAllToFront,
             "arrange-in-front" => Self::ArrangeInFront,
-            "cycle" => Self::CycleWindows,
             "always-on-top" => Self::AlwaysOnTop,
             "remove-from-set" => Self::RemoveFromSet,
             "full-screen-tile" => Self::FullScreenTileUnavailable,
@@ -579,7 +574,6 @@ impl WindowCommand {
             | Self::ZoomAll
             | Self::BringAllToFront
             | Self::ArrangeInFront
-            | Self::CycleWindows
             | Self::AlwaysOnTop
             | Self::RemoveFromSet
             | Self::FullScreenTileUnavailable
@@ -738,25 +732,37 @@ pub fn window_menu(
                 .separated(),
         );
     }
-    // The Mac's order: Cycle Through Windows, Bring All to Front and
-    // Arrange in Front, then the app's own block (its tabs), then the
-    // window list. An app that cycles its own windows (Files, Terminal)
-    // keeps its row; any other app gets the menu bar's, which works for
-    // every app, first-party or not. ⌘` is bound in every Lulo app
-    // (rmac-ui), so only those show it.
-    let (cycle, app_items): (Vec<_>, Vec<_>) = app_items
+    // The Mac's order (tests/inventory/mac): an app's own Cycle Through
+    // Windows sits right under Remove Window from Set (only Finder and
+    // Terminal have one), with the app's other rows before its tabs
+    // (Finder's Show Progress Window); then Bring All to Front and Arrange
+    // in Front; then the tab block. Terminal keeps every row of its own
+    // above Bring All to Front, as the Mac's Terminal does.
+    let (cycle, mut rest): (Vec<_>, Vec<_>) = app_items
         .into_iter()
         .partition(|item| item.label == CYCLE_THROUGH_WINDOWS);
-    let cycle = cycle.into_iter().next().unwrap_or_else(|| {
-        let first_party = app_id.is_some_and(|app_id| app_id.starts_with("org.rmac."));
-        Item::new(
-            CYCLE_THROUGH_WINDOWS,
-            WindowCommand::CycleWindows.action(),
-            if first_party { "⌘`" } else { "" },
-        )
-        .enabled(windows.len() > 1)
-    });
-    items.push(cycle.separated());
+    let split = if app_id == Some(rmac_apps::identity::TERMINAL) {
+        rest.len()
+    } else {
+        rest.iter()
+            .position(|item| TAB_ROWS.contains(&item.label.as_str()))
+            .unwrap_or(rest.len())
+    };
+    let tabs = rest.split_off(split);
+    let follows_cycle = !cycle.is_empty();
+    for mut item in cycle {
+        item.separator_before = false;
+        items.push(item);
+    }
+    let mut head = rest.into_iter();
+    if let Some(first) = head.next() {
+        items.push(if follows_cycle {
+            first
+        } else {
+            first.separated()
+        });
+        items.extend(head);
+    }
     items.push(
         Item::new(
             "Bring All to Front",
@@ -774,10 +780,10 @@ pub fn window_menu(
         )
         .enabled(!windows.is_empty()),
     );
-    let mut app_items = app_items.into_iter();
-    if let Some(first) = app_items.next() {
+    let mut tabs = tabs.into_iter();
+    if let Some(first) = tabs.next() {
         items.push(first.separated());
-        items.extend(app_items);
+        items.extend(tabs);
     }
     for (index, window) in windows.iter().enumerate() {
         let title = if window.title.trim().is_empty() {
@@ -796,6 +802,13 @@ pub fn window_menu(
 }
 
 const CYCLE_THROUGH_WINDOWS: &str = "Cycle Through Windows";
+/// The Window menu's tab block, which the Mac lists under Arrange in Front.
+const TAB_ROWS: &[&str] = &[
+    "Show Previous Tab",
+    "Show Next Tab",
+    "Move Tab to New Window",
+    "Merge All Windows",
+];
 
 fn shorten(text: &str, limit: usize) -> String {
     let mut characters = text.chars();
@@ -2401,7 +2414,6 @@ mod tests {
                 "Move & Resize",
                 "Full-Screen Tile",
                 "Remove Window from Set",
-                "Cycle Through Windows",
                 "Bring All to Front",
                 "Arrange in Front",
                 "Show Next Tab",
@@ -2454,50 +2466,70 @@ mod tests {
             Some(WindowCommand::RemoveFromSet)
         );
         assert!(menu.items[9].separator_before);
-        // Finder-like apps without their own row get the menu bar's
-        // Cycle Through Windows, with ⌘` (bound in every Lulo app).
         assert_eq!(
-            WindowCommand::parse(&menu.items[9].action),
-            Some(WindowCommand::CycleWindows)
-        );
-        assert_eq!(menu.items[9].shortcut, "⌘`");
-        assert!(menu.items[9].enabled);
-        assert_eq!(
-            WindowCommand::parse(&menu.items[11].action),
+            WindowCommand::parse(&menu.items[10].action),
             Some(WindowCommand::ArrangeInFront)
         );
-        assert!(menu.items[12].separator_before);
-        assert_eq!(menu.items[14].checked, rmac_app_menu::CheckState::On);
-        assert_eq!(menu.items[13].checked, rmac_app_menu::CheckState::Off);
+        // The tab block sits under Arrange in Front, as on the Mac.
+        assert!(menu.items[11].separator_before);
+        assert_eq!(menu.items[13].checked, rmac_app_menu::CheckState::On);
+        assert_eq!(menu.items[12].checked, rmac_app_menu::CheckState::Off);
         assert_eq!(
-            WindowCommand::parse(&menu.items[13].action),
+            WindowCommand::parse(&menu.items[12].action),
             Some(WindowCommand::Focus(rmac_compositor::WindowId(7)))
         );
 
-        // An app with its own Cycle Through Windows row keeps it, in the
-        // Mac's place; a third-party app's row has no ⌘` hint.
-        let own = window_menu(
-            &[window(7, "A")],
-            Some(rmac_compositor::WindowId(7)),
-            vec![Item::new(
+        // Files' own Cycle Through Windows sits right under Remove Window
+        // from Set with Show Progress Window; Terminal keeps its own rows
+        // above Bring All to Front (tests/inventory/mac).
+        let files_items = vec![
+            Item::new("Show Progress Window", "finder::ShowProgressWindow", ""),
+            Item::new(
                 "Cycle Through Windows",
                 "rmac_ui::CycleThroughWindows",
                 "⌘`",
-            )],
-            words,
-            Some("org.rmac.Files"),
-        );
-        assert_eq!(own.items[9].action, "rmac_ui::CycleThroughWindows");
+            )
+            .separated(),
+            Item::new("Show Previous Tab", "finder::PreviousTab", "").separated(),
+        ];
+        let files = window_menu(&[], None, files_items, words, Some("org.rmac.Files"));
+        let tail = files.items[8..]
+            .iter()
+            .map(|item| (item.label.as_str(), item.separator_before))
+            .collect::<Vec<_>>();
         assert_eq!(
-            own.items
-                .iter()
-                .filter(|item| item.label == "Cycle Through Windows")
-                .count(),
-            1
+            tail,
+            [
+                ("Remove Window from Set", true),
+                ("Cycle Through Windows", false),
+                ("Show Progress Window", false),
+                ("Bring All to Front", true),
+                ("Arrange in Front", false),
+                ("Show Previous Tab", true),
+            ]
         );
-        let foreign = window_menu(&[window(7, "A")], None, Vec::new(), words, Some("firefox"));
-        assert_eq!(foreign.items[9].shortcut, "");
-        assert!(!foreign.items[9].enabled);
+        let terminal_items = vec![
+            Item::new("Show Next Tab", "terminal::NextTab", "⇧⌘]"),
+            Item::new(
+                "Return to Default Size",
+                "terminal::ReturnToDefaultSize",
+                "",
+            ),
+        ];
+        let terminal = window_menu(&[], None, terminal_items, words, Some("org.rmac.Terminal"));
+        let labels = terminal.items[9..]
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels,
+            [
+                "Show Next Tab",
+                "Return to Default Size",
+                "Bring All to Front",
+                "Arrange in Front",
+            ]
+        );
         assert!(rmac_app_menu::validate_menus(std::slice::from_ref(&menu)).is_ok());
 
         // With no window focused, the window commands are greyed out, and
@@ -2583,7 +2615,6 @@ mod tests {
             WindowCommand::ReturnToPreviousSize,
             WindowCommand::BringAllToFront,
             WindowCommand::ArrangeInFront,
-            WindowCommand::CycleWindows,
             WindowCommand::AlwaysOnTop,
             WindowCommand::RemoveFromSet,
             WindowCommand::FullScreenTileUnavailable,

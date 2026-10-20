@@ -973,29 +973,15 @@
           "children": []
         },
         {
-          "label": "Show Progress Window",
-          "action": "finder::ShowProgressWindow",
-          "shortcut": "",
-          "separator_before": true,
-          "children": []
-        },
-        {
           "label": "Cycle Through Windows",
           "action": "rmac_ui::CycleThroughWindows",
           "shortcut": "⌘`",
-          "separator_before": true,
+          "separator_before": false,
           "children": []
         },
         {
-          "label": "Show Previous Tab",
-          "action": "finder::PreviousTab",
-          "shortcut": "",
-          "separator_before": true,
-          "children": []
-        },
-        {
-          "label": "Show Next Tab",
-          "action": "finder::NextTab",
+          "label": "Show Progress Window",
+          "action": "finder::ShowProgressWindow",
           "shortcut": "",
           "separator_before": false,
           "children": []
@@ -1010,6 +996,20 @@
         {
           "label": "Arrange in Front",
           "action": "window::arrange-in-front",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Previous Tab",
+          "action": "finder::PreviousTab",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Show Next Tab",
+          "action": "finder::NextTab",
           "shortcut": "",
           "separator_before": false,
           "children": []

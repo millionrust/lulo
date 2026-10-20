@@ -77,7 +77,8 @@ impl MailView {
     }
 
     pub(super) fn sync_people_menu(&self, cx: &mut Context<Self>) {
-        let sender = self.sender();
+        // Until the store has loaded, a change could not be merged into it.
+        let sender = self.sender().filter(|_| cx.has_global::<people::People>());
         let known = sender
             .as_ref()
             .is_some_and(|(_, address)| self.state.people.knows(address));
@@ -106,12 +107,16 @@ impl MailView {
 
     pub(super) fn on_people_actions(&self, root: gpui::Div, cx: &mut Context<Self>) -> gpui::Div {
         root.on_action(cx.listener(|this, _: &AddSenderToContacts, _, cx| {
-            if let Some((name, address)) = this.sender() {
+            if let Some((name, address)) =
+                this.sender().filter(|_| cx.has_global::<people::People>())
+            {
                 people::update(cx, |contacts| contacts.add(&name, &address));
             }
         }))
         .on_action(cx.listener(|this, _: &ToggleSenderVip, _, cx| {
-            if let Some((name, address)) = this.sender() {
+            if let Some((name, address)) =
+                this.sender().filter(|_| cx.has_global::<people::People>())
+            {
                 let vip = !this.state.is_vip(&address);
                 people::update(cx, |contacts| contacts.set_vip(&name, &address, vip));
             }

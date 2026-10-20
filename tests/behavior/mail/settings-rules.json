@@ -1,0 +1,15 @@
+{
+  "title": "Mail: Settings ▸ Rules ▸ Add Rule… opens the rule sheet and OK lists the new rule",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"key": "cmd-,", "settle": 1.0},
+    {"select": "Rules", "settle": 0.6},
+    {"observe": "empty", "facts": ["settings_controls"]},
+    {"select": "Add Rule…", "settle": 0.6},
+    {"observe": "sheet", "facts": ["settings_controls"]},
+    {"select": "OK", "settle": 0.6},
+    {"observe": "listed", "facts": ["settings_controls"]}
+  ]
+}

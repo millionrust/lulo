@@ -35,8 +35,14 @@ pub fn load(cx: &mut App) {
             })
             .await;
         cx.update(|cx| {
-            cx.set_global(Rules(Arc::new(rules)));
-            cx.set_global(People(people));
+            // A change made before the load finished (Settings ▸ Rules, Add
+            // Sender to VIPs) is newer than the file; keep it.
+            if !cx.has_global::<Rules>() {
+                cx.set_global(Rules(Arc::new(rules)));
+            }
+            if !cx.has_global::<People>() {
+                cx.set_global(People(people));
+            }
         });
     })
     .detach();

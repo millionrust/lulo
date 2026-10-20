@@ -1,0 +1,16 @@
+{
+  "title": "Mail: Message ▸ Apply Rules runs a saved rule on the selected message (flag in a colour, mark as read)",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "setup": {
+    "config": {
+      "lulo/mail-rules.json": "{\"version\":1,\"rules\":[{\"description\":\"Lunch\",\"enabled\":true,\"any\":true,\"conditions\":[{\"field\":\"subject\",\"operator\":\"contains\",\"value\":\"lunch\"}],\"actions\":[{\"kind\":\"mark-as-flagged\",\"colour\":\"Orange\"},{\"kind\":\"mark-as-read\"}]}]}"
+    }
+  },
+  "steps": [
+    {"observe": "before", "facts": ["mail_messages"]},
+    {"menu_action": "mail::ApplyRules", "settle": 1},
+    {"observe": "after", "facts": ["mail_messages"]}
+  ]
+}

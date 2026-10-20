@@ -11,8 +11,9 @@
 use std::sync::Arc;
 
 use gpui::{
-    div, px, AnyElement, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Role, SharedString, Styled as _, Window,
+    div, px, AnyElement, AppContext as _, Context, Entity, Focusable as _, InteractiveElement as _,
+    IntoElement, ParentElement as _, Role, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Window,
 };
 use rmac_editor::InputState;
 use rmac_mail::smart::{

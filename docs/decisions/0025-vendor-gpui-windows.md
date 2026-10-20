@@ -316,6 +316,93 @@ drew Inter's CFF outlines with its own hinting and antialiasing, where
   and icons a debug build does not embed).
 - `RMAC_TEXT_TRACE=1` reports on stderr which faces swash took over.
 
+## Launch on a real PC (branch `op/win-launch-speed`, WIN-OS-99)
+
+On Ruban's laptop (Ryzen 3 7320U, Radeon, Windows 11, release builds) the
+owner measured 0.73 to 1.26 s from a click to an app's window, against the
+Mac's 0.3 to 0.5 s. `scripts/windows/launch_times.ps1` splits a launch into
+the time before the process exists and the time from process creation to
+the first frame on screen, both cold (the build copied to a new folder) and
+warm (the launch after). For beta.2: 500 to 690 ms before the process
+existed when cold, about 5 ms warm; then 290 to 560 ms to the first frame.
+
+Where the time went, and what changed:
+
+- **Microsoft Defender** scans an exe it has not cached before
+  `CreateProcess` returns: `New-MpPerformanceRecording` showed a 460 ms
+  `OnOpen` scan of Calculator, and a fresh copy of an exe waited 400 to
+  600 ms where the next launch waited 5. Its cache lets an exe go within
+  minutes, and the scan grows with the file (63 ms for 0.7 MB, 460 for 19,
+  640 for 32). Opening the file, mapping it as an image or reading it does
+  not fill the cache; creating its process does. Without changing the PC's
+  Defender settings and without code signing (which costs money), two
+  things help:
+  - Smaller exes: Lulo's fonts (4.8 MB) are files beside the exes, mapped
+    and shared by every process (`rmac_ui`'s `fonts_windows`); GPUI's
+    `image` no longer builds the default codecs (an AV1 encoder, OpenEXR,
+    DDS, HDR, QOI, TGA, rayon) nothing decodes; and one `resvg` replaces two.
+    Calculator went from 19.8 to 13.9 MB, Mail from 27.0 to 21.0, Settings
+    from 28.6 to 22.4, lulo-shell from 33.7 to 27.1.
+  - Warming: when an app is about to be opened (the pointer reaches its
+    Dock tile or Apps icon, or it becomes Spotlight's selection), the shell
+    creates its process suspended, so none of its code runs, and ends it
+    (`rmac_app_launch::prewarm`, at most once per app per two minutes). That
+    is when Defender scans it; the click a moment later waited 6 to 9 ms
+    instead of 480 to 570, even 30 s on. Nothing runs at idle.
+- **DirectWrite's system font collection** was asked for with
+  `checkForUpdates`, which reads through every installed font: 106 to 345
+  ms on this laptop (251 families), 1.5 ms without. It no longer is, and a
+  family that is not installed asks for the check once per process.
+- **Console hosts:** Mail, Calendar, System Monitor, Player and Archive
+  Utility were console programs, so Windows started a `conhost` for each
+  before `main` (about 210 ms of Mail's and Calendar's launches). They are
+  GUI programs now, as the other apps were.
+- **Direct3D devices** (60 to 70 ms, the GPU driver) are still made on their
+  own thread, but the first window takes them, not DirectWrite: the
+  platform, GPUI and the app's own set-up run meanwhile. The text system
+  gets its GPU state (only colour glyphs use it) when the devices arrive.
+- **System Monitor** sampled every process twice before its first frame
+  (once building its view, once for the window's own first activation).
+- **The first frame:** a window is cloaked (`DWMWA_CLOAK`) when it is shown
+  and uncloaked by the frame that first draws it, with its Mac shadow held
+  back until then (WIN-OS-16); a one-shot timer uncloaks it after 750 ms if
+  nothing drew.
+
+Results on the laptop, `launch_times.ps1`, mean of two rounds, ms from
+`Start-Process` to the first frame on screen. Cold: a new copy of the exe,
+nothing warmed; warm: the launch after it, which is also what an open from
+the Dock, Apps or Spotlight now gets after the warm-up. Before is beta.2's
+CI build, after is this branch's (`windows-preview.yml`, run 39412597620).
+
+| App | Cold before → after | Warm before → after | Process to first frame before → after |
+|---|---|---|---|
+| Calculator | 1001 → 877 | 304 → 203 | 344 → 297 |
+| Notes | 880 → 781 | 316 → 229 | 312 → 219 |
+| Text Editor | 916 → 821 | 314 → 237 | 318 → 223 |
+| Files | 971 → 902 | 328 → 248 | 330 → 252 |
+| System Settings | 1076 → 913 | 319 → 251 | 366 → 275 |
+| Weather | 876 → 676 | 443 → 198 | 394 → 193 |
+| Clock | 846 → 753 | 332 → 360 (255 and 465) | 326 → 301 |
+| Terminal | 868 → 748 | 329 → 240 | 325 → 228 |
+| Preview (an image) | 944 → 785 | 356 → 186 | 328 → 191 |
+| Mail | 1188 → 835 | 542 → 194 | 542 → 210 |
+| Calendar | 1066 → 893 | 524 → 220 | 520 → 297 |
+| System Monitor | (owner: 951) → 981 to 2028 | → 456 to 513 | → 448 to 1531 |
+
+The cold numbers are Defender's: 480 to 640 ms before the process existed,
+about the same as before for most apps despite the smaller exes. Only the
+warm-up removes it, so an app opened from Explorer or the Start menu, which
+Lulo does not see coming, still pays it on its first launch in a while.
+System Monitor still samples every process before its first frame.
+
+`launch_smoke.py --launch-budget-ms` fails an app whose first frame is on
+screen later than the budget after its process started; CI uses 900 ms for
+its debug builds on a software renderer. `RMAC_GPUI_STARTUP_TRACE` now
+also marks `crt_init` (the first Lulo code, before `main`), rmac-ui's
+`init_application`, menu and window-option steps, `window_cloaked`,
+`directx_devices_attached` and `first_frame_shown`; an app can add its own
+with `rmac_ui::startup_mark`.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_windows` and re-applying the

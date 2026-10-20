@@ -628,9 +628,9 @@ fn revalidate_context(
     match requested {
         rmac_dock::ContextAction::LaunchNew { app_id, .. } => {
             let menu = model.context_menu(app_id)?;
-            menu.application_commands
+            model
+                .offered_launches(app_id)
                 .into_iter()
-                .map(|command| command.action)
                 .find(|candidate| candidate == requested)
                 .or(menu.open)
         }

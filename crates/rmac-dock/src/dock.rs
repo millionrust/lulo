@@ -12,6 +12,91 @@ pub struct ResolvedStack {
     pub available: bool,
 }
 
+/// The System Settings tile's panes (DOCK-32), alphabetical as the Mac's
+/// tile lists them: (label, `--pane` id). Panes that exist only on some
+/// PCs (Battery, Trackpad, Touchscreen) are left out: the Dock does not
+/// know this PC's hardware, and the sidebar's own list does.
+const SETTINGS_PANES: [(&str, &str); 30] = [
+    ("About", "about"),
+    ("Accessibility", "accessibility"),
+    ("Appearance", "appearance"),
+    ("Bluetooth", "bluetooth"),
+    ("Date & Time", "date-time"),
+    ("Desktop & Dock", "desktop-dock"),
+    ("Displays", "displays"),
+    ("Focus", "focus"),
+    ("Internet Accounts", "internet-accounts"),
+    ("Keyboard", "keyboard"),
+    ("Language & Region", "language-region"),
+    ("Lock Screen", "lock-screen"),
+    ("Login Items", "login-items"),
+    ("Login Password", "login-password"),
+    ("Lulo Intelligence", "intelligence"),
+    ("Menu Bar", "menu-bar"),
+    ("Mouse", "mouse"),
+    ("Network", "network"),
+    ("Notifications", "notifications"),
+    ("Printers & Scanners", "printers-scanners"),
+    ("Privacy & Security", "privacy-security"),
+    ("Sharing", "sharing"),
+    ("Software Update", "software-update"),
+    ("Sound", "sound"),
+    ("Spotlight", "spotlight"),
+    ("Storage", "storage"),
+    ("Users & Groups", "users-groups"),
+    ("VPN", "vpn"),
+    ("Wallpaper", "wallpaper"),
+    ("Wi\u{2011}Fi", "wifi"),
+];
+
+/// The System Settings tile's pane commands (DOCK-32); none for any other
+/// app, or where Settings launches without a command line.
+fn settings_pane_commands(item: &Item) -> Vec<ApplicationCommand> {
+    if canonical_app_id(&item.id) != canonical_app_id(rmac_apps::identity::SYSTEM_SETTINGS) {
+        return Vec::new();
+    }
+    let Some(rmac_apps::LaunchSpec::Command {
+        program,
+        working_dir,
+        terminal,
+        ..
+    }) = &item.launch
+    else {
+        return Vec::new();
+    };
+    SETTINGS_PANES
+        .iter()
+        .map(|(name, pane)| ApplicationCommand {
+            id: format!("settings-pane-{pane}"),
+            name: (*name).to_owned(),
+            action: ContextAction::LaunchNew {
+                app_id: item.id.clone(),
+                spec: rmac_apps::LaunchSpec::Command {
+                    program: program.clone(),
+                    args: vec!["--pane".to_owned(), (*pane).to_owned()],
+                    working_dir: working_dir.clone(),
+                    terminal: *terminal,
+                },
+            },
+        })
+        .collect()
+}
+
+/// Finder's tile commands (DOCK-05): (row id, label, `rmac-files` flag).
+const FINDER_COMMANDS: [(&str, &str, &str); 3] = [
+    ("files-find", "Find\u{2026}", "--find"),
+    (
+        "files-go-to-folder",
+        "Go to Folder\u{2026}",
+        "--go-to-folder",
+    ),
+    (
+        "files-connect-to-server",
+        "Connect to Server\u{2026}",
+        "--connect-to-server",
+    ),
+];
+
 impl Model {
     pub fn build(
         pinned: &[rmac_shell_settings::AppId],
@@ -193,7 +278,7 @@ impl Model {
                 parked
                     .app_id
                     .as_deref()
-                    .is_some_and(|app_id| canonical_app_id(app_id) == canonical)
+                    .is_some_and(|app_id| window_app_id(app_id) == canonical)
             }) {
                 return Activation::RestoreWindow {
                     window: parked.window,
@@ -343,6 +428,7 @@ impl Model {
                         spec: command.launch.clone(),
                     },
                 })
+                .chain(settings_pane_commands(item))
                 .collect(),
             windows,
             show_in_finder: item
@@ -372,6 +458,9 @@ impl Model {
     /// The Files tile's own Dock menu (DOCK-05): built like `context_menu`,
     /// but New Finder Window replaces the generic Open row (offered
     /// whether or not Files is running) and there is no Options ▸ or Quit.
+    /// The Files tile's commands after New Finder Window, as Finder's tile
+    /// lists them, with the `rmac-files` flag that opens each. New Smart
+    /// Folder has no Lulo equivalent and is left out.
     pub fn finder_context_menu(&self) -> Option<FinderContextMenu> {
         let canonical = canonical_app_id(rmac_apps::identity::FILES);
         let item = self
@@ -416,6 +505,36 @@ impl Model {
                 app_id: item.id.clone(),
                 spec,
             }),
+            commands: item
+                .launch
+                .iter()
+                .flat_map(|spec| {
+                    FINDER_COMMANDS.iter().filter_map(move |(id, name, flag)| {
+                        let rmac_apps::LaunchSpec::Command {
+                            program,
+                            working_dir,
+                            terminal,
+                            ..
+                        } = spec
+                        else {
+                            return None;
+                        };
+                        Some(ApplicationCommand {
+                            id: (*id).to_owned(),
+                            name: (*name).to_owned(),
+                            action: ContextAction::LaunchNew {
+                                app_id: item.id.clone(),
+                                spec: rmac_apps::LaunchSpec::Command {
+                                    program: program.clone(),
+                                    args: vec![(*flag).to_owned()],
+                                    working_dir: working_dir.clone(),
+                                    terminal: *terminal,
+                                },
+                            },
+                        })
+                    })
+                })
+                .collect(),
             show_all_windows: item
                 .windows
                 .first()
@@ -450,6 +569,28 @@ impl Model {
     /// Revalidates a menu command against the newest Dock projection before a
     /// renderer crosses into an external application, compositor, or process
     /// authority. A menu left open across process/window churn fails closed.
+    /// Every launch a Dock menu offers for `app_id`: Open, its commands
+    /// (desktop actions, the Settings panes), and the Files tile's New
+    /// Finder Window, Find…, Go to Folder… and Connect to Server….
+    pub fn offered_launches(&self, app_id: &str) -> Vec<ContextAction> {
+        let mut launches = Vec::new();
+        if let Some(menu) = self.context_menu(app_id) {
+            launches.extend(menu.open);
+            launches.extend(
+                menu.application_commands
+                    .into_iter()
+                    .map(|command| command.action),
+            );
+        }
+        if canonical_app_id(app_id) == canonical_app_id(rmac_apps::identity::FILES) {
+            if let Some(menu) = self.finder_context_menu() {
+                launches.extend(menu.new_window);
+                launches.extend(menu.commands.into_iter().map(|command| command.action));
+            }
+        }
+        launches
+    }
+
     pub fn authorizes_context_action(&self, action: &ContextAction) -> bool {
         let app_id = match action {
             ContextAction::LaunchNew { app_id, .. }
@@ -474,6 +615,7 @@ impl Model {
             ContextAction::LaunchNew { spec, .. } => {
                 item.launch.as_ref() == Some(spec)
                     || item.actions.iter().any(|action| &action.launch == spec)
+                    || self.offered_launches(&item.id).contains(action)
             }
             ContextAction::FocusWindow { window, .. }
             | ContextAction::CloseWindow { window, .. } => {
@@ -644,7 +786,7 @@ pub(super) fn minimized_items(
             let application = window
                 .app_id
                 .as_deref()
-                .map(canonical_app_id)
+                .map(window_app_id)
                 .and_then(|canonical| applications.get(&canonical).copied());
             MinimizedItem {
                 window: window.id,
@@ -694,7 +836,7 @@ pub(super) fn window_groups(
         else {
             continue;
         };
-        let canonical = canonical_app_id(app_id);
+        let canonical = window_app_id(app_id);
         if canonical.is_empty() || is_system_dialog(&canonical) {
             continue;
         }
@@ -761,6 +903,15 @@ pub(super) fn build_item(
             .map(|application| application.mime_types.clone())
             .unwrap_or_default(),
     }
+}
+
+/// The desktop identity of a window: its app id, or the entry whose
+/// `StartupWMClass` claims it (an XWayland window's `WM_CLASS`), so the app
+/// gets its own tile, name and icon (`rmac_apps::window_class`).
+pub(super) fn window_app_id(app_id: &str) -> String {
+    rmac_apps::desktop_id_for_window_class(app_id)
+        .map(|desktop_id| canonical_app_id(&desktop_id))
+        .unwrap_or_else(|| canonical_app_id(app_id))
 }
 
 pub(super) fn canonical_app_id(app_id: &str) -> String {

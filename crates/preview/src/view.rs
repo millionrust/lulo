@@ -6538,20 +6538,23 @@ impl PreviewView {
         )
     }
 
-    /// Go ▸ Go to Page… (⌥⌘G): a small centred field over the document.
-    fn render_go_to_page(&self, palette: Palette, width: f32, height: f32) -> impl IntoElement {
-        let pages = self
-            .slot()
-            .and_then(Slot::loaded)
-            .map(Loaded::page_count)
-            .unwrap_or(0);
+    /// Go ▸ Go to Page… (⌥⌘G): the Mac's 184 × 92 sheet, hanging from the
+    /// top edge of the window (below the title bar) with a "Go to page:"
+    /// label, the field, and Cancel · OK (default). PREV-14.
+    fn render_go_to_page(
+        &self,
+        palette: Palette,
+        width: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         div()
             .id("preview-go-to-page")
             .absolute()
-            .left(px((width - 220.0) / 2.0))
-            .top(px(height / 3.0))
-            .w(px(220.0))
-            .rounded(px(10.0))
+            .left(px((width - metrics::GO_TO_PAGE_SHEET.0) / 2.0))
+            .top(px(0.0))
+            .w(px(metrics::GO_TO_PAGE_SHEET.0))
+            .h(px(metrics::GO_TO_PAGE_SHEET.1))
+            .rounded_b(px(10.0))
             .bg(rgb(palette.card))
             .border_1()
             .border_color(rgb(palette.card_separator))
@@ -6559,15 +6562,41 @@ impl PreviewView {
             .p(px(10.0))
             .flex()
             .flex_col()
-            .gap(px(8.0))
+            .gap(px(6.0))
             .child(
                 div()
                     .text_size(px(12.0))
-                    .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(palette.glyph))
-                    .child(SharedString::from(format!("Go to page (1–{pages})"))),
+                    .child("Go to page:"),
             )
             .child(rmac_ui::TextField::new(&self.go_to_page_input).small())
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-go-to-page-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.close_go_to_page(window, cx)),
+                        ),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-go-to-page-ok",
+                            "OK",
+                            rmac_ui::DialogButtonKind::Primary,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.submit_go_to_page(cx);
+                            window.focus(&this.page_focus, cx);
+                        })),
+                    ),
+            )
             .into_any_element()
     }
 
@@ -8187,7 +8216,7 @@ impl Render for PreviewView {
             })
             .children(menu)
             .when(self.go_to_page_open, |root| {
-                root.child(self.render_go_to_page(palette, width, height))
+                root.child(self.render_go_to_page(palette, width, cx))
             })
             .when(self.rename_open, |root| {
                 root.child(self.render_rename_sheet(palette, width, height, cx))

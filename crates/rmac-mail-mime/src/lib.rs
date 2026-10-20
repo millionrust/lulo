@@ -4,6 +4,7 @@
 mod rich_text;
 pub use rich_text::{sanitize_html, Block, BlockKind, Image, RichText, Span};
 
+use mail_builder::headers::raw::Raw;
 use mail_builder::MessageBuilder;
 use mail_parser::{Address, HeaderValue, MessageParser, MimeHeaders};
 
@@ -20,6 +21,41 @@ pub struct Draft {
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
     pub attachments: Vec<Attachment>,
+    /// View ▸ Reply-To Address Field: where replies should go instead of
+    /// `from`.
+    pub reply_to: Vec<String>,
+    /// Message ▸ Set Priority.
+    pub priority: Priority,
+}
+
+/// Message ▸ Set Priority, sent as `X-Priority` and `Importance` the way
+/// Mac Mail sends it. Normal adds no header.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Priority {
+    Low,
+    #[default]
+    Normal,
+    High,
+}
+
+impl Priority {
+    /// The `X-Priority` and `Importance` values, or `None` for Normal.
+    pub const fn headers(self) -> Option<(&'static str, &'static str)> {
+        match self {
+            Self::Low => Some(("5 (Lowest)", "low")),
+            Self::Normal => None,
+            Self::High => Some(("1 (Highest)", "high")),
+        }
+    }
+
+    /// Reads a message's `X-Priority` value back ("1 (Highest)", "5").
+    pub fn from_x_priority(value: &str) -> Self {
+        match value.trim().chars().next() {
+            Some('1' | '2') => Self::High,
+            Some('4' | '5') => Self::Low,
+            _ => Self::Normal,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -177,6 +213,10 @@ pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
     if !draft.cc.is_empty() {
         builder = builder.cc(draft.cc.iter().map(String::as_str).collect::<Vec<_>>());
     }
+    if !draft.reply_to.iter().all(|address| valid_address(address)) {
+        return Err(Error::InvalidAddress);
+    }
+    builder = with_reply_to_and_priority(builder, draft);
     if let Some(html) = &draft.html {
         builder = builder.html_body(html.as_str());
     }
@@ -221,6 +261,60 @@ pub fn build(draft: &Draft) -> Result<BuiltMessage, Error> {
     })
 }
 
+fn with_reply_to_and_priority<'x>(
+    mut builder: MessageBuilder<'x>,
+    draft: &'x Draft,
+) -> MessageBuilder<'x> {
+    let reply_to: Vec<&str> = draft
+        .reply_to
+        .iter()
+        .map(String::as_str)
+        .filter(|address| valid_address(address))
+        .collect();
+    if !reply_to.is_empty() {
+        builder = builder.reply_to(reply_to);
+    }
+    if let Some((x_priority, importance)) = draft.priority.headers() {
+        builder = builder
+            .header("X-Priority", Raw::new(x_priority))
+            .header("Importance", Raw::new(importance));
+    }
+    builder
+}
+
+/// An unsent draft as an RFC 5322 source, for the Drafts mailbox: the
+/// same headers [`build`] sends (Reply-To and priority included), but a
+/// draft may still be missing recipients or hold half-typed addresses,
+/// which are left out rather than refused.
+pub fn draft_source(draft: &Draft) -> Result<Vec<u8>, Error> {
+    let to: Vec<&str> = draft
+        .to
+        .iter()
+        .map(String::as_str)
+        .filter(|address| valid_address(address))
+        .collect();
+    let cc: Vec<&str> = draft
+        .cc
+        .iter()
+        .map(String::as_str)
+        .filter(|address| valid_address(address))
+        .collect();
+    let mut builder = MessageBuilder::new()
+        .subject(draft.subject.as_str())
+        .text_body(draft.text.as_str());
+    if valid_address(&draft.from) {
+        builder = builder.from(draft.from.as_str());
+    }
+    if !to.is_empty() {
+        builder = builder.to(to);
+    }
+    if !cc.is_empty() {
+        builder = builder.cc(cc);
+    }
+    builder = with_reply_to_and_priority(builder, draft);
+    builder.write_to_vec().map_err(Error::Build)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedMessage {
     pub subject: String,
@@ -231,6 +325,7 @@ pub struct ParsedMessage {
     pub to: Vec<Mailbox>,
     pub cc: Vec<Mailbox>,
     pub reply_to: Vec<Mailbox>,
+    pub priority: Priority,
     pub preview: String,
     pub plain_text: String,
     pub rich_text: RichText,
@@ -309,6 +404,9 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMessage, Error> {
         to: mailboxes(message.to()),
         cc: mailboxes(message.cc()),
         reply_to: mailboxes(message.reply_to()),
+        priority: message
+            .header_raw("X-Priority")
+            .map_or(Priority::Normal, Priority::from_x_priority),
         preview: message
             .body_preview(160)
             .map(|preview| preview.into_owned())
@@ -368,6 +466,52 @@ mod tests {
         assert!(!parsed.preview.is_empty());
         assert!(parsed.plain_text.contains("Plain café"));
         assert_eq!(parsed.attachments[0].bytes, b"attached");
+    }
+
+    #[test]
+    fn reply_to_and_priority_are_sent_and_read_back() {
+        let mut draft = Draft {
+            from: "a@example.test".into(),
+            to: vec!["b@example.test".into()],
+            subject: "Urgent".into(),
+            text: "Please".into(),
+            reply_to: vec!["team@example.test".into()],
+            priority: Priority::High,
+            ..Draft::default()
+        };
+        let built = build(&draft).unwrap();
+        let source = String::from_utf8_lossy(&built.bytes).into_owned();
+        assert!(source.contains("Reply-To: <team@example.test>"), "{source}");
+        assert!(source.contains("X-Priority: 1 (Highest)"), "{source}");
+        assert!(source.contains("Importance: high"), "{source}");
+        let parsed = parse(&built.bytes).unwrap();
+        assert_eq!(parsed.reply_to[0].address, "team@example.test");
+        assert_eq!(parsed.priority, Priority::High);
+        draft.priority = Priority::Normal;
+        let normal = String::from_utf8_lossy(&build(&draft).unwrap().bytes).into_owned();
+        assert!(!normal.contains("X-Priority"));
+        draft.reply_to = vec!["x@example.test\r\nBcc: y@example.test".into()];
+        assert!(matches!(build(&draft), Err(Error::InvalidAddress)));
+    }
+
+    #[test]
+    fn draft_source_keeps_headers_without_recipients() {
+        let draft = Draft {
+            from: "a@example.test".into(),
+            to: vec!["half-typed".into()],
+            subject: "Later".into(),
+            text: "Not done".into(),
+            reply_to: vec!["team@example.test".into()],
+            priority: Priority::Low,
+            ..Draft::default()
+        };
+        let source = draft_source(&draft).unwrap();
+        let parsed = parse(&source).unwrap();
+        assert_eq!(parsed.subject, "Later");
+        assert!(parsed.to.is_empty());
+        assert_eq!(parsed.reply_to[0].address, "team@example.test");
+        assert_eq!(parsed.priority, Priority::Low);
+        assert_eq!(Priority::from_x_priority("3"), Priority::Normal);
     }
 
     #[test]

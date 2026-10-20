@@ -85,6 +85,21 @@ fn pinned_order_leads_and_running_windows_group_by_desktop_identity() {
 }
 
 #[test]
+fn an_xwayland_window_joins_the_entry_that_claims_its_class() {
+    rmac_apps::register_window_class("jetbrains-idea-docktest", "idea-docktest.desktop");
+    let catalog = [application("idea-docktest.desktop", "IntelliJ IDEA")];
+    let compositor = rmac_compositor::Snapshot {
+        windows: vec![window(1, "jetbrains-idea-docktest", true, false, 20)],
+        ..Default::default()
+    };
+    let model = Model::build(&[], &Default::default(), &catalog, &compositor);
+    assert_eq!(model.items.len(), 1);
+    assert_eq!(model.items[0].name, "IntelliJ IDEA");
+    assert!(model.items[0].running);
+    assert!(model.items[0].launchable);
+}
+
+#[test]
 fn unpinned_running_apps_do_not_reorder_when_focus_changes() {
     let catalog = [
         application("alacritty.desktop", "Alacritty"),
@@ -891,6 +906,51 @@ fn context_menu_offers_pin_for_an_unpinned_running_app() {
 }
 
 #[test]
+fn the_settings_tile_lists_its_panes_alphabetically() {
+    let settings = rmac_apps::identity::SYSTEM_SETTINGS;
+    let catalog = [
+        application(settings, "System Settings"),
+        application("music.desktop", "Music"),
+    ];
+    let model = Model::build(
+        &[
+            rmac_shell_settings::AppId(settings.into()),
+            rmac_shell_settings::AppId("music.desktop".into()),
+        ],
+        &Default::default(),
+        &catalog,
+        &rmac_compositor::Snapshot::default(),
+    );
+    let menu = model.context_menu(settings).expect("Settings is kept");
+    let names = menu
+        .application_commands
+        .iter()
+        .map(|command| command.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names.first(), Some(&"About"));
+    assert_eq!(names.last(), Some(&"Wi\u{2011}Fi"));
+    let mut sorted = names.clone();
+    sorted.sort_by_key(|name| name.to_lowercase());
+    assert_eq!(names, sorted);
+    let ContextAction::LaunchNew { spec, .. } = &menu.application_commands[0].action else {
+        panic!("a pane row launches Settings");
+    };
+    assert!(matches!(
+        spec,
+        rmac_apps::LaunchSpec::Command { args, .. } if args == &["--pane", "about"]
+    ));
+    assert!(rmac_dock_menu_session_opens(&menu));
+    assert!(model.authorizes_context_action(&menu.application_commands[0].action));
+    // Every other app keeps its own commands only.
+    let music = model.context_menu("music.desktop").expect("Music is kept");
+    assert!(music.application_commands.is_empty());
+}
+
+fn rmac_dock_menu_session_opens(menu: &ContextMenu) -> bool {
+    crate::menu::Session::context(menu).is_ok()
+}
+
+#[test]
 fn finder_context_menu_always_offers_a_new_window_and_no_options_or_quit() {
     let catalog = [application(rmac_apps::identity::FILES, "Files")];
     // Not running: a generic app's `context_menu().open` would still be
@@ -930,6 +990,34 @@ fn finder_context_menu_always_offers_a_new_window_and_no_options_or_quit() {
     assert_eq!(menu.windows.len(), 1);
     assert!(menu.show_all_windows.is_some());
     assert!(menu.hide.is_some());
+    // DOCK-05: Find…, Go to Folder… and Connect to Server… launch Files
+    // with their own flag, and the Dock authorizes exactly those launches.
+    let flags = menu
+        .commands
+        .iter()
+        .map(|command| match &command.action {
+            ContextAction::LaunchNew {
+                spec: rmac_apps::LaunchSpec::Command { args, .. },
+                ..
+            } => args.join(" "),
+            _ => String::new(),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(flags, ["--find", "--go-to-folder", "--connect-to-server"]);
+    for command in &menu.commands {
+        assert!(running.authorizes_context_action(&command.action));
+    }
+    assert!(running.authorizes_context_action(menu.new_window.as_ref().unwrap()));
+    let forged = ContextAction::LaunchNew {
+        app_id: rmac_apps::identity::FILES.into(),
+        spec: rmac_apps::LaunchSpec::Command {
+            program: "sh".into(),
+            args: vec!["-c".into(), "true".into()],
+            working_dir: None,
+            terminal: false,
+        },
+    };
+    assert!(!running.authorizes_context_action(&forged));
 }
 
 #[test]

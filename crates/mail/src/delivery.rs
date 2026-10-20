@@ -12,7 +12,7 @@ use rmac_accounts_linux::{
     winstore::{Kind, WinAccounts},
     GoaApi,
 };
-use rmac_mail_mime::{build, guess_content_type, Draft};
+use rmac_mail_mime::{build, draft_source, guess_content_type, Draft, Priority};
 #[cfg(any(target_os = "linux", windows))]
 use rmac_mail_runtime::account_id;
 #[cfg(any(target_os = "linux", windows))]
@@ -134,6 +134,14 @@ fn now_unix() -> i64 {
 /// mailbox, debounced by the caller. The first save allocates a UID; every
 /// later save for the same window reuses it so the row is replaced in
 /// place, matching the Mac's single "most recent draft" per window.
+/// What a draft carries beyond its addresses and text: View ▸ Reply-To
+/// Address Field and Message ▸ Set Priority.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DraftHeaders {
+    pub reply_to: Vec<String>,
+    pub priority: Priority,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn save_draft(
     account: &ComposeAccount,
@@ -145,6 +153,7 @@ pub fn save_draft(
     subject: &str,
     body: &str,
     attachments: &[PendingAttachment],
+    headers: &DraftHeaders,
 ) -> Option<DraftLocation> {
     let root = data_root()?;
     let mut storage = MailStorage::open(&root, account.id).ok()?;
@@ -164,6 +173,19 @@ pub fn save_draft(
     } else {
         subject
     };
+    // The draft's own source, so its Reply-To and priority are kept with
+    // it (and View ▸ Message ▸ Raw Source shows what will be sent).
+    let source = draft_source(&Draft {
+        from: from.to_owned(),
+        to: to.to_vec(),
+        cc: cc.to_vec(),
+        subject: subject.to_owned(),
+        text: body.to_owned(),
+        reply_to: headers.reply_to.clone(),
+        priority: headers.priority,
+        ..Draft::default()
+    })
+    .ok();
     let message_id = storage
         .put_message(&NewMessage {
             mailbox_id,
@@ -178,7 +200,7 @@ pub fn save_draft(
             preview: &preview,
             received_at: now_unix(),
             flags: FLAG_DRAFT,
-            body: None,
+            body: source.as_deref(),
             body_text: Some(body),
         })
         .ok()?;
@@ -458,6 +480,10 @@ mod tests {
             "Lunch on Friday?",
             "Fancy lunch on Friday?",
             &[],
+            &DraftHeaders {
+                reply_to: vec!["team@example.test".to_owned()],
+                priority: Priority::High,
+            },
         )
         .expect("a fresh draft should save");
 
@@ -470,6 +496,18 @@ mod tests {
         assert_eq!(saved.flags & FLAG_DRAFT, FLAG_DRAFT);
         assert!(saved.recipients.contains("anna@example.test"));
         assert_eq!(saved.cc, "sam@example.test");
+        // Reply-To and the priority are kept in the draft's source.
+        let source = storage
+            .read_blob(
+                saved
+                    .body_hash
+                    .as_deref()
+                    .expect("a draft keeps its source"),
+            )
+            .unwrap();
+        let parsed = rmac_mail_mime::parse(&source).unwrap();
+        assert_eq!(parsed.reply_to[0].address, "team@example.test");
+        assert_eq!(parsed.priority, Priority::High);
 
         // Re-saving the same window's draft replaces the row in place
         // rather than leaving a trail of earlier autosaves behind.
@@ -483,6 +521,7 @@ mod tests {
             "Lunch on Friday?",
             "Fancy lunch on Friday? Say noon.",
             &[],
+            &DraftHeaders::default(),
         )
         .expect("re-saving the same draft should succeed");
         assert_eq!(second, location, "a later autosave reuses the same row");
@@ -510,6 +549,7 @@ mod tests {
             "Hello",
             "Hi Anna",
             &[],
+            &DraftHeaders::default(),
         )
         .unwrap();
         let draft = Draft {

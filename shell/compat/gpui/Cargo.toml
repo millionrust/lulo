@@ -84,7 +84,11 @@ futures-concurrency = "7.7.1"
 gpui_macros = { version = "0.1.0", git = "https://github.com/zed-industries/zed.git", package = "gpui_macros" }
 gpui_shared_string = { version = "0.1.0", git = "https://github.com/zed-industries/zed.git", package = "gpui_shared_string" }
 http_client = { version = "0.1.0", git = "https://github.com/zed-industries/zed.git", package = "http_client" }
-image = "0.25.1"
+# rmac: only the formats GPUI's `ImageFormat` decodes. The defaults also
+# built in an AV1 encoder (rav1e, via `avif`), OpenEXR, DDS, HDR, QOI, TGA
+# and rayon, megabytes of code in every exe that nothing calls, and
+# Microsoft Defender reads all of it before each cold launch (WIN-OS-99).
+image = { version = "0.25.1", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "pnm", "tiff", "webp"] }
 inventory = "0.3.19"
 itertools = "0.14.0"
 log = { version = "0.4.16", features = ["kv_unstable_serde", "serde"] }

@@ -112,7 +112,7 @@ impl NotesView {
         let (title, text) =
             printable_note(&self.title.read(cx).value(), &self.body.read(cx).value());
         let suggested_name = format!("{}.pdf", safe_export_stem(&title));
-        let directory = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let directory = crate::file_choosers::documents_directory();
 
         // `print_busy` covers this too: both are the print pipeline, and
         // `continue_close` already blocks the window on it.

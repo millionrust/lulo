@@ -14,6 +14,12 @@ mod menu_model;
 mod session_guard;
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod unsaved_guard;
+// The Battery menu's "Using Significant Energy" sample (BAR-05).
+#[cfg_attr(
+    not(any(all(target_os = "linux", feature = "wayland"), windows)),
+    allow(dead_code)
+)]
+mod energy;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 pub use bar::run;
@@ -277,6 +283,9 @@ mod bar {
         menus_live: bool,
         menu_generation: u64,
         low_battery: LowBatteryWatch,
+        /// Wi-Fi ▸ Ask to join networks: the "networks available" notice
+        /// was posted for the current unjoined stretch.
+        wifi_offer_shown: bool,
     }
 
     /// Files owns the menu bar on the desktop, including the interval before
@@ -319,6 +328,18 @@ mod bar {
         #[test]
         fn other_apps_do_not_receive_the_files_fallback() {
             assert!(static_fallback_menus(rmac_apps::identity::NOTES).is_empty());
+        }
+
+        #[test]
+        fn command_w_runs_the_apps_own_close_item() {
+            // Terminal's ⌘W closes the tab, through its own menu item.
+            let terminal = rmac_app_menu::static_definition(rmac_apps::identity::TERMINAL).unwrap();
+            assert_eq!(
+                super::key_equivalent_action(&terminal, "⌘W").as_deref(),
+                Some("terminal::CloseTab")
+            );
+            // No menus (a third-party app): the window is closed instead.
+            assert_eq!(super::key_equivalent_action(&[], "⌘W"), None);
         }
     }
 
@@ -406,6 +427,18 @@ mod bar {
                                         post_system_notice(summary, body, cx);
                                     }
                                 }
+                                // Wi-Fi ▸ Ask to join networks (Notify): one
+                                // notice per stretch with Wi-Fi on, nothing
+                                // joined and only unknown networks in range.
+                                let wifi = &this.update.snapshot.quick_settings.wifi;
+                                if wifi.current_ssid.is_some() || !wifi.enabled {
+                                    this.wifi_offer_shown = false;
+                                } else if !this.wifi_offer_shown
+                                    && rmac_network::ask_to_join::should_offer(wifi)
+                                {
+                                    this.wifi_offer_shown = true;
+                                    offer_wifi_networks(cx);
+                                }
                                 if visible {
                                     cx.notify();
                                 }
@@ -432,6 +465,7 @@ mod bar {
                 menus_live: false,
                 menu_generation: 0,
                 low_battery: LowBatteryWatch::default(),
+                wifi_offer_shown: false,
             };
             status.show_desktop_menus(cx);
             status
@@ -475,15 +509,17 @@ mod bar {
             return;
         }
         cx.spawn(async move |this, cx| {
-            let wanted = vec![app_id.clone()];
-            let Ok(entries) = blocking::unblock(move || rmac_apps::discover_entries(&wanted)).await
+            // By desktop ID, else by the entry's `StartupWMClass` (an
+            // XWayland window's `WM_CLASS`).
+            let wanted = app_id.clone();
+            let Ok(Some(entry)) =
+                blocking::unblock(move || rmac_apps::discover_for_window(&wanted)).await
             else {
                 return;
             };
-            let Some(entry) = entries.first() else {
-                return;
-            };
             rmac_apps::windows_apps::register_display_name(&app_id, &entry.name);
+            // One line per third-party app, for the nested checks.
+            eprintln!("menu bar: {app_id} is named {}", entry.name);
             let _ = this.update(cx, |_, cx| cx.notify());
         })
         .detach();
@@ -1097,6 +1133,9 @@ mod bar {
         /// fresh mutation starts.
         wifi_error: Option<String>,
         battery_menu: Option<rmac_power::Snapshot>,
+        /// Apps using significant energy, sampled when the Battery menu
+        /// opens (BAR-05).
+        battery_energy: Option<Vec<String>>,
         /// The last energy-mode mutation failure, visible until dismissed.
         battery_error: Option<String>,
         /// The Sound menu's live audio snapshot, kept fresh by
@@ -1256,6 +1295,7 @@ mod bar {
                 wifi_joining: None,
                 wifi_error: None,
                 battery_menu: None,
+                battery_energy: None,
                 battery_error: None,
                 sound_menu: None,
                 sound_error: None,
@@ -1639,6 +1679,13 @@ mod bar {
         fn open_power_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             self.open_menu(0, SYSTEM_MENU_ID.to_owned(), window, cx);
             self.start_confirmation(menu_model::POWER_DIALOG_ACTION.to_owned(), cx);
+        }
+
+        /// ⇧⌘Q (KB-01): the Log Out confirmation, shown where the system
+        /// menu opens, with the same countdown as choosing Log Out….
+        fn open_log_out_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.open_menu(0, SYSTEM_MENU_ID.to_owned(), window, cx);
+            self.start_confirmation("system::logout".to_owned(), cx);
         }
 
         fn open_menu(
@@ -2504,6 +2551,30 @@ mod bar {
                         });
                     })
                     .detach();
+                    // One short CPU sample of the apps with windows, taken
+                    // off the UI thread only while the menu opens.
+                    self.battery_energy = None;
+                    cx.spawn(async move |this, cx| {
+                        let windows = match rmac_compositor_system::snapshot().await {
+                            Ok(snapshot) => snapshot
+                                .windows
+                                .into_iter()
+                                .filter_map(|window| Some((window.pid?, window.app_id?)))
+                                .collect::<Vec<_>>(),
+                            Err(_) => Vec::new(),
+                        };
+                        let energy =
+                            blocking::unblock(move || crate::energy::significant(&windows)).await;
+                        let _ = this.update(cx, |this, cx| {
+                            if this.status_generation == generation
+                                && this.status_menu == Some(StatusMenuKind::Battery)
+                            {
+                                this.battery_energy = energy;
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .detach();
                 }
                 // Sound and Bluetooth also stay live while open through
                 // `watch_sound_changes`/`watch_bluetooth_changes`; opening
@@ -2589,9 +2660,11 @@ mod bar {
                     joining: self.wifi_joining.as_ref(),
                     error: self.wifi_error.as_deref(),
                 }),
-                StatusMenuKind::Battery => {
-                    battery_menu_rows(self.battery_menu.as_ref(), self.battery_error.as_deref())
-                }
+                StatusMenuKind::Battery => battery_menu_rows(
+                    self.battery_menu.as_ref(),
+                    self.battery_error.as_deref(),
+                    self.battery_energy.as_deref(),
+                ),
                 StatusMenuKind::Sound => sound_menu_rows(SoundMenuInput {
                     audio: self.sound_menu.as_ref(),
                     error: self.sound_error.as_deref(),
@@ -4858,6 +4931,11 @@ mod bar {
                 .left_0()
                 .right_0()
                 .h(px(BAR_HEIGHT))
+                // Over a full-screen window the revealed bar is solid, as
+                // on the Mac, not see-through to the window under it.
+                .when(self.fullscreen, |style| {
+                    style.bg(rgba(tokens::top_bar_full_screen_fill()))
+                })
                 .flex()
                 .items_center()
                 .pl(px(BAR_LEAD))
@@ -5497,18 +5575,31 @@ mod bar {
                 Item::new("System Settings…", "system::settings", "")
                     .badge(software_update_badge.unwrap_or_default())
                     .separated(),
-                Item::new("Software Center", "system::software-center", ""),
+                Item::new("Software Center…", "system::software-center", ""),
                 Item::new("Recent Items", "system::recents", menu_model::SUBMENU_MARK).separated(),
                 Item::new("Force Quit…", "system::force-quit", "⌥⌘⎋").separated(),
                 Item::new("Sleep", "system::sleep", "").separated(),
-                Item::new("Restart…", "system::restart", ""),
-                Item::new("Shut Down…", "system::shutdown", ""),
+                // Holding ⌥ drops the "…" and the confirmation (BAR-04).
+                Item::new("Restart…", "system::restart", "").with_alternate(Item::new(
+                    "Restart",
+                    "system::restart-now",
+                    "",
+                )),
+                Item::new("Shut Down…", "system::shutdown", "").with_alternate(Item::new(
+                    "Shut Down",
+                    "system::shutdown-now",
+                    "",
+                )),
                 Item::new("Lock Screen", "system::lock", "⌃⌘Q").separated(),
                 // The Mac shows ⇧⌘Q here. Nothing binds it yet: the
                 // confirmation lives in this menu, which no key can open
                 // (the ⌃F2 gap), so no hint is shown rather than one that
                 // does nothing.
-                Item::new(logout_label, "system::logout", ""),
+                Item::new(logout_label.clone(), "system::logout", "").with_alternate(Item::new(
+                    logout_label.trim_end_matches('…').to_owned(),
+                    "system::logout-now",
+                    "",
+                )),
             ]
             .into_iter()
             .chain(system::extra_menu::rows().into_iter().map(|row| {
@@ -6038,7 +6129,8 @@ mod bar {
         use rmac_compositor::{Action, TileRegion};
         let tile = |region| Action::TileWindow { window, region };
         Some(match word {
-            "fill" => Action::FillWindow { window },
+            // Windows' maximise toggles back to the restored frame.
+            "fill" | "zoom" => Action::FillWindow { window },
             "centre" => Action::CenterWindow { window },
             "restore-size" => Action::FullscreenWindow { window, on: false },
             "tile-left" => tile(TileRegion::Left),
@@ -6127,10 +6219,32 @@ mod bar {
                     for window in &windows {
                         store.forget(*window);
                     }
-                    actions = windows
-                        .into_iter()
-                        .map(|window| rmac_compositor::Action::CloseWindow { window })
-                        .collect();
+                    // Windows: every top-level window of the app's process,
+                    // not only the ones Alt+Tab lists, is told to close.
+                    // One request per process (a browser runs several).
+                    #[cfg(windows)]
+                    {
+                        let mut pids = BTreeSet::new();
+                        actions = windows
+                            .into_iter()
+                            .filter(|window| {
+                                let pid = snapshot
+                                    .windows
+                                    .iter()
+                                    .find(|candidate| candidate.id == *window)
+                                    .and_then(|candidate| candidate.pid);
+                                pids.insert(pid)
+                            })
+                            .map(|window| rmac_compositor::Action::QuitApplication { window })
+                            .collect();
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        actions = windows
+                            .into_iter()
+                            .map(|window| rmac_compositor::Action::CloseWindow { window })
+                            .collect();
+                    }
                 }
                 other => eprintln!("unknown app menu action: {other}"),
             }
@@ -6233,6 +6347,10 @@ mod bar {
             #[cfg(windows)]
             "system::sleep" => system::power(PowerCommand::Sleep),
             "system::restart" | "system::shutdown" | "system::logout" => quit_all_then(action, cx),
+            // ⌥ alternates run without the confirmation (BAR-04).
+            "system::restart-now" => quit_all_then("system::restart".to_owned(), cx),
+            "system::shutdown-now" => quit_all_then("system::shutdown".to_owned(), cx),
+            "system::logout-now" => quit_all_then("system::logout".to_owned(), cx),
             #[cfg(target_os = "linux")]
             "system::lock" => dispatch_shortcut("lock", cx),
             #[cfg(windows)]
@@ -6399,6 +6517,27 @@ mod bar {
     }
 
     /// A transient notice through the session's notification server.
+    /// Post "Wi-Fi Networks Available" unless Ask to join networks is Off
+    /// (a small preference file, read off the UI thread).
+    fn offer_wifi_networks(cx: &mut App) {
+        cx.spawn(async move |cx| {
+            let setting = cx
+                .background_executor()
+                .spawn(async { rmac_network::ask_to_join::load() })
+                .await;
+            if setting == rmac_network::ask_to_join::AskToJoin::Notify {
+                cx.update(|cx| {
+                    post_system_notice(
+                        "Wi-Fi Networks Available".to_owned(),
+                        "Choose a network in the Wi-Fi menu to join it.".to_owned(),
+                        cx,
+                    )
+                });
+            }
+        })
+        .detach();
+    }
+
     fn post_system_notice(summary: String, body: String, cx: &mut App) {
         // Windows: no notification server of Lulo's own yet; the notice is
         // logged (ADR 0023, "Phase 3 revised", what is left).
@@ -6837,6 +6976,7 @@ mod bar {
             watch_power_dialog_requests(cx);
             watch_restart_to_update_requests(cx);
             watch_menu_focus_requests(cx);
+            watch_log_out_requests(cx);
             start(cx);
         });
     }
@@ -6850,9 +6990,12 @@ mod bar {
         {
             system::requests::register("menu-bar-focus", begin_menu_keyboard_on_first_bar);
             system::requests::register("shutdown-dialog", show_power_dialog);
+            system::requests::register("log-out-dialog", show_log_out_dialog);
         }
         {
             let status = start_status(cx);
+            #[cfg(target_os = "linux")]
+            watch_key_equivalents(status.clone(), cx);
             let (backdrop_tx, backdrop_rx) = async_channel::bounded(16);
             cx.spawn(async move |cx| {
                 let mut tracker = MenuBackdropTracker::default();
@@ -6999,6 +7142,109 @@ mod bar {
         .detach();
     }
 
+    /// ⌘Q and ⌘W, which the Mac's menu bar answers for every app (WIN-17).
+    /// niri's binds spawn `rmac-shortcut-dispatch app-quit|window-close`;
+    /// the key goes through the frontmost app's menus as AppKit's key
+    /// equivalents do. A Lulo app runs its own Quit and its own ⌘W item (Close
+    /// Window, Close Tab), so its unsaved-changes guards still ask; a
+    /// third-party app, which publishes no menus, is asked to close its
+    /// windows: all of them for Quit, the frontmost one for ⌘W. The watches
+    /// wait on their sockets; nothing polls.
+    #[cfg(target_os = "linux")]
+    fn watch_key_equivalents(status: Entity<ShellStatus>, cx: &mut App) {
+        for (shortcut, quit) in [("app-quit", true), ("window-close", false)] {
+            let (sender, requests) = async_channel::bounded(4);
+            cx.background_executor()
+                .spawn(async move {
+                    let id = rmac_shortcuts::ShortcutId(shortcut.to_owned());
+                    if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                        eprintln!("the {shortcut} key equivalent is unavailable: {error}");
+                    }
+                })
+                .detach();
+            let status = status.clone();
+            cx.spawn(async move |cx| {
+                while let Ok(event) = requests.recv().await {
+                    if !matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                        continue;
+                    }
+                    let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
+                        eprintln!("could not read the frontmost window for {shortcut}");
+                        continue;
+                    };
+                    // Only an app window with the keyboard: a shell panel
+                    // (Spotlight, a menu) holding it leaves no window focused.
+                    let Some((window, app_id)) = snapshot
+                        .windows
+                        .iter()
+                        .find(|window| window.focused)
+                        .and_then(|window| Some((window.id, window.app_id.clone()?)))
+                    else {
+                        continue;
+                    };
+                    cx.update(|cx| {
+                        let (menu_app_id, menus) = {
+                            let status = status.read(cx);
+                            (status.menu_app_id.clone(), status.menus.clone())
+                        };
+                        run_key_equivalent(quit, app_id, window, menu_app_id, &menus, cx);
+                    });
+                }
+            })
+            .detach();
+        }
+    }
+
+    /// The menu command a key equivalent runs in the frontmost app's
+    /// `menus`: its enabled item with that shortcut.
+    #[cfg(any(target_os = "linux", test))]
+    fn key_equivalent_action(menus: &[rmac_app_menu::Menu], shortcut: &str) -> Option<String> {
+        menus.iter().find_map(|menu| {
+            menu.leaves()
+                .into_iter()
+                .find(|(_, item)| item.enabled && item.shortcut == shortcut)
+                .map(|(_, item)| item.action.clone())
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    fn run_key_equivalent(
+        quit: bool,
+        app_id: String,
+        window: rmac_compositor::WindowId,
+        menu_app_id: Option<String>,
+        menus: &[rmac_app_menu::Menu],
+        cx: &mut App,
+    ) {
+        // An Open/Save panel is the app's sheet, not an app of its own.
+        let app_id = if rmac_apps::identity::is_transient_panel(&app_id) && quit {
+            menu_app_id.clone().unwrap_or(app_id)
+        } else {
+            app_id
+        };
+        if quit {
+            // A Lulo app's own Quit; every window closed for any other.
+            dispatch_app_menu_action(app_id, "app::quit".to_owned(), cx);
+            return;
+        }
+        let own_menus = menu_app_id.as_deref() == Some(app_id.as_str());
+        if let Some(action) = own_menus
+            .then(|| key_equivalent_action(menus, "⌘W"))
+            .flatten()
+        {
+            dispatch_menu_action(app_id, action, Some(window), cx);
+            return;
+        }
+        cx.background_executor()
+            .spawn(async move {
+                let close = rmac_compositor::Action::CloseWindow { window };
+                if let Err(error) = rmac_compositor_system::execute_action(&close).await {
+                    eprintln!("could not close the {app_id} window: {error:?}");
+                }
+            })
+            .detach();
+    }
+
     /// `Ctrl+F2` (ACC-05, `docs/known-limitations.md`): niri's bind spawns
     /// `rmac-shortcut-dispatch menu-bar-focus`, the same command-endpoint
     /// mechanism the power key uses, through the `menu-bar-focus` dispatch
@@ -7039,6 +7285,45 @@ mod bar {
             }
         }
         eprintln!("Ctrl+F2 has no menu bar to move keyboard focus to");
+    }
+
+    /// `⇧⌘Q` (KB-01): niri's bind spawns `rmac-shortcut-dispatch
+    /// log-out-dialog`; the watch waits on the socket, nothing polls.
+    #[cfg(target_os = "linux")]
+    fn watch_log_out_requests(cx: &mut App) {
+        let (sender, requests) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let id = rmac_shortcuts::ShortcutId("log-out-dialog".to_owned());
+                if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                    eprintln!("Shift+Command+Q cannot open the Log Out dialog: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = requests.recv().await {
+                if matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                    cx.update(show_log_out_dialog);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Opens the Log Out confirmation on the first menu bar that can take it.
+    fn show_log_out_dialog(cx: &mut App) {
+        for handle in cx.windows() {
+            let Some(bar) = handle.downcast::<TopBar>() else {
+                continue;
+            };
+            if bar
+                .update(cx, |bar, window, cx| bar.open_log_out_dialog(window, cx))
+                .is_ok()
+            {
+                return;
+            }
+        }
+        eprintln!("Shift+Command+Q has no menu bar to open the Log Out dialog in");
     }
 
     /// Shows the dialog on the first menu bar that can take it.

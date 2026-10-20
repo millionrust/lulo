@@ -19,6 +19,8 @@ pub(super) enum SubPage {
     About,
     SoftwareUpdate,
     Storage,
+    /// General ▸ Startup Disk (UEFI boot entries, Lulo OS).
+    StartupDisk,
     NotificationApp {
         app_id: String,
     },
@@ -332,17 +334,18 @@ fn all_categories() -> Vec<Vec<Category>> {
                 gray,
                 "Adjust key repeat behavior and keyboard startup options.",
             ),
-            cat(
-                "Mouse",
-                "icons/mouse.svg",
-                gray,
-                "Adjust tracking, scrolling, acceleration, and buttons.",
-            ),
+            // Trackpad before Mouse, as macOS 26 lists them (SET-54).
             cat(
                 "Trackpad",
                 "icons/touchpad.svg",
                 gray,
                 "Adjust tracking, tapping, scrolling, and gestures.",
+            ),
+            cat(
+                "Mouse",
+                "icons/mouse.svg",
+                gray,
+                "Adjust tracking, scrolling, acceleration, and buttons.",
             ),
             cat(
                 "Printers & Scanners",

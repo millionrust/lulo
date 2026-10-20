@@ -32,36 +32,25 @@ impl Settings {
             .child(text_block("Bluetooth".into(), Some(description)))
             .child(power)
             .into_any_element()];
-        // Windows lets only its own Bluetooth settings make the PC
-        // discoverable; apps have no call for it.
-        if self.bluetooth_on
-            && self.bluetooth_available
-            && !self.bluetooth_loading
-            && cfg!(not(windows))
-        {
-            let discoverable_view = view.clone();
-            let discoverable = Toggle::new("bluetooth-discoverable")
-                .checked(self.bt_discoverable)
-                .disabled(self.bluetooth_busy || self.bluetooth_discovering)
-                .on_click(move |enabled, _, cx| {
-                    discoverable_view.update(cx, |settings, cx| {
-                        settings.set_bluetooth_discoverable(*enabled, cx)
-                    });
-                });
-            let subtitle: SharedString = match (&self.bluetooth_adapter_name, self.bt_discoverable)
-            {
-                (Some(name), true) => {
-                    format!("This computer is discoverable as \u{201c}{name}\u{201d}.").into()
-                }
-                _ => "Allow nearby devices to find this computer.".into(),
-            };
-            header_rows.push(
-                row_base()
-                    .items_start()
-                    .child(text_block("Discoverable".into(), Some(subtitle)))
-                    .child(discoverable)
-                    .into_any_element(),
-            );
+        // macOS makes the computer discoverable while Bluetooth Settings is
+        // open and says so under the header; Lulo OS does the same
+        // (`sync_bluetooth_discoverable_on_navigation`). Windows lets only
+        // its own Bluetooth settings make the PC discoverable.
+        if self.bluetooth_on && self.bt_discoverable && cfg!(not(windows)) {
+            if let Some(name) = &self.bluetooth_adapter_name {
+                header_rows.push(
+                    row_base()
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(secondary())
+                                .child(format!(
+                                    "This computer is discoverable as \u{201c}{name}\u{201d} while Bluetooth Settings is open."
+                                )),
+                        )
+                        .into_any_element(),
+                );
+            }
         }
         let mut cards = vec![card(header_rows)];
 

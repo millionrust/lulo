@@ -5,8 +5,8 @@ use gpui::{
     AccessibleAction, Along, App, AppContext as _, Axis, Background, Bounds, Context, Corners,
     DefiniteLength, DragMoveEvent, Empty, Entity, EntityId, EventEmitter, InteractiveElement,
     IntoElement, IsZero, MouseButton, MouseDownEvent, Orientation, ParentElement as _, Pixels,
-    Point, Render, RenderOnce, Role, StatefulInteractiveElement as _, StyleRefinement, Styled,
-    Window, div, prelude::FluentBuilder as _, px, relative,
+    Point, Render, RenderOnce, Role, SharedString, StatefulInteractiveElement as _,
+    StyleRefinement, Styled, Window, div, prelude::FluentBuilder as _, px, relative,
 };
 
 #[derive(Clone)]
@@ -416,6 +416,7 @@ pub struct Slider {
     style: StyleRefinement,
     disabled: bool,
     reverse: bool,
+    accessible_name: Option<SharedString>,
 }
 
 impl Slider {
@@ -427,7 +428,14 @@ impl Slider {
             style: StyleRefinement::default(),
             disabled: false,
             reverse: false,
+            accessible_name: None,
         }
+    }
+
+    /// rmac: the name assistive technology reads for the slider.
+    pub fn accessible_name(mut self, name: impl Into<SharedString>) -> Self {
+        self.accessible_name = Some(name.into());
+        self
     }
 
     /// As a horizontal slider.
@@ -606,6 +614,9 @@ impl RenderOnce for Slider {
         div()
             .id(("slider", self.state.entity_id()))
             .role(Role::Slider)
+            .when_some(self.accessible_name.clone(), |this, name| {
+                this.aria_label(name)
+            })
             .aria_disabled(self.disabled)
             .aria_numeric_value(slider_value)
             .aria_min_numeric_value(slider_min)

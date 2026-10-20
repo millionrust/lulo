@@ -285,6 +285,7 @@ impl LauncherView {
                     if this
                         .update(cx, |this, cx| {
                             if this.coordinator.apply(batch) {
+                                this.coordinator.prewarm_selected_launch();
                                 if let Some(probe) = &mut this.input_probe {
                                     if probe.pending.is_some()
                                         && !this.coordinator.snapshot().rows.is_empty()

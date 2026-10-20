@@ -5,13 +5,14 @@
   "observations": {
     "pane": {
       "pane_text": {
-        "labelled": 12,
+        "labelled": 10,
         "labels": [
-          "Menu Bar Controls"
+          "Menu Bar Controls",
+          "Clock"
         ],
         "controls": [
-          "Show seconds in the clock",
-          "Show battery percentage"
+          "Wi-Fi",
+          "Sound"
         ]
       }
     }

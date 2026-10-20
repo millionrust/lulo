@@ -2,10 +2,12 @@
 
 use super::*;
 
+#[allow(clippy::too_many_arguments)]
 pub(in crate::controller) fn dock_segment_row(
     view: Entity<Settings>,
     id: &'static str,
     title: &'static str,
+    accessible_name: Option<&'static str>,
     options: &'static [DockOption],
     selected: Option<usize>,
     enabled: bool,
@@ -24,7 +26,10 @@ pub(in crate::controller) fn dock_segment_row(
         })
         .collect();
     let current = popup_value(&choices, "Custom");
-    popup_row(id, title, None, current, choices, enabled)
+    match accessible_name {
+        Some(name) => popup_row_named(id, title, name, current, choices, enabled),
+        None => popup_row(id, title, None, current, choices, enabled),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

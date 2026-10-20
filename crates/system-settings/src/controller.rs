@@ -39,6 +39,7 @@ mod shell_settings;
 mod software_updates;
 mod sound;
 mod spotlight;
+mod startup_disk;
 mod state;
 mod storage;
 mod system_info;
@@ -71,7 +72,7 @@ use crate::appearance::{
 use crate::connectivity::{
     wifi_join_action, BluetoothForgetPrompt, BluetoothPairingDisplay, BluetoothPairingState,
     NetworkEditorState, VpnEditorState, WifiEnterprisePrompt, WifiForgetPrompt, WifiJoinAction,
-    WifiPasswordPrompt,
+    WifiOtherPrompt, WifiPasswordPrompt,
 };
 use crate::displays::{
     compositor_event_affects_displays, relative_display_position, DisplayChange,
@@ -84,9 +85,10 @@ use crate::focus::{
 use crate::hardware::Capabilities;
 use crate::input::{
     compositor_event_affects_input, compositor_input_config_failed, keyboard_delay_slider_index,
-    keyboard_rate_slider_index, speed_index, InputChange, InputOption, KEYBOARD_DELAYS,
-    KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS, MOUSE_PRECISION_PRESETS, MOUSE_SPEEDS,
-    TOUCHPAD_SPEEDS, TRACKPOINT_SPEEDS,
+    keyboard_rate_slider_index, nearest_numeric, speed_index, InputChange, InputOption,
+    DOUBLE_CLICK_SPEEDS, KEYBOARD_DELAYS, KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS,
+    MOUSE_PRECISION_PRESETS, MOUSE_SCROLL_FACTORS, MOUSE_SPEEDS, TOUCHPAD_SPEEDS,
+    TRACKPOINT_SPEEDS, WHEEL_SCROLL_LINES,
 };
 use crate::navigation::{
     categories, category_has_dedicated_renderer, category_name_for_pane_id, category_parent,

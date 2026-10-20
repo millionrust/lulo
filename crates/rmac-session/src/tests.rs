@@ -705,11 +705,21 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     let fallback = include_str!("../../../packaging/rmac-session/shortcuts-fallback.kdl");
 
     for reserved in [
-        "Mod+A ", "Mod+F ", "Mod+H ", "Mod+J ", "Mod+K ", "Mod+L ", "Mod+N ", "Mod+O ", "Mod+Q ",
-        "Mod+T ", "Mod+W ",
+        "Mod+A ", "Mod+F ", "Mod+H ", "Mod+J ", "Mod+K ", "Mod+L ", "Mod+N ", "Mod+O ", "Mod+T ",
     ] {
         assert!(!shell.contains(reserved), "shell captures {reserved}");
         assert!(!fallback.contains(reserved), "fallback captures {reserved}");
+    }
+    // ⌘Q and ⌘W go to the menu bar, which runs the frontmost app's own Quit
+    // and ⌘W item, or closes a third-party app's windows (WIN-17).
+    for (keys, word) in [("Mod+Q ", "app-quit"), ("Mod+W ", "window-close")] {
+        assert!(shell.lines().any(|line| {
+            line.trim_start().starts_with(keys)
+                && line.contains(&format!(
+                    "{{ spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"{word}\"; }}"
+                ))
+        }));
+        assert!(!fallback.contains(keys), "fallback captures {keys}");
     }
     assert!(!shell.contains("shortcuts-fallback.kdl"));
     assert!(shell.contains("Ctrl+Up repeat=false hotkey-overlay-title=\"Mission Control\""));
@@ -727,6 +737,13 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     // IPC of its own).
     assert!(shell.contains(
         "Ctrl+F2 repeat=false hotkey-overlay-title=\"Move Focus to the Menu Bar\" { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"menu-bar-focus\"; }"
+    ));
+    // Keyboard-backlight keys (KB-04) go to the OSD.
+    assert!(shell.contains("XF86KbdBrightnessUp allow-when-locked=true { spawn \"/usr/libexec/rmac/rmac-osd\" \"keyboard-brightness-up\"; }"));
+    assert!(shell.contains("XF86KbdBrightnessDown allow-when-locked=true { spawn \"/usr/libexec/rmac/rmac-osd\" \"keyboard-brightness-down\"; }"));
+    // ⇧⌘Q (KB-01) opens the Log Out confirmation.
+    assert!(shell.contains(
+        "Mod+Shift+Q repeat=false hotkey-overlay-title=\"Log Out\" { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"log-out-dialog\"; }"
     ));
     // ⌘M minimises the focused window of every app, not only rmac's own.
     assert!(shell.contains(
@@ -818,7 +835,7 @@ fn every_window_uses_the_measured_radius_and_active_inactive_shadows() {
     ));
     // Unified-toolbar apps take the 27 pt toolbar-window radius; Text Editor
     // is a title-bar window like TextEdit and keeps the 16 pt default.
-    assert!(shell.contains("|SystemMonitor)$\"#\n    geometry-corner-radius 27"));
+    assert!(shell.contains("|SystemMonitor|Preview|Weather)$\"#\n    geometry-corner-radius 27"));
     assert!(!shell.contains("TextEditor)$\"#\n    geometry-corner-radius 27"));
     // Header-bar apps under the rmac GTK theme are toolbar windows as well.
     assert!(shell.contains(

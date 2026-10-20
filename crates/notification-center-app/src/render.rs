@@ -6,7 +6,8 @@
 mod history;
 
 use crate::accessibility::{
-    EDIT_WIDGETS_LABEL, EMPTY_TITLE, LOADING_LABEL, SHOW_LESS_LABEL, UNAVAILABLE_TITLE,
+    EDIT_WIDGETS_LABEL, EMPTY_TITLE, LOADING_LABEL, SETTINGS_LABEL, SHOW_LESS_LABEL,
+    UNAVAILABLE_TITLE,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -24,8 +25,14 @@ use crate::model::{
     panel_height, relative_time, ApplicationIdentity, Busy, RecordGroup, COLUMN_BOTTOM, COLUMN_TOP,
     DIM_HEIGHT, PANEL_WIDTH,
 };
-use crate::view::NotificationCenterView;
+use crate::view::{
+    MuteForHour, MuteForToday, NotificationCenterView, OpenNotificationSettings, TurnOffApp,
+};
 use history::{card, Clock};
+
+const MUTE_HOUR_LABEL: &str = "Mute for 1 Hour";
+const MUTE_TODAY_LABEL: &str = "Mute for Today";
+const TURN_OFF_LABEL: &str = "Turn Off";
 
 /// The column's right inset; the × on a card overhangs its left edge, so the
 /// scroll area is widened by the same amount to keep it unclipped.
@@ -260,6 +267,12 @@ impl Render for NotificationCenterView {
         }
         self.a11y_active_last_frame = a11y_active;
         self.scale_factor = window.scale_factor();
+        // NC-11: slide in from (and out to) the right edge; frames are
+        // asked for only while it moves.
+        let slide = self.slide_offset();
+        if slide.is_some() {
+            window.request_animation_frame();
+        }
         let clock = Clock::now();
         let groups = self.groups();
         let has_records = !groups.is_empty();
@@ -311,16 +324,44 @@ impl Render for NotificationCenterView {
         .absolute()
         .inset_0();
 
+        let app_menu = self
+            .app_menu
+            .as_ref()
+            .map(|(state, target)| (app_menu(state.position(), &target.name), state.clone()));
+
         div()
             .id("notification-center")
             .role(Role::Group)
             .aria_label("Notification Center")
             .size_full()
             .relative()
+            .when_some(slide, |root, offset| root.left(px(offset)))
             .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
+                this.dismiss_app_menu(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &MuteForHour, window, cx| {
+                this.mute_menu_app(crate::view::unix_now() + 3600, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &MuteForToday, window, cx| {
+                let now = crate::view::unix_now();
+                this.mute_menu_app(crate::view::end_of_today(now), window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TurnOffApp, window, cx| {
+                this.turn_off_menu_app(window, cx);
+            }))
+            .on_action(
+                cx.listener(|this, _: &OpenNotificationSettings, window, cx| {
+                    this.open_notification_settings(window, cx);
+                }),
+            )
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
                     cx.stop_propagation();
+                    if this.app_menu.is_some() {
+                        this.dismiss_app_menu(window, cx);
+                        return;
+                    }
                     this.dismiss_and_restore_focus(window, cx);
                 }
             }))
@@ -364,7 +405,7 @@ impl Render for NotificationCenterView {
                             .children(notices)
                             .children(group_elements)
                             .children(widget_elements)
-                            .when(has_widgets && !empty, |column| {
+                            .when(!empty && !loading && !unavailable, |column| {
                                 column.child(
                                     div()
                                         .flex()
@@ -375,5 +416,19 @@ impl Render for NotificationCenterView {
                             .child(measure),
                     ),
             )
+            .when_some(app_menu, |root, (menu, state)| {
+                root.child(menu.render(&state))
+            })
     }
+}
+
+/// A card's right-click menu, as macOS 26 shows it.
+fn app_menu(position: gpui::Point<gpui::Pixels>, name: &str) -> rmac_ui::ContextMenu {
+    rmac_ui::ContextMenu::new(position)
+        .header(format!("{name} Notifications"))
+        .item(MUTE_HOUR_LABEL, Box::new(MuteForHour))
+        .item(MUTE_TODAY_LABEL, Box::new(MuteForToday))
+        .item(TURN_OFF_LABEL, Box::new(TurnOffApp))
+        .separator()
+        .item(SETTINGS_LABEL, Box::new(OpenNotificationSettings))
 }

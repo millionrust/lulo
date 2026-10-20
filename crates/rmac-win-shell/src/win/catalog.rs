@@ -276,6 +276,23 @@ fn apps_folder() -> Option<Vec<Entry>> {
     }
 }
 
+/// Every `.lnk` in the Start menu folders (for their icons).
+pub(super) fn start_menu_links() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for root in app_roots() {
+        walk(&root, 0, 4, &mut |path, is_dir| {
+            if !is_dir
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("lnk"))
+            {
+                found.push(path.to_path_buf());
+            }
+        });
+    }
+    found
+}
+
 /// The Start menu's shortcuts, when the Apps folder cannot be read.
 fn start_menu_shortcuts() -> Vec<Entry> {
     let mut found = Vec::new();

@@ -30,6 +30,15 @@ pub(super) struct WifiPasswordPrompt {
     pub(super) validation_error: Option<SharedString>,
 }
 
+/// Wi-Fi ▸ Other…: join a network that does not broadcast its name.
+pub(super) struct WifiOtherPrompt {
+    pub(super) name: Entity<InputState>,
+    pub(super) password: Entity<InputState>,
+    /// WPA2/WPA3 Personal; false is None (an open network).
+    pub(super) secure: bool,
+    pub(super) validation_error: Option<SharedString>,
+}
+
 pub(super) struct WifiEnterprisePrompt {
     pub(super) network: rmac_network::WifiNetworkId,
     pub(super) ssid: SharedString,

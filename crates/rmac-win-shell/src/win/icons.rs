@@ -318,19 +318,64 @@ fn is_file_path(source: &str) -> bool {
 /// and keep it as a PNG at `path`, no larger than `pixels` square. True
 /// when it was written.
 pub(crate) fn save_png(source: &str, pixels: u32, path: &std::path::Path) -> bool {
-    let Some((width, height, mut bytes)) = load(source, pixels as i32, false) else {
+    let Some(image) = render_fitted(source, pixels) else {
         return false;
     };
+    image
+        .save_with_format(path, image::ImageFormat::Png)
+        .is_ok()
+}
+
+/// [`save_png`], but a placeholder (Windows' generic application icon, what
+/// Explorer shows for an item without art) is not kept: false, nothing
+/// written, so the caller can try another source or hide the entry.
+pub(crate) fn save_real_png(source: &str, pixels: u32, path: &std::path::Path) -> bool {
+    let Some(image) = render_fitted(source, pixels) else {
+        return false;
+    };
+    if is_generic(&image) {
+        return false;
+    }
+    image
+        .save_with_format(path, image::ImageFormat::Png)
+        .is_ok()
+}
+
+fn render_fitted(source: &str, pixels: u32) -> Option<image::RgbaImage> {
+    let (width, height, mut bytes) = load(source, pixels as i32, false)?;
     // BGRA from Windows; PNG wants RGBA.
     for pixel in bytes.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }
-    let Some(image) = image::RgbaImage::from_raw(width, height, bytes) else {
+    let image = image::RgbaImage::from_raw(width, height, bytes)?;
+    Some(fit_icon_grid(image, pixels))
+}
+
+/// Whether `image` is Windows' generic application icon, compared with the
+/// one the shell draws for an executable without icon resources.
+fn is_generic(image: &image::RgbaImage) -> bool {
+    static GENERIC: OnceLock<Option<image::RgbaImage>> = OnceLock::new();
+    let generic = GENERIC.get_or_init(|| {
+        let file = std::env::temp_dir().join(format!("lulo-generic-{}.exe", std::process::id()));
+        std::fs::write(&file, b"MZ").ok()?;
+        let icon = render_fitted(&file.to_string_lossy(), 96);
+        let _ = std::fs::remove_file(&file);
+        icon
+    });
+    let Some(generic) = generic else {
         return false;
     };
-    fit_icon_grid(image, pixels)
-        .save_with_format(path, image::ImageFormat::Png)
-        .is_ok()
+    let small = |image: &image::RgbaImage| {
+        image::imageops::resize(image, 24, 24, image::imageops::FilterType::Triangle)
+    };
+    let (a, b) = (small(image), small(generic));
+    let total: u64 = a
+        .as_raw()
+        .iter()
+        .zip(b.as_raw())
+        .map(|(x, y)| u64::from(x.abs_diff(*y)))
+        .sum();
+    total / (24 * 24 * 4) < 10
 }
 
 /// The share of its square an icon's body may fill in Lulo's icon grid:

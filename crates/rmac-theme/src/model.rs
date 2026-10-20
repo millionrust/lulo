@@ -100,6 +100,10 @@ pub struct Preferences {
     pub text_highlight: TextHighlightPreference,
     pub scroll_bar_visibility: ScrollBarVisibility,
     pub scroll_bar_click: ScrollBarClickAction,
+    /// macOS Keyboard ▸ Keyboard navigation: Tab also stops at buttons,
+    /// switches and pop-ups, not only at text fields and lists. Off by
+    /// default, as on the Mac.
+    pub keyboard_navigation: bool,
 }
 
 impl Default for Preferences {
@@ -114,6 +118,7 @@ impl Default for Preferences {
             text_highlight: TextHighlightPreference::default(),
             scroll_bar_visibility: ScrollBarVisibility::default(),
             scroll_bar_click: ScrollBarClickAction::default(),
+            keyboard_navigation: false,
         }
     }
 }

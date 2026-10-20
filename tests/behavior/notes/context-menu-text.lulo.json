@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "scenario": "notes/context-menu-text",
+  "platform": "Lulo local contract",
+  "observations": {
+    "menu": {
+      "menu": {
+        "present": true,
+        "items": [
+          "Cut",
+          "Copy",
+          "Paste",
+          "Paste and Match Style",
+          "Font",
+          "Spelling and Grammar",
+          "Substitutions",
+          "Transformations",
+          "Speech"
+        ]
+      }
+    },
+    "closed": {
+      "menu": {
+        "present": false
+      }
+    }
+  }
+}

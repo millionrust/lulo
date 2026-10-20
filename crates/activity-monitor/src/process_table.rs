@@ -503,7 +503,12 @@ impl ProcessTableDelegate {
         };
         self.accessible = accessibility::project_process_table(
             "Processes",
-            &self.rows,
+            // The table is virtualised and shows every process (MON-11); the
+            // AT-SPI projection stays bounded to its first rows.
+            &self.rows[..self
+                .rows
+                .len()
+                .min(accessibility::MAX_ACCESSIBLE_PROCESS_ROWS)],
             &columns,
             self.selected_pid,
             self.sort_key.into(),
@@ -770,7 +775,6 @@ impl ProcessTableDelegate {
                         },
                     )
             })
-            .take(300)
             .cloned()
             .collect();
         if view_filter == ViewFilter::AllHierarchical {
@@ -784,8 +788,8 @@ impl ProcessTableDelegate {
     /// tree — each row immediately followed by its own children, one
     /// level deeper (`ProcRow::depth`) — using `ppid`, without touching
     /// the underlying flat storage this is built from. A process whose
-    /// parent isn't in `rows` (filtered out, already reaped, or the 300-row
-    /// cap cut it, MON-11) is shown as its own root rather than dropped.
+    /// parent isn't in `rows` (filtered out, already reaped, or the
+    /// row set was filtered) is shown as its own root rather than dropped.
     /// Siblings keep whatever order `sort_rows` already gave `rows`.
     fn hierarchical_order(rows: &[ProcRow]) -> Vec<ProcRow> {
         let index_by_pid: std::collections::HashMap<u32, usize> = rows
@@ -1419,6 +1423,16 @@ mod tests {
             depth: 0,
             extra: ProcExtra::default(),
         }
+    }
+
+    #[test]
+    fn table_lists_every_process_past_the_accessibility_bound() {
+        let mut delegate = ProcessTableDelegate::new(ColKey::ALL.to_vec());
+        delegate.all_rows = (1..=450)
+            .map(|pid| row_with_parent(pid, None, &format!("p{pid}")))
+            .collect();
+        delegate.apply_view();
+        assert_eq!(delegate.rows.len(), 450);
     }
 
     #[test]

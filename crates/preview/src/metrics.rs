@@ -200,6 +200,10 @@ pub fn image_window_size(pixels: (f32, f32)) -> (f32, f32) {
     )
 }
 
+/// Size (width, height) of Go ▸ Go to Page…'s sheet, measured on macOS 26
+/// (PREV-14).
+pub const GO_TO_PAGE_SHEET: (f32, f32) = (184.0, 92.0);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,5 +247,10 @@ mod tests {
     fn document_column_starts_after_the_sidebar() {
         assert_eq!(document_left(true), 168.0);
         assert_eq!(document_left(false), 0.0);
+    }
+
+    #[test]
+    fn go_to_page_sheet_matches_the_mac() {
+        assert_eq!(GO_TO_PAGE_SHEET, (184.0, 92.0));
     }
 }

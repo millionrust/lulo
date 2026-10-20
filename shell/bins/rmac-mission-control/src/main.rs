@@ -36,8 +36,8 @@ mod linux_wayland {
     use gpui_platform::application;
     use rmac_compositor::reveal::{self, Revealed};
     use rmac_compositor::{
-        frame_to_percent, window_logical_rect, Action, Distance, OutputId, Snapshot,
-        TileHistoryStore, TileRegion, WindowId, WorkspaceId,
+        window_logical_rect, Action, Distance, OutputId, Snapshot, TileHistoryStore, TileRegion,
+        WindowId, WorkspaceId,
     };
     use rmac_shell_settings::{ClickWallpaperToReveal, HotCornerSettings};
     use rmac_shell_ui::tokens;
@@ -55,10 +55,6 @@ mod linux_wayland {
     /// The height rmac's menu bar reserves (rmac-menubar BAR_HEIGHT). The
     /// Mac measures its wallpaper-click reveal from below the menu bar.
     const MENU_BAR_HEIGHT: f64 = 29.0;
-    /// The Dock's reservation (rmac-dock EXCLUSIVE_ZONE, WIN-02). Fill,
-    /// Centre and the halves (WIN-01) measure their working area between
-    /// this and the menu bar, above.
-    const DOCK_HEIGHT: f64 = 89.0;
     /// niri's window-movement animation (shell.kdl: 300 ms). Under Reduce
     /// Motion the screen holds this long while windows move, then
     /// crossfades; Mission Control waits this long for windows coming back.
@@ -81,6 +77,8 @@ mod linux_wayland {
     /// A window nothing on screen shows whole: the rmac content surface
     /// (docs/measured-colors-2026-09-19.md) with the app's icon (S).
     const CARD_FILL: u32 = 0x2220_25FF;
+    /// App Exposé's divider over the minimised row (S: white ≈ 25 %).
+    const DIVIDER: u32 = 0xFFFF_FF40;
     /// rmac's window corner radius (shell.kdl geometry-corner-radius).
     const WINDOW_RADIUS: f32 = 16.0;
 
@@ -129,6 +127,9 @@ mod linux_wayland {
         /// Tells the window placer (`crate::placement`) when windows are
         /// pushed aside on purpose, so it leaves them there.
         reveal_guard: crate::placement::RevealGuard,
+        /// What the menu bar and the Dock reserve (Desktop & Dock), which
+        /// Fill, Centre, the halves and Zoom measure their percentages in.
+        reservation: rmac_compositor::placement::Reservation,
     }
 
     impl Service {
@@ -150,6 +151,10 @@ mod linux_wayland {
                 window_pictures: HashMap::new(),
                 tile_history: TileHistoryStore::load_default(),
                 reveal_guard,
+                reservation: rmac_compositor::placement::Reservation {
+                    menu_bar: MENU_BAR_HEIGHT,
+                    ..Default::default()
+                },
             };
             service.refresh_catalog(cx);
             service
@@ -182,7 +187,7 @@ mod linux_wayland {
         /// tiling action keeps the frame from before the first, so 🌐⌃R
         /// always lands back on the window's original size.
         fn record_tile_history(&mut self, snapshot: &Snapshot, window: WindowId) {
-            let Some(percent) = tile_history_percent(snapshot, window) else {
+            let Some(percent) = tile_history_percent(snapshot, window, &self.reservation) else {
                 return;
             };
             self.tile_history.record(window, percent);
@@ -412,6 +417,7 @@ mod linux_wayland {
     fn tile_history_percent(
         snapshot: &Snapshot,
         window: WindowId,
+        reservation: &rmac_compositor::placement::Reservation,
     ) -> Option<rmac_compositor::FramePercent> {
         let window = snapshot
             .windows
@@ -428,19 +434,18 @@ mod linux_wayland {
             .outputs
             .iter()
             .find(|output| Some(&output.id) == workspace.output.as_ref())?;
-        let logical = output.logical.as_ref()?;
         let position = window.layout.tile_position_in_view?;
         let size = window.layout.tile_size;
-        frame_to_percent(
-            logical.size.width,
-            logical.size.height,
-            MENU_BAR_HEIGHT,
-            DOCK_HEIGHT,
-            position.x,
-            position.y,
-            size.width,
-            size.height,
-        )
+        // The live reservation: the Dock's size, edge and hiding change the
+        // working area niri measures percentages in.
+        let insets = reservation.insets(&output.id, &snapshot.outputs);
+        let area = rmac_compositor::placement::visible_frame(output, insets)?;
+        Some(rmac_compositor::FramePercent {
+            x: (position.x - area.x) / area.width * 100.0,
+            y: (position.y - area.y) / area.height * 100.0,
+            width: size.width / area.width * 100.0,
+            height: size.height / area.height * 100.0,
+        })
     }
 
     /// Under Reduce Motion, hold the screen while niri moves the windows and
@@ -458,6 +463,38 @@ mod linux_wayland {
     }
 
     /// Run compositor actions in order, one socket each.
+    /// Bring a minimised window back to the Space it left and focus it, the
+    /// way the Dock's minimised tile does (the parking store remembers the
+    /// Space). The store's file is read and written off the UI thread.
+    fn restore_minimised(window: WindowId, snapshot: Snapshot, cx: &mut App) {
+        cx.spawn(async move |cx: &mut AsyncApp| {
+            let actions = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut store = rmac_compositor::ParkingStore::load_default();
+                    store.prune(&snapshot);
+                    let mut actions = store.restore_actions(&[window]);
+                    if !actions.is_empty() {
+                        if let Err(error) = store.save_default() {
+                            eprintln!("Mission Control could not save the parking set: {error}");
+                        }
+                    }
+                    actions.push(Action::FocusWindow { window });
+                    actions
+                })
+                .await;
+            for action in actions {
+                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                    eprintln!(
+                        "Mission Control could not run {:?}: {error:?}",
+                        action.kind()
+                    );
+                }
+            }
+        })
+        .detach();
+    }
+
     fn run_actions(actions: Vec<Action>, cx: &mut App) {
         if actions.is_empty() {
             return;
@@ -552,6 +589,8 @@ mod linux_wayland {
     enum Exit {
         Nothing,
         Focus(WindowId),
+        /// Bring a minimised window back from App Exposé's row.
+        Restore(WindowId),
         Space(WorkspaceId),
     }
 
@@ -693,6 +732,33 @@ mod linux_wayland {
                     model::GAP_Y,
                     0.0,
                 ),
+                Mode::AppWindows if self.has_minimised() => {
+                    let (open_area, _, row_area) =
+                        model::app_windows_areas_with_minimised(width, height);
+                    let (minimised, open): (Vec<_>, Vec<_>) = self
+                        .scene
+                        .windows
+                        .iter()
+                        .enumerate()
+                        .partition(|(_, window)| window.minimised);
+                    let mut rects = vec![model::Rect::new(0.0, 0.0, 0.0, 0.0); frames.len()];
+                    for (group, area, gap_y) in [(open, open_area, 0.0), (minimised, row_area, 0.0)]
+                    {
+                        let group_frames: Vec<Rect> =
+                            group.iter().map(|(_, window)| window.frame).collect();
+                        let laid = model::layout(
+                            &group_frames,
+                            area,
+                            model::GAP_X,
+                            gap_y,
+                            model::CAPTION_BAND,
+                        );
+                        for ((index, _), rect) in group.iter().zip(laid) {
+                            rects[*index] = rect;
+                        }
+                    }
+                    rects
+                }
                 Mode::AppWindows => model::layout(
                     &frames,
                     model::app_windows_area(width, height),
@@ -701,6 +767,10 @@ mod linux_wayland {
                     model::CAPTION_BAND,
                 ),
             }
+        }
+
+        fn has_minimised(&self) -> bool {
+            self.scene.windows.iter().any(|window| window.minimised)
         }
 
         /// 0 = the windows where they are on screen, 1 = laid out.
@@ -835,6 +905,10 @@ mod linux_wayland {
                 Exit::Nothing => None,
                 Exit::Focus(window) => Some(Action::FocusWindow { window }),
                 Exit::Space(workspace) => Some(Action::FocusWorkspace { workspace }),
+                Exit::Restore(window) => {
+                    restore_minimised(window, self.snapshot.clone(), cx);
+                    None
+                }
             };
             run_actions(action.into_iter().collect(), cx);
         }
@@ -842,7 +916,12 @@ mod linux_wayland {
         fn commit(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
             if let Some(scene_window) = self.scene.windows.get(index) {
                 let id = scene_window.id;
-                self.dismiss(Exit::Focus(id), window, cx);
+                let exit = if scene_window.minimised {
+                    Exit::Restore(id)
+                } else {
+                    Exit::Focus(id)
+                };
+                self.dismiss(exit, window, cx);
             }
         }
 
@@ -1421,6 +1500,19 @@ mod linux_wayland {
                 Vec::new()
             };
             let bar = (self.mode == Mode::MissionControl).then(|| self.spaces_bar(progress, cx));
+            // App Exposé's divider above the minimised windows' row.
+            let divider = (self.mode == Mode::AppWindows && self.has_minimised()).then(|| {
+                let (_, y, row) =
+                    model::app_windows_areas_with_minimised(self.scene.width, self.scene.height);
+                div()
+                    .absolute()
+                    .left(px(row.x))
+                    .top(px(y))
+                    .w(px(row.width))
+                    .h(px(1.0))
+                    .opacity(progress)
+                    .bg(rgba(DIVIDER))
+            });
             div()
                 .id("mission-control")
                 .track_focus(&self.focus)
@@ -1438,6 +1530,7 @@ mod linux_wayland {
                 )
                 .children(windows)
                 .children(captions)
+                .children(divider)
                 .children(bar)
         }
     }
@@ -2013,12 +2106,13 @@ mod linux_wayland {
                                 crate::placement::MENU_BAR_HEIGHT,
                             );
                             let _ = placement_tx
-                                .send(crate::placement::Input::Dock(reservation))
+                                .send(crate::placement::Input::Dock(reservation.clone()))
                                 .await;
                             cx.update(|cx| {
                                 configured.update(cx, |service, _| {
                                     service.corners = corners;
                                     service.click_to_reveal = click_to_reveal;
+                                    service.reservation = reservation.clone();
                                 });
                                 reconcile_corners(&configured, cx);
                             });

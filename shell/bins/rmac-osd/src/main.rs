@@ -315,6 +315,7 @@ mod linux_wayland {
         match presentation.kind {
             Kind::Output => "Sound".to_owned(),
             Kind::Display => "Display".to_owned(),
+            Kind::Keyboard => "Keyboard Brightness".to_owned(),
             Kind::Input => "Microphone".to_owned(),
         }
     }
@@ -377,7 +378,7 @@ mod linux_wayland {
                     height: 17.0,
                 },
             },
-            (Kind::Display, _) => RowGlyphs {
+            (Kind::Display | Kind::Keyboard, _) => RowGlyphs {
                 low: Glyph {
                     file: "brightness-low.svg",
                     width: 15.0,

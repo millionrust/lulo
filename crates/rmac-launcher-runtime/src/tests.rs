@@ -99,6 +99,7 @@ fn result(id: &str, category: Category, title: &str) -> SearchResult {
         },
         category,
         application_group: None,
+        kind: None,
         title: title.into(),
         subtitle: None,
         detail: None,

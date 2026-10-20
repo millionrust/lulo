@@ -32,7 +32,10 @@ there). What is the cleanest way to get all of this on Ubuntu 26.04 with niri, f
 
 **niri alone cannot do it.** niri binds keys to its own actions (and `spawn`). It cannot turn a
 chord into another chord and deliver it to the focused client, so ⌘C can never reach Firefox as
-Control-C. It stays the owner of ⌘Space, ⌘Tab, ⇧⌘3/4/5 and ⌃⌘Q.
+Control-C. It stays the owner of ⌘Space, ⌘Tab, ⇧⌘3/4/5 and ⌃⌘Q. Revision (2026-10-14, WIN-17):
+niri also owns ⌘Q and ⌘W, which `spawn` the menu bar's key-equivalent dispatch: it runs the
+frontmost app's own Quit and ⌘W menu item, or closes a third-party app's windows, so both work
+without keyd. With keyd on, a third-party app's ⌘Q/⌘W become Control-Q/W before niri sees them.
 
 **xremap** is the nearest competitor. It is Rust, it knows niri, and it is flexible. It is not in
 the archive, though, and running it as the user means putting that user in `input`, so every

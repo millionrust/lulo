@@ -26,6 +26,9 @@ pub(super) fn execute(command: Command) -> Result<Presentation, Error> {
         Command::BrightnessUp | Command::BrightnessDown | Command::ShowBrightness => {
             execute_brightness(command)
         }
+        Command::KeyboardBrightnessUp | Command::KeyboardBrightnessDown => {
+            execute_keyboard_brightness(command)
+        }
     }
 }
 
@@ -147,6 +150,19 @@ fn execute_brightness(command: Command) -> Result<Presentation, Error> {
         backlight = apply_brightness(&backlight.name, target)?;
     }
     Presentation::new(Kind::Display, "Display", backlight.percentage(), false)
+}
+
+/// XF86KbdBrightnessUp/Down (KB-04): one of sixteen steps, like the Mac's
+/// keyboard-backlight keys; down reaches 0, which turns the light off.
+fn execute_keyboard_brightness(command: Command) -> Result<Presentation, Error> {
+    let led = keyboard_led()?;
+    let direction = if command == Command::KeyboardBrightnessUp {
+        Direction::Up
+    } else {
+        Direction::Down
+    };
+    let led = apply_level(Subsystem::Leds, &led.name, led.adjusted(direction))?;
+    Presentation::new(Kind::Keyboard, "Keyboard", led.percentage(), false)
 }
 
 /// Set a backlight through logind and wait until sysfs reports the level.

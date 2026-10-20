@@ -93,6 +93,12 @@ jobs:
           # executables (rmac-wallpaper's `packaged_wallpaper_dir`).
           mkdir -p "$out/wallpapers"
           cp packaging/rmac-session/wallpapers/*.jpg "$out/wallpapers/"
+          # Lulo's fonts, which every app maps from a `fonts` folder beside
+          # it (WIN-OS-99; generate_apps_wxs.py installs the same files).
+          mkdir -p "$out/fonts"
+          cp assets/fonts/inter/*.otf assets/fonts/jetbrains-mono/*.ttf "$out/fonts/"
+          cp assets/fonts/inter/LICENSE.txt "$out/fonts/inter-LICENSE.txt"
+          cp assets/fonts/jetbrains-mono/LICENSE.txt "$out/fonts/jetbrains-mono-LICENSE.txt"
           cat > "$out/README.txt" <<'EOF'
           Lulo apps for Windows - preview build (${{ github.sha }})
 
@@ -107,7 +113,7 @@ jobs:
 
           rmac-system-settings.exe sets the appearance, accent colour,
           wallpaper and alert sound every Lulo app uses. Keep the
-          wallpapers folder next to the apps.
+          wallpapers and fonts folders next to the apps.
 
           The Lulo layer: double-click lulo-session.exe to put Lulo's menu
           bar, Dock and Spotlight (Alt+Space) over the Windows desktop. The

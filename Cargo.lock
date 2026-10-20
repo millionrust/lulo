@@ -7058,6 +7058,7 @@ dependencies = [
  "rmac-compositor-system",
  "rmac-desktop",
  "rmac-desktop-widgets",
+ "rmac-hardware",
  "rmac-locale",
  "rmac-locale-linux",
  "rmac-notifications",
@@ -7342,6 +7343,7 @@ version = "0.9.0-beta.2"
 dependencies = [
  "async-channel",
  "blocking",
+ "chrono",
  "futures-util",
  "gpui",
  "gpui-component",

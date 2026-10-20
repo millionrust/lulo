@@ -638,6 +638,11 @@ pub(crate) fn run(windows: Vec<Vec<String>>) {
                         .update(cx, |state, cx| state.set_value(query, window, cx));
                     finder.recursive_search(cx);
                 }
+                crate::StartupDestination::Find => finder.open_search(window, cx),
+                crate::StartupDestination::GoToFolder => finder.open_go_to_folder(window, cx),
+                crate::StartupDestination::ConnectToServer => {
+                    finder.open_connect_to_server(window, cx)
+                }
             }
             finder
         },

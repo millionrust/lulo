@@ -86,6 +86,83 @@ impl Category {
     }
 }
 
+/// What kind of file a file result is. macOS 26 groups file results
+/// under these headings (Documents, Folders, PDF Documents, …) instead of
+/// one Files section; the names are Spotlight's own category names.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FileKind {
+    Folders,
+    Documents,
+    PdfDocuments,
+    Images,
+    Presentations,
+    Spreadsheets,
+    Movies,
+    Music,
+    Developer,
+    Fonts,
+    Other,
+}
+
+impl FileKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Folders => "Folders",
+            Self::Documents => "Documents",
+            Self::PdfDocuments => "PDF Documents",
+            Self::Images => "Images",
+            Self::Presentations => "Presentations",
+            Self::Spreadsheets => "Spreadsheets",
+            Self::Movies => "Movies",
+            Self::Music => "Music",
+            Self::Developer => "Developer",
+            Self::Fonts => "Fonts",
+            Self::Other => "Other",
+        }
+    }
+
+    /// The kind of a file from its name; `is_dir` says it is a folder.
+    pub fn of(path: &std::path::Path, is_dir: bool) -> Self {
+        if is_dir {
+            return Self::Folders;
+        }
+        let extension = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_default();
+        match extension.as_str() {
+            "pdf" => Self::PdfDocuments,
+            "txt" | "text" | "md" | "markdown" | "rtf" | "rtfd" | "doc" | "docx" | "odt"
+            | "pages" | "tex" | "epub" | "log" => Self::Documents,
+            "xls" | "xlsx" | "ods" | "numbers" | "csv" | "tsv" => Self::Spreadsheets,
+            "ppt" | "pptx" | "odp" | "key" => Self::Presentations,
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "heif" | "bmp" | "tif" | "tiff"
+            | "svg" | "avif" | "ico" | "raw" | "cr2" | "nef" | "dng" | "xcf" | "psd" => {
+                Self::Images
+            }
+            "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "mpg" | "mpeg" | "ogv" => Self::Movies,
+            "mp3" | "m4a" | "flac" | "wav" | "ogg" | "oga" | "opus" | "aac" | "aif" | "aiff" => {
+                Self::Music
+            }
+            "rs" | "py" | "js" | "ts" | "tsx" | "jsx" | "c" | "h" | "cc" | "cpp" | "hpp" | "go"
+            | "java" | "kt" | "swift" | "rb" | "sh" | "json" | "toml" | "yaml" | "yml" | "xml"
+            | "html" | "htm" | "css" | "sql" | "lua" | "php" => Self::Developer,
+            "ttf" | "otf" | "ttc" | "woff" | "woff2" => Self::Fonts,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// The heading a result sits under in a typed query's list: its file kind
+/// for a file, otherwise its category.
+pub fn section_label(category: Category, kind: Option<FileKind>) -> &'static str {
+    match kind {
+        Some(kind) => kind.label(),
+        None => category.label(),
+    }
+}
+
 /// Tahoe's fixed Apps browse categories. Suggestions are intentionally not a
 /// category: they require truthful usage ranking and are omitted until that
 /// authority is available. Arcade is Apple Games content and is likewise not
@@ -200,6 +277,9 @@ pub struct SearchResult {
     /// Apps-browse grouping supplied only by the installed-application
     /// provider. Other result categories leave this unset.
     pub application_group: Option<ApplicationGroup>,
+    /// A file's kind, which picks its section (SPOT-03). Only file results
+    /// carry one.
+    pub kind: Option<FileKind>,
     pub title: String,
     pub subtitle: Option<String>,
     /// A third line an answer card shows: the time in a city, the rate

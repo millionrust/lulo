@@ -14,6 +14,12 @@ mod menu_model;
 mod session_guard;
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod unsaved_guard;
+// The Battery menu's "Using Significant Energy" sample (BAR-05).
+#[cfg_attr(
+    not(any(all(target_os = "linux", feature = "wayland"), windows)),
+    allow(dead_code)
+)]
+mod energy;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 pub use bar::run;
@@ -1127,6 +1133,9 @@ mod bar {
         /// fresh mutation starts.
         wifi_error: Option<String>,
         battery_menu: Option<rmac_power::Snapshot>,
+        /// Apps using significant energy, sampled when the Battery menu
+        /// opens (BAR-05).
+        battery_energy: Option<Vec<String>>,
         /// The last energy-mode mutation failure, visible until dismissed.
         battery_error: Option<String>,
         /// The Sound menu's live audio snapshot, kept fresh by
@@ -1286,6 +1295,7 @@ mod bar {
                 wifi_joining: None,
                 wifi_error: None,
                 battery_menu: None,
+                battery_energy: None,
                 battery_error: None,
                 sound_menu: None,
                 sound_error: None,
@@ -2541,6 +2551,30 @@ mod bar {
                         });
                     })
                     .detach();
+                    // One short CPU sample of the apps with windows, taken
+                    // off the UI thread only while the menu opens.
+                    self.battery_energy = None;
+                    cx.spawn(async move |this, cx| {
+                        let windows = match rmac_compositor_system::snapshot().await {
+                            Ok(snapshot) => snapshot
+                                .windows
+                                .into_iter()
+                                .filter_map(|window| Some((window.pid?, window.app_id?)))
+                                .collect::<Vec<_>>(),
+                            Err(_) => Vec::new(),
+                        };
+                        let energy =
+                            blocking::unblock(move || crate::energy::significant(&windows)).await;
+                        let _ = this.update(cx, |this, cx| {
+                            if this.status_generation == generation
+                                && this.status_menu == Some(StatusMenuKind::Battery)
+                            {
+                                this.battery_energy = energy;
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .detach();
                 }
                 // Sound and Bluetooth also stay live while open through
                 // `watch_sound_changes`/`watch_bluetooth_changes`; opening
@@ -2626,9 +2660,11 @@ mod bar {
                     joining: self.wifi_joining.as_ref(),
                     error: self.wifi_error.as_deref(),
                 }),
-                StatusMenuKind::Battery => {
-                    battery_menu_rows(self.battery_menu.as_ref(), self.battery_error.as_deref())
-                }
+                StatusMenuKind::Battery => battery_menu_rows(
+                    self.battery_menu.as_ref(),
+                    self.battery_error.as_deref(),
+                    self.battery_energy.as_deref(),
+                ),
                 StatusMenuKind::Sound => sound_menu_rows(SoundMenuInput {
                     audio: self.sound_menu.as_ref(),
                     error: self.sound_error.as_deref(),
@@ -5539,18 +5575,31 @@ mod bar {
                 Item::new("System Settings…", "system::settings", "")
                     .badge(software_update_badge.unwrap_or_default())
                     .separated(),
-                Item::new("Software Center", "system::software-center", ""),
+                Item::new("Software Center…", "system::software-center", ""),
                 Item::new("Recent Items", "system::recents", menu_model::SUBMENU_MARK).separated(),
                 Item::new("Force Quit…", "system::force-quit", "⌥⌘⎋").separated(),
                 Item::new("Sleep", "system::sleep", "").separated(),
-                Item::new("Restart…", "system::restart", ""),
-                Item::new("Shut Down…", "system::shutdown", ""),
+                // Holding ⌥ drops the "…" and the confirmation (BAR-04).
+                Item::new("Restart…", "system::restart", "").with_alternate(Item::new(
+                    "Restart",
+                    "system::restart-now",
+                    "",
+                )),
+                Item::new("Shut Down…", "system::shutdown", "").with_alternate(Item::new(
+                    "Shut Down",
+                    "system::shutdown-now",
+                    "",
+                )),
                 Item::new("Lock Screen", "system::lock", "⌃⌘Q").separated(),
                 // The Mac shows ⇧⌘Q here. Nothing binds it yet: the
                 // confirmation lives in this menu, which no key can open
                 // (the ⌃F2 gap), so no hint is shown rather than one that
                 // does nothing.
-                Item::new(logout_label, "system::logout", ""),
+                Item::new(logout_label.clone(), "system::logout", "").with_alternate(Item::new(
+                    logout_label.trim_end_matches('…').to_owned(),
+                    "system::logout-now",
+                    "",
+                )),
             ]
             .into_iter()
             .chain(system::extra_menu::rows().into_iter().map(|row| {
@@ -6298,6 +6347,10 @@ mod bar {
             #[cfg(windows)]
             "system::sleep" => system::power(PowerCommand::Sleep),
             "system::restart" | "system::shutdown" | "system::logout" => quit_all_then(action, cx),
+            // ⌥ alternates run without the confirmation (BAR-04).
+            "system::restart-now" => quit_all_then("system::restart".to_owned(), cx),
+            "system::shutdown-now" => quit_all_then("system::shutdown".to_owned(), cx),
+            "system::logout-now" => quit_all_then("system::logout".to_owned(), cx),
             #[cfg(target_os = "linux")]
             "system::lock" => dispatch_shortcut("lock", cx),
             #[cfg(windows)]

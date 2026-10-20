@@ -231,6 +231,8 @@ impl NotificationCenterView {
             .collect::<Vec<_>>();
         let view = cx.entity();
         let hover_view = view.clone();
+        let menu_view = view.clone();
+        let menu_app_id = record.app_id.clone();
         let hover_target = hover_key.clone();
         let record_id = record.id;
         let close_id = SharedString::from(format!("close-{hover_key}"));
@@ -277,6 +279,17 @@ impl NotificationCenterView {
             .border_color(rgba(card::BORDER))
             .shadow_lg()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            // macOS: right-click opens "<App> Notifications" (mute, turn
+            // off, settings).
+            .on_mouse_down(
+                MouseButton::Right,
+                move |event: &MouseDownEvent, window, cx| {
+                    cx.stop_propagation();
+                    menu_view.update(cx, |this, cx| {
+                        this.open_app_menu(&menu_app_id, event.position, window, cx)
+                    });
+                },
+            )
             .on_hover(move |hovered: &bool, _, cx| {
                 let hovered = *hovered;
                 let target = hover_target.clone();

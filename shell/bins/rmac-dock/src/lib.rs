@@ -4044,6 +4044,10 @@ mod dock {
                         // tile's (DOCK-05): no Options, no Quit.
                         let is_finder = context_app_id.trim_end_matches(".desktop")
                             == rmac_apps::identity::FILES;
+                        // The Apps tile offers just Remove from Dock and
+                        // Show Apps (DOCK-06).
+                        let is_apps = context_app_id.trim_end_matches(".desktop")
+                            == rmac_apps::identity::APP_DRAWER;
                         item = item.on_mouse_down(
                             MouseButton::Right,
                             cx.listener(move |this, _, window, cx| {
@@ -4054,6 +4058,10 @@ mod dock {
                                         if is_finder {
                                             model.finder_context_menu().and_then(|menu| {
                                                 rmac_dock::menu::Session::finder(&menu).ok()
+                                            })
+                                        } else if is_apps {
+                                            model.context_menu(&context_app_id).and_then(|menu| {
+                                                rmac_dock::menu::Session::apps(&menu).ok()
                                             })
                                         } else {
                                             model.context_menu(&context_app_id).and_then(|menu| {
@@ -4079,7 +4087,7 @@ mod dock {
                                         cx,
                                     );
                                 }
-                                if !is_finder {
+                                if !is_finder && !is_apps {
                                     this.load_login_state(&context_app_id, cx);
                                 }
                                 cx.notify();

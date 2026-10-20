@@ -129,6 +129,10 @@ impl Backend for FakeBackend {
         self.mutation(format!("set focus {enabled}"))
     }
 
+    fn activate_focus_mode(&self, mode: &str, duration_ms: u64) -> Result<(), String> {
+        self.mutation(format!("activate focus {mode} {duration_ms}"))
+    }
+
     fn focus(&self) -> Result<rmac_shell_settings::FocusSettings, String> {
         self.refresh(
             "read focus",

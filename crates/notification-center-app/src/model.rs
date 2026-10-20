@@ -18,9 +18,10 @@ pub(crate) struct ApplicationIdentity {
 pub(crate) enum Busy {
     /// Clearing every record of one displayed group (its key).
     ClearGroup(String),
-    // Wired once the notification options menu lands (§5.3).
-    #[allow(dead_code)]
+    /// Turning off one application's notifications (its first app ID).
     DisableApp(String),
+    /// Muting one application's notifications for a while.
+    MuteApp(String),
     Remove(NotificationId),
     Invoke(NotificationId, ActionSelection),
 }

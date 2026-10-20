@@ -120,7 +120,7 @@ fn windows_corners_are_the_ones_niri_gives_each_app() {
             "{app_id}"
         );
     }
-    assert_eq!(names.split('|').count(), 6);
+    assert_eq!(names.split('|').count(), 8);
     assert_eq!(
         window_corner_radius("org.rmac.TextEditor", radii.window, radii.window_toolbar),
         radii.window

@@ -221,6 +221,16 @@ impl AppDrawer {
                     .truncate()
                     .child(app.name.clone()),
             )
+            // On Windows, have the app's exe scanned while the pointer
+            // rests on it, not after the click (WIN-OS-99).
+            .on_hover({
+                let launch = launch.clone();
+                move |hovered: &bool, _, _| {
+                    if *hovered {
+                        rmac_app_launch::prewarm(&launch);
+                    }
+                }
+            })
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = position;
                 this.launch_application(Some(id.clone()), launch.clone(), cx);

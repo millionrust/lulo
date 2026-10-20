@@ -32,6 +32,13 @@ pub struct Item {
     pub(super) mime_types: Vec<String>,
 }
 
+impl Item {
+    /// What opening this item starts, when it can be opened.
+    pub fn launch_spec(&self) -> Option<&rmac_apps::LaunchSpec> {
+        self.launch.as_ref()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SpecialItemKind {
     Files,

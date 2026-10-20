@@ -175,6 +175,29 @@ impl Coordinator {
         self.launcher.session().selected().cloned()
     }
 
+    /// The app the selected row opens, if it opens one.
+    pub fn selected_launch(&self) -> Option<&rmac_apps::LaunchSpec> {
+        let session = self.launcher.session();
+        let selected = session.selected()?;
+        session
+            .results()
+            .iter()
+            .find(|ranked| &ranked.result.id == selected)
+            .and_then(|ranked| match &ranked.result.primary {
+                rmac_launcher::Action::LaunchApplication { spec, .. } => Some(spec),
+                _ => None,
+            })
+    }
+
+    /// The selected row is the app Return opens: on Windows, have its exe
+    /// scanned while the query is still being typed
+    /// (`rmac_app_launch::prewarm`, WIN-OS-99). Nothing elsewhere.
+    pub fn prewarm_selected_launch(&self) {
+        if let Some(spec) = self.selected_launch() {
+            rmac_app_launch::prewarm(spec);
+        }
+    }
+
     /// Show, replace or clear the "Lulo can do this" row for `generation`.
     pub fn apply_assist(
         &mut self,

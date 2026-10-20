@@ -108,7 +108,11 @@ struct GPUState {
 }
 
 struct DirectWriteState {
-    gpu_state: GPUState,
+    /// rmac: made once the platform has its Direct3D devices, which a
+    /// thread creates while the app starts (`attach_devices`); only colour
+    /// glyphs need it, and none is drawn before the first window, which
+    /// waits for the devices (docs/decisions/0025-vendor-gpui-windows.md).
+    gpu_state: Option<GPUState>,
     system_font_collection: IDWriteFontCollection1,
     custom_font_collection: IDWriteFontCollection1,
     fonts: Vec<FontInfo>,
@@ -203,12 +207,11 @@ impl GPUState {
 }
 
 impl DirectWriteTextSystem {
-    /// rmac: `directx_devices` is called only once the system font
-    /// collection is loaded, so the platform can create the Direct3D devices
-    /// on another thread meanwhile (docs/decisions/0025-vendor-gpui-windows.md).
-    pub(crate) fn new(
-        directx_devices: impl FnOnce() -> Result<DirectXDevices>,
-    ) -> Result<(Self, DirectXDevices)> {
+    /// rmac: the text system starts without the Direct3D devices, which the
+    /// platform creates on another thread meanwhile and attaches with
+    /// [`Self::attach_devices`] before the first window opens
+    /// (docs/decisions/0025-vendor-gpui-windows.md).
+    pub(crate) fn new() -> Result<Self> {
         let factory: IDWriteFactory5 = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
         // The `IDWriteInMemoryFontFileLoader` here is supported starting from
         // Windows 10 Creators Update, which consequently requires the entire
@@ -255,26 +258,26 @@ impl DirectWriteTextSystem {
         };
         crate::rmac_trace::startup("system_fonts_loaded");
 
-        let directx_devices = directx_devices()?;
-        let gpu_state = GPUState::new(&directx_devices)?;
+        Ok(Self {
+            components,
+            state: RwLock::new(DirectWriteState {
+                system_font_collection,
+                custom_font_collection,
+                fonts: Vec::new(),
+                font_to_font_id: HashMap::default(),
+                font_info_cache: HashMap::default(),
+                layout_line_scratch: Vec::new(),
+                swash_faces: Vec::new(),
+                swash_context: Mutex::new(ScaleContext::new()),
+            }),
+        })
+    }
 
-        Ok((
-            Self {
-                components,
-                state: RwLock::new(DirectWriteState {
-                    gpu_state,
-                    system_font_collection,
-                    custom_font_collection,
-                    fonts: Vec::new(),
-                    font_to_font_id: HashMap::default(),
-                    font_info_cache: HashMap::default(),
-                    layout_line_scratch: Vec::new(),
-                    swash_faces: Vec::new(),
-                    swash_context: Mutex::new(ScaleContext::new()),
-                }),
-            },
-            directx_devices,
-        ))
+    /// rmac: the platform's Direct3D devices are ready.
+    pub(crate) fn attach_devices(&self, directx_devices: &DirectXDevices) -> Result<()> {
+        let gpu_state = GPUState::new(directx_devices)?;
+        self.state.write().gpu_state = Some(gpu_state);
+        Ok(())
     }
 
     pub(crate) fn handle_gpu_lost(&self, directx_devices: &DirectXDevices) -> Result<()> {
@@ -1052,6 +1055,10 @@ impl DirectWriteState {
         params: &RenderGlyphParams,
         glyph_bounds: Bounds<DevicePixels>,
     ) -> Result<Vec<u8>> {
+        let gpu_state = self
+            .gpu_state
+            .as_ref()
+            .context("colour glyph before the Direct3D devices were ready")?;
         let bitmap_size = glyph_bounds.size;
         let subpixel_shift = params
             .subpixel_variant
@@ -1148,7 +1155,7 @@ impl DirectWriteState {
                     };
                     let bounds = bounds(point(color_bounds.left, color_bounds.top), color_size);
                     glyph_layers.push(GlyphLayerTexture::new(
-                        &self.gpu_state,
+                        gpu_state,
                         run_color,
                         bounds,
                         &alpha_data,
@@ -1164,7 +1171,6 @@ impl DirectWriteState {
             }
         }
 
-        let gpu_state = &self.gpu_state;
         let params_buffer = {
             let desc = D3D11_BUFFER_DESC {
                 ByteWidth: std::mem::size_of::<GlyphLayerTextureParams>() as u32,
@@ -1425,7 +1431,7 @@ impl DirectWriteState {
         try_to_recover_from_device_lost(|| {
             GPUState::new(directx_devices).context("Recreating GPU state for DirectWrite")
         })
-        .map(|gpu_state| self.gpu_state = gpu_state)
+        .map(|gpu_state| self.gpu_state = Some(gpu_state))
     }
 }
 

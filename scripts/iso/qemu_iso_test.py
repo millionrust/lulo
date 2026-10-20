@@ -295,7 +295,6 @@ class Machine:
             command += ["-drive", f"file={args.disk},if=virtio,format=qcow2"]
         command += [
             *self.display_device(),
-            "-display", "none",
             "-device", "qemu-xhci",
             "-device", "usb-tablet",
             "-netdev", "user,id=net0",
@@ -312,11 +311,20 @@ class Machine:
         return command
 
     def display_device(self) -> list[str]:
+        """The guest GPU and QEMU's display for it.
+
+        niri refuses software EGL renderers (llvmpipe), so a plain virtual
+        framebuffer ("std", "virtio") gets no picture from the Lulo session.
+        "virgl" gives the guest an accelerated virtio GPU, backed on the
+        runner by Mesa's llvmpipe through QEMU's GTK display on Xvfb
+        (DISPLAY must be set); screenshots then come from Xvfb.
+        """
+        size = f"xres={SCREEN[0]},yres={SCREEN[1]}"
+        if self.args.display == "virgl":
+            return ["-device", f"virtio-vga-gl,{size}", "-display", "gtk,gl=on,full-screen=on,show-menubar=off,zoom-to-fit=off"]
         if self.args.display == "std":
-            # bochs-drm: a plain framebuffer, rendered in software like a
-            # low-end PC without a working GPU driver.
-            return ["-device", f"VGA,xres={SCREEN[0]},yres={SCREEN[1]},edid=on"]
-        return ["-device", f"virtio-vga,xres={SCREEN[0]},yres={SCREEN[1]}"]
+            return ["-device", f"VGA,{size},edid=on", "-display", "none"]
+        return ["-device", f"virtio-vga,{size}", "-display", "none"]
 
     def start(self) -> None:
         command = self.command_line()
@@ -345,8 +353,12 @@ class Machine:
     def screenshot(self, name: str) -> Path:
         self.shots += 1
         path = self.out / f"{self.shots:03d}-{name}.png"
-        assert self.qmp
-        self.qmp.command("screendump", filename=str(path), format="png")
+        if self.args.display == "virgl":
+            subprocess.run(["import", "-window", "root", str(path)], check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            assert self.qmp
+            self.qmp.command("screendump", filename=str(path), format="png")
         for _ in range(20):
             if path.exists() and path.stat().st_size > 0:
                 break
@@ -580,7 +592,7 @@ def main() -> int:
     parser.add_argument("--disk", type=Path, help="qcow2 disk for install/installed")
     parser.add_argument("--vars", default="", help="OVMF variables file (kept between install and installed)")
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--display", choices=("virtio", "std"), default="virtio")
+    parser.add_argument("--display", choices=("virgl", "virtio", "std"), default="virgl")
     parser.add_argument("--memory", type=int, default=4096)
     parser.add_argument("--shot-interval", type=float, default=45)
     parser.add_argument("--install-timeout", type=float, default=3600)

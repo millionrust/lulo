@@ -117,8 +117,9 @@ You don't need a password.
 - Everything runs from the USB stick and from memory. **Nothing on your disk
   changes**, and anything you save is gone when you restart.
 - Connect to Wi-Fi from the menu bar to try the internet and the apps.
-- If the screen stays black or flickers, restart and choose **Lulo OS (safe
-  graphics)** in the menu.
+- Lulo OS needs a graphics chip with a working Linux driver (almost every
+  Intel, AMD and NVIDIA chip from the last 15 years has one). If the screen
+  stays black after the Lulo logo, see "If something goes wrong" below.
 
 To leave, choose **Shut Down** from the Lulo menu, then take out the USB
 stick. Your PC starts Windows as before.
@@ -204,7 +205,12 @@ after it connects to the internet.
 - **"Secure Boot violation" or "Verification failed".** Update the PC's
   firmware (BIOS) from the manufacturer's website, then try again. As a last
   resort you can turn Secure Boot off in the firmware setup.
-- **The screen stays black.** Choose **Lulo OS (safe graphics)** in the menu.
+- **The screen stays black after the Lulo logo.** Lulo OS draws its desktop
+  with the graphics chip and does not have a software-only fallback yet. This
+  happens in virtual machines without 3D acceleration (turn on 3D
+  acceleration in VirtualBox or VMware; Hyper-V has none) and on PCs whose
+  graphics chip has no Linux driver. Please tell us your PC model in the
+  [issue tracker](https://github.com/millionrust/lulo/issues).
 - **Windows asks for a BitLocker recovery key** after installing. Enter the
   key you wrote down in section 3. It asks only once.
 - More help: [Troubleshooting](troubleshooting.md) and the

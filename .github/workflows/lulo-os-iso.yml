@@ -164,15 +164,15 @@ jobs:
           - name: live-uefi-secureboot
             mode: live
             firmware: uefi-sb
-            display: virtio
+            display: virgl
           - name: live-bios
             mode: live
             firmware: bios
-            display: std
+            display: virgl
           - name: install-uefi-secureboot
             mode: install
             firmware: uefi-sb
-            display: std
+            display: virgl
     env:
       VERSION: ${{ needs.resolve.outputs.version }}
     steps:
@@ -185,7 +185,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            qemu-system-x86 qemu-utils ovmf tesseract-ocr tesseract-ocr-eng python3-pil
+            qemu-system-x86 qemu-system-gui qemu-system-modules-opengl qemu-utils ovmf \
+            xvfb imagemagick libgl1-mesa-dri libegl-mesa0 \
+            tesseract-ocr tesseract-ocr-eng python3-pil
+          # QEMU's GTK display runs on Xvfb; Mesa's llvmpipe backs the
+          # guest's virgl GPU (niri needs an accelerated renderer).
+          Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
           # KVM for the runner user.
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules

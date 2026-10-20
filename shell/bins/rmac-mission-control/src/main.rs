@@ -77,6 +77,11 @@ mod linux_wayland {
     /// A window nothing on screen shows whole: the rmac content surface
     /// (docs/measured-colors-2026-09-19.md) with the app's icon (S).
     const CARD_FILL: u32 = 0x2220_25FF;
+    /// Edge-drag tiling's preview (S: macOS 26's frosted tile outline).
+    const EDGE_PREVIEW_FILL: u32 = 0xFFFF_FF2E;
+    const EDGE_PREVIEW_BORDER: u32 = 0xFFFF_FF66;
+    const EDGE_PREVIEW_INSET: f32 = 6.0;
+    const EDGE_PREVIEW_NAMESPACE: &str = "rmac-tile-preview";
     /// App Exposé's divider over the minimised row (S: white ≈ 25 %).
     const DIVIDER: u32 = 0xFFFF_FF40;
     /// rmac's window corner radius (shell.kdl geometry-corner-radius).
@@ -130,6 +135,39 @@ mod linux_wayland {
         /// What the menu bar and the Dock reserve (Desktop & Dock), which
         /// Fill, Centre, the halves and Zoom measure their percentages in.
         reservation: rmac_compositor::placement::Reservation,
+        /// The tile a window being dragged to a screen edge would take,
+        /// drawn under the pointer until the drag ends (DESK-03).
+        edge_preview: Option<(WindowHandle<EdgePreview>, rmac_compositor_niri::EdgeTile)>,
+    }
+
+    /// Edge-drag tiling's preview: a frosted outline of the tile the window
+    /// will take if it is let go here (DESK-03). It takes no input.
+    struct EdgePreview {
+        tile: rmac_compositor_niri::EdgeTile,
+    }
+
+    impl Render for EdgePreview {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let (x, y, width, height) = self.tile.frame_percent();
+            let fraction = |percent: f64| gpui::relative((percent / 100.0) as f32);
+            div().size_full().relative().child(
+                div()
+                    .absolute()
+                    .left(fraction(x))
+                    .top(fraction(y))
+                    .w(fraction(width))
+                    .h(fraction(height))
+                    .p(px(EDGE_PREVIEW_INSET))
+                    .child(
+                        div()
+                            .size_full()
+                            .rounded(px(WINDOW_RADIUS))
+                            .bg(rgba(EDGE_PREVIEW_FILL))
+                            .border_1()
+                            .border_color(rgba(EDGE_PREVIEW_BORDER)),
+                    ),
+            )
+        }
     }
 
     impl Service {
@@ -155,6 +193,7 @@ mod linux_wayland {
                     menu_bar: MENU_BAR_HEIGHT,
                     ..Default::default()
                 },
+                edge_preview: None,
             };
             service.refresh_catalog(cx);
             service
@@ -1573,6 +1612,96 @@ mod linux_wayland {
         }
     }
 
+    /// A window drag reached or left a screen edge, or ended (DESK-03):
+    /// show the tile it would take, and tile it when it is let go there.
+    fn edge_drag(service: &Entity<Service>, drag: rmac_compositor_niri::EdgeDrag, cx: &mut App) {
+        let shown = service
+            .read(cx)
+            .edge_preview
+            .as_ref()
+            .map(|(_, tile)| *tile);
+        let wanted = drag.tile.filter(|_| !drag.ended);
+        if shown != wanted {
+            if let Some((handle, _)) = service.update(cx, |service, _| service.edge_preview.take())
+            {
+                let _ = handle.update(cx, |_, window, _| window.remove_window());
+            }
+            if let Some(tile) = wanted {
+                open_edge_preview(service, drag.window, tile, cx);
+            }
+        }
+        if !drag.ended {
+            return;
+        }
+        let Some(tile) = drag.tile else {
+            return;
+        };
+        let snapshot = service.read(cx).compositor.snapshot();
+        service.update(cx, |service, _| {
+            service.record_tile_history(&snapshot, drag.window)
+        });
+        run_floating_frame_action(drag.window, tile.action(drag.window), cx);
+    }
+
+    /// The preview on the output of the window being dragged, over the
+    /// windows and under the menu bar's and the Dock's reserved edges.
+    fn open_edge_preview(
+        service: &Entity<Service>,
+        window: WindowId,
+        tile: rmac_compositor_niri::EdgeTile,
+        cx: &mut App,
+    ) {
+        let snapshot = service.read(cx).compositor.snapshot();
+        let output = snapshot
+            .windows
+            .iter()
+            .find(|candidate| candidate.id == window)
+            .and_then(|candidate| candidate.workspace)
+            .and_then(|workspace| {
+                snapshot
+                    .workspaces
+                    .iter()
+                    .find(|candidate| candidate.id == workspace)
+            })
+            .and_then(|workspace| workspace.output.clone());
+        let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
+        let display = output
+            .and_then(|output| displays.get(&rmac_shell_layer::stable_output_uuid(&output)))
+            .cloned();
+        let options = WindowOptions {
+            titlebar: None,
+            focus: false,
+            show: true,
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: Size::new(px(1.0), px(1.0)),
+            })),
+            display_id: display.as_ref().map(|display| display.id()),
+            app_id: Some("dev.rmac.TilePreview".to_owned()),
+            window_background: WindowBackgroundAppearance::Transparent,
+            kind: WindowKind::LayerShell(LayerShellOptions {
+                namespace: EDGE_PREVIEW_NAMESPACE.to_owned(),
+                layer: Layer::Top,
+                anchor: Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
+                keyboard_interactivity: KeyboardInteractivity::None,
+                ..Default::default()
+            }),
+            is_movable: false,
+            is_resizable: false,
+            is_minimizable: false,
+            ..Default::default()
+        };
+        match cx.open_window(options, move |window, cx| {
+            window.set_input_region(Some(&[]));
+            cx.new(|_| EdgePreview { tile })
+        }) {
+            Ok(handle) => service.update(cx, |service, _| {
+                service.edge_preview = Some((handle, tile));
+            }),
+            Err(error) => eprintln!("could not show the tile preview: {error}"),
+        }
+    }
+
     /// Keep one 1 × 1 surface in each configured corner of every display.
     fn reconcile_corners(service: &Entity<Service>, cx: &mut App) {
         let corners = model::active_corners(&service.read(cx).corners);
@@ -1727,6 +1856,16 @@ mod linux_wayland {
             Command::Minimize => {
                 close_overlay(service, cx);
                 minimize_focused_window(service, cx);
+            }
+            Command::ArrangeLeftRight | Command::ArrangeTopBottom | Command::ArrangeQuarters => {
+                close_overlay(service, cx);
+                let snapshot = service.read(cx).compositor.snapshot();
+                for (window, region) in model::arrange(&snapshot, command) {
+                    service.update(cx, |service, _| {
+                        service.record_tile_history(&snapshot, window)
+                    });
+                    run_floating_frame_action(window, Action::TileWindow { window, region }, cx);
+                }
             }
         }
     }
@@ -2061,6 +2200,7 @@ mod linux_wayland {
             cx.spawn(async move |cx: &mut AsyncApp| {
                 while let Ok(event) = compositor_rx.recv().await {
                     cx.update(|cx| {
+                        let drag = rmac_compositor_niri::edge_drag(&event);
                         let reconnected = matches!(event, rmac_compositor::Event::Snapshot { .. });
                         let (topology, action) =
                             watched.update(cx, |service, _| service.apply(event));
@@ -2072,6 +2212,9 @@ mod linux_wayland {
                         run_actions(follow, cx);
                         if topology {
                             reconcile_corners(&watched, cx);
+                        }
+                        if let Some(drag) = drag {
+                            edge_drag(&watched, drag, cx);
                         }
                         let overlay = watched.read(cx).overlay;
                         if let Some(handle) = overlay {

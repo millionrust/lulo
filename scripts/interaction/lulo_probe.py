@@ -1096,6 +1096,13 @@ def assert_shell_parity(shell: ShellSession) -> None:
     shell.dispatch("quick-settings")
     if not shell._wait_for(lambda: shell.wait_for_populated_frame(quick, 5) and showing(shell, quick), 25):
         raise StepFailed("CC-08: Control Centre did not open")
+    # CC-07: the appearance circle sits with the other round controls.
+    if shell._wait_for(lambda: find_named(shell, quick, "Dark Mode"), 10) is None:
+        dump_tree(shell.frames_by_pid(quick), "Control Centre without Dark Mode")
+        raise StepFailed("CC-07: Control Centre has no Dark Mode control")
+    time.sleep(0.5)
+    shot("cc-07-grid")
+    print("CC-07: Control Centre shows the Dark Mode control", flush=True)
     trigger = shell._wait_for(lambda: find_named(shell, quick, "Focus details"), 10)
     if trigger is None:
         dump_tree(shell.frames_by_pid(quick), "Control Centre without a Focus details control")
@@ -1168,6 +1175,13 @@ def assert_shell_parity(shell: ShellSession) -> None:
     if not shell._wait_for(muted, 10):
         raise StepFailed("NC-08: Mute for 1 Hour did not reach the notification policy")
     print("NC-08: the card menu mutes the app for an hour", flush=True)
+
+    # NC-09: the ✕ beside Edit Widgets clears every notification.
+    clear = shell._wait_for(lambda: find_named(shell, panel, "Clear All Notifications"), 10)
+    if clear is None:
+        dump_tree(shell.frames_by_pid(panel), "Notification Centre without a Clear button")
+        raise StepFailed("NC-09: no Clear All Notifications button under the list")
+    print("NC-09: the Clear All Notifications button is there", flush=True)
 
 
 # --------------------------------------------------------------------------

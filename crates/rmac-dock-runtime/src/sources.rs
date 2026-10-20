@@ -9,12 +9,14 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (catalog_tx, catalog_rx) = async_channel::bounded(2);
     let (places_tx, places_rx) = async_channel::bounded(2);
     let (appearance_tx, appearance_rx) = async_channel::bounded(2);
+    let (documents_tx, documents_rx) = async_channel::bounded(2);
 
     let compositor = watch_compositor(compositor_tx);
     let settings = watch_settings(settings_tx);
     let catalog = watch_catalog(catalog_tx);
     let places = watch_places(places_tx);
     let appearance = watch_appearance(appearance_tx);
+    let documents = watch_documents(documents_tx);
     let consumer = consume(
         sender,
         compositor_rx,
@@ -22,9 +24,11 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         catalog_rx,
         places_rx,
         appearance_rx,
+        documents_rx,
     );
-    let (_, _, _, _, _, _) =
-        futures_util::try_join!(compositor, settings, catalog, places, appearance, consumer)?;
+    let (_, _, _, _, _, _, _) = futures_util::try_join!(
+        compositor, settings, catalog, places, appearance, documents, consumer
+    )?;
     Ok(())
 }
 
@@ -58,6 +62,70 @@ async fn watch_compositor(sender: Sender<rmac_compositor::Event>) -> Result<(), 
                 return Err(Error::new("watch niri for the Dock", error.to_string()));
             }
         }
+    }
+}
+
+type Documents = std::collections::BTreeMap<String, Vec<std::path::PathBuf>>;
+
+/// Each app's recent documents (DOCK-15): read off the async thread, then
+/// again whenever the store's file changes. No polling: a store directory
+/// that cannot be watched is read once.
+async fn watch_documents(sender: Sender<Result<Documents, String>>) -> Result<(), Error> {
+    let Ok(store) = rmac_recent_documents::Store::from_environment() else {
+        sender.closed().await;
+        return Ok(());
+    };
+    let file = store.file().to_path_buf();
+    let (changed_tx, changed_rx) = async_channel::bounded::<()>(1);
+    let watch_file = file.clone();
+    let watcher = blocking::unblock(move || {
+        use notify::Watcher as _;
+        let directory = watch_file.parent()?.to_path_buf();
+        std::fs::create_dir_all(&directory).ok()?;
+        let name = watch_file.file_name()?.to_owned();
+        let mut watcher =
+            notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                let Ok(event) = event else {
+                    return;
+                };
+                if !matches!(event.kind, notify::EventKind::Access(_))
+                    && event
+                        .paths
+                        .iter()
+                        .any(|path| path.file_name() == Some(name.as_os_str()))
+                {
+                    let _ = changed_tx.try_send(());
+                }
+            })
+            .ok()?;
+        watcher
+            .watch(&directory, notify::RecursiveMode::NonRecursive)
+            .ok()?;
+        Some(watcher)
+    })
+    .await;
+    loop {
+        let reader = store.clone();
+        let loaded = blocking::unblock(move || reader.load_by_app())
+            .await
+            .map_err(|error| error.to_string());
+        if sender.send(loaded).await.is_err() {
+            return Ok(());
+        }
+        if watcher.is_none() {
+            sender.closed().await;
+            return Ok(());
+        }
+        let changed = futures_util::FutureExt::fuse(changed_rx.recv());
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(changed, closed);
+        futures_util::select! {
+            _ = changed => {},
+            _ = closed => return Ok(()),
+        }
+        // A save is a write and a rename: let it land before reading.
+        async_io::Timer::after(Duration::from_millis(100)).await;
+        while changed_rx.try_recv().is_ok() {}
     }
 }
 

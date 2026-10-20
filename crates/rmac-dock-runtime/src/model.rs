@@ -128,4 +128,6 @@ pub struct Coordinator {
     /// The Dock's recent-apps section order (persisted by the consumer).
     pub(super) recents: Vec<String>,
     pub(super) recents_dirty: bool,
+    /// Each app's own recent documents (DOCK-15), last known good.
+    pub(super) documents: std::collections::BTreeMap<String, Vec<std::path::PathBuf>>,
 }

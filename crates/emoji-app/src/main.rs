@@ -158,7 +158,20 @@ mod linux {
             // Focus follows the compositor's own pace.
             std::thread::sleep(std::time::Duration::from_millis(120));
             let chord = crate::inject::Paste::for_app(previous.app_id.as_deref());
-            if let Err(error) = crate::inject::paste(&glyph, chord) {
+            if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+                use std::io::Write as _;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::path::Path::new(&dir).join("emoji-debug.log")) {
+                    let _ = writeln!(f, "paste {glyph} {chord:?} app={:?} prev={:?}", previous.app_id, previous.window);
+                }
+            }
+            let result = crate::inject::paste(&glyph, chord);
+            if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+                use std::io::Write as _;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::path::Path::new(&dir).join("emoji-debug.log")) {
+                    let _ = writeln!(f, "paste result {result:?}");
+                }
+            }
+            if let Err(error) = result {
                 eprintln!("rmac-emoji: could not insert {glyph}: {error}");
                 return ExitCode::FAILURE;
             }

@@ -234,6 +234,19 @@ impl Store {
         Ok(stored.live_paths_for_app(app_id))
     }
 
+    /// Every app's own documents ([`Store::load_for_app`] for each app that
+    /// recorded any), keyed by app ID — what the Dock lists under each
+    /// app's windows.
+    pub fn load_by_app(&self) -> Result<std::collections::BTreeMap<String, Vec<PathBuf>>, Error> {
+        let (stored, _) = self.load_stored()?;
+        Ok(stored.live_paths_by_app())
+    }
+
+    /// The store's file, for a caller that watches it for changes.
+    pub fn file(&self) -> &Path {
+        &self.path
+    }
+
     /// Removes only the documents this app recorded with
     /// [`Store::record_for_app`] — File ▸ Open Recent's "Clear Menu" —
     /// leaving every other app's entries and the desktop-history boundary

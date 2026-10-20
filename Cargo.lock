@@ -6431,6 +6431,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-places",
  "rmac-places-system",
+ "rmac-recent-documents",
  "rmac-shell-settings",
  "rmac-storage",
  "rmac-theme",

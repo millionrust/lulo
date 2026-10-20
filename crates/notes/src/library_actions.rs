@@ -1521,7 +1521,7 @@ impl NotesView {
             || !self.body_format_editable()
             || cursor.start != cursor.end
             || text.len() != previous + 1
-            || text[..cursor.end].chars().next_back() != Some('=')
+            || !text[..cursor.end].ends_with('=')
             || text[cursor.end..].chars().next().is_some_and(|c| c != '\n')
         {
             return;

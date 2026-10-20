@@ -464,11 +464,8 @@ fn clear_button(view: Entity<NotificationCenterView>) -> impl IntoElement {
         .border_1()
         .border_color(rgba(border))
         .text_color(rgba(text))
-        .child(
-            gpui_component::Icon::new(IconName::Close)
-                .size(px(CLEAR_BUTTON * 0.5))
-                .text_color(rgba(text)),
-        )
+        .text_size(rmac_ui::text_px(11.0))
+        .child("\u{2715}")
         .on_mouse_down(
             MouseButton::Left,
             move |event: &MouseDownEvent, window, cx| {

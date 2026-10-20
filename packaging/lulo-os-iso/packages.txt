@@ -4,7 +4,7 @@
 
 # Base system, kernel, firmware
 ubuntu-minimal
-linux-generic
+linux-image-generic
 linux-firmware
 intel-microcode
 amd64-microcode

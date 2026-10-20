@@ -294,7 +294,7 @@ class Machine:
         if args.mode in ("install", "installed"):
             command += ["-drive", f"file={args.disk},if=virtio,format=qcow2"]
         command += [
-            "-device", f"virtio-vga,xres={SCREEN[0]},yres={SCREEN[1]}",
+            *self.display_device(),
             "-display", "none",
             "-device", "qemu-xhci",
             "-device", "usb-tablet",
@@ -310,6 +310,13 @@ class Machine:
             "-no-reboot",
         ]
         return command
+
+    def display_device(self) -> list[str]:
+        if self.args.display == "std":
+            # bochs-drm: a plain framebuffer, rendered in software like a
+            # low-end PC without a working GPU driver.
+            return ["-device", f"VGA,xres={SCREEN[0]},yres={SCREEN[1]},edid=on"]
+        return ["-device", f"virtio-vga,xres={SCREEN[0]},yres={SCREEN[1]}"]
 
     def start(self) -> None:
         command = self.command_line()
@@ -573,6 +580,7 @@ def main() -> int:
     parser.add_argument("--disk", type=Path, help="qcow2 disk for install/installed")
     parser.add_argument("--vars", default="", help="OVMF variables file (kept between install and installed)")
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--display", choices=("virtio", "std"), default="virtio")
     parser.add_argument("--memory", type=int, default=4096)
     parser.add_argument("--shot-interval", type=float, default=45)
     parser.add_argument("--install-timeout", type=float, default=3600)

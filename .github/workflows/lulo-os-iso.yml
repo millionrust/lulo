@@ -164,12 +164,15 @@ jobs:
           - name: live-uefi-secureboot
             mode: live
             firmware: uefi-sb
+            display: virtio
           - name: live-bios
             mode: live
             firmware: bios
+            display: std
           - name: install-uefi-secureboot
             mode: install
             firmware: uefi-sb
+            display: std
     env:
       VERSION: ${{ needs.resolve.outputs.version }}
     steps:
@@ -203,7 +206,7 @@ jobs:
       - name: Boot the ISO (${{ matrix.mode }}, ${{ matrix.firmware }})
         run: |
           /usr/bin/python3 scripts/iso/qemu_iso_test.py --mode "${{ matrix.mode }}" \
-            --firmware "${{ matrix.firmware }}" \
+            --firmware "${{ matrix.firmware }}" --display "${{ matrix.display }}" \
             --iso "$RUNNER_TEMP/iso/lulo-os-$VERSION-amd64.iso" \
             --disk "$RUNNER_TEMP/disk.qcow2" --vars "$RUNNER_TEMP/OVMF_VARS.fd" \
             --out "$RUNNER_TEMP/results/${{ matrix.mode }}"
@@ -213,7 +216,7 @@ jobs:
         run: |
           qemu-img info "$RUNNER_TEMP/disk.qcow2"
           /usr/bin/python3 scripts/iso/qemu_iso_test.py --mode installed \
-            --firmware "${{ matrix.firmware }}" \
+            --firmware "${{ matrix.firmware }}" --display "${{ matrix.display }}" \
             --disk "$RUNNER_TEMP/disk.qcow2" --vars "$RUNNER_TEMP/OVMF_VARS.fd" \
             --out "$RUNNER_TEMP/results/installed"
 

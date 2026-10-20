@@ -48,7 +48,18 @@ running() { pgrep -u "$1" -x "$2" >/dev/null 2>&1; }
 
 report_failure_context() {
     say "context: $(systemctl is-system-running 2>/dev/null) failed-units=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | tr '\n' ',')"
-    journalctl -b -p warning --no-pager -o short-monotonic 2>/dev/null | tail -n 150 > "$logport"
+    {
+        echo "=== journal (warnings)"
+        journalctl -b -p warning --no-pager -o short-monotonic 2>/dev/null | tail -n 150
+        echo "=== niri"
+        journalctl -b --no-pager -o short-monotonic _COMM=niri 2>/dev/null | tail -n 120
+        echo "=== drm"
+        ls -l /dev/dri 2>&1
+        for connector in /sys/class/drm/card*-*; do
+            [ -e "$connector/status" ] || continue
+            echo "$(basename "$connector") status=$(cat "$connector/status") enabled=$(cat "$connector/enabled" 2>/dev/null) dpms=$(cat "$connector/dpms" 2>/dev/null) modes=$(head -n 2 "$connector/modes" 2>/dev/null | tr '\n' ' ')"
+        done
+    } > "$logport" 2>&1
 }
 
 user=""

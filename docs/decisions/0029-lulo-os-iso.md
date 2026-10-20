@@ -40,7 +40,7 @@ install it next to Windows or in place of it. The constraints:
 
 - **Base:** Ubuntu 26.04 (`resolute`) from `archive.ubuntu.com`, built with
   `debootstrap --variant=minbase` in a GitHub `ubuntu-26.04` runner, plus
-  `ubuntu-minimal`, `linux-generic` (signed kernel, `linux-firmware`), the
+  `ubuntu-minimal`, `linux-image-generic` (signed kernel and `linux-firmware`, no headers), the
   Intel and AMD microcode, Mesa (GL, Vulkan lavapipe/radv/anv, VA-API), NetworkManager,
   BlueZ, PipeWire, GDM, Plymouth and `ubuntu-drivers-common`. No snaps, no
   GNOME session, no LibreOffice. `--no-install-recommends` everywhere, and

@@ -241,8 +241,12 @@ impl FinderView {
                 .command_item(move_to_bin, MOVE_TO_BIN_KEY, Box::new(MoveToTrash))
                 .separator()
                 .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
-                .item("Show Inspector", Box::new(ShowInspector))
-                .command_item("Rename", RENAME_KEY, Box::new(RenameItem));
+                .item("Show Inspector", Box::new(ShowInspector));
+            // Finder greys Rename out for a multi-selection (it offers a
+            // batch rename instead), so a many-item menu omits it.
+            if item_menu_offers_rename(selection_count) {
+                m = m.command_item("Rename", RENAME_KEY, Box::new(RenameItem));
+            }
             if let Some(label) = compress_label {
                 m = m.item(label, Box::new(Compress));
             }
@@ -502,5 +506,23 @@ impl FinderView {
                 .tooltip("New Tab")
                 .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
         )
+    }
+}
+
+/// Finder's item menu lists Rename only for a single item; a
+/// multi-selection gets a batch rename there instead.
+fn item_menu_offers_rename(selection_count: usize) -> bool {
+    selection_count == 1
+}
+
+#[cfg(test)]
+mod rename_menu_tests {
+    use super::item_menu_offers_rename;
+
+    #[test]
+    fn rename_is_offered_for_exactly_one_item() {
+        assert!(item_menu_offers_rename(1));
+        assert!(!item_menu_offers_rename(2));
+        assert!(!item_menu_offers_rename(9));
     }
 }

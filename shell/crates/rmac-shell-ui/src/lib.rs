@@ -304,6 +304,7 @@ mod tests {
         assert_eq!(top_bar_clock_pattern(&settings), "%a %-d %b %-I:%M %p");
 
         settings.show_date = false;
+        settings.show_weekday = false;
         settings.show_seconds = true;
         settings.format = rmac_shell_settings::ClockFormat::TwentyFourHour;
         assert_eq!(
@@ -396,6 +397,8 @@ mod tests {
             (Some("%a %-d %b"), "%-I:%M %p")
         );
         settings.show_date = false;
+        assert_eq!(top_bar_clock_parts(&settings), (Some("%a"), "%-I:%M %p"));
+        settings.show_weekday = false;
         assert_eq!(top_bar_clock_parts(&settings), (None, "%-I:%M %p"));
     }
 

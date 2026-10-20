@@ -40,6 +40,9 @@ mod vk {
 
 /// Evdev key codes.
 const KEY_V: u32 = 47;
+const KEY_LEFTCTRL: u32 = 29;
+const KEY_LEFTSHIFT: u32 = 42;
+const KEY_LEFTMETA: u32 = 125;
 /// XKB modifier bits: Shift, Control and Mod4 (Super, the ⌘ key).
 const MOD_SHIFT: u32 = 1;
 const MOD_CONTROL: u32 = 4;
@@ -48,22 +51,23 @@ const KEY_RELEASED: u32 = 0;
 const KEY_PRESSED: u32 = 1;
 const XKB_V1: u32 = 1;
 
-/// The keymap the virtual keyboard declares: the three modifiers and `v`.
-const KEYMAP: &str = r#"xkb_keymap {
-  xkb_keycodes "rmac" { minimum = 8; maximum = 255; <LCTL> = 37; <LFSH> = 50; <LWIN> = 133; <AB04> = 55; };
-  xkb_types "rmac" { include "complete" };
-  xkb_compat "rmac" { include "complete" };
-  xkb_symbols "rmac" {
-    key <LCTL> { [ Control_L ] };
-    key <LFSH> { [ Shift_L ] };
-    key <LWIN> { [ Super_L ] };
-    key <AB04> { [ v, V ] };
-    modifier_map Control { <LCTL> };
-    modifier_map Shift { <LFSH> };
-    modifier_map Mod4 { <LWIN> };
-  };
-};
-"#;
+/// The default US keymap, as text, from libxkbcommon: the same one a real
+/// keyboard gets, so the focused client reads the chord exactly as typed.
+fn keymap_text() -> Result<String, String> {
+    use xkbcommon::xkb;
+    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+    let keymap = xkb::Keymap::new_from_names(
+        &context,
+        "",
+        "",
+        "us",
+        "",
+        None,
+        xkb::KEYMAP_COMPILE_NO_FLAGS,
+    )
+    .ok_or_else(|| "could not build a keymap".to_owned())?;
+    Ok(keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1))
+}
 
 /// The paste shortcut the focused app listens for. keyd turns ⌘V into Ctrl+V
 /// for other apps, but a virtual keyboard bypasses keyd, so the chord has to
@@ -259,7 +263,7 @@ impl Dispatch<ZwpVirtualKeyboardV1, ()> for State {
 }
 
 /// The keymap as an anonymous file the compositor can map.
-fn keymap_file() -> Result<std::fs::File, String> {
+fn keymap_file(text: &str) -> Result<std::fs::File, String> {
     let directory = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .filter(|path| path.is_absolute())
@@ -272,7 +276,7 @@ fn keymap_file() -> Result<std::fs::File, String> {
         .open(&path)
         .map_err(|error| format!("keymap file: {error}"))?;
     let _ = std::fs::remove_file(&path);
-    file.write_all(KEYMAP.as_bytes())
+    file.write_all(text.as_bytes())
         .and_then(|()| file.write_all(&[0]))
         .map_err(|error| format!("keymap file: {error}"))?;
     Ok(file)
@@ -290,16 +294,37 @@ fn press_paste(chord: Paste) -> Result<(), String> {
         .bind(&qh, 1..=1, ())
         .map_err(|error| format!("no virtual keyboard: {error}"))?;
     let keyboard = manager.create_virtual_keyboard(&seat, &qh, ());
-    let file = keymap_file()?;
-    let size = u32::try_from(KEYMAP.len() + 1).map_err(|error| error.to_string())?;
+    let text = keymap_text()?;
+    let file = keymap_file(&text)?;
+    let size = u32::try_from(text.len() + 1).map_err(|error| error.to_string())?;
     keyboard.keymap(XKB_V1, file.as_fd(), size);
 
     let start = Instant::now();
-    let time = |offset: u32| u32::try_from(start.elapsed().as_millis()).unwrap_or(0) + offset;
-    keyboard.modifiers(chord.modifiers(), 0, 0, 0);
-    keyboard.key(time(1), KEY_V, KEY_PRESSED);
-    keyboard.key(time(2), KEY_V, KEY_RELEASED);
-    keyboard.modifiers(0, 0, 0, 0);
+    let time = || u32::try_from(start.elapsed().as_millis()).unwrap_or(0);
+    // Like a real keyboard: each modifier key goes down (and the modifier
+    // state follows), then V, then everything comes back up.
+    let held: &[(u32, u32)] = match chord {
+        Paste::Command => &[(KEY_LEFTMETA, MOD_SUPER)],
+        Paste::Control => &[(KEY_LEFTCTRL, MOD_CONTROL)],
+        Paste::ControlShift => &[(KEY_LEFTCTRL, MOD_CONTROL), (KEY_LEFTSHIFT, MOD_SHIFT)],
+    };
+    let mut mask = 0;
+    for &(key, bit) in held {
+        keyboard.key(time(), key, KEY_PRESSED);
+        mask |= bit;
+        keyboard.modifiers(mask, 0, 0, 0);
+    }
+    keyboard.key(time(), KEY_V, KEY_PRESSED);
+    queue
+        .roundtrip(&mut State)
+        .map_err(|error| format!("virtual keyboard: {error}"))?;
+    std::thread::sleep(Duration::from_millis(30));
+    keyboard.key(time(), KEY_V, KEY_RELEASED);
+    for &(key, bit) in held.iter().rev() {
+        keyboard.key(time(), key, KEY_RELEASED);
+        mask &= !bit;
+        keyboard.modifiers(mask, 0, 0, 0);
+    }
     keyboard.destroy();
     queue
         .roundtrip(&mut State)
@@ -322,10 +347,9 @@ mod tests {
     }
 
     #[test]
-    fn the_keymap_declares_only_what_the_paste_needs() {
-        assert!(KEYMAP.contains("<AB04> = 55"));
-        assert!(KEYMAP.contains("<LWIN> = 133"));
+    fn the_paste_keys_are_evdev_codes() {
+        assert_eq!(KEY_V, 47);
+        assert_eq!(KEY_LEFTMETA, 125);
         assert_eq!(MOD_SUPER, 1 << 6);
-        assert_eq!(KEY_V + 8, 55);
     }
 }

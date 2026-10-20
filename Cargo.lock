@@ -6496,6 +6496,7 @@ dependencies = [
  "wayland-backend",
  "wayland-client",
  "wayland-scanner",
+ "xkbcommon",
 ]
 
 [[package]]

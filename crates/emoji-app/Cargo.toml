@@ -25,3 +25,4 @@ rmac-compositor-system.workspace = true
 wayland-backend.workspace = true
 wayland-client.workspace = true
 wayland-scanner.workspace = true
+xkbcommon.workspace = true

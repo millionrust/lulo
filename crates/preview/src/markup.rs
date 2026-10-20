@@ -222,6 +222,25 @@ fn rgb(color: u32) -> Vec<Object> {
         .collect()
 }
 
+/// A PDF text string: plain ASCII as it is, anything else as UTF-16BE with
+/// the byte-order mark, so other readers show the same characters.
+fn pdf_text(text: &str) -> Object {
+    let text: String = text
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n')
+        .take(2000)
+        .collect();
+    if text.is_ascii() {
+        Object::string_literal(text)
+    } else {
+        let mut bytes = vec![0xFE, 0xFF];
+        for unit in text.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_be_bytes());
+        }
+        Object::String(bytes, lopdf::StringFormat::Hexadecimal)
+    }
+}
+
 fn escape_pdf_text(text: &str) -> String {
     text.chars()
         .filter(|c| c.is_ascii() && !c.is_ascii_control())
@@ -712,7 +731,7 @@ pub fn write_pdf_with_author(
                     "Resources",
                     dictionary! { "Font" => dictionary! { "F1" => font } },
                 );
-                annotation.set("Contents", item.text.clone());
+                annotation.set("Contents", pdf_text(&item.text));
                 annotation.set("DA", "/F1 16 Tf 0 0 0 rg");
             }
             let ap = doc.add_object(stream);
@@ -766,7 +785,7 @@ pub fn write_pdf_with_author(
                 annotation.set("Vertices", vertices);
             }
             if item.tool == Tool::Note {
-                annotation.set("Contents", item.text.clone());
+                annotation.set("Contents", pdf_text(&item.text));
             }
         }
         let id = doc.add_object(annotation);
@@ -1049,7 +1068,11 @@ fn parse_annotation(
     item.text = dict
         .get(b"Contents")
         .ok()
-        .and_then(decode_outline_title)
+        .and_then(|contents| match contents {
+            // Older Lulo files stored the text as a name.
+            Object::Name(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            other => decode_outline_title(other),
+        })
         .unwrap_or_default();
     let spread = (
         (bounds.x1 - bounds.x0).max(1e-4),

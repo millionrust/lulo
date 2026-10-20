@@ -274,6 +274,12 @@ fn initial_size(paths: &[PathBuf]) -> (f32, f32) {
     let Some(first) = paths.first() else {
         return metrics::DEFAULT_WINDOW;
     };
+    // PREV-13: a document reopens at the size its window was last left at.
+    if paths.len() == 1 {
+        if let Some(size) = load_window_size(first) {
+            return size;
+        }
+    }
     match render::sniff_path(first) {
         Ok(Kind::Image(_)) if paths.len() == 1 => render::image_dimensions(first)
             .map(|(width, height)| metrics::image_window_size((width as f32, height as f32)))
@@ -495,8 +501,20 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         rmac_ui::fit_to_display_after_first_frame(window, cx);
+        let remembered_document = (paths.len() == 1).then(|| paths[0].clone());
         let view = cx.new(|cx| {
             rmac_ui::track_key_window(window, cx);
+            if let Some(document) = remembered_document {
+                cx.observe_window_bounds(window, move |_, window, _| {
+                    let size = window.window_bounds().get_bounds().size;
+                    remember_window_size(
+                        document.clone(),
+                        f32::from(size.width),
+                        f32::from(size.height),
+                    );
+                })
+                .detach();
+            }
             // Preview's windows are per-document, not one `app_id`-keyed
             // saved geometry, so this calls `track_key_window` directly
             // rather than `observe_window_state` — which left out the
@@ -612,6 +630,80 @@ fn save_last_page(document: &std::path::Path, page: usize) -> std::io::Result<()
         std::fs::create_dir_all(parent)?;
     }
     let bytes = serde_json::to_vec(&(document, page)).map_err(std::io::Error::other)?;
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&temporary, bytes)?;
+    std::fs::rename(temporary, path)
+}
+
+/// Smallest and largest window dimension a remembered size may restore to,
+/// so a stale or hand-edited file can never open an unusable window.
+const WINDOW_SIZE_RANGE: (f32, f32) = (320.0, 8192.0);
+
+/// `Some((width, height))` when `width` and `height` are a sane window size.
+fn sane_window_size(width: f32, height: f32) -> Option<(f32, f32)> {
+    let ok = |value: f32| {
+        value.is_finite() && (WINDOW_SIZE_RANGE.0..=WINDOW_SIZE_RANGE.1).contains(&value)
+    };
+    (ok(width) && ok(height)).then_some((width, height))
+}
+
+fn window_size_path(document: &std::path::Path) -> PathBuf {
+    document_state_path(document, "window-sizes")
+}
+
+/// The window size `document` was last left at, if Preview remembers one.
+pub(crate) fn load_window_size(document: &std::path::Path) -> Option<(f32, f32)> {
+    let bytes = std::fs::read(window_size_path(document)).ok()?;
+    let (stored_path, width, height) =
+        serde_json::from_slice::<(PathBuf, f32, f32)>(&bytes).ok()?;
+    if stored_path != document {
+        return None;
+    }
+    sane_window_size(width, height)
+}
+
+/// Records `document`'s window size on a writer thread that keeps only the
+/// newest size per document after a short quiet period, so dragging a
+/// window edge never writes on the UI thread or once per frame.
+pub(crate) fn remember_window_size(document: PathBuf, width: f32, height: f32) {
+    use std::sync::{mpsc, Mutex, OnceLock};
+    type Message = (PathBuf, f32, f32);
+    static WRITER: OnceLock<Mutex<mpsc::Sender<Message>>> = OnceLock::new();
+    if sane_window_size(width, height).is_none() {
+        return;
+    }
+    let writer = WRITER.get_or_init(|| {
+        let (sender, receiver) = mpsc::channel::<Message>();
+        let _ = std::thread::Builder::new()
+            .name("preview-window-size".into())
+            .spawn(move || {
+                while let Ok(first) = receiver.recv() {
+                    let mut latest = std::collections::HashMap::new();
+                    latest.insert(first.0, (first.1, first.2));
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    while let Ok((document, width, height)) = receiver.try_recv() {
+                        latest.insert(document, (width, height));
+                    }
+                    for (document, (width, height)) in latest {
+                        if let Err(error) = save_window_size(&document, width, height) {
+                            eprintln!("rmac-preview: could not remember the window size: {error}");
+                        }
+                    }
+                }
+            });
+        Mutex::new(sender)
+    });
+    if let Ok(writer) = writer.lock() {
+        let _ = writer.send((document, width, height));
+    }
+}
+
+fn save_window_size(document: &std::path::Path, width: f32, height: f32) -> std::io::Result<()> {
+    let path = window_size_path(document);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let bytes = serde_json::to_vec(&(document, width, height)).map_err(std::io::Error::other)?;
     let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
     std::fs::write(&temporary, bytes)?;
     std::fs::rename(temporary, path)
@@ -1012,6 +1104,29 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn remembered_window_sizes_are_sane_or_ignored() {
+        assert_eq!(sane_window_size(800.0, 600.0), Some((800.0, 600.0)));
+        assert_eq!(sane_window_size(10.0, 600.0), None);
+        assert_eq!(sane_window_size(f32::NAN, 600.0), None);
+        assert_eq!(sane_window_size(800.0, 100_000.0), None);
+    }
+
+    #[test]
+    fn a_saved_window_size_round_trips_for_its_document_only() {
+        let directory =
+            std::env::temp_dir().join(format!("rmac-preview-size-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::env::set_var("XDG_STATE_HOME", &directory);
+        let document = directory.join("a.pdf");
+        let other = directory.join("b.pdf");
+        assert_eq!(load_window_size(&document), None);
+        save_window_size(&document, 900.0, 700.0).unwrap();
+        assert_eq!(load_window_size(&document), Some((900.0, 700.0)));
+        assert_eq!(load_window_size(&other), None);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
     use super::*;
 
     #[test]

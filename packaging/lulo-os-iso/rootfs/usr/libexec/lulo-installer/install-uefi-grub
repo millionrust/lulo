@@ -7,5 +7,11 @@ set -eu
 
 deb=$(find /usr/share/lulo-installer/debs -maxdepth 1 -name 'grub-efi-amd64_*.deb' | head -n 1)
 [ -n "$deb" ] || { echo "install-uefi-grub: no grub-efi-amd64 package in the image" >&2; exit 1; }
-DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-download \
-    -o Dpkg::Options::=--force-confold "$deb"
+export DEBIAN_FRONTEND=noninteractive
+if ! apt-get install --yes -o Dpkg::Options::=--force-confold "$deb"; then
+    # The image has no package lists, which some apt versions need even for
+    # a local file. Do the same swap with dpkg.
+    dpkg --remove --force-depends grub-pc
+    dpkg --install --force-confold "$deb"
+fi
+dpkg-query -W -f='${Package} ${Version} ${db:Status-Abbrev}\n' grub-efi-amd64 grub-pc 2>/dev/null || true

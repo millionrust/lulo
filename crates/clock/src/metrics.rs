@@ -114,6 +114,12 @@ pub const PAUSE_FILL: u32 = 0xF09A37;
 pub const TIMER_LABEL_CENTERS: [f32; 3] = [374.0, 512.0, 650.5];
 pub const TIMER_LABEL_TOP: f32 = 231.0;
 pub const TIMER_LABEL_SIZE: f32 = 13.0;
+/// The Mac's Timers entry (2026-10-20 capture, 1024 x 768 window): the "Timer"
+/// label field at y 379 and the sound pop-up at y 406, both 200 wide and
+/// centred.
+pub const TIMER_LABEL_FIELD_TOP: f32 = 379.0;
+pub const TIMER_SOUND_TOP: f32 = 406.0;
+pub const TIMER_CONTROL_WIDTH: f32 = 200.0;
 /// Running timer ring (S).
 pub const RING_DIAMETER: f32 = 320.0;
 pub const RING_WIDTH: f32 = 8.0;

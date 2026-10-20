@@ -7,7 +7,8 @@ use std::time::{Duration, SystemTime};
 
 use gpui::{
     canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AppContext as _,
-    Bounds, ClickEvent, Context, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement as _,
+    Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
+    InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, PathBuilder, Pixels, Render, RenderImage, Role,
     ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Toggled, Window,
     WindowControlArea,
@@ -199,6 +200,12 @@ pub(crate) struct ClockView {
     entry: Entry,
     entry_field: Field,
     timer_setup: bool,
+    /// The Timers entry's label field ("Timer" placeholder) and the sound
+    /// pop-up under it ("Radial (Default)" on the Mac, CLOCK-02).
+    timer_label: Entity<InputState>,
+    timer_sound: AlarmSound,
+    /// Empty the label field on the next render (it needs the window).
+    clear_timer_label: bool,
     /// The saved state could not be read; edits are not saved over it.
     read_failed: bool,
     error: Option<SharedString>,
@@ -266,6 +273,9 @@ impl ClockView {
             entry: Entry::default(),
             entry_field: Field::Minutes,
             timer_setup: false,
+            timer_label: cx.new(|cx| InputState::new(window, cx).placeholder("Timer")),
+            timer_sound: AlarmSound::default(),
+            clear_timer_label: false,
             read_failed: error.is_some(),
             error,
             text_assist: rmac_ui::text_assist::TextAssistSettings {
@@ -652,6 +662,8 @@ impl ClockView {
                 id,
                 duration,
                 now: now_millis(),
+                label: String::new(),
+                sound: AlarmSound::default(),
             },
             cx,
         );
@@ -695,14 +707,32 @@ impl ClockView {
                 id,
                 duration: self.entry.milliseconds(),
                 now: now_millis(),
+                label: self.timer_label.read(cx).value().to_string(),
+                sound: self.timer_sound,
             },
             cx,
         );
+        self.clear_timer_label = true;
     }
 
-    fn on_key_down(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+    fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         if keystroke.modifiers.platform || keystroke.modifiers.control {
+            return;
+        }
+        // Typing in the timer's label field: only Return (start) and Escape
+        // (leave the field) are ours; digits and Space belong to the text.
+        if self.tab == Tab::Timers
+            && self.showing_entry()
+            && self.timer_label.read(cx).focus_handle(cx).is_focused(window)
+        {
+            match keystroke.key.as_str() {
+                "enter" => self.start_timer(cx),
+                "escape" => window.focus(&self.focus, cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+            cx.notify();
             return;
         }
         if let Some(editor) = self.editor.as_mut() {
@@ -1764,7 +1794,52 @@ impl ClockView {
                     std::iter::once(group).chain(colon)
                 });
             let cancellable = !self.state.timers.is_empty();
+            let view = cx.entity();
+            let sound = self.timer_sound;
+            let control_left = ((width - m::TIMER_CONTROL_WIDTH) / 2.0).round();
             return body
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(m::TIMER_LABEL_FIELD_TOP))
+                        .left(px(control_left))
+                        .w(px(m::TIMER_CONTROL_WIDTH))
+                        .child(
+                            TextField::new(&self.timer_label)
+                                .small()
+                                .appearance(false)
+                                .w(px(m::TIMER_CONTROL_WIDTH)),
+                        ),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(m::TIMER_SOUND_TOP))
+                        .left(px(control_left))
+                        .w(px(m::TIMER_CONTROL_WIDTH))
+                        .child(
+                            PopUpButton::new("clock-timer-sound", sound.label())
+                                .dropdown_menu(move |menu, _, _| {
+                                    AlarmSound::ALL.iter().fold(menu, |menu, &choice| {
+                                        let view = view.clone();
+                                        menu.item(
+                                            PopupMenuItem::new(choice.label())
+                                                .checked(choice == sound)
+                                                .on_click(move |_, _, cx| {
+                                                    // Choosing a sound plays it, as in the
+                                                    // Alarm sheet.
+                                                    let _ = rmac_sound::play(choice.cue());
+                                                    view.update(cx, |this, cx| {
+                                                        this.timer_sound = choice;
+                                                        cx.notify();
+                                                    });
+                                                }),
+                                        )
+                                    })
+                                })
+                                .w(px(m::TIMER_CONTROL_WIDTH)),
+                        ),
+                )
                 .children(labels)
                 .child(
                     div()
@@ -1809,6 +1884,7 @@ impl ClockView {
             let remaining = timer.remaining(now);
             let fraction = timer.fraction_left(now);
             let running = timer.is_running();
+            let name = timer.label.clone();
             let end_text = timer.ends_at().map(|ends_at| {
                 let seconds = ends_at.div_ceil(1000) as i64;
                 let wall = WallTime::at(seconds, zone.offset_at(seconds));
@@ -1833,6 +1909,16 @@ impl ClockView {
                                 .items_center()
                                 .justify_center()
                                 .gap(px(6.0))
+                                .when(!name.is_empty(), |column| {
+                                    column.child(
+                                        div()
+                                            .max_w(px(diameter * 0.7))
+                                            .truncate()
+                                            .text_size(px(13.0))
+                                            .text_color(rgb(m::SECONDARY_TEXT))
+                                            .child(name.clone()),
+                                    )
+                                })
                                 .child(
                                     div()
                                         .text_size(px(
@@ -2327,6 +2413,10 @@ impl Render for ClockView {
             cx.drop_image(image, Some(window));
         }
         self.refresh_recent_timer_menu(cx);
+        if std::mem::take(&mut self.clear_timer_label) {
+            self.timer_label
+                .update(cx, |state, cx| state.set_value("", window, cx));
+        }
         if window.is_window_active() {
             // View ▸ World Clock … Timers tick the tab on show.
             for (tab, action) in [
@@ -2400,7 +2490,9 @@ impl Render for ClockView {
             .track_focus(&self.focus)
             .key_context("Clock")
             .on_key_down(
-                cx.listener(|this, event: &KeyDownEvent, _, cx| this.on_key_down(event, cx)),
+                cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    this.on_key_down(event, window, cx);
+                }),
             )
             .on_action(cx.listener(|this, _: &ShowWorldClock, _, cx| this.set_tab(Tab::World, cx)))
             .on_action(cx.listener(|this, _: &ShowAlarms, _, cx| this.set_tab(Tab::Alarms, cx)))

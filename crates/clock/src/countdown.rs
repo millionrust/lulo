@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::alarms::AlarmSound;
+
 /// The three editable groups of the "00:15:00" entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Field {
@@ -92,6 +94,9 @@ pub struct Countdown {
     pub duration: u64,
     #[serde(default)]
     pub label: String,
+    /// What plays when it ends ("Radial (Default)" on the Mac's pop-up).
+    #[serde(default)]
+    pub sound: AlarmSound,
     #[serde(flatten)]
     pub run: RunState,
 }
@@ -102,6 +107,7 @@ impl Countdown {
             id,
             duration,
             label: String::new(),
+            sound: AlarmSound::default(),
             run: RunState::Running {
                 ends_at: now + duration,
             },

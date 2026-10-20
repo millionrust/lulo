@@ -4,9 +4,12 @@
 //! (a one-time alarm switching off, a finished timer disappearing) are
 //! never overwritten.
 
-use crate::alarms::Alarm;
+use crate::alarms::{Alarm, AlarmSound};
 use crate::countdown::Countdown;
 use crate::store::{State, MAX_ALARMS, MAX_CITIES, MAX_RECENT_TIMERS, MAX_TIMERS};
+
+/// The longest timer label kept, in characters.
+const MAX_TIMER_LABEL: usize = 64;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Change {
@@ -29,6 +32,9 @@ pub enum Change {
         id: u64,
         duration: u64,
         now: u64,
+        /// The Timers entry's label field (blank for an unnamed timer).
+        label: String,
+        sound: AlarmSound,
     },
     PauseTimer {
         id: u64,
@@ -94,12 +100,21 @@ impl Change {
                     alarm.snoozed_until = None;
                 }
             }
-            Self::StartTimer { id, duration, now } => {
+            Self::StartTimer {
+                id,
+                duration,
+                now,
+                label,
+                sound,
+            } => {
                 if *duration > 0
                     && state.timers.len() < MAX_TIMERS
                     && state.timers.iter().all(|timer| timer.id != *id)
                 {
-                    state.timers.push(Countdown::start(*id, *duration, *now));
+                    let mut timer = Countdown::start(*id, *duration, *now);
+                    timer.label = label.trim().chars().take(MAX_TIMER_LABEL).collect();
+                    timer.sound = *sound;
+                    state.timers.push(timer);
                     state.next_id = state.next_id.max(*id);
                     state
                         .recent_timer_durations
@@ -230,6 +245,8 @@ mod tests {
             id: 4,
             duration: 0,
             now: 0,
+            label: String::new(),
+            sound: AlarmSound::default(),
         }
         .apply(&mut state);
         assert!(state.timers.is_empty()); // zero-length timers never start
@@ -237,9 +254,14 @@ mod tests {
             id: 4,
             duration: 60_000,
             now: 1_000,
+            label: "  Pasta ".into(),
+            sound: AlarmSound::Chime,
         }
         .apply(&mut state);
         assert_eq!(state.recent_timer_durations, [60_000]);
+        // The label is trimmed and the chosen sound kept.
+        assert_eq!(state.timers[0].label, "Pasta");
+        assert_eq!(state.timers[0].sound, AlarmSound::Chime);
         Change::PauseTimer { id: 4, now: 31_000 }.apply(&mut state);
         assert_eq!(state.timers[0].remaining(90_000), 30_000);
         Change::ResumeTimer { id: 4, now: 40_000 }.apply(&mut state);
@@ -257,6 +279,8 @@ mod tests {
                 id: index + 1,
                 duration: (index + 1) * 1000,
                 now: 0,
+                label: String::new(),
+                sound: AlarmSound::default(),
             }
             .apply(&mut state);
         }
@@ -267,6 +291,8 @@ mod tests {
             id: 11,
             duration: 5_000,
             now: 0,
+            label: String::new(),
+            sound: AlarmSound::default(),
         }
         .apply(&mut state);
         assert_eq!(state.recent_timer_durations[0], 5_000);

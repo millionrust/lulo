@@ -30,6 +30,7 @@ enum Ringing {
     },
     Timer {
         label: String,
+        sound: AlarmSound,
     },
 }
 
@@ -119,6 +120,7 @@ fn collect_due() -> std::io::Result<Vec<Ringing>> {
             if timer.is_done(now) {
                 due.push(Ringing::Timer {
                     label: timer.label.clone(),
+                    sound: timer.sound,
                 });
                 false
             } else {
@@ -181,7 +183,7 @@ fn open_clock() {
 fn ring(ringing: &Ringing) -> Option<Outcome> {
     let cue = match ringing {
         Ringing::Alarm { sound, .. } => sound.cue(),
-        Ringing::Timer { .. } => rmac_sound::Cue::Alert,
+        Ringing::Timer { sound, .. } => sound.cue(),
     };
     let (summary, body, snooze) = match ringing {
         Ringing::Alarm {
@@ -190,7 +192,7 @@ fn ring(ringing: &Ringing) -> Option<Outcome> {
             snooze,
             ..
         } => (title.clone(), time.clone(), *snooze),
-        Ringing::Timer { label } => (
+        Ringing::Timer { label, .. } => (
             if label.trim().is_empty() {
                 "Timer".to_owned()
             } else {

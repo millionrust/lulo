@@ -449,6 +449,36 @@ impl Session {
         )
     }
 
+    /// The Apps tile's menu (DOCK-06): the Mac's Launchpad tile offers
+    /// Remove from Dock and Show Apps, flat -- no Options, windows or
+    /// Quit.
+    pub fn apps(menu: &ContextMenu) -> Result<Self, MenuError> {
+        let mut stripped = menu.clone();
+        stripped.windows.clear();
+        stripped.application_commands.clear();
+        stripped.show_in_finder = None;
+        stripped.show_all_windows = None;
+        stripped.hide = None;
+        stripped.hide_others = None;
+        stripped.quit = None;
+        stripped.force_quit = None;
+        let mut rows = Self::context(&stripped)?.rows().to_vec();
+        for row in &mut rows {
+            row.submenu = None;
+            row.checked = false;
+            if row.id == RowId::Open {
+                row.label = "Show Apps".into();
+                row.accessible_label = "Show Apps".into();
+            }
+        }
+        Self::new(
+            EntryId::Application(menu.app_id.clone()),
+            bounded(&menu.application_name),
+            format!("{} Dock menu", bounded(&menu.application_name)),
+            rows,
+        )
+    }
+
     /// The Files tile's menu (DOCK-05): windows, New Finder Window, Show
     /// All Windows, Hide/Hide Others -- no Options ▸, no Quit.
     pub fn finder(menu: &FinderContextMenu) -> Result<Self, MenuError> {
@@ -1278,6 +1308,30 @@ mod tests {
             focus: focus("terminal.desktop", id),
             close: close("terminal.desktop", id),
         }
+    }
+
+    #[test]
+    fn apps_tile_menu_is_remove_from_dock_and_show_apps() {
+        let unpin = || PinCommand::Unpin {
+            app_id: "terminal.desktop".into(),
+        };
+        let menu = mac_menu(unpin(), vec![window_menu(2, true)], true);
+        let session = Session::apps(&menu).unwrap();
+        let labels: Vec<&str> = session
+            .rows()
+            .iter()
+            .map(|row| row.label.as_str())
+            .collect();
+        assert_eq!(labels, ["Remove from Dock"]);
+        let menu = mac_menu(unpin(), Vec::new(), false);
+        let session = Session::apps(&menu).unwrap();
+        let labels: Vec<&str> = session
+            .rows()
+            .iter()
+            .map(|row| row.label.as_str())
+            .collect();
+        assert_eq!(labels, ["Remove from Dock", "Show Apps"]);
+        assert!(session.rows().iter().all(|row| row.submenu.is_none()));
     }
 
     #[test]

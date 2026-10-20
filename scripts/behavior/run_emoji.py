@@ -134,6 +134,19 @@ class Scenario:
         self.snapshot("baseline")
         baseline = self.line_pixels()
 
+        # The paste on its own: `rmac-emoji --insert` into the focused field.
+        inserted_now = subprocess.run(
+            [str(Path(self.args.bin_dir) / EMOJI), "--insert", "X"],
+            env=self.driver.session.env, capture_output=True, text=True, timeout=30, check=False)
+        self.facts["insert_exit"] = inserted_now.returncode
+        self.facts["insert_stderr"] = inserted_now.stderr.strip()[-300:]
+        time.sleep(0.8)
+        self.snapshot("insert-x")
+        self.facts["insert_pastes"] = self.changed(self.line_pixels(), baseline)
+        if not self.facts["insert_pastes"]:
+            self.errors.append("rmac-emoji --insert did not paste into the Text Editor")
+        baseline = self.line_pixels()
+
         key("ctrl-cmd-space")
         opened = wait_until(self.panel_open, 10)
         self.facts["opens"] = bool(opened)

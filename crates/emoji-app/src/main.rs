@@ -118,6 +118,22 @@ mod linux {
     }
 
     pub fn run() -> ExitCode {
+        // `rmac-emoji --insert TEXT`: paste TEXT into the focused field the
+        // way a choice in the panel does (used by the nested-session check).
+        let arguments: Vec<String> = std::env::args().skip(1).collect();
+        if let [flag, text] = arguments.as_slice() {
+            if flag == "--insert" {
+                let previous = previous_window();
+                let chord = crate::inject::Paste::for_app(previous.app_id.as_deref());
+                return match crate::inject::paste(text, chord) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(error) => {
+                        eprintln!("rmac-emoji: could not insert {text}: {error}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+        }
         let previous = previous_window();
         // A second press of the shortcut closes the panel that is open.
         let _guard = match crate::instance::claim(previous.window.map(|window| window.0)) {

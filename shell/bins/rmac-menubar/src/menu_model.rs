@@ -554,8 +554,12 @@ impl WindowCommand {
     /// sizing, or they need more than one window), so this stays `None`.
     pub fn mission_control_command(self) -> Option<&'static str> {
         Some(match self {
-            // The green button's Zoom fills the working area, as Fill does.
-            Self::Zoom | Self::Fill => "fill",
+            // Zoom toggles, as on the Mac: it fills the visible frame and,
+            // chosen again, puts the window back at its previous size (the
+            // same toggle as ⌃⌘Z and a title-bar double-click). Fill only
+            // fills.
+            Self::Zoom => "zoom",
+            Self::Fill => "fill",
             Self::Centre => "centre",
             Self::ReturnToPreviousSize => "restore-size",
             Self::Tile(WindowRegion::Left) => "tile-left",
@@ -2535,7 +2539,8 @@ mod tests {
             WindowCommand::Tile(WindowRegion::Left).mission_control_command(),
             Some("tile-left")
         );
-        assert_eq!(WindowCommand::Zoom.mission_control_command(), Some("fill"));
+        assert_eq!(WindowCommand::Zoom.mission_control_command(), Some("zoom"));
+        assert_eq!(WindowCommand::Fill.mission_control_command(), Some("fill"));
         assert_eq!(
             WindowCommand::ReturnToPreviousSize.mission_control_command(),
             Some("restore-size")

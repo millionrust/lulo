@@ -12,6 +12,7 @@ mod platform;
 mod superseded;
 #[cfg(test)]
 mod tests;
+pub mod window_class;
 pub mod windows_apps;
 
 pub use catalog::*;
@@ -19,6 +20,7 @@ use icons::*;
 pub use model::*;
 use platform::*;
 pub use superseded::{discover_for_browsing, hide_superseded, superseded_desktop_ids};
+pub use window_class::{desktop_id_for_window_class, register_window_class};
 // Only the desktop-entry tokenizer is re-exported, for the desktop_entry
 // fuzz target; the rest of `platform` stays crate-private.
 pub use platform::desktop_group_named;

@@ -320,6 +320,18 @@ mod bar {
         fn other_apps_do_not_receive_the_files_fallback() {
             assert!(static_fallback_menus(rmac_apps::identity::NOTES).is_empty());
         }
+
+        #[test]
+        fn command_w_runs_the_apps_own_close_item() {
+            // Terminal's ⌘W closes the tab, through its own menu item.
+            let terminal = rmac_app_menu::static_definition(rmac_apps::identity::TERMINAL).unwrap();
+            assert_eq!(
+                super::key_equivalent_action(&terminal, "⌘W").as_deref(),
+                Some("terminal::CloseTab")
+            );
+            // No menus (a third-party app): the window is closed instead.
+            assert_eq!(super::key_equivalent_action(&[], "⌘W"), None);
+        }
     }
 
     impl ShellStatus {
@@ -475,15 +487,17 @@ mod bar {
             return;
         }
         cx.spawn(async move |this, cx| {
-            let wanted = vec![app_id.clone()];
-            let Ok(entries) = blocking::unblock(move || rmac_apps::discover_entries(&wanted)).await
+            // By desktop ID, else by the entry's `StartupWMClass` (an
+            // XWayland window's `WM_CLASS`).
+            let wanted = app_id.clone();
+            let Ok(Some(entry)) =
+                blocking::unblock(move || rmac_apps::discover_for_window(&wanted)).await
             else {
                 return;
             };
-            let Some(entry) = entries.first() else {
-                return;
-            };
             rmac_apps::windows_apps::register_display_name(&app_id, &entry.name);
+            // One line per third-party app, for the nested checks.
+            eprintln!("menu bar: {app_id} is named {}", entry.name);
             let _ = this.update(cx, |_, cx| cx.notify());
         })
         .detach();
@@ -6043,7 +6057,8 @@ mod bar {
         use rmac_compositor::{Action, TileRegion};
         let tile = |region| Action::TileWindow { window, region };
         Some(match word {
-            "fill" => Action::FillWindow { window },
+            // Windows' maximise toggles back to the restored frame.
+            "fill" | "zoom" => Action::FillWindow { window },
             "centre" => Action::CenterWindow { window },
             "restore-size" => Action::FullscreenWindow { window, on: false },
             "tile-left" => tile(TileRegion::Left),
@@ -6132,10 +6147,32 @@ mod bar {
                     for window in &windows {
                         store.forget(*window);
                     }
-                    actions = windows
-                        .into_iter()
-                        .map(|window| rmac_compositor::Action::CloseWindow { window })
-                        .collect();
+                    // Windows: every top-level window of the app's process,
+                    // not only the ones Alt+Tab lists, is told to close.
+                    // One request per process (a browser runs several).
+                    #[cfg(windows)]
+                    {
+                        let mut pids = BTreeSet::new();
+                        actions = windows
+                            .into_iter()
+                            .filter(|window| {
+                                let pid = snapshot
+                                    .windows
+                                    .iter()
+                                    .find(|candidate| candidate.id == *window)
+                                    .and_then(|candidate| candidate.pid);
+                                pids.insert(pid)
+                            })
+                            .map(|window| rmac_compositor::Action::QuitApplication { window })
+                            .collect();
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        actions = windows
+                            .into_iter()
+                            .map(|window| rmac_compositor::Action::CloseWindow { window })
+                            .collect();
+                    }
                 }
                 other => eprintln!("unknown app menu action: {other}"),
             }
@@ -6858,6 +6895,8 @@ mod bar {
         }
         {
             let status = start_status(cx);
+            #[cfg(target_os = "linux")]
+            watch_key_equivalents(status.clone(), cx);
             let (backdrop_tx, backdrop_rx) = async_channel::bounded(16);
             cx.spawn(async move |cx| {
                 let mut tracker = MenuBackdropTracker::default();
@@ -7002,6 +7041,109 @@ mod bar {
             }
         })
         .detach();
+    }
+
+    /// ⌘Q and ⌘W, which the Mac's menu bar answers for every app (WIN-17).
+    /// niri's binds spawn `rmac-shortcut-dispatch app-quit|window-close`;
+    /// the key goes through the frontmost app's menus as AppKit's key
+    /// equivalents do. A Lulo app runs its own Quit and its own ⌘W item (Close
+    /// Window, Close Tab), so its unsaved-changes guards still ask; a
+    /// third-party app, which publishes no menus, is asked to close its
+    /// windows: all of them for Quit, the frontmost one for ⌘W. The watches
+    /// wait on their sockets; nothing polls.
+    #[cfg(target_os = "linux")]
+    fn watch_key_equivalents(status: Entity<ShellStatus>, cx: &mut App) {
+        for (shortcut, quit) in [("app-quit", true), ("window-close", false)] {
+            let (sender, requests) = async_channel::bounded(4);
+            cx.background_executor()
+                .spawn(async move {
+                    let id = rmac_shortcuts::ShortcutId(shortcut.to_owned());
+                    if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                        eprintln!("the {shortcut} key equivalent is unavailable: {error}");
+                    }
+                })
+                .detach();
+            let status = status.clone();
+            cx.spawn(async move |cx| {
+                while let Ok(event) = requests.recv().await {
+                    if !matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                        continue;
+                    }
+                    let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
+                        eprintln!("could not read the frontmost window for {shortcut}");
+                        continue;
+                    };
+                    // Only an app window with the keyboard: a shell panel
+                    // (Spotlight, a menu) holding it leaves no window focused.
+                    let Some((window, app_id)) = snapshot
+                        .windows
+                        .iter()
+                        .find(|window| window.focused)
+                        .and_then(|window| Some((window.id, window.app_id.clone()?)))
+                    else {
+                        continue;
+                    };
+                    cx.update(|cx| {
+                        let (menu_app_id, menus) = {
+                            let status = status.read(cx);
+                            (status.menu_app_id.clone(), status.menus.clone())
+                        };
+                        run_key_equivalent(quit, app_id, window, menu_app_id, &menus, cx);
+                    });
+                }
+            })
+            .detach();
+        }
+    }
+
+    /// The menu command a key equivalent runs in the frontmost app's
+    /// `menus`: its enabled item with that shortcut.
+    #[cfg(any(target_os = "linux", test))]
+    fn key_equivalent_action(menus: &[rmac_app_menu::Menu], shortcut: &str) -> Option<String> {
+        menus.iter().find_map(|menu| {
+            menu.leaves()
+                .into_iter()
+                .find(|(_, item)| item.enabled && item.shortcut == shortcut)
+                .map(|(_, item)| item.action.clone())
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    fn run_key_equivalent(
+        quit: bool,
+        app_id: String,
+        window: rmac_compositor::WindowId,
+        menu_app_id: Option<String>,
+        menus: &[rmac_app_menu::Menu],
+        cx: &mut App,
+    ) {
+        // An Open/Save panel is the app's sheet, not an app of its own.
+        let app_id = if rmac_apps::identity::is_transient_panel(&app_id) && quit {
+            menu_app_id.clone().unwrap_or(app_id)
+        } else {
+            app_id
+        };
+        if quit {
+            // A Lulo app's own Quit; every window closed for any other.
+            dispatch_app_menu_action(app_id, "app::quit".to_owned(), cx);
+            return;
+        }
+        let own_menus = menu_app_id.as_deref() == Some(app_id.as_str());
+        if let Some(action) = own_menus
+            .then(|| key_equivalent_action(menus, "⌘W"))
+            .flatten()
+        {
+            dispatch_menu_action(app_id, action, Some(window), cx);
+            return;
+        }
+        cx.background_executor()
+            .spawn(async move {
+                let close = rmac_compositor::Action::CloseWindow { window };
+                if let Err(error) = rmac_compositor_system::execute_action(&close).await {
+                    eprintln!("could not close the {app_id} window: {error:?}");
+                }
+            })
+            .detach();
     }
 
     /// `Ctrl+F2` (ACC-05, `docs/known-limitations.md`): niri's bind spawns

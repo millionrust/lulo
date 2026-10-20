@@ -279,6 +279,14 @@ binds {
     // (docs/decisions/0021-niri-minimize-request.md). keyd leaves M
     // untranslated in every profile (ADR 0017), so it always reaches niri.
     Mod+M repeat=false hotkey-overlay-title="Minimise" { spawn "/usr/libexec/rmac/rmac-mission-control" "minimize"; }
+    // ⌘Q and ⌘W work in every app, as the Mac's menu bar makes them
+    // (WIN-17): the resident menu bar runs the frontmost app's own Quit and
+    // ⌘W item (Lulo apps, through their menus and unsaved-changes guards) or
+    // asks a third-party app to close its windows. With the keyd Mac
+    // keyboard on (ADR 0017) a third-party app gets Ctrl+Q/Ctrl+W instead,
+    // before niri sees them, so a browser's ⌘W still closes a tab.
+    Mod+Q repeat=false hotkey-overlay-title="Quit" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "app-quit"; }
+    Mod+W repeat=false hotkey-overlay-title="Close Window" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "window-close"; }
     // Screenshots are the resident rmac-screenshot service
     // (docs/decisions/0010): ⇧⌘3 screen, ⇧⌘4 selection (Space: window),
     // ⇧⌘5 toolbar; adding ⌃ copies to the clipboard instead of saving.

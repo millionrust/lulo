@@ -234,7 +234,7 @@ xkbcommon = { version = "=0.8.0", default-features = false, features = ["wayland
 zbus = { version = "5.16.0", features = ["blocking-api"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls-no-provider", "platform-verifier", "json"] }
 zeroize = "=1.9.0"
-zip = { version = "2.4", default-features = false, features = ["deflate"] }
+zip = { version = "9.0", default-features = false, features = ["deflate"] }
 
 [profile.release]
 lto = true

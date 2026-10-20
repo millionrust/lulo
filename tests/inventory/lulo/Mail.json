@@ -628,6 +628,13 @@
               "shortcut": "",
               "separator_before": true,
               "children": []
+            },
+            {
+              "label": "Only from VIP",
+              "action": "mail::FilterVip",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
             }
           ]
         },
@@ -825,6 +832,55 @@
           "label": "Erase Junk Mail",
           "action": "mail::EraseJunkMail",
           "shortcut": "⌥⌘J",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "New Mailbox…",
+          "action": "mail::NewMailbox",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "New Smart Mailbox…",
+          "action": "mail::NewSmartMailbox",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Edit Smart Mailbox…",
+          "action": "mail::EditSmartMailbox",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Duplicate Smart Mailbox",
+          "action": "mail::DuplicateSmartMailbox",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Rename Mailbox…",
+          "action": "mail::RenameMailbox",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Delete Mailbox…",
+          "action": "mail::DeleteMailbox",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Export Mailbox…",
+          "action": "mail::ExportMailbox",
+          "shortcut": "",
           "separator_before": false,
           "children": []
         },
@@ -1122,6 +1178,27 @@
         {
           "label": "Move Again",
           "action": "mail::MoveAgain",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Apply Rules",
+          "action": "mail::ApplyRules",
+          "shortcut": "⌥⌘L",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Add Sender to Contacts",
+          "action": "mail::AddSenderToContacts",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Add Sender to VIPs",
+          "action": "mail::ToggleSenderVip",
           "shortcut": "",
           "separator_before": false,
           "children": []

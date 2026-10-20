@@ -33,6 +33,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "parallel"))
 import run_lulo  # noqa: E402
 import run_lulo_journey  # noqa: E402
+import run_window_move  # noqa: E402
 
 SERVICE = "rmac-screenshot"
 # model.rs: the toolbar's measured geometry.
@@ -168,6 +169,13 @@ class Scenario:
 
 def inner(args) -> int:
     work = Path(args.inner)
+    # A nested niri only serves org.gnome.Mutter.ScreenCast when told to.
+    source = work / "recording-source"
+    shell_kdl = source / "packaging/rmac-session/shell.kdl"
+    shell_kdl.parent.mkdir(parents=True, exist_ok=True)
+    shell_kdl.write_text((run_window_move.REPO / "packaging/rmac-session/shell.kdl").read_text()
+                         + "\ndebug {\n    dbus-interfaces-in-non-session-instances\n}\n")
+    run_window_move.REPO = source
     scenario = Scenario(args, work)
     try:
         result = scenario.run()

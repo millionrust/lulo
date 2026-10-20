@@ -100,12 +100,12 @@ class Scenario:
         x, y = editor["layout"]["tile_pos_in_workspace_view"]
         image = self.driver.screenshot()
         scale = image.width / max(1, self.driver.session.width)
-        box = tuple(round(v * scale) for v in (x + 44, y + 34, x + 120, y + 52))
-        return list(image.crop(box).resize((24, 6)).getdata())
+        box = tuple(round(v * scale) for v in (x + 8, y + 34, x + 300, y + 52))
+        return list(image.crop(box).resize((96, 6)).getdata())
 
     @staticmethod
     def changed(a, b) -> bool:
-        return sum(abs(p - q) for u, v in zip(a, b) for p, q in zip(u, v)) / (len(a) * 3) > 4
+        return sum(abs(p - q) for u, v in zip(a, b) for p, q in zip(u, v)) / (len(a) * 3) > 1.5
 
     def recents(self) -> str:
         path = self.state_home / "rmac" / "emoji-recents"
@@ -136,7 +136,7 @@ class Scenario:
 
         # The paste on its own: `rmac-emoji --insert` into the focused field.
         inserted_now = subprocess.run(
-            [str(Path(self.args.bin_dir) / EMOJI), "--insert", "X"],
+            [str(Path(self.args.bin_dir) / EMOJI), "--insert", "XXXXXXXXXX"],
             env=self.driver.session.env, capture_output=True, text=True, timeout=30, check=False)
         self.facts["insert_exit"] = inserted_now.returncode
         self.facts["insert_stderr"] = inserted_now.stderr.strip()[-300:]

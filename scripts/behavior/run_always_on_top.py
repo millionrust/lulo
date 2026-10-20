@@ -182,7 +182,11 @@ def outer(args) -> int:
         bins = Path(args.bin_dir).expanduser().resolve()
         links = work / "bins"
         links.mkdir()
-        for source in bins.iterdir():
+        sources = {source.name: source for source in bins.iterdir()}
+        if args.override_bin_dir:
+            for source in Path(args.override_bin_dir).expanduser().resolve().iterdir():
+                sources[source.name] = source
+        for source in sources.values():
             if source.is_file() and source.name not in {"dock", "mission-control"}:
                 (links / source.name).symlink_to(source)
         for alias, source in (("dock", "rmac-dock"), ("mission-control", "rmac-mission-control")):
@@ -213,6 +217,7 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bin-dir", required=True)
     parser.add_argument("--niri", required=True, help="the niri built with patch 0003")
+    parser.add_argument("--override-bin-dir", help="take these binaries instead of --bin-dir's")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     parser.set_defaults(frame_only=False, full_too=False, dump_a11y=False)

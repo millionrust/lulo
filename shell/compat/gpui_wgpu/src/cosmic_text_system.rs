@@ -345,6 +345,10 @@ impl CosmicTextSystemState {
             let allowed_bad_font_names = [
                 "SegoeFluentIcons", // NOTE: Segoe fluent icons postscript name is inconsistent
                 "Segoe Fluent Icons",
+                // A colour emoji font has no 'm' either; Emoji & Symbols asks
+                // for it by name so the common faces are not drawn from the
+                // text fonts' monochrome emoji (DejaVu Sans).
+                "NotoColorEmoji",
             ];
 
             if font.as_swash().charmap().map('m') == 0

@@ -918,6 +918,29 @@ impl PlatformWindow for WindowsWindow {
         self.state.background_appearance.get()
     }
 
+    /// Edit ▸ Emoji & Symbols and ⌃⌘Space inside an app (KB-02): Windows' own
+    /// emoji panel, opened with its Win+. shortcut, which types into the
+    /// focused field itself.
+    fn show_character_palette(&self) {
+        let key = |vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    dwFlags: flags,
+                    ..Default::default()
+                },
+            },
+        };
+        let inputs = [
+            key(VK_LWIN, KEYBD_EVENT_FLAGS(0)),
+            key(VK_OEM_PERIOD, KEYBD_EVENT_FLAGS(0)),
+            key(VK_OEM_PERIOD, KEYEVENTF_KEYUP),
+            key(VK_LWIN, KEYEVENTF_KEYUP),
+        ];
+        unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    }
+
     fn is_subpixel_rendering_supported(&self) -> bool {
         true
     }

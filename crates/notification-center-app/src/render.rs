@@ -364,7 +364,7 @@ impl Render for NotificationCenterView {
                             .children(notices)
                             .children(group_elements)
                             .children(widget_elements)
-                            .when(has_widgets && !empty, |column| {
+                            .when(!empty && !loading && !unavailable, |column| {
                                 column.child(
                                     div()
                                         .flex()

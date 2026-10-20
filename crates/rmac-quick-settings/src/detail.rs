@@ -1137,7 +1137,8 @@ mod tests {
             .collect::<Vec<_>>();
         networks.extend((0..8).map(|index| network(&format!("Other {index}"), WPA, false, false)));
         let mut panel = wifi_panel(&wifi(networks), true);
-        let max = crate::layout::MAX_SURFACE_HEIGHT as f32;
+        // A short output: the tallest surface it can fit.
+        let max = 420.0;
         assert!(panel.layout().1 > max);
         panel.fit(max);
         assert!(panel.layout().1 <= max);

@@ -270,6 +270,9 @@ struct NotesView {
     /// The window is too narrow for the folder list (`narrow_window`), as
     /// of the last frame.
     window_narrow: bool,
+    /// The Mac's window title, "<folder> – N notes", written by the list render.
+    list_window_title: std::cell::RefCell<SharedString>,
+    applied_window_title: SharedString,
     /// The user showed the folder list although the window is narrow.
     folders_shown_while_narrow: bool,
     show_note_count: bool,
@@ -461,6 +464,8 @@ impl NotesView {
             light_background_notes: BTreeSet::new(),
             folders_visible: true,
             window_narrow: false,
+            list_window_title: std::cell::RefCell::new("Notes".into()),
+            applied_window_title: "Notes".into(),
             folders_shown_while_narrow: false,
             show_note_count: true,
             group_notes_by_date: true,

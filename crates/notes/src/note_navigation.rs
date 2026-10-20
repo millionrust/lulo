@@ -898,6 +898,8 @@ impl NotesView {
                 1 => "1 note".to_string(),
                 count => format!("{count} notes"),
             };
+            *self.list_window_title.borrow_mut() =
+                list_window_title(&title, note_count, self.show_note_count).into();
             (
                 title,
                 if self.show_note_count {
@@ -945,5 +947,28 @@ impl NotesView {
                 },
             )
             .into_any_element()
+    }
+}
+
+/// The window title, "<folder> – N notes" (docs/parity.md NOTES-04).
+fn list_window_title(folder: &str, note_count: usize, show_count: bool) -> String {
+    match note_count {
+        _ if !show_count => folder.to_string(),
+        0 => format!("{folder} – No notes"),
+        1 => format!("{folder} – 1 note"),
+        count => format!("{folder} – {count} notes"),
+    }
+}
+
+#[cfg(test)]
+mod window_title_tests {
+    use super::list_window_title;
+
+    #[test]
+    fn window_title_names_folder_and_count() {
+        assert_eq!(list_window_title("All Notes", 3, true), "All Notes – 3 notes");
+        assert_eq!(list_window_title("Work", 1, true), "Work – 1 note");
+        assert_eq!(list_window_title("Work", 0, true), "Work – No notes");
+        assert_eq!(list_window_title("Work", 9, false), "Work");
     }
 }

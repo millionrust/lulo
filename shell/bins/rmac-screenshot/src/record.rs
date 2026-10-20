@@ -86,9 +86,7 @@ pub fn pipeline_arguments(
         ));
     }
     stages.push("videorate".to_owned());
-    stages.push(format!(
-        "video/x-raw,format=I420,framerate={FRAME_RATE}/1"
-    ));
+    stages.push(format!("video/x-raw,format=I420,framerate={FRAME_RATE}/1"));
     match encoder {
         Encoder::H264 => {
             stages.push(format!(
@@ -158,7 +156,7 @@ mod linux {
     use zbus::blocking::{Connection, Proxy};
     use zbus::zvariant::{OwnedObjectPath, Value};
 
-    use super::{pipeline_arguments, state_text, Crop, Encoder};
+    use super::{Crop, Encoder, pipeline_arguments, state_text};
 
     const BUS: &str = "org.gnome.Mutter.ScreenCast";
     const ROOT: &str = "/org/gnome/Mutter/ScreenCast";
@@ -290,7 +288,13 @@ mod linux {
         crop: Option<Crop>,
         encoder: Encoder,
         path: PathBuf,
-    ) -> Result<(Recording, mpsc::Receiver<io::Result<std::process::ExitStatus>>), String> {
+    ) -> Result<
+        (
+            Recording,
+            mpsc::Receiver<io::Result<std::process::ExitStatus>>,
+        ),
+        String,
+    > {
         let session = Session::open(connector, show_pointer)?;
         let arguments = pipeline_arguments(session.node, crop, encoder, &path);
         let spawned = Command::new("gst-launch-1.0")

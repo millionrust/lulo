@@ -23,20 +23,20 @@ mod linux_wayland {
     use std::time::{Duration, Instant};
 
     use gpui::{
-        canvas, div, fill, img, layer_shell::*, point, prelude::*, px, rgba, svg, AnyElement, App,
-        AssetSource, AsyncApp, Bounds, BoxShadow, Context, CursorStyle, Entity, FocusHandle,
-        FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-        Pixels, QuitMode, Role, SharedString, Size, WeakEntity, Window, WindowBackgroundAppearance,
-        WindowBounds, WindowHandle, WindowKind, WindowOptions,
+        AnyElement, App, AssetSource, AsyncApp, Bounds, BoxShadow, Context, CursorStyle, Entity,
+        FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+        MouseUpEvent, Pixels, QuitMode, Role, SharedString, Size, WeakEntity, Window,
+        WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, canvas,
+        div, fill, img, layer_shell::*, point, prelude::*, px, rgba, svg,
     };
     use gpui_platform::application;
     use uuid::Uuid;
 
     use crate::capture::{self, Region};
-    use crate::record;
     use crate::model::{
         self, Command, Destination, Handle, MenuEntry, MenuItem, Point, Rect, Settings, Target,
     };
+    use crate::record;
 
     const NAMESPACE: &str = "rmac-screenshot";
     const THUMBNAIL_NAMESPACE: &str = "rmac-screenshot-thumbnail";
@@ -225,7 +225,9 @@ mod linux_wayland {
         /// The timer is running down, or niri and the encoder are starting.
         Starting,
         /// The pipeline runs; `pid` is the encoder to stop.
-        Running { pid: u32 },
+        Running {
+            pid: u32,
+        },
     }
 
     struct Service {
@@ -256,7 +258,12 @@ mod linux_wayland {
         /// ⇧⌘5 ▸ Record: start filming `request`'s area once its timer is
         /// down. Stopped by [`Self::stop_recording`] (⌃⌘⎋, the menu bar's
         /// stop button, or ⇧⌘5 again).
-        fn start_recording(&mut self, request: Request, output: OutputInfo, cx: &mut Context<Self>) {
+        fn start_recording(
+            &mut self,
+            request: Request,
+            output: OutputInfo,
+            cx: &mut Context<Self>,
+        ) {
             if !matches!(self.recorder, Recorder::Idle) {
                 return;
             }
@@ -279,8 +286,9 @@ mod linux_wayland {
                 let started = blocking::unblock(move || {
                     let directory = directory.ok_or("no folder to save the recording in")?;
                     let encoder = record::detect_encoder()?;
-                    std::fs::create_dir_all(&directory)
-                        .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
+                    std::fs::create_dir_all(&directory).map_err(|error| {
+                        format!("could not create {}: {error}", directory.display())
+                    })?;
                     let name = record::file_name(&chrono::Local::now().naive_local(), encoder);
                     let path = model::unique_path(&directory, &name, |path| path.exists());
                     let crop = selection.map(|rect| {
@@ -339,7 +347,9 @@ mod linux_wayland {
             };
             record::request_stop(pid);
             cx.spawn(async move |_, cx: &mut AsyncApp| {
-                cx.background_executor().timer(record::finish_timeout()).await;
+                cx.background_executor()
+                    .timer(record::finish_timeout())
+                    .await;
                 // Only does anything if the process is still there.
                 if std::path::Path::new(&format!("/proc/{pid}")).exists() {
                     record::kill(pid);
@@ -1455,13 +1465,15 @@ mod linux_wayland {
             window: &mut Window,
             cx: &mut Context<Self>,
         ) -> Self {
-            cx.spawn_in(window, async move |this, cx| loop {
-                cx.background_executor().timer(FRAME).await;
-                let running = this
-                    .update_in(cx, |this, window, cx| this.tick(window, cx))
-                    .unwrap_or(false);
-                if !running {
-                    break;
+            cx.spawn_in(window, async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(FRAME).await;
+                    let running = this
+                        .update_in(cx, |this, window, cx| this.tick(window, cx))
+                        .unwrap_or(false);
+                    if !running {
+                        break;
+                    }
                 }
             })
             .detach();
@@ -1708,16 +1720,18 @@ mod linux_wayland {
         let (command_tx, command_rx) = async_channel::bounded(32);
         std::thread::Builder::new()
             .name("rmac-screenshot-ipc".into())
-            .spawn(move || loop {
-                match listener.receive() {
-                    Ok(command) => {
-                        if command_tx.send_blocking(command).is_err() {
-                            return;
+            .spawn(move || {
+                loop {
+                    match listener.receive() {
+                        Ok(command) => {
+                            if command_tx.send_blocking(command).is_err() {
+                                return;
+                            }
                         }
-                    }
-                    Err(error) => {
-                        eprintln!("screenshot endpoint stopped: {error}");
-                        std::process::exit(1);
+                        Err(error) => {
+                            eprintln!("screenshot endpoint stopped: {error}");
+                            std::process::exit(1);
+                        }
                     }
                 }
             })

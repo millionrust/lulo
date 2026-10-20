@@ -299,9 +299,8 @@ mod tests {
     #[test]
     fn a_running_screen_recording_shows_the_stop_button() {
         let mut snapshot = rmac_shell_status::Snapshot::default();
-        snapshot.screen_recording = Some(rmac_shell_status::ScreenRecordingIndicator {
-            started_unix_ms: 1,
-        });
+        snapshot.screen_recording =
+            Some(rmac_shell_status::ScreenRecordingIndicator { started_unix_ms: 1 });
         let labels = top_bar_indicator_labels(&snapshot);
         assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].kind, TopBarIndicatorKind::ScreenRecording);

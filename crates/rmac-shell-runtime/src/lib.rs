@@ -1,9 +1,9 @@
 //! Live, last-known-good orchestration for shell status consumers.
 
 mod coordinator;
+mod model;
 #[cfg(not(windows))]
 mod recording;
-mod model;
 mod runtime;
 pub mod scene;
 #[cfg(windows)]

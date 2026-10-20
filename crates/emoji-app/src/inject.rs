@@ -19,7 +19,12 @@ use self::vk::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1;
 
 /// The virtual-keyboard protocol, generated from `protocols/*.xml`.
 mod vk {
-    #![allow(missing_docs, non_upper_case_globals, non_camel_case_types, clippy::all)]
+    #![allow(
+        missing_docs,
+        non_upper_case_globals,
+        non_camel_case_types,
+        clippy::all
+    )]
 
     use wayland_client::protocol::*;
     use wayland_client::{self};

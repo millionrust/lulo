@@ -8,10 +8,9 @@ use std::time::{Duration, SystemTime};
 use gpui::{
     canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AppContext as _,
     Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
-    InteractiveElement as _,
-    IntoElement, KeyDownEvent, ParentElement as _, PathBuilder, Pixels, Render, RenderImage, Role,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Toggled, Window,
-    WindowControlArea,
+    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, PathBuilder, Pixels,
+    Render, RenderImage, Role, ScrollWheelEvent, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Toggled, Window, WindowControlArea,
 };
 use notify::Watcher as _;
 use rmac_clock::alarms::{Alarm, AlarmSound, Days};
@@ -739,7 +738,11 @@ impl ClockView {
         // (leave the field) are ours; digits and Space belong to the text.
         if self.tab == Tab::Timers
             && self.showing_entry()
-            && self.timer_label.read(cx).focus_handle(cx).is_focused(window)
+            && self
+                .timer_label
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
         {
             match keystroke.key.as_str() {
                 "enter" => self.start_timer(cx),
@@ -2503,11 +2506,9 @@ impl Render for ClockView {
             .id("clock")
             .track_focus(&self.focus)
             .key_context("Clock")
-            .on_key_down(
-                cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                    this.on_key_down(event, window, cx);
-                }),
-            )
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                this.on_key_down(event, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &ShowWorldClock, _, cx| this.set_tab(Tab::World, cx)))
             .on_action(cx.listener(|this, _: &ShowAlarms, _, cx| this.set_tab(Tab::Alarms, cx)))
             .on_action(

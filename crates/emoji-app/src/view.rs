@@ -183,8 +183,16 @@ impl EmojiView {
     fn on_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
             use std::io::Write as _;
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::path::Path::new(&dir).join("emoji-debug.log")) {
-                let _ = writeln!(f, "key {:?} {:?}", event.keystroke.key, event.keystroke.modifiers);
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(std::path::Path::new(&dir).join("emoji-debug.log"))
+            {
+                let _ = writeln!(
+                    f,
+                    "key {:?} {:?}",
+                    event.keystroke.key, event.keystroke.modifiers
+                );
             }
         }
         let modifiers = event.keystroke.modifiers;

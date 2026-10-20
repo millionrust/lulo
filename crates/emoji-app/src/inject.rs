@@ -65,9 +65,18 @@ impl Paste {
             return Self::Command;
         }
         let app_id = app_id.to_lowercase();
-        let terminal = ["terminal", "kitty", "alacritty", "foot", "wezterm", "konsole", "ptyxis", "xterm"]
-            .iter()
-            .any(|name| app_id.contains(name));
+        let terminal = [
+            "terminal",
+            "kitty",
+            "alacritty",
+            "foot",
+            "wezterm",
+            "konsole",
+            "ptyxis",
+            "xterm",
+        ]
+        .iter()
+        .any(|name| app_id.contains(name));
         if terminal {
             Self::ControlShift
         } else {

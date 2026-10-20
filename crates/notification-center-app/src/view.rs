@@ -260,7 +260,7 @@ impl NotificationCenterView {
         cx: &mut Context<Self>,
     ) {
         self.dismiss_app_menu(window, cx);
-        cx.background_spawn(async {
+        cx.background_executor().spawn(async {
             match std::process::Command::new("rmac-system-settings")
                 .args(["--pane", "notifications"])
                 .spawn()

@@ -526,7 +526,7 @@ impl FinderView {
                     )
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                         if ev.click_count() >= 2 {
-                            this.open_index(ix, cx);
+                            this.open_index_with(ix, ev.modifiers().platform, cx);
                         }
                         window.focus(&this.focus, cx);
                     }))
@@ -851,7 +851,7 @@ impl FinderView {
                 this.change_options(
                     |options| {
                         options.group_by = if options.group_by == view_options::GroupBy::None {
-                            view_options::GroupBy::Name
+                            view_options::GroupBy::Kind
                         } else {
                             view_options::GroupBy::None
                         };
@@ -974,24 +974,24 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ViewAsGallery, _, cx| {
                 this.select_view_mode(ViewMode::Gallery, cx)
             }))
-            .on_action(cx.listener(|this, _: &SortByName, _, cx| this.set_sort(SortKey::Name, cx)))
-            .on_action(cx.listener(|this, _: &SortByDate, _, cx| this.set_sort(SortKey::Date, cx)))
-            .on_action(cx.listener(|this, _: &SortBySize, _, cx| this.set_sort(SortKey::Size, cx)))
-            .on_action(cx.listener(|this, _: &SortByKind, _, cx| this.set_sort(SortKey::Kind, cx)))
+            .on_action(cx.listener(|this, _: &SortByName, _, cx| this.choose_sort(SortKey::Name, cx)))
+            .on_action(cx.listener(|this, _: &SortByDate, _, cx| this.choose_sort(SortKey::Date, cx)))
+            .on_action(cx.listener(|this, _: &SortBySize, _, cx| this.choose_sort(SortKey::Size, cx)))
+            .on_action(cx.listener(|this, _: &SortByKind, _, cx| this.choose_sort(SortKey::Kind, cx)))
             .on_action(cx.listener(|this, _: &SortByLastOpened, _, cx| {
-                this.set_sort(SortKey::LastOpened, cx)
+                this.choose_sort(SortKey::LastOpened, cx)
             }))
             .on_action(
-                cx.listener(|this, _: &SortByAdded, _, cx| this.set_sort(SortKey::Added, cx)),
+                cx.listener(|this, _: &SortByAdded, _, cx| this.choose_sort(SortKey::Added, cx)),
             )
-            .on_action(cx.listener(|this, _: &SortByTags, _, cx| this.set_sort(SortKey::Tags, cx)))
+            .on_action(cx.listener(|this, _: &SortByTags, _, cx| this.choose_sort(SortKey::Tags, cx)))
             .on_action(cx.listener(
                 |this, action: &list_columns::ToggleListColumnAction, _, cx| {
                     this.toggle_list_column(action.index, cx)
                 },
             ))
             .on_action(
-                cx.listener(|this, _: &SortByCreated, _, cx| this.set_sort(SortKey::Created, cx)),
+                cx.listener(|this, _: &SortByCreated, _, cx| this.choose_sort(SortKey::Created, cx)),
             )
             .on_action(cx.listener(|this, _: &CleanUp, _, cx| this.clean_up(cx)))
             .on_action(cx.listener(|this, _: &CleanUpSelection, _, cx| this.clean_up_selection(cx)))
@@ -1529,7 +1529,7 @@ impl FinderView {
         .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
             if ev.click_count() >= 2 {
                 if let Some(index) = this.list_row_index(&open_row_path) {
-                    this.open_index(index, cx);
+                    this.open_index_with(index, ev.modifiers().platform, cx);
                 }
             }
             window.focus(&this.focus, cx);

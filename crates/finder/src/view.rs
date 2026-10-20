@@ -509,6 +509,8 @@ struct FinderView {
     /// A found network computer to connect to on the next frame, when a
     /// window is at hand (FILES-07).
     pending_connect: Option<String>,
+    /// A rename waiting on the "change the extension?" alert (FILES-35).
+    extension_prompt: Option<rename_controller::PendingExtensionChange>,
     sort_key: SortKey,
     sort_asc: bool,
     query: gpui::Entity<InputState>,

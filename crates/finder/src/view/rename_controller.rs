@@ -105,6 +105,89 @@ impl FinderView {
             return;
         };
         let new_name = input.read(cx).value().to_string();
+        // Settings ▸ Advanced ▸ "Show warning before changing an extension".
+        let is_dir = path.is_dir();
+        let old_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if super::settings::current()
+            .advanced
+            .warn_before_changing_extension
+        {
+            if let Some(prompt) = extension_prompt(&old_name, new_name.trim(), is_dir) {
+                self.extension_prompt = Some(PendingExtensionChange {
+                    path,
+                    new_name,
+                    prompt,
+                });
+                window.focus(&self.focus, cx);
+                cx.notify();
+                return;
+            }
+        }
+        self.finish_rename_commit(path, new_name, window, cx);
+    }
+
+    /// The extension alert's answer: `true` uses the new name as typed,
+    /// `false` keeps the old extension (the item keeps its old name).
+    pub(super) fn answer_extension_prompt(
+        &mut self,
+        use_new: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.extension_prompt.take() else {
+            return;
+        };
+        if use_new {
+            self.finish_rename_commit(pending.path, pending.new_name, window, cx);
+        } else {
+            self.pending_select = Some(pending.path);
+            window.focus(&self.focus, cx);
+            self.reload(cx);
+        }
+    }
+
+    pub(super) fn render_extension_prompt(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let pending = self.extension_prompt.as_ref()?;
+        let prompt = &pending.prompt;
+        Some(
+            rmac_ui::alert(
+                prompt.title.clone(),
+                prompt.message,
+                vec![
+                    rmac_ui::dialog_button(
+                        "extension-use",
+                        prompt.use_label.clone(),
+                        rmac_ui::DialogButtonKind::Normal,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.answer_extension_prompt(true, window, cx)
+                    }))
+                    .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "extension-keep",
+                        prompt.keep_label.clone(),
+                        rmac_ui::DialogButtonKind::Primary,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.answer_extension_prompt(false, window, cx)
+                    }))
+                    .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
+    }
+
+    fn finish_rename_commit(
+        &mut self,
+        path: PathBuf,
+        new_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Keep the item selected under its new name, and return focus to
         // the list, as Finder does — reload's own path-based selection
         // would otherwise look for the item under its old (now nonexistent)
@@ -287,6 +370,63 @@ impl FinderView {
     }
 }
 
+/// Finder's alert for a rename that changes, removes or adds an extension.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ExtensionPrompt {
+    pub(super) title: String,
+    pub(super) message: &'static str,
+    pub(super) keep_label: String,
+    pub(super) use_label: String,
+}
+
+/// A rename held back until the extension alert is answered.
+pub(super) struct PendingExtensionChange {
+    pub(super) path: PathBuf,
+    pub(super) new_name: String,
+    pub(super) prompt: ExtensionPrompt,
+}
+
+fn extension_of(name: &str) -> Option<&str> {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 && dot + 1 < name.len() => Some(&name[dot + 1..]),
+        _ => None,
+    }
+}
+
+/// The alert to show before renaming `old` to `new`, if the extension
+/// changes. Folders never ask.
+pub(super) fn extension_prompt(old: &str, new: &str, is_dir: bool) -> Option<ExtensionPrompt> {
+    if is_dir || old == new || new.is_empty() {
+        return None;
+    }
+    const MESSAGE: &str = "If you make this change, your document may open in a different application.";
+    match (extension_of(old), extension_of(new)) {
+        (Some(from), Some(to)) if from != to => Some(ExtensionPrompt {
+            title: format!(
+                "Are you sure you want to change the extension from “.{from}” to “.{to}”?"
+            ),
+            message: MESSAGE,
+            keep_label: format!("Keep .{from}"),
+            use_label: format!("Use .{to}"),
+        }),
+        (Some(from), None) => Some(ExtensionPrompt {
+            title: format!("Are you sure you want to remove the extension “.{from}”?"),
+            message: MESSAGE,
+            keep_label: "Keep".to_owned(),
+            use_label: "Remove".to_owned(),
+        }),
+        (None, Some(to)) => Some(ExtensionPrompt {
+            title: format!(
+                "Are you sure you want to add the extension “.{to}” to the end of the name?"
+            ),
+            message: MESSAGE,
+            keep_label: "Don’t Add".to_owned(),
+            use_label: "Add".to_owned(),
+        }),
+        _ => None,
+    }
+}
+
 /// Why File ▸ Rename cannot run for this selection, if it cannot.
 /// The part of a name Rename selects: all of a folder's name, and a file's
 /// name up to its last extension (a leading dot is part of the name).
@@ -319,7 +459,29 @@ fn rename_unavailable_reason(
 
 #[cfg(test)]
 mod tests {
-    use super::{rename_selection, rename_unavailable_reason};
+    use super::{extension_prompt, rename_selection, rename_unavailable_reason};
+
+    #[test]
+    fn changing_an_extension_asks_first_as_finder_does() {
+        let change = extension_prompt("report.txt", "report.md", false).unwrap();
+        assert_eq!(
+            change.title,
+            "Are you sure you want to change the extension from “.txt” to “.md”?"
+        );
+        assert_eq!(change.keep_label, "Keep .txt");
+        assert_eq!(change.use_label, "Use .md");
+        assert_eq!(
+            extension_prompt("report.txt", "report", false).unwrap().use_label,
+            "Remove"
+        );
+        assert_eq!(
+            extension_prompt("README", "README.md", false).unwrap().use_label,
+            "Add"
+        );
+        assert_eq!(extension_prompt("report.txt", "memo.txt", false), None);
+        assert_eq!(extension_prompt("Folder", "Folder.app", true), None);
+        assert_eq!(extension_prompt(".bashrc", ".zshrc", false), None);
+    }
 
     #[test]
     fn rename_selects_a_folder_whole_and_a_file_up_to_its_extension() {

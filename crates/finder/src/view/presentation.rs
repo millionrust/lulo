@@ -88,6 +88,7 @@ impl Render for FinderView {
         let connect_sheet = self.render_connect_to_server(cx);
         let archive_sheet = self.render_archive_job(cx);
         let archive_alert = self.render_archive_alert(cx);
+        let extension_alert = self.render_extension_prompt(cx);
         let rename_alert = self.rename_conflict.clone().map(|title| {
             rmac_ui::alert(
                 title,
@@ -640,6 +641,7 @@ impl Render for FinderView {
             .when_some(archive_sheet, |el, sheet| el.child(sheet))
             .when_some(archive_alert, |el, dialog| el.child(dialog))
             .when_some(rename_alert, |el, dialog| el.child(dialog))
+            .when_some(extension_alert, |el, dialog| el.child(dialog))
             .when_some(help_dialog, |el, dialog| el.child(dialog))
             .when_some(missing_favourite, |el, dialog| el.child(dialog))
     }

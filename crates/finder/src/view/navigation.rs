@@ -23,10 +23,39 @@ impl FinderView {
         path.is_dir().then_some(path)
     }
 
+    /// A double-click; with ⌘ held a folder opens in a new tab, or a new
+    /// window when Settings ▸ General ▸ "Open folders in tabs instead of
+    /// new windows" is off, as in Finder.
+    pub(super) fn open_index_with(&mut self, index: usize, command: bool, cx: &mut Context<Self>) {
+        let folder = self
+            .entries
+            .get(index)
+            .filter(|entry| entry.is_dir && entry.application.is_none())
+            .map(|entry| entry.path.clone());
+        match folder {
+            Some(path) if command && !self.trash_view && !self.applications_view => {
+                if super::settings::current().general.open_folders_in_tabs {
+                    self.open_folder_in_new_tab(path, cx);
+                } else if let Some(text) = path.to_str() {
+                    if !rmac_ui::open_another_window(vec!["--path".to_owned(), text.to_owned()], cx)
+                    {
+                        self.operation_error = Some("Files could not open another window".into());
+                        cx.notify();
+                    }
+                }
+            }
+            _ => self.open_index(index, cx),
+        }
+    }
+
     pub(super) fn open_selection_in_new_tab(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.selected_folder() else {
             return;
         };
+        self.open_folder_in_new_tab(path, cx);
+    }
+
+    fn open_folder_in_new_tab(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if self.tabs.len() >= MAX_RESTORED_TABS {
             self.operation_error = Some("A Files window can contain up to 16 tabs".into());
             cx.notify();

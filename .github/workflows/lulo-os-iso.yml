@@ -188,7 +188,7 @@ jobs:
             qemu-system-x86 qemu-system-gui qemu-system-modules-opengl qemu-utils ovmf \
             xvfb imagemagick libgl1-mesa-dri libegl-mesa0 libegl1 libgl1 libgles2 \
             tesseract-ocr tesseract-ocr-eng python3-pil
-          # QEMU's GTK display runs on Xvfb; Mesa's llvmpipe backs the
+          # QEMU's SDL display runs on Xvfb; Mesa's llvmpipe backs the
           # guest's virgl GPU (niri needs an accelerated renderer).
           Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"

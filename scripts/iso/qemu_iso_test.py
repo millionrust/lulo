@@ -316,12 +316,14 @@ class Machine:
         niri refuses software EGL renderers (llvmpipe), so a plain virtual
         framebuffer ("std", "virtio") gets no picture from the Lulo session.
         "virgl" gives the guest an accelerated virtio GPU, backed on the
-        runner by Mesa's llvmpipe through QEMU's GTK display on Xvfb
-        (DISPLAY must be set); screenshots then come from Xvfb.
+        runner by Mesa's llvmpipe through QEMU's SDL display on Xvfb
+        (DISPLAY must be set).
         """
         size = f"xres={SCREEN[0]},yres={SCREEN[1]}"
         if self.args.display == "virgl":
-            return ["-device", f"virtio-vga-gl,{size}", "-display", "gtk,gl=on,full-screen=on,show-menubar=off,zoom-to-fit=off"]
+            # SDL keeps its window at the guest's size; GTK kept asking the
+            # guest for new sizes (niri ended up at 5120x2160).
+            return ["-device", f"virtio-vga-gl,{size}", "-display", "sdl,gl=on"]
         if self.args.display == "std":
             return ["-device", f"VGA,{size},edid=on", "-display", "none"]
         return ["-device", f"virtio-vga,{size}", "-display", "none"]
@@ -354,6 +356,7 @@ class Machine:
         self.shots += 1
         path = self.out / f"{self.shots:03d}-{name}.png"
         if self.args.display == "virgl":
+            # QEMU's window fills the Xvfb screen (both are SCREEN sized).
             subprocess.run(["import", "-window", "root", str(path)], check=False,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:

@@ -6503,6 +6503,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_linux",
+ "image",
  "libc",
  "notify",
  "raw-window-handle",

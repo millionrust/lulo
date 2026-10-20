@@ -23,10 +23,39 @@ impl FinderView {
         path.is_dir().then_some(path)
     }
 
+    /// A double-click; with ⌘ held a folder opens in a new tab, or a new
+    /// window when Settings ▸ General ▸ "Open folders in tabs instead of
+    /// new windows" is off, as in Finder.
+    pub(super) fn open_index_with(&mut self, index: usize, command: bool, cx: &mut Context<Self>) {
+        let folder = self
+            .entries
+            .get(index)
+            .filter(|entry| entry.is_dir && entry.application.is_none())
+            .map(|entry| entry.path.clone());
+        match folder {
+            Some(path) if command && !self.trash_view && !self.applications_view => {
+                if super::settings::current().general.open_folders_in_tabs {
+                    self.open_folder_in_new_tab(path, cx);
+                } else if let Some(text) = path.to_str() {
+                    if !rmac_ui::open_another_window(vec!["--path".to_owned(), text.to_owned()], cx)
+                    {
+                        self.operation_error = Some("Files could not open another window".into());
+                        cx.notify();
+                    }
+                }
+            }
+            _ => self.open_index(index, cx),
+        }
+    }
+
     pub(super) fn open_selection_in_new_tab(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.selected_folder() else {
             return;
         };
+        self.open_folder_in_new_tab(path, cx);
+    }
+
+    fn open_folder_in_new_tab(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if self.tabs.len() >= MAX_RESTORED_TABS {
             self.operation_error = Some("A Files window can contain up to 16 tabs".into());
             cx.notify();
@@ -361,6 +390,10 @@ impl FinderView {
             self.launch_applications(vec![application.launch], cx);
             return;
         }
+        if let Some(address) = network_browser::network_address(&entry.path) {
+            self.connect_to_network_address(address, cx);
+            return;
+        }
         if entry.is_dir {
             self.navigate(entry.path, cx);
         } else {
@@ -423,6 +456,12 @@ impl FinderView {
             let total = paths.len();
             let mut failures = Vec::new();
             for path in paths {
+                // Get Info ▸ Open with: a file's own choice wins over the
+                // type's default; if it cannot open, the default still does.
+                #[cfg(target_os = "linux")]
+                if open_with_own_choice(path.clone()).await == Some(true) {
+                    continue;
+                }
                 if let Err(error) = rmac_app_launch::open_item(path).await {
                     failures.push(error.to_string());
                 }
@@ -498,6 +537,29 @@ impl FinderView {
 /// `navigate` itself checks whether the folder actually exists.
 fn network_path(runtime_dir: Option<std::ffi::OsString>) -> Option<PathBuf> {
     runtime_dir.map(|dir| PathBuf::from(dir).join("gvfs"))
+}
+
+/// Open `path` with the application its Get Info ▸ Open with chose, when it
+/// has one that is still installed and compatible. `None` means it has no
+/// usable choice of its own.
+#[cfg(target_os = "linux")]
+async fn open_with_own_choice(path: PathBuf) -> Option<bool> {
+    let read_path = path.clone();
+    let application_id =
+        blocking::unblock(move || super::file_metadata::read_open_with(&read_path)).await?;
+    let association = rmac_app_launch::file_association(path.clone()).await.ok()?;
+    if !association
+        .handlers
+        .iter()
+        .any(|handler| handler.id == application_id)
+    {
+        return None;
+    }
+    Some(
+        rmac_app_launch::open_file_with(path, association.mime_type, application_id, false, false)
+            .await
+            .is_ok(),
+    )
 }
 
 #[cfg(test)]

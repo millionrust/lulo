@@ -105,7 +105,9 @@ impl FinderView {
                 .flex()
                 .items_center()
                 .when_some(width, |cell, width| cell.w(px(width)).flex_none())
-                .when(width.is_none(), |cell| cell.flex_1().min_w(px(0.0)))
+                .when(width.is_none(), |cell| {
+                    cell.flex_1().min_w(px(list_columns::MIN_NAME_WIDTH))
+                })
                 .when(divider, |cell| {
                     cell.child(
                         div()
@@ -149,27 +151,14 @@ impl FinderView {
                 .on_click(cx.listener(move |this, _, _, cx| this.set_sort(key, cx)))
         };
 
-        let plain_head = |id: &'static str, text: &'static str, width: f32| {
-            div()
-                .id(id)
-                .h_full()
-                .w(px(width))
-                .flex_none()
-                .flex()
-                .items_center()
-                .pl(px(LIST_CELL_TEXT_X))
-                .truncate()
-                .text_size(rmac_ui::text_px(LIST_HEADER_TEXT))
-                .text_color(chrome_text())
-                .child(text)
-        };
-
+        let visible_columns = list_columns::visible_columns(&options);
         let header = div()
             .h(px(LIST_HEADER_HEIGHT))
             .flex_none()
             .v_flex()
             .child(
                 div()
+                    .id("list-header")
                     .flex_1()
                     .flex()
                     .items_center()
@@ -182,54 +171,36 @@ impl FinderView {
                         false,
                         LIST_DISCLOSURE_X + LIST_DISCLOSURE_WIDTH + list_icon + LIST_ICON_TO_NAME,
                     ))
-                    .when(options.columns[0], |header| {
-                        header.child(head(
-                            "head-date",
-                            "Date Modified",
-                            SortKey::Date,
-                            Some(DATE_W),
-                            true,
-                            LIST_CELL_TEXT_X,
-                        ))
-                    })
-                    .when(options.columns[1], |header| {
-                        header.child(plain_head("head-created", "Date Created", DATE_W))
-                    })
-                    .when(options.columns[2], |header| {
-                        header.child(plain_head("head-opened", "Date Last Opened", DATE_W))
-                    })
-                    .when(options.columns[3], |header| {
-                        header.child(plain_head("head-added", "Date Added", DATE_W))
-                    })
-                    .when(options.columns[4], |header| {
-                        header.child(head(
-                            "head-size",
-                            "Size",
-                            SortKey::Size,
-                            Some(SIZE_W),
-                            true,
-                            LIST_CELL_TEXT_X,
-                        ))
-                    })
-                    .when(options.columns[5], |header| {
-                        header.child(head(
-                            "head-kind",
-                            "Kind",
-                            SortKey::Kind,
-                            Some(KIND_W),
-                            true,
-                            LIST_CELL_TEXT_X,
-                        ))
-                    })
-                    .when(options.columns[6], |header| {
-                        header.child(plain_head("head-version", "Version", SIZE_W))
-                    })
-                    .when(options.columns[7], |header| {
-                        header.child(plain_head("head-comments", "Comments", DATE_W))
-                    })
-                    .when(options.columns[8], |header| {
-                        header.child(plain_head("head-tags", "Tags", KIND_W))
-                    }),
+                    .children(visible_columns.iter().map(|&column| {
+                        self.render_list_header_cell(
+                            column,
+                            list_columns::column_width(&options, column),
+                            cx,
+                        )
+                    }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.open_list_header_menu(event.position, window, cx);
+                        }),
+                    )
+                    .on_drag_move(cx.listener(
+                        |this,
+                         event: &gpui::DragMoveEvent<list_columns::ResizingListColumn>,
+                         _,
+                         cx| {
+                            this.drag_column_resize(f32::from(event.event.position.x), cx);
+                        },
+                    ))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| this.finish_column_resize()),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| this.finish_column_resize()),
+                    ),
             )
             .child(div().h(px(0.5)).flex_none().bg(hairline()));
 
@@ -558,7 +529,7 @@ impl FinderView {
                     )
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                         if ev.click_count() >= 2 {
-                            this.open_index(ix, cx);
+                            this.open_index_with(ix, ev.modifiers().platform, cx);
                         }
                         window.focus(&this.focus, cx);
                     }))
@@ -835,6 +806,9 @@ impl FinderView {
             .on_action(
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &RenameItems, window, cx| this.open_batch_rename(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
             // Duplicate already copies exactly: it keeps each item's
             // permissions and never resolves links (`file_ops.rs`), and a
@@ -875,14 +849,12 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ShareItems, _, cx| {
                 this.menu_unavailable("Sharing is not available", cx)
             }))
-            .on_action(cx.listener(|this, _: &QuickActions, _, cx| {
-                this.menu_unavailable("No Quick Actions are available", cx)
-            }))
+            .on_action(cx.listener(|this, _: &RotateLeft, _, cx| this.rotate_selection_left(cx)))
             .on_action(cx.listener(|this, _: &UseGroups, _, cx| {
                 this.change_options(
                     |options| {
                         options.group_by = if options.group_by == view_options::GroupBy::None {
-                            view_options::GroupBy::Name
+                            view_options::GroupBy::Kind
                         } else {
                             view_options::GroupBy::None
                         };
@@ -910,9 +882,9 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoDesktop, _, cx| this.go_desktop(cx)))
             .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
             .on_action(cx.listener(|this, _: &GoRecents, _, cx| this.recents_click(cx)))
-            .on_action(cx.listener(|this, _: &Find, window, cx| this.open_search(window, cx)))
+            .on_action(cx.listener(|this, _: &Find, window, cx| this.open_find(false, window, cx)))
             .on_action(
-                cx.listener(|this, _: &FindByName, window, cx| this.open_name_search(window, cx)),
+                cx.listener(|this, _: &FindByName, window, cx| this.open_find(true, window, cx)),
             )
             .on_action(cx.listener(|this, _: &CopyAsPathname, _, cx| this.copy_as_pathname(cx)))
             .on_action(cx.listener(|this, _: &CopyAsLink, _, cx| this.copy_as_link(cx)))
@@ -1005,19 +977,36 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ViewAsGallery, _, cx| {
                 this.select_view_mode(ViewMode::Gallery, cx)
             }))
-            .on_action(cx.listener(|this, _: &SortByName, _, cx| this.set_sort(SortKey::Name, cx)))
-            .on_action(cx.listener(|this, _: &SortByDate, _, cx| this.set_sort(SortKey::Date, cx)))
-            .on_action(cx.listener(|this, _: &SortBySize, _, cx| this.set_sort(SortKey::Size, cx)))
-            .on_action(cx.listener(|this, _: &SortByKind, _, cx| this.set_sort(SortKey::Kind, cx)))
+            .on_action(
+                cx.listener(|this, _: &SortByName, _, cx| this.choose_sort(SortKey::Name, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SortByDate, _, cx| this.choose_sort(SortKey::Date, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SortBySize, _, cx| this.choose_sort(SortKey::Size, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SortByKind, _, cx| this.choose_sort(SortKey::Kind, cx)),
+            )
             .on_action(cx.listener(|this, _: &SortByLastOpened, _, cx| {
-                this.set_sort(SortKey::LastOpened, cx)
+                this.choose_sort(SortKey::LastOpened, cx)
             }))
             .on_action(
-                cx.listener(|this, _: &SortByAdded, _, cx| this.set_sort(SortKey::Added, cx)),
+                cx.listener(|this, _: &SortByAdded, _, cx| this.choose_sort(SortKey::Added, cx)),
             )
-            .on_action(cx.listener(|this, _: &SortByTags, _, cx| this.set_sort(SortKey::Tags, cx)))
             .on_action(
-                cx.listener(|this, _: &SortByCreated, _, cx| this.set_sort(SortKey::Created, cx)),
+                cx.listener(|this, _: &SortByTags, _, cx| this.choose_sort(SortKey::Tags, cx)),
+            )
+            .on_action(cx.listener(
+                |this, action: &list_columns::ToggleListColumnAction, _, cx| {
+                    this.toggle_list_column(action.index, cx)
+                },
+            ))
+            .on_action(
+                cx.listener(|this, _: &SortByCreated, _, cx| {
+                    this.choose_sort(SortKey::Created, cx)
+                }),
             )
             .on_action(cx.listener(|this, _: &CleanUp, _, cx| this.clean_up(cx)))
             .on_action(cx.listener(|this, _: &CleanUpSelection, _, cx| this.clean_up_selection(cx)))
@@ -1435,7 +1424,7 @@ impl FinderView {
                 .flex_1()
                 .flex()
                 .items_center()
-                .min_w(px(0.0))
+                .min_w(px(list_columns::MIN_NAME_WIDTH))
                 .child(
                     div()
                         .w(px(LIST_DISCLOSURE_X
@@ -1520,126 +1509,11 @@ impl FinderView {
                 .child(row_icon)
                 .child(name_cell),
         )
-        .when(options.columns[0], |row| {
-            row.child(
-                div()
-                    .w(px(DATE_W))
-                    .flex_none()
-                    .pl(px(LIST_CELL_TEXT_X))
-                    .truncate()
-                    .text_color(sub)
-                    .child(if options.relative_dates {
-                        e.modified.clone()
-                    } else {
-                        e.modified_absolute.clone()
-                    }),
-            )
-        })
-        .when(options.columns[1], |row| {
-            row.child(
-                div()
-                    .w(px(DATE_W))
-                    .flex_none()
-                    .pl(px(LIST_CELL_TEXT_X))
-                    .truncate()
-                    .text_color(sub)
-                    .child(if options.relative_dates {
-                        e.created.clone()
-                    } else {
-                        e.created_absolute.clone()
-                    }),
-            )
-        })
-        .when(options.columns[2], |row| {
-            row.child(
-                div()
-                    .w(px(DATE_W))
-                    .flex_none()
-                    .pl(px(LIST_CELL_TEXT_X))
-                    .truncate()
-                    .text_color(sub)
-                    .child(if options.relative_dates {
-                        e.last_opened.clone()
-                    } else {
-                        e.last_opened_absolute.clone()
-                    }),
-            )
-        })
-        .when(options.columns[3], |row| {
-            row.child(
-                div()
-                    .w(px(DATE_W))
-                    .flex_none()
-                    .pl(px(LIST_CELL_TEXT_X))
-                    .truncate()
-                    .text_color(sub)
-                    .child(if options.relative_dates {
-                        e.added.clone()
-                    } else {
-                        e.added_absolute.clone()
-                    }),
-            )
-        })
-        .when(options.columns[4], |row| {
-            row.child(
-                div()
-                    .w(px(SIZE_W))
-                    .flex_none()
-                    .flex()
-                    .justify_end()
-                    .pr(px(LIST_SIZE_TRAILING))
-                    .text_color(sub)
-                    .child(if options.calculate_sizes && e.is_dir {
-                        self.directory_sizes
-                            .get(&e.path)
-                            .map(|size| human_size(*size).into())
-                            .unwrap_or_else(|| "--".into())
-                    } else {
-                        e.size.clone()
-                    }),
-            )
-        })
-        .when(options.columns[5], |row| {
-            row.child(
-                div()
-                    .w(px(KIND_W))
-                    .flex_none()
-                    .pl(px(LIST_CELL_TEXT_X))
-                    .text_color(sub)
-                    .truncate()
-                    .child(e.kind.clone()),
-            )
-        })
-        .when(options.columns[6], |row| {
-            row.child(
-                div()
-                    .w(px(SIZE_W))
-                    .flex_none()
-                    .pl(px(LIST_CELL_TEXT_X))
-                    .text_color(sub)
-                    .child("--"),
-            )
-        })
-        .when(options.columns[7], |row| {
-            row.child(
-                div()
-                    .w(px(DATE_W))
-                    .flex_none()
-                    .pl(px(LIST_CELL_TEXT_X))
-                    .text_color(sub)
-                    .child("--"),
-            )
-        })
-        .when(options.columns[8], |row| {
-            row.child(
-                div()
-                    .w(px(KIND_W))
-                    .flex_none()
-                    .pl(px(LIST_CELL_TEXT_X))
-                    .text_color(sub)
-                    .child("--"),
-            )
-        })
+        .children(
+            list_columns::visible_columns(&options)
+                .into_iter()
+                .map(|column| self.render_list_cell(e, column, &options, sub)),
+        )
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
@@ -1670,7 +1544,7 @@ impl FinderView {
         .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
             if ev.click_count() >= 2 {
                 if let Some(index) = this.list_row_index(&open_row_path) {
-                    this.open_index(index, cx);
+                    this.open_index_with(index, ev.modifiers().platform, cx);
                 }
             }
             window.focus(&this.focus, cx);

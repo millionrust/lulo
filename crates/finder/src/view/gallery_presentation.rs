@@ -4,70 +4,94 @@ impl FinderView {
     /// Gallery inspector (design-lab/finder.html): the item's name and
     /// "kind – size" centred at the top, then an "Information" table whose
     /// values sit right-aligned in semibold, rows split by hairlines.
-    fn render_gallery_inspector(&self, active_index: Option<usize>) -> impl IntoElement {
-        let contents = active_index
-            .and_then(|index| self.entries.get(index))
-            .map(|entry| {
-                let information = [
-                    ("Kind", entry.kind.clone()),
-                    ("Size", entry.size.clone()),
-                    ("Modified", entry.modified.clone()),
-                ];
-                let summary = if entry.size.as_ref() == "--" {
-                    entry.kind.clone()
-                } else {
-                    SharedString::from(format!("{} – {}", entry.kind, entry.size))
-                };
-                div()
-                    .v_flex()
-                    .child(
-                        div()
-                            .pt(px(GALLERY_INSPECTOR_TITLE_TOP))
-                            .pb(px(GALLERY_INSPECTOR_SECTION_GAP))
-                            .v_flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .max_w(gpui::relative(1.0))
-                                    .truncate()
-                                    .text_size(rmac_ui::text_px(15.0))
-                                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                                    .text_color(label())
-                                    .child(displayed_name(entry)),
-                            )
-                            .child(
-                                div()
-                                    .max_w(gpui::relative(1.0))
-                                    .truncate()
-                                    .text_size(rmac_ui::text_px(13.0))
-                                    .text_color(secondary_text())
-                                    .child(summary),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .pb(px(4.0))
-                            .text_size(rmac_ui::text_px(13.0))
-                            .font_weight(rmac_ui::mac::BOLD)
-                            .text_color(label())
-                            .child("Information"),
-                    )
-                    .children(
-                        information
-                            .into_iter()
-                            .enumerate()
-                            .map(|(row, (name, value))| inspector_row(row > 0, name, value)),
-                    )
-                    .into_any_element()
-            })
-            .unwrap_or_else(|| {
-                div()
-                    .pt(px(GALLERY_INSPECTOR_TITLE_TOP))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(secondary())
-                    .child("Select an item to see its information.")
-                    .into_any_element()
-            });
+    fn render_gallery_inspector(
+        &self,
+        active_index: Option<usize>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let contents =
+            active_index
+                .and_then(|index| self.entries.get(index))
+                .map(|entry| {
+                    let information = [
+                        ("Kind", entry.kind.clone()),
+                        ("Size", entry.size.clone()),
+                        ("Created", entry.created.clone()),
+                        ("Modified", entry.modified.clone()),
+                        ("Last opened", entry.last_opened.clone()),
+                    ];
+                    let tags = self.render_gallery_tags(entry, cx);
+                    let rotate =
+                        super::quick_actions::can_rotate(&entry.path, entry.is_dir).then(|| {
+                            div()
+                                .pt(px(GALLERY_INSPECTOR_SECTION_GAP))
+                                .flex()
+                                .justify_center()
+                                .child(
+                                    Button::new("gallery-rotate-left", "Rotate Left")
+                                        .small()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.rotate_selection_left(cx)
+                                        })),
+                                )
+                        });
+                    let summary = if entry.size.as_ref() == "--" {
+                        entry.kind.clone()
+                    } else {
+                        SharedString::from(format!("{} – {}", entry.kind, entry.size))
+                    };
+                    div()
+                        .v_flex()
+                        .child(
+                            div()
+                                .pt(px(GALLERY_INSPECTOR_TITLE_TOP))
+                                .pb(px(GALLERY_INSPECTOR_SECTION_GAP))
+                                .v_flex()
+                                .items_center()
+                                .child(
+                                    div()
+                                        .max_w(gpui::relative(1.0))
+                                        .truncate()
+                                        .text_size(rmac_ui::text_px(15.0))
+                                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                                        .text_color(label())
+                                        .child(displayed_name(entry)),
+                                )
+                                .child(
+                                    div()
+                                        .max_w(gpui::relative(1.0))
+                                        .truncate()
+                                        .text_size(rmac_ui::text_px(13.0))
+                                        .text_color(secondary_text())
+                                        .child(summary),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .pb(px(4.0))
+                                .text_size(rmac_ui::text_px(13.0))
+                                .font_weight(rmac_ui::mac::BOLD)
+                                .text_color(label())
+                                .child("Information"),
+                        )
+                        .children(
+                            information
+                                .into_iter()
+                                .enumerate()
+                                .map(|(row, (name, value))| inspector_row(row > 0, name, value)),
+                        )
+                        .child(tags)
+                        .children(rotate)
+                        .into_any_element()
+                })
+                .unwrap_or_else(|| {
+                    div()
+                        .pt(px(GALLERY_INSPECTOR_TITLE_TOP))
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(secondary())
+                        .child("Select an item to see its information.")
+                        .into_any_element()
+                });
 
         div()
             .id("gallery-inspector")
@@ -79,6 +103,58 @@ impl FinderView {
             .border_l_1()
             .border_color(dark_rule())
             .child(contents)
+    }
+
+    /// The inspector's Tags: the applied tag's name, and the seven colours
+    /// to apply or clear on the previewed item.
+    fn render_gallery_tags(&self, entry: &Entry, cx: &mut Context<Self>) -> Div {
+        let applied = entry.tag.clone();
+        div()
+            .pt(px(GALLERY_INSPECTOR_SECTION_GAP))
+            .v_flex()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::BOLD)
+                    .text_color(label())
+                    .child("Tags"),
+            )
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(secondary_text())
+                    .child(
+                        applied
+                            .as_ref()
+                            .map(|tag| super::file_metadata::tag_display_name(tag))
+                            .unwrap_or_else(|| "Add Tags…".to_owned()),
+                    ),
+            )
+            .child(div().flex().gap(px(6.0)).children(
+                super::file_metadata::file_tags().iter().map(|&tag| {
+                    let on = applied.as_deref() == Some(tag);
+                    div()
+                        .id(SharedString::from(format!("gallery-tag-{tag}")))
+                        .role(Role::CheckBox)
+                        .aria_label(super::file_metadata::tag_display_name(tag))
+                        .aria_toggled(if on { Toggled::True } else { Toggled::False })
+                        .size(px(16.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .when(on, |dot| dot.border_2().border_color(label()))
+                        .cursor_pointer()
+                        .child(
+                            div()
+                                .size(px(11.0))
+                                .rounded_full()
+                                .bg(super::file_metadata::tag_colour(tag)),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| this.set_selected_tag(tag, cx)))
+                }),
+            ))
     }
 
     /// Like Finder, Gallery view always previews something: opening it on a
@@ -393,7 +469,7 @@ impl FinderView {
             .flex()
             .bg(list_bg())
             .child(browser)
-            .child(self.render_gallery_inspector(active_index))
+            .child(self.render_gallery_inspector(active_index, cx))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {

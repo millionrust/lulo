@@ -292,6 +292,7 @@ mod tests {
             created_time: SystemTime::UNIX_EPOCH,
             last_opened_time: SystemTime::UNIX_EPOCH,
             tag: None,
+            comment: None,
             search_detail: None,
             application: None,
         };

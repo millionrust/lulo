@@ -135,6 +135,7 @@ pub(super) fn entry_for(path: &Path) -> Option<Entry> {
         created_time,
         last_opened_time,
         tag,
+        comment: super::file_metadata::read_file_comment(path),
         search_detail: None,
         application: None,
     })
@@ -165,6 +166,7 @@ pub(super) fn entry_for_application(application: rmac_apps::Application) -> Entr
         created_time: SystemTime::UNIX_EPOCH,
         last_opened_time: SystemTime::UNIX_EPOCH,
         tag: None,
+        comment: None,
         search_detail: application.generic_name.map(Into::into),
         application: Some(ApplicationEntry {
             launch: application.launch,
@@ -344,6 +346,15 @@ fn sort_entries_with(v: &mut [Entry], key: SortKey, asc: bool, folders_on_top: b
                 (None, Some(_)) => std::cmp::Ordering::Greater,
                 (None, None) => std::cmp::Ordering::Equal,
             },
+            // Only applications have a version; files fall back to name order.
+            SortKey::Version => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            // Items without a comment sort after every commented one.
+            SortKey::Comments => match (&a.comment, &b.comment) {
+                (Some(left), Some(right)) => left.to_lowercase().cmp(&right.to_lowercase()),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            },
         };
         if asc {
             o
@@ -435,6 +446,18 @@ pub(super) fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
         }
     }
     v
+}
+
+/// The account name for `uid`, or the number when it has none.
+#[cfg(unix)]
+pub(super) fn account_name(uid: libc::uid_t) -> String {
+    user_name(uid).unwrap_or_else(|| uid.to_string())
+}
+
+/// The group name for `gid`, or the number when it has none.
+#[cfg(unix)]
+pub(super) fn group_account_name(gid: libc::gid_t) -> String {
+    group_name(gid).unwrap_or_else(|| gid.to_string())
 }
 
 /// The account name for `uid` from the system user database.

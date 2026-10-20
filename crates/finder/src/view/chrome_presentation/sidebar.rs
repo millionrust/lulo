@@ -14,6 +14,7 @@ fn place_is_selected(
         PlaceKind::Trash => trash_view,
         PlaceKind::Applications => applications_view && result_title == Some("Applications"),
         PlaceKind::Recents => !trash_view && !applications_view && result_title == Some("Recents"),
+        PlaceKind::Network => !trash_view && !applications_view && result_title == Some("Network"),
         PlaceKind::Tag => {
             !trash_view
                 && !applications_view
@@ -305,6 +306,7 @@ impl FinderView {
         match kind {
             PlaceKind::Tag => self.tag_click(name, cx),
             PlaceKind::Recents => self.recents_click(cx),
+            PlaceKind::Network => self.network_click(cx),
             PlaceKind::Trash => self.trash_click(cx),
             PlaceKind::Applications => self.applications_click(cx),
             _ if path.is_file() => self.open_paths(vec![path], cx),

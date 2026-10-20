@@ -1945,6 +1945,18 @@ def check_full_screen_bar(
         revealed = log.wait_for(r"^top bar shown over full screen", 5.0, after=mark)
         time.sleep(0.6)
         save(screenshots, "full-screen-top-edge")
+        # Revealed over a full-screen window, the bar is solid, as on the
+        # Mac: its empty middle shows the bar's own fill (light F6F6F6 or
+        # dark 1E1E20, `tokens::top_bar_full_screen_fill`), not the window.
+        if revealed is not None:
+            fill = pixel(width // 2, 10)
+            solid = any(
+                all(abs(channel - expected) <= 3 for channel, expected in zip(fill, colour))
+                for colour in ((0xF6, 0xF6, 0xF6), (0x1E, 0x1E, 0x20))
+            )
+            print(f"shell: revealed bar over full screen at the middle: {fill}; solid: {solid}")
+            if not solid:
+                failures.append(f"the bar revealed over a full-screen window is not solid ({fill})")
         user32().SetCursorPos(width // 2, height // 2)
         hidden_again = log.wait_for(r"^top bar hidden over full screen", 5.0, after=mark)
         print(

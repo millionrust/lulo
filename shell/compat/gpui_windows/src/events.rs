@@ -262,6 +262,10 @@ impl WindowsWindowInner {
     }
 
     fn handle_timer_msg(&self, handle: HWND, wparam: WPARAM) -> Option<isize> {
+        if wparam.0 == crate::rmac_first_frame::UNCLOAK_TIMER_ID {
+            self.state.first_frame.reveal(handle);
+            return Some(0);
+        }
         if wparam.0 == crate::rmac_frame_loop::THROTTLE_RETRY_TIMER_ID {
             unsafe {
                 KillTimer(Some(handle), wparam.0).log_err();
@@ -1484,6 +1488,7 @@ impl WindowsWindowInner {
         if drew {
             static FIRST_DRAW: std::sync::Once = std::sync::Once::new();
             FIRST_DRAW.call_once(|| crate::rmac_trace::startup("first_frame_drawn"));
+            self.state.first_frame.reveal(handle);
         }
         let smooth_active =
             self.state.smooth_scroll.is_active() || self.state.pan_smoother.is_active();

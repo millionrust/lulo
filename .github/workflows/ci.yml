@@ -591,8 +591,20 @@ jobs:
           name: windows-apps
           path: target/debug
 
+      # The installed layout: Lulo's fonts in a `fonts` folder beside the
+      # exes, which every app maps (WIN-OS-99). The launch check fails an
+      # app that reports a missing face.
+      - name: Lay out the fonts beside the apps
+        run: |
+          mkdir -p target/debug/fonts
+          cp assets/fonts/inter/*.otf assets/fonts/jetbrains-mono/*.ttf target/debug/fonts/
+
       # `windows-build` made the icons before building (it fails without
-      # them), so every exe must carry its own.
+      # them), so every exe must carry its own. Each app's first frame must
+      # be on screen within 700 ms of its process starting (WIN-OS-99:
+      # debug builds on the runner's software renderer took 210 to 560 ms
+      # before that change; the reference laptop's release builds are
+      # measured by hand, docs/parity.md WIN-OS-99).
       - name: Launch each app
         id: launch
         env:
@@ -601,7 +613,7 @@ jobs:
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
             ${{ matrix.launch }} --results windows-results.json \
-            target/debug ${{ matrix.apps }}
+            --launch-budget-ms 700 target/debug ${{ matrix.apps }}
 
       # System Settings (WIN-SET): every pane its sidebar lists on the runner
       # opens with content, and the red traffic light, Ctrl+W, Ctrl+Q and

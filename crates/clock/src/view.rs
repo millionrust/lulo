@@ -206,6 +206,7 @@ impl ClockView {
             }
         })
         .detach();
+        rmac_ui::startup_mark("clock_view_new");
         let (state, error) = match store::load() {
             Ok(state) => (state, None),
             Err(error) => (
@@ -233,6 +234,7 @@ impl ClockView {
                 .ok()?;
             Some(watcher)
         });
+        rmac_ui::startup_mark("clock_state_loaded");
         let mut view = Self {
             focus: cx.focus_handle(),
             tab: Tab::World,
@@ -272,9 +274,11 @@ impl ClockView {
                 .unwrap_or_default();
             view.change(Change::SetCities(local), cx);
         }
+        rmac_ui::startup_mark("clock_view_built");
         // Make sure the ring schedule matches the saved state (for example
         // after an update moved the binary).
         view.persist(None, cx);
+        rmac_ui::startup_mark("clock_persisted");
         view.start_ticker(window, ticker_events, cx);
         rmac_ui::set_menu_checked(
             "clock::ToggleCheckSpellingWhileTyping",

@@ -50,6 +50,7 @@ gpui::actions!(
 );
 
 fn main() {
+    rmac_ui::startup_mark("calendar_main");
     let args: Vec<String> = std::env::args().skip(1).collect();
     let deep_link = deep_link::parse(&args);
     rmac_ui::application()

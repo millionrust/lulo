@@ -174,6 +174,7 @@ pub const MONO_FONT: &str = "JetBrains Mono";
 /// Construct GPUI with the platform backend that owns native display and
 /// Wayland layer-shell integration (or, on Windows, Win32 and DirectX).
 pub fn application() -> gpui::Application {
+    startup_mark("rmac_ui_application");
     platform::prepare_environment();
     #[cfg(windows)]
     fonts_windows::prepare();
@@ -185,6 +186,18 @@ mod fonts_windows;
 
 #[cfg(test)]
 mod tests;
+
+/// With `RMAC_GPUI_STARTUP_TRACE=1` on Windows, print one start-up phase on
+/// the clock `gpui_windows` uses for its own phases (milliseconds since
+/// Windows created the process), so an app can name the work between them
+/// (`scripts/windows/launch_smoke.py` lists every phase). Elsewhere, or
+/// without the variable, it does nothing.
+pub fn startup_mark(phase: &str) {
+    #[cfg(windows)]
+    platform::startup_mark(phase);
+    #[cfg(not(windows))]
+    let _ = phase;
+}
 
 /// Add an app-defined row to this process's `RMAC_FRAME_TRACE` (a no-op
 /// without it, and on hosts other than Linux), so the speed sweep can time

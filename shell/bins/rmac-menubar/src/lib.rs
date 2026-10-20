@@ -4858,6 +4858,11 @@ mod bar {
                 .left_0()
                 .right_0()
                 .h(px(BAR_HEIGHT))
+                // Over a full-screen window the revealed bar is solid, as
+                // on the Mac, not see-through to the window under it.
+                .when(self.fullscreen, |style| {
+                    style.bg(rgba(tokens::top_bar_full_screen_fill()))
+                })
                 .flex()
                 .items_center()
                 .pl(px(BAR_LEAD))

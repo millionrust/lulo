@@ -400,6 +400,7 @@ fn watch_account_changes(
 }
 
 fn main() {
+    rmac_ui::startup_mark("mail_main");
     // One Mail per user on Windows: a later launch hands its `mailto:` link
     // (or sign-in return) to the running one instead of opening a second.
     #[cfg(windows)]

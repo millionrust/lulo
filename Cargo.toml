@@ -205,7 +205,7 @@ pam-sys2 = "=1.0.2"
 quick-xml = "0.39.4"
 raw-window-handle = "=0.6.2"
 rrule = "0.14"
-resvg = { version = "=0.45.1", default-features = false }
+resvg = { version = "=0.46.0", default-features = false }
 rust-embed = { version = "8", features = ["include-exclude"] }
 rustix = { version = "=1.1.4", features = ["fs"] }
 rusqlite = { version = "=0.37.0", features = ["bundled"] }

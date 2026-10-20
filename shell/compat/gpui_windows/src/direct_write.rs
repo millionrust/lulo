@@ -233,11 +233,18 @@ impl DirectWriteTextSystem {
             system_subpixel_rendering,
         };
 
+        // rmac: `checkForUpdates` false. True makes DirectWrite look through
+        // the installed fonts for changes before it answers: 106 to 345 ms
+        // on the reference Windows laptop (251 families), against 1.5 ms
+        // without it, on the main thread of every launch (WIN-OS-99). The
+        // font cache service still reports newly installed fonts, and
+        // first font lookup that misses asks again with the check
+        // (`select_and_cache_font`).
         let system_font_collection = unsafe {
             let mut result = None;
             components
                 .factory
-                .GetSystemFontCollection(false, &mut result, true)?;
+                .GetSystemFontCollection(false, &mut result, false)?;
             result.context("Failed to get system font collection")?
         };
         let custom_font_set = unsafe { components.builder.CreateFontSet()? };
@@ -381,7 +388,16 @@ impl DirectWriteState {
         };
 
         let mut font_id = select_font(self, font);
-        if font_id.is_none() {
+        // rmac: the check for newly installed fonts reads through every
+        // installed font (100 to 350 ms on the reference laptop), so a family
+        // that is not installed asks for it once per process, not on every
+        // lookup (WIN-OS-99).
+        static CHECKED_FOR_NEW_FONTS: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        if font_id.is_none()
+            && !CHECKED_FOR_NEW_FONTS.swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            text_trace(|| format!("{:?} not found: checking for new system fonts", font.family));
             // try updating system fonts and reselect
             let mut collection = None;
             let font_collection_updated = unsafe {

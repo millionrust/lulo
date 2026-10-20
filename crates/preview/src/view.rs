@@ -16,6 +16,7 @@ use gpui::{
     PathBuilder, PathPromptOptions, Render, RenderImage, Role, ScrollHandle, ScrollWheelEvent,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
+use rmac_preview::adjust::{adjust_colour, ColourAdjust};
 use rmac_preview::document::{self, ImageKind, Kind};
 use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
 use rmac_preview::markup::{self, Annotation, Markup, Tool};
@@ -25,12 +26,12 @@ use rmac_preview::redact;
 use rmac_preview::selection;
 use rmac_preview::versions;
 use rmac_preview::zoom::{self, ContentKind, Zoom};
-use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
+use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState, SliderEvent, SliderState};
 
 use crate::{
-    ActualSize, ActualSizeOnAll, AddBookmark, AdjustSize, AnnotateArrow, AnnotateHighlight,
-    AnnotateLine, AnnotateLoupe, AnnotateMask, AnnotateNote, AnnotateOval, AnnotatePolygon,
-    AnnotateRectangle, AnnotateSignature, AnnotateSpeechBubble, AnnotateStar,
+    ActualSize, ActualSizeOnAll, AddBookmark, AdjustColour, AdjustSize, AnnotateArrow,
+    AnnotateHighlight, AnnotateLine, AnnotateLoupe, AnnotateMask, AnnotateNote, AnnotateOval,
+    AnnotatePolygon, AnnotateRectangle, AnnotateSignature, AnnotateSpeechBubble, AnnotateStar,
     AnnotateStrikeThrough, AnnotateText, AnnotateUnderline, AutomaticSelection, Back,
     BrowseSavedVersions, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, ContactSheet,
     ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, Duplicate, EnterFullScreen,
@@ -91,6 +92,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::CustomiseToolbar",
         "preview::ZoomToSelection",
         "preview::AdjustSize",
+        "preview::AdjustColour",
         "preview::FlipHorizontal",
         "preview::FlipVertical",
         "preview::RemoveBackground",
@@ -762,6 +764,15 @@ pub(crate) struct PreviewView {
     adjust_size_open: bool,
     adjust_size_width: Entity<InputState>,
     adjust_size_height: Entity<InputState>,
+    /// Tools ▸ Adjust Color… (PREV-10): the sheet, its values and sliders,
+    /// the downsized picture the live preview is computed from, and the
+    /// preview itself (shown over the picture while the sheet is open).
+    adjust_colour_open: bool,
+    adjust_colour_values: ColourAdjust,
+    adjust_colour_sliders: Vec<Entity<SliderState>>,
+    adjust_colour_source: Option<Arc<image::RgbaImage>>,
+    adjust_colour_preview: Option<Arc<RenderImage>>,
+    adjust_colour_generation: u64,
     /// Tools ▸ Rectangular Selection (PRV-MENU-055): the drag-to-select
     /// tool Tools ▸ Crop (⌘K, PRV-MENU-068) crops to (`crop_to_selection`).
     /// `selection_drag` holds the drag's anchor point, in the same
@@ -1437,8 +1448,31 @@ impl PreviewView {
         cx.notify();
     }
 
+    /// Whether Edit ▸ Delete would remove the current page: the thumbnails
+    /// are showing, the PDF has another page, and no markup waits to be saved
+    /// (page numbers in it would shift).
+    fn can_delete_page(&self) -> bool {
+        self.sidebar
+            && self.sidebar_mode == SidebarMode::Thumbnails
+            && !self.markup_save_busy
+            && self.slot().is_some_and(|slot| {
+                slot.kind() == Some(Kind::Pdf)
+                    && slot.loaded().is_some_and(|loaded| loaded.page_count() > 1)
+                    && !slot.markup.dirty
+                    && slot.markup_original.is_none()
+            })
+    }
+
     fn delete_markup(&mut self, cx: &mut Context<Self>) {
         let Some(index) = self.markup_selected.take() else {
+            if self.can_delete_page() {
+                self.edit_pdf_pages(
+                    "delete the page",
+                    |source, temporary, page| markup::delete_page(source, temporary, page),
+                    false,
+                    cx,
+                );
+            }
             return;
         };
         if let Some(slot) = self.slot_mut() {
@@ -2377,6 +2411,27 @@ impl PreviewView {
             .map(|(index, path)| Slot::new(index as u64, path))
             .collect();
         let next_id = slots.len() as u64;
+        let adjust_colour_sliders: Vec<Entity<SliderState>> = ADJUST_COLOUR_ROWS
+            .iter()
+            .enumerate()
+            .map(|(index, (_, min, max))| {
+                let (min, max) = (*min, *max);
+                let slider = cx.new(|_| {
+                    SliderState::new()
+                        .min(min)
+                        .max(max)
+                        .step(0.01)
+                        .default_value(0.0)
+                });
+                cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
+                    if let SliderEvent::Change(value) = event {
+                        this.adjust_colour_changed(index, value.start(), cx);
+                    }
+                })
+                .detach();
+                slider
+            })
+            .collect();
         let mut view = Self {
             focus: cx.focus_handle(),
             page_focus: cx.focus_handle(),
@@ -2450,6 +2505,12 @@ impl PreviewView {
             adjust_size_open: false,
             adjust_size_width,
             adjust_size_height,
+            adjust_colour_open: false,
+            adjust_colour_values: ColourAdjust::default(),
+            adjust_colour_sliders,
+            adjust_colour_source: None,
+            adjust_colour_preview: None,
+            adjust_colour_generation: 0,
             selection_tool_active: false,
             selection_drag: None,
             automatic_selection_tool_active: false,
@@ -3305,6 +3366,236 @@ impl PreviewView {
         cx.notify();
     }
 
+    // ---- Tools ▸ Adjust Color… (⌥⌘C, PREV-10) ----------------------------
+    //
+    // Nine sliders over a live preview. The preview is computed from a
+    // downsized copy off the UI thread (a newer slider value supersedes an
+    // older one still being computed); OK applies the same adjustment to
+    // the full picture off the UI thread, as one undoable image edit.
+
+    fn open_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.adjust_colour_open || self.markup_save_busy {
+            return;
+        }
+        let Some(pixels) = self.slot().and_then(Slot::baked_pixels) else {
+            return;
+        };
+        if !matches!(self.slot().and_then(Slot::kind), Some(Kind::Image(_))) {
+            return;
+        }
+        self.adjust_colour_open = true;
+        self.reset_adjust_colour(window, cx);
+        cx.spawn(async move |this, cx| {
+            let small = blocking::unblock(move || {
+                let (width, height) = pixels.dimensions();
+                let longest = width.max(height).max(1);
+                if longest <= ADJUST_COLOUR_PREVIEW_SIDE {
+                    return pixels;
+                }
+                let scale = ADJUST_COLOUR_PREVIEW_SIDE as f32 / longest as f32;
+                Arc::new(image::imageops::thumbnail(
+                    pixels.as_ref(),
+                    ((width as f32 * scale) as u32).max(1),
+                    ((height as f32 * scale) as u32).max(1),
+                ))
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.adjust_colour_open {
+                    this.adjust_colour_source = Some(small);
+                    this.refresh_adjust_preview(cx);
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn reset_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.adjust_colour_values = ColourAdjust::default();
+        for slider in &self.adjust_colour_sliders {
+            slider.update(cx, |state, cx| state.set_value(0.0, window, cx));
+        }
+        self.adjust_colour_generation += 1;
+        if let Some(old) = self.adjust_colour_preview.take() {
+            self.garbage.push(old);
+        }
+        cx.notify();
+    }
+
+    fn close_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.adjust_colour_open = false;
+        self.adjust_colour_source = None;
+        self.adjust_colour_generation += 1;
+        if let Some(old) = self.adjust_colour_preview.take() {
+            self.garbage.push(old);
+        }
+        window.focus(&self.page_focus, cx);
+        cx.notify();
+    }
+
+    fn adjust_colour_changed(&mut self, index: usize, value: f32, cx: &mut Context<Self>) {
+        let values = &mut self.adjust_colour_values;
+        match index {
+            0 => values.exposure = value,
+            1 => values.contrast = value,
+            2 => values.highlights = value,
+            3 => values.shadows = value,
+            4 => values.saturation = value,
+            5 => values.temperature = value,
+            6 => values.tint = value,
+            7 => values.sepia = value,
+            8 => values.sharpness = value,
+            _ => return,
+        }
+        self.refresh_adjust_preview(cx);
+    }
+
+    fn refresh_adjust_preview(&mut self, cx: &mut Context<Self>) {
+        self.adjust_colour_generation += 1;
+        let generation = self.adjust_colour_generation;
+        let values = self.adjust_colour_values;
+        if values.is_identity() {
+            if let Some(old) = self.adjust_colour_preview.take() {
+                self.garbage.push(old);
+            }
+            cx.notify();
+            return;
+        }
+        let Some(source) = self.adjust_colour_source.clone() else {
+            return;
+        };
+        let rotation = self.slot().map(|slot| slot.rotation).unwrap_or_default();
+        cx.spawn(async move |this, cx| {
+            let image = blocking::unblock(move || {
+                let adjusted = adjust_colour(&source, &values);
+                render::to_render_image(render::rotate(&adjusted, rotation))
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.adjust_colour_open && this.adjust_colour_generation == generation {
+                    if let Some(old) = this.adjust_colour_preview.replace(image) {
+                        this.garbage.push(old);
+                    }
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn commit_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let values = self.adjust_colour_values;
+        let pixels = self.slot().and_then(Slot::baked_pixels);
+        self.close_adjust_colour(window, cx);
+        if values.is_identity() {
+            return;
+        }
+        let Some(pixels) = pixels else { return };
+        self.markup_save_busy = true;
+        cx.spawn(async move |this, cx| {
+            let adjusted = blocking::unblock(move || adjust_colour(&pixels, &values)).await;
+            let _ = this.update(cx, |this, cx| {
+                this.markup_save_busy = false;
+                this.edit_image(move |_| adjusted, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// The Adjust Color sheet: a slider per adjustment, Reset All, Cancel
+    /// and OK.
+    fn render_adjust_colour(
+        &self,
+        palette: Palette,
+        width: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id("preview-adjust-colour")
+            .absolute()
+            .left(px((width - 300.0).max(8.0)))
+            .top(px(self.toolbar_height() + 8.0))
+            .w(px(292.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(10.0))
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child("Adjust Color"),
+            )
+            .children(
+                ADJUST_COLOUR_ROWS
+                    .iter()
+                    .zip(self.adjust_colour_sliders.iter())
+                    .map(|((label, _, _), slider)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .w(px(78.0))
+                                    .text_size(px(12.0))
+                                    .text_color(rgb(palette.glyph))
+                                    .child(*label),
+                            )
+                            .child(
+                                rmac_ui::Slider::new(slider)
+                                    .accessible_name(*label)
+                                    .w(px(180.0)),
+                            )
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .pt(px(6.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-adjust-colour-reset",
+                            "Reset All",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.reset_adjust_colour(window, cx);
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-adjust-colour-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.close_adjust_colour(window, cx);
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-adjust-colour-ok",
+                            "OK",
+                            rmac_ui::DialogButtonKind::Primary,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.commit_adjust_colour(window, cx);
+                        })),
+                    ),
+            )
+            .into_any_element()
+    }
+
     // ---- Tools ▸ Rectangular Selection / Crop (⌘K, PRV-MENU-055/068) -------
     //
     // The Mac's own Crop is driven by a drag-rectangle selection rather than
@@ -3756,7 +4047,7 @@ impl PreviewView {
     /// Edit ▸ Insert ▸ Blank Page (PRV-MENU-007): an empty, same-size page
     /// after the current one.
     fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
-        self.edit_pdf_pages("insert a blank page", markup::insert_blank_page, cx);
+        self.edit_pdf_pages("insert a blank page", markup::insert_blank_page, true, cx);
     }
 
     /// Edit ▸ Insert ▸ Page from File… (PRV-MENU-005): choose a PDF or an
@@ -3787,6 +4078,7 @@ impl PreviewView {
                         let incoming = markup::document_for_insertion(&other)?;
                         markup::insert_pages_from(source, incoming, temporary, after).map(|_| ())
                     },
+                    true,
                     cx,
                 );
             });
@@ -3804,6 +4096,7 @@ impl PreviewView {
         &mut self,
         what: &'static str,
         edit: impl FnOnce(&Path, &Path, usize) -> Result<(), String> + Send + 'static,
+        lands_after: bool,
         cx: &mut Context<Self>,
     ) {
         if self.markup_save_busy {
@@ -3862,8 +4155,10 @@ impl PreviewView {
                         slot.base = base;
                         slot.text = TextState::NotLoaded;
                         slot.pending.clear();
-                        slot.current_page =
-                            (after + 1).min(slot.page_sizes().len().saturating_sub(1));
+                        // An insert lands on the new page after the current
+                        // one; a delete on the page that took its place.
+                        slot.current_page = (after + usize::from(lands_after))
+                            .min(slot.page_sizes().len().saturating_sub(1));
                         if let Some((_, image)) = old_display {
                             this.garbage.push(image);
                         }
@@ -4000,8 +4295,25 @@ impl PreviewView {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        let Some((_, pixels)) = slot.final_image_pixels() else {
-            return;
+        // A PDF exports the page on screen as a picture (PREV-26); a
+        // picture exports its pixels.
+        let pdf_page = match (slot.kind(), slot.loaded().map(|loaded| &loaded.content)) {
+            (Some(Kind::Pdf), Some(Content::Pdf(info))) => {
+                info.pages.get(slot.current_page).map(|page| {
+                    (
+                        slot.path.clone(),
+                        slot.current_page,
+                        page.displayed(),
+                        slot.rotation,
+                    )
+                })
+            }
+            _ => None,
+        };
+        let pixels = match (&pdf_page, slot.final_image_pixels()) {
+            (Some(_), _) => None,
+            (None, Some((_, pixels))) => Some(pixels),
+            (None, None) => return,
         };
         let directory = slot
             .path
@@ -4019,7 +4331,18 @@ impl PreviewView {
         cx.spawn_in(window, async move |this, cx| {
             let result = match receiver.await {
                 Ok(Ok(Some(path))) => {
-                    blocking::unblock(move || render::export_image(&pixels, &path)).await
+                    blocking::unblock(move || {
+                        let pixels = match (pixels, pdf_page) {
+                            (Some(pixels), _) => pixels,
+                            (None, Some((source, page, size, rotation))) => {
+                                // Twice the point size: 144 dpi.
+                                Arc::new(render::render_page(&source, page, size, 2.0, rotation)?)
+                            }
+                            (None, None) => return Ok(()),
+                        };
+                        render::export_image(&pixels, &path)
+                    })
+                    .await
                 }
                 _ => Ok(()),
             };
@@ -4242,7 +4565,7 @@ impl PreviewView {
         }
         let Some(slot) = self.slot() else { return };
         let image = match slot.loaded().map(|loaded| &loaded.content) {
-            Some(Content::Image(image)) => Some((image.pixels.clone(), slot.rotation)),
+            Some(Content::Image(_)) => slot.baked_pixels().map(|pixels| (pixels, slot.rotation)),
             Some(Content::Pdf(_)) => None,
             None => return,
         };
@@ -4453,8 +4776,13 @@ impl PreviewView {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) {
-            eprintln!("rmac-preview: exporting an image as PDF isn't supported yet");
+        // A picture becomes a one-page PDF (with its markup and rotation).
+        let picture = match slot.kind() {
+            Some(Kind::Pdf) => None,
+            Some(Kind::Image(_)) => slot.baked_pixels().map(|pixels| (pixels, slot.rotation)),
+            None => return,
+        };
+        if slot.kind() != Some(Kind::Pdf) && picture.is_none() {
             return;
         }
         let source = slot.path.clone();
@@ -4462,11 +4790,21 @@ impl PreviewView {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."));
-        let suggested_name = source
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(str::to_owned)
-            .unwrap_or_else(|| "Untitled.pdf".to_owned());
+        let suggested_name = if picture.is_some() {
+            format!(
+                "{}.pdf",
+                source
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Untitled".to_owned())
+            )
+        } else {
+            source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+                .unwrap_or_else(|| "Untitled.pdf".to_owned())
+        };
         self.export_busy = true;
         cx.notify();
         let receiver = cx.prompt_for_new_path(&directory, Some(&suggested_name));
@@ -4481,7 +4819,20 @@ impl PreviewView {
             };
             let result = cx
                 .background_executor()
-                .spawn(async move { std::fs::copy(&source, &destination).map(|_| ()) })
+                .spawn(async move {
+                    match picture {
+                        None => std::fs::copy(&source, &destination).map(|_| ()),
+                        Some((pixels, rotation)) => {
+                            let (jpeg, width, height) =
+                                render::encode_print_jpeg(&pixels, rotation)
+                                    .map_err(std::io::Error::other)?;
+                            std::fs::write(
+                                &destination,
+                                rmac_preview::pdfwriter::wrap_jpeg(&jpeg, width, height),
+                            )
+                        }
+                    }
+                })
                 .await;
             let _ = this.update_in(cx, |this, _, cx| {
                 this.export_busy = false;
@@ -5181,6 +5532,15 @@ impl PreviewView {
                 "escape" => self.slideshow = false,
                 "left" | "up" => self.slideshow_step(-1, cx),
                 "right" | "down" | "space" => self.slideshow_step(1, cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if self.adjust_colour_open {
+            match event.keystroke.key.as_str() {
+                "escape" => self.close_adjust_colour(window, cx),
+                "enter" => self.commit_adjust_colour(window, cx),
                 _ => return,
             }
             cx.stop_propagation();
@@ -6370,6 +6730,12 @@ impl PreviewView {
                         let scale = slot.zoom.resolve(slot.fit_scale(viewport));
                         let shown = (size.0 * scale, size.1 * scale);
                         let origin = layout::centred_origin(shown, viewport);
+                        // Adjust Color shows its live preview over the picture.
+                        let shown_image = self
+                            .adjust_colour_preview
+                            .clone()
+                            .filter(|_| self.adjust_colour_open)
+                            .or_else(|| slot.display.clone().map(|(_, image)| image));
                         div()
                             .relative()
                             .w(px(shown.0.max(viewport.0)))
@@ -6385,7 +6751,7 @@ impl PreviewView {
                                         .bg(rgb(0xFFFFFF)),
                                 )
                             })
-                            .when_some(slot.display.clone(), |content, (_, image)| {
+                            .when_some(shown_image, |content, image| {
                                 content.child(
                                     img(image)
                                         .absolute()
@@ -7571,6 +7937,22 @@ fn message(text: &str, palette: Palette) -> AnyElement {
         .into_any_element()
 }
 
+/// Adjust Color's rows: label and slider range.
+const ADJUST_COLOUR_ROWS: [(&str, f32, f32); 9] = [
+    ("Exposure", -2.0, 2.0),
+    ("Contrast", -1.0, 1.0),
+    ("Highlights", -1.0, 1.0),
+    ("Shadows", -1.0, 1.0),
+    ("Saturation", -1.0, 1.0),
+    ("Temperature", -1.0, 1.0),
+    ("Tint", -1.0, 1.0),
+    ("Sepia", 0.0, 1.0),
+    ("Sharpness", 0.0, 1.0),
+];
+
+/// Longest side of the copy the Adjust Color preview is computed from.
+const ADJUST_COLOUR_PREVIEW_SIDE: u32 = 1000;
+
 struct PageMarkupRender {
     annotations: Vec<(usize, Annotation)>,
     rotation: Rotation,
@@ -7939,10 +8321,12 @@ impl Render for PreviewView {
             );
             rmac_ui::set_menu_enabled(
                 "preview::DeleteSelection",
-                self.markup_selected
+                (self
+                    .markup_selected
                     .and_then(|index| self.slot()?.markup.items.get(index))
                     .is_some()
-                    && !self.markup_save_busy,
+                    && !self.markup_save_busy)
+                    || self.can_delete_page(),
                 cx,
             );
             rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
@@ -8069,7 +8453,12 @@ impl Render for PreviewView {
                 cx,
             );
             rmac_ui::set_menu_enabled("preview::AdjustSize", is_image, cx);
-            rmac_ui::set_menu_enabled("preview::ExportAs", is_image && !self.export_as_busy, cx);
+            rmac_ui::set_menu_enabled(
+                "preview::AdjustColour",
+                is_image && !self.markup_save_busy && !self.adjust_colour_open,
+                cx,
+            );
+            rmac_ui::set_menu_enabled("preview::ExportAs", loaded && !self.export_as_busy, cx);
             rmac_ui::set_menu_enabled("preview::UseDarkAppearanceForPdf", pdf, cx);
             rmac_ui::set_menu_enabled(
                 "preview::ZoomToSelection",
@@ -8078,7 +8467,7 @@ impl Render for PreviewView {
             );
             rmac_ui::set_menu_enabled("preview::Back", !self.back.is_empty(), cx);
             rmac_ui::set_menu_enabled("preview::Forward", !self.forward.is_empty(), cx);
-            rmac_ui::set_menu_enabled("preview::ExportAsPdf", pdf, cx);
+            rmac_ui::set_menu_enabled("preview::ExportAsPdf", loaded && !self.export_busy, cx);
             rmac_ui::set_menu_enabled("preview::ShowBookmarks", pdf && !multiple, cx);
             rmac_ui::set_menu_enabled("preview::AddBookmark", pdf && !multiple, cx);
             rmac_ui::set_menu_enabled("preview::UseSelectionForFind", selected_text, cx);
@@ -8388,6 +8777,9 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &AdjustSize, window, cx| {
                 this.open_adjust_size(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &AdjustColour, window, cx| {
+                this.open_adjust_colour(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &ExportAs, window, cx| this.export_as(window, cx)))
             .on_action(cx.listener(|_, _: &TakeScreenshotSelection, _, _| {
                 PreviewView::take_screenshot("selection");
@@ -8504,6 +8896,9 @@ impl Render for PreviewView {
                     &self.adjust_size_width,
                     &self.adjust_size_height,
                 ))
+            })
+            .when(self.adjust_colour_open, |root| {
+                root.child(self.render_adjust_colour(palette, width, cx))
             })
             .when(self.manage_signatures_open, |root| {
                 root.child(self.render_manage_signatures(palette, width, height, cx))

@@ -418,6 +418,59 @@ pub fn insert_blank_page(source: &Path, destination: &Path, after: usize) -> Res
     Ok(())
 }
 
+/// Edit ▸ Delete on a page (PREV-12): writes `destination` as `source`
+/// without page index `page`. Every ancestor `Pages` node's `/Count` drops
+/// by one and the page's objects that nothing else uses are pruned. A PDF
+/// keeps at least one page.
+pub fn delete_page(source: &Path, destination: &Path, page: usize) -> Result<(), String> {
+    let mut doc = Document::load(source).map_err(|e| e.to_string())?;
+    let pages: Vec<_> = doc.get_pages().into_values().collect();
+    if pages.len() < 2 {
+        return Err("a PDF needs at least one page".to_owned());
+    }
+    let target = *pages.get(page).ok_or("the page does not exist")?;
+    let parent = doc
+        .get_dictionary(target)
+        .map_err(|e| e.to_string())?
+        .get(b"Parent")
+        .map_err(|e| e.to_string())?
+        .as_reference()
+        .map_err(|e| e.to_string())?;
+    {
+        let kids = doc
+            .get_dictionary_mut(parent)
+            .map_err(|e| e.to_string())?
+            .get_mut(b"Kids")
+            .map_err(|e| e.to_string())?
+            .as_array_mut()
+            .map_err(|e| e.to_string())?;
+        let position = kids
+            .iter()
+            .position(|kid| kid.as_reference().ok() == Some(target))
+            .ok_or("page is not listed in its parent")?;
+        kids.remove(position);
+    }
+    let mut node = Some(parent);
+    for _ in 0..32 {
+        let Some(id) = node else { break };
+        let dictionary = doc.get_dictionary_mut(id).map_err(|e| e.to_string())?;
+        let count = dictionary
+            .get(b"Count")
+            .ok()
+            .and_then(|count| count.as_i64().ok())
+            .unwrap_or(1);
+        dictionary.set("Count", (count - 1).max(0));
+        node = dictionary
+            .get(b"Parent")
+            .ok()
+            .and_then(|parent| parent.as_reference().ok());
+    }
+    doc.delete_object(target);
+    doc.prune_objects();
+    doc.save(destination).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// A PDF document that shows `path`, a PDF or an image, for Edit ▸ Insert ▸
 /// Page from File… (PRV-MENU-005): a PDF is loaded as it is, an image
 /// becomes a one-page PDF at its pixel size. An encrypted PDF is refused.
@@ -1811,5 +1864,38 @@ mod tests {
         markup.revert();
         assert_eq!(markup.items, vec![existing]);
         assert!(!markup.dirty);
+    }
+
+    #[test]
+    fn deleting_a_page_removes_it_and_keeps_the_rest_in_order() {
+        let base = std::env::temp_dir().join(format!("rmac-markup-delete-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let (source, shorter) = (base.join("two.pdf"), base.join("one.pdf"));
+        let (first, second) = two_page_pdf(&source);
+        delete_page(&source, &shorter, 0).unwrap();
+        let after = Document::load(&shorter).unwrap();
+        let pages: Vec<_> = after.get_pages().into_values().collect();
+        assert_eq!(pages, vec![second]);
+        assert!(!after.objects.contains_key(&first));
+        let count = after
+            .get_dictionary(
+                after
+                    .catalog()
+                    .unwrap()
+                    .get(b"Pages")
+                    .unwrap()
+                    .as_reference()
+                    .unwrap(),
+            )
+            .unwrap()
+            .get(b"Count")
+            .unwrap()
+            .as_i64()
+            .unwrap();
+        assert_eq!(count, 1);
+        // The last page cannot go, nor one that is not there.
+        assert!(delete_page(&shorter, &base.join("none.pdf"), 0).is_err());
+        assert!(delete_page(&source, &base.join("none.pdf"), 5).is_err());
+        std::fs::remove_dir_all(base).unwrap();
     }
 }

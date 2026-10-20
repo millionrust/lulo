@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "scenario": "preview/delete-page",
+  "observations": {
+    "before": {
+      "pdf_pages": {
+        "pages": 2
+      }
+    },
+    "after": {
+      "pdf_pages": {
+        "pages": 1
+      }
+    }
+  }
+}

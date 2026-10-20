@@ -1,0 +1,17 @@
+{
+  "title": "Notes: Suggest Results offers the answer after an equals sign and Return inserts it",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "Maths note"},
+    {"key": "tab"},
+    {"menu_action": "notes::MathsResultsSuggest", "settle": 0.5},
+    {"type": "12+30="},
+    {"observe": "offered", "facts": ["note_body"]},
+    {"key": "return", "settle": 0.5},
+    {"observe": "accepted", "facts": ["note_body"]}
+  ]
+}

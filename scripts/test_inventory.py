@@ -212,6 +212,24 @@ class FlattenMenuItemsTests(unittest.TestCase):
         flat = d.flatten_menu_items(menus, bold_menu_alias="TextEdit")
         self.assertIn(("Application", "About"), flat)
 
+    def test_untitled_indented_item_takes_its_title_from_the_shortcut(self):
+        # Notes' Writing Direction: items under a greyed section label come
+        # back from AX with no title and "⌘Default" as the shortcut.
+        menus = [
+            {
+                "label": "Format",
+                "items": [
+                    {"label": "Paragraph", "shortcut": "", "children": []},
+                    {"label": None, "shortcut": "⌘Default", "children": []},
+                    {"label": None, "shortcut": "", "children": []},
+                ],
+            }
+        ]
+        flat = d.flatten_menu_items(menus)
+        self.assertIn(("Format", "Default"), flat)
+        self.assertEqual(flat[("Format", "Default")]["shortcut"], "")
+        self.assertEqual(len(flat), 2)
+
 
 class DiffMenuBarsTests(unittest.TestCase):
     def test_missing_item_with_shortcut_is_high_tier(self):

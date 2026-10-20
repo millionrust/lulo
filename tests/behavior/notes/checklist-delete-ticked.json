@@ -1,0 +1,19 @@
+{
+  "title": "Notes: Smart Lists start a checklist, ⇧⌘U ticks an item and Delete Ticked removes it",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "Groceries"},
+    {"key": "tab"},
+    {"type": "- [ ] Milk"},
+    {"key": "return"},
+    {"type": "Eggs"},
+    {"key": "shift-cmd-u", "settle": 0.5},
+    {"observe": "ticked", "facts": ["note_body"]},
+    {"menu_action": "notes::DeleteTicked", "settle": 0.5},
+    {"observe": "deleted", "facts": ["note_body"]}
+  ]
+}

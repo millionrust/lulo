@@ -1257,6 +1257,10 @@
       },
       {
         "type": "item",
+        "label": "<batch_rename_label(selection_count)>"
+      },
+      {
+        "type": "item",
         "label": "Compress"
       },
       {
@@ -1309,8 +1313,12 @@
         "type": "separator"
       },
       {
-        "type": "item",
+        "type": "submenu",
         "label": "Quick Actions"
+      },
+      {
+        "type": "item",
+        "label": "Rotate Left"
       }
     ],
     "folder": [
@@ -1352,6 +1360,10 @@
       },
       {
         "type": "item",
+        "label": "<batch_rename_label(selection_count)>"
+      },
+      {
+        "type": "item",
         "label": "Compress"
       },
       {
@@ -1404,8 +1416,12 @@
         "type": "separator"
       },
       {
-        "type": "item",
+        "type": "submenu",
         "label": "Quick Actions"
+      },
+      {
+        "type": "item",
+        "label": "Rotate Left"
       }
     ],
     "background": [

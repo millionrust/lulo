@@ -90,7 +90,7 @@ fn snapshot(policy: WirePolicy) -> Result<Snapshot, Error> {
 }
 
 /// Add the display-off timeouts (`(battery, adapter)`, 0 meaning Never).
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn with_display_off(mut snapshot: Snapshot, display_off: (u32, u32)) -> Snapshot {
     snapshot.display_off_on_battery_seconds = (display_off.0 != 0).then_some(display_off.0);
     snapshot.display_off_on_adapter_seconds = (display_off.1 != 0).then_some(display_off.1);

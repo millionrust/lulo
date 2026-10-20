@@ -5570,7 +5570,7 @@ mod bar {
                 Item::new("System Settings…", "system::settings", "")
                     .badge(software_update_badge.unwrap_or_default())
                     .separated(),
-                Item::new("Software Center", "system::software-center", ""),
+                Item::new("Software Center…", "system::software-center", ""),
                 Item::new("Recent Items", "system::recents", menu_model::SUBMENU_MARK).separated(),
                 Item::new("Force Quit…", "system::force-quit", "⌥⌘⎋").separated(),
                 Item::new("Sleep", "system::sleep", "").separated(),

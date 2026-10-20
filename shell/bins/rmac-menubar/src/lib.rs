@@ -5516,22 +5516,26 @@ mod bar {
                 Item::new("Force Quit…", "system::force-quit", "⌥⌘⎋").separated(),
                 Item::new("Sleep", "system::sleep", "").separated(),
                 // Holding ⌥ drops the "…" and the confirmation (BAR-04).
-                Item::new("Restart…", "system::restart", "")
-                    .with_alternate(Item::new("Restart", "system::restart-now", "")),
-                Item::new("Shut Down…", "system::shutdown", "")
-                    .with_alternate(Item::new("Shut Down", "system::shutdown-now", "")),
+                Item::new("Restart…", "system::restart", "").with_alternate(Item::new(
+                    "Restart",
+                    "system::restart-now",
+                    "",
+                )),
+                Item::new("Shut Down…", "system::shutdown", "").with_alternate(Item::new(
+                    "Shut Down",
+                    "system::shutdown-now",
+                    "",
+                )),
                 Item::new("Lock Screen", "system::lock", "⌃⌘Q").separated(),
                 // The Mac shows ⇧⌘Q here. Nothing binds it yet: the
                 // confirmation lives in this menu, which no key can open
                 // (the ⌃F2 gap), so no hint is shown rather than one that
                 // does nothing.
-                Item::new(logout_label.clone(), "system::logout", "").with_alternate(
-                    Item::new(
-                        logout_label.trim_end_matches('…').to_owned(),
-                        "system::logout-now",
-                        "",
-                    ),
-                ),
+                Item::new(logout_label.clone(), "system::logout", "").with_alternate(Item::new(
+                    logout_label.trim_end_matches('…').to_owned(),
+                    "system::logout-now",
+                    "",
+                )),
             ]
             .into_iter()
             .chain(system::extra_menu::rows().into_iter().map(|row| {

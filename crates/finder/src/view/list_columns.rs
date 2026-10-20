@@ -103,6 +103,16 @@ pub(super) fn default_column_widths() -> [f32; COLUMN_COUNT] {
     ListColumn::ALL.map(ListColumn::default_width)
 }
 
+/// Folders keep the default layout unless the person changed it, so the
+/// saved state only carries layouts that differ.
+pub(super) fn is_default_order(order: &[u8]) -> bool {
+    order.iter().copied().eq(0..COLUMN_COUNT as u8)
+}
+
+pub(super) fn is_default_widths(widths: &[f32; COLUMN_COUNT]) -> bool {
+    *widths == default_column_widths()
+}
+
 pub(super) fn width_is_valid(width: f32) -> bool {
     width.is_finite() && (MIN_COLUMN_WIDTH..=MAX_COLUMN_WIDTH).contains(&width)
 }
@@ -562,6 +572,19 @@ mod tests {
             assert!(!keys[..index].contains(key), "{key:?} repeats");
         }
         assert!(!keys.contains(&SortKey::Name));
+    }
+
+    #[test]
+    fn only_a_changed_layout_is_saved() {
+        let mut options = FolderOptions::default();
+        let saved = serde_json::to_string(&options).unwrap();
+        assert!(!saved.contains("column_order") && !saved.contains("column_widths"));
+        reorder_columns(&mut options, ListColumn::Kind, ListColumn::Modified);
+        options.column_widths[ListColumn::Kind.index()] = 200.0;
+        let saved = serde_json::to_string(&options).unwrap();
+        assert!(saved.contains("column_order") && saved.contains("column_widths"));
+        let loaded: FolderOptions = serde_json::from_str(&saved).unwrap();
+        assert_eq!(loaded, options);
     }
 
     #[test]

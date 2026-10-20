@@ -14,6 +14,7 @@ use super::*;
 const BROWSE_SECONDS: &str = "6";
 
 /// A computer or share GVFS found, by name, with the address to connect to.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct NetworkHost {
     pub(super) name: String,
@@ -22,6 +23,7 @@ pub(super) struct NetworkHost {
 
 /// Parse `gio list -l -a standard::display-name,standard::target-uri`:
 /// one tab-separated line per item, its attributes as `key=value` fields.
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn parse_gio_list(output: &str) -> Vec<NetworkHost> {
     let mut hosts = Vec::new();
     for line in output.lines() {

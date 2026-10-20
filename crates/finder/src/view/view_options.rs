@@ -72,8 +72,10 @@ pub(super) struct FolderOptions {
     pub(super) columns: [bool; 9],
     /// The optional columns left to right (indices into `columns`); see
     /// `list_columns::column_order`, which repairs a damaged order.
+    #[serde(skip_serializing_if = "super::list_columns::is_default_order")]
     pub(super) column_order: Vec<u8>,
     /// Each optional column's width in points, in `columns` order.
+    #[serde(skip_serializing_if = "super::list_columns::is_default_widths")]
     pub(super) column_widths: [f32; 9],
     pub(super) relative_dates: bool,
     pub(super) calculate_sizes: bool,

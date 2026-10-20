@@ -137,6 +137,7 @@ pub(super) fn info_permissions(details: &[(&'static str, String)]) -> Div {
 }
 
 /// One row of Finder's Sharing & Permissions table.
+#[cfg_attr(not(unix), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Privilege {
     ReadWrite,
@@ -145,6 +146,7 @@ pub(super) enum Privilege {
     NoAccess,
 }
 
+#[cfg_attr(not(unix), allow(dead_code))]
 impl Privilege {
     const ALL: [Privilege; 4] = [
         Self::ReadWrite,
@@ -177,6 +179,7 @@ impl Privilege {
 /// `mode` with the triplet at `shift` (6 owner, 3 group, 0 everyone) set to
 /// `privilege`. A folder's search bit follows read or write access, as
 /// Finder sets it; a file keeps its execute bit.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(super) fn with_privilege(mode: u32, shift: u32, privilege: Privilege, is_dir: bool) -> u32 {
     let old = (mode >> shift) & 0o7;
     let mut bits = match privilege {

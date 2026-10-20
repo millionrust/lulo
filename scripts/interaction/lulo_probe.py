@@ -1154,10 +1154,11 @@ def assert_shell_parity(shell: ShellSession) -> None:
              "--object-path", "/org/rmac/NotificationCenter1",
              "--method", "org.rmac.NotificationCenter1.Applications"],
             env=shell.env, capture_output=True, text=True, timeout=10)
-        # (bbbbbbyt): the last field is muted_until, seconds since 1970.
+        # (bbbbbbyt): the last field is muted_until, seconds since 1970;
+        # gdbus prints it after the lock-preview byte.
         import re as _re
         return any(int(value) > time.time() for value in
-                   _re.findall(r"uint64 (\d+)", reply.stdout))
+                   _re.findall(r"0x[0-9a-f]+, (?:uint64 )?(\d+)\)", reply.stdout))
 
     if not shell._wait_for(muted, 10):
         raise StepFailed("NC-08: Mute for 1 Hour did not reach the notification policy")

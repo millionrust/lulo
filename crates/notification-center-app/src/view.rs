@@ -35,6 +35,9 @@ pub(crate) struct NotificationCenterView {
     pub(crate) scale_factor: f32,
     /// The open "<App> Notifications" right-click menu and the app it is for.
     pub(crate) app_menu: Option<(rmac_ui::ContextMenuState, AppMenuTarget)>,
+    /// The app the last card menu was opened for. It outlives the menu
+    /// itself: choosing an item dismisses the menu before its action runs.
+    pub(crate) menu_target: Option<AppMenuTarget>,
     /// The panel slides in from the right edge from here (NC-11) …
     pub(crate) opened: std::time::Instant,
     /// … and out again from here.
@@ -205,6 +208,7 @@ impl NotificationCenterView {
             return;
         };
         let state = rmac_ui::ContextMenuState::open(position, &self.focus, window, cx);
+        self.menu_target = Some(target.clone());
         self.app_menu = Some((state, target));
         self.hovered = None;
         cx.notify();
@@ -223,9 +227,8 @@ impl NotificationCenterView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AppMenuTarget> {
-        let target = self.app_menu.as_ref().map(|(_, target)| target.clone());
         self.dismiss_app_menu(window, cx);
-        target
+        self.menu_target.take()
     }
 
     /// "Mute for 1 Hour" / "Mute for Today": the app's notifications keep

@@ -139,6 +139,9 @@ pub(crate) struct QuickSettingsView {
     pub(crate) focus_modes: Vec<detail::FocusMode>,
     /// A Focus row's ⋯ timer menu and the mode it is for.
     pub(crate) focus_menu: Option<(rmac_ui::ContextMenuState, String)>,
+    /// The mode the last ⋯ menu was opened for; it outlives the menu,
+    /// which closes before the chosen item's action runs.
+    pub(crate) focus_menu_mode: Option<String>,
     /// Keyboard focus in the grid and in a detail view. Rings show only
     /// after a key was pressed, as on the Mac.
     pub(crate) module_focus: Option<Module>,
@@ -367,6 +370,7 @@ impl QuickSettingsView {
             others_expanded: false,
             focus_modes: Vec::new(),
             focus_menu: None,
+            focus_menu_mode: None,
             module_focus: None,
             detail_focus: None,
             keyboard: false,
@@ -487,6 +491,7 @@ impl QuickSettingsView {
         cx: &mut Context<Self>,
     ) {
         let state = rmac_ui::ContextMenuState::open(position, &self.focus, window, cx);
+        self.focus_menu_mode = Some(mode.clone());
         self.focus_menu = Some((state, mode));
         cx.notify();
     }
@@ -505,8 +510,8 @@ impl QuickSettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let mode = self.focus_menu.as_ref().map(|(_, mode)| mode.clone());
         self.dismiss_focus_menu(window, cx);
+        let mode = self.focus_menu_mode.take();
         if let Some(mode) = mode {
             let duration_ms = timer.duration_ms(chrono::Local::now());
             self.execute(Command::ActivateFocusMode { mode, duration_ms }, cx);

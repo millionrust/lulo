@@ -11,7 +11,7 @@ shell over one simultaneous 60-second window. Save the raw JSON.
 | Surface | Idle behavior to verify |
 |---|---|
 | Text Editor | The focused insertion point parks visibly after two seconds without editing; typing after four seconds still reaches the document (`text-editor/find.json` exercises this in the nested suite). Deactivating the window cancels its blink task. |
-| Clock | World Clock has minute-resolution hands and labels and schedules only the next minute change. Static tabs wait on the saved-state watcher; an inactive window has no redraw timer. A running stopwatch or countdown uses its displayed precision. |
+| Clock | World Clock labels and the hour and minute hands change once a minute and schedule only the next minute change; its second hand sweeps at about 30 frames a second only while the Clock window is active (CLOCK-10), so this row is measured with `RMAC_CLOCK_SECOND_HAND=still`. Static tabs wait on the saved-state watcher; an inactive window has no redraw timer. A running stopwatch or countdown uses its displayed precision. |
 | System Monitor | Process and graph samples occur at the five-second interval only while its window is active. |
 | Files | Folder and mount changes arrive through inotify and kernel mount notifications; there is no directory scan timer. |
 | Settings | The Search field starts keyboard-focused, then the cursor parks without keeping the whole window busy. Measure with that initial focus intact. With no Focus or Notification Center service on the session bus, their watchers wait for the bus name instead of reconnecting every second, and a repeated stream error does not repaint. |

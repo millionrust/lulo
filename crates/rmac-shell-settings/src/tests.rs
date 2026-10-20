@@ -660,3 +660,21 @@ fn a_windows_dock_saved_before_apps_ran_on_windows_gets_apps_back() {
         ShellSettings::default().pinned_apps
     );
 }
+
+#[test]
+fn control_centre_edit_controls_round_trip_and_default_to_every_control() {
+    assert!(ShellSettings::default()
+        .control_centre
+        .hidden_controls
+        .is_empty());
+    let (root, store) = test_store("control-centre-edit-controls");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut settings = ShellSettings::default();
+    settings.control_centre.hidden_controls = vec!["screenshot".into()];
+    store.save(&settings).unwrap();
+    assert_eq!(
+        store.load().unwrap().settings.control_centre.hidden_controls,
+        ["screenshot"]
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

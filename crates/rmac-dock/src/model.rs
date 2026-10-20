@@ -377,6 +377,9 @@ pub struct FinderContextMenu {
     pub application_name: String,
     pub windows: Vec<WindowMenu>,
     pub new_window: Option<ContextAction>,
+    /// Find…, Go to Folder… and Connect to Server… (DOCK-05), each opening
+    /// a Files window that runs the command.
+    pub commands: Vec<ApplicationCommand>,
     pub show_all_windows: Option<ContextAction>,
     pub hide: Option<ContextAction>,
     pub hide_others: Option<ContextAction>,

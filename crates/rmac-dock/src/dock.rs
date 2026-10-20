@@ -12,6 +12,21 @@ pub struct ResolvedStack {
     pub available: bool,
 }
 
+/// Finder's tile commands (DOCK-05): (row id, label, `rmac-files` flag).
+const FINDER_COMMANDS: [(&str, &str, &str); 3] = [
+    ("files-find", "Find\u{2026}", "--find"),
+    (
+        "files-go-to-folder",
+        "Go to Folder\u{2026}",
+        "--go-to-folder",
+    ),
+    (
+        "files-connect-to-server",
+        "Connect to Server\u{2026}",
+        "--connect-to-server",
+    ),
+];
+
 impl Model {
     pub fn build(
         pinned: &[rmac_shell_settings::AppId],
@@ -372,6 +387,9 @@ impl Model {
     /// The Files tile's own Dock menu (DOCK-05): built like `context_menu`,
     /// but New Finder Window replaces the generic Open row (offered
     /// whether or not Files is running) and there is no Options ▸ or Quit.
+    /// The Files tile's commands after New Finder Window, as Finder's tile
+    /// lists them, with the `rmac-files` flag that opens each. New Smart
+    /// Folder has no Lulo equivalent and is left out.
     pub fn finder_context_menu(&self) -> Option<FinderContextMenu> {
         let canonical = canonical_app_id(rmac_apps::identity::FILES);
         let item = self
@@ -416,6 +434,36 @@ impl Model {
                 app_id: item.id.clone(),
                 spec,
             }),
+            commands: item
+                .launch
+                .iter()
+                .flat_map(|spec| {
+                    FINDER_COMMANDS.iter().filter_map(move |(id, name, flag)| {
+                        let rmac_apps::LaunchSpec::Command {
+                            program,
+                            working_dir,
+                            terminal,
+                            ..
+                        } = spec
+                        else {
+                            return None;
+                        };
+                        Some(ApplicationCommand {
+                            id: (*id).to_owned(),
+                            name: (*name).to_owned(),
+                            action: ContextAction::LaunchNew {
+                                app_id: item.id.clone(),
+                                spec: rmac_apps::LaunchSpec::Command {
+                                    program: program.clone(),
+                                    args: vec![(*flag).to_owned()],
+                                    working_dir: working_dir.clone(),
+                                    terminal: *terminal,
+                                },
+                            },
+                        })
+                    })
+                })
+                .collect(),
             show_all_windows: item
                 .windows
                 .first()

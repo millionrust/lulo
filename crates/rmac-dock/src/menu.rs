@@ -484,6 +484,7 @@ impl Session {
     pub fn finder(menu: &FinderContextMenu) -> Result<Self, MenuError> {
         let row_count = menu.windows.len()
             + usize::from(menu.new_window.is_some())
+            + menu.commands.len()
             + usize::from(menu.show_all_windows.is_some())
             + usize::from(menu.hide.is_some());
         if row_count > MAX_MENU_ROWS {
@@ -531,6 +532,20 @@ impl Session {
                 submenu: None,
             });
         }
+        rows.extend(menu.commands.iter().map(|command| Row {
+            id: RowId::ApplicationCommand(command.id.clone()),
+            section: Section::Lifecycle,
+            label: bounded(&command.name),
+            accessible_label: bounded(&command.name),
+            enabled: true,
+            checked: false,
+            urgent: false,
+            destructive: false,
+            primary: Some(Action::Context(command.action.clone())),
+            secondary: None,
+            alternate_label: None,
+            submenu: None,
+        }));
         if let Some(action) = &menu.show_all_windows {
             rows.push(Row {
                 id: RowId::ShowAllWindows,
@@ -1129,6 +1144,19 @@ mod tests {
                     terminal: false,
                 },
             }),
+            commands: vec![crate::ApplicationCommand {
+                id: "files-go-to-folder".into(),
+                name: "Go to Folder…".into(),
+                action: ContextAction::LaunchNew {
+                    app_id: "org.rmac.Files".into(),
+                    spec: rmac_apps::LaunchSpec::Command {
+                        program: "rmac-files".into(),
+                        args: vec!["--go-to-folder".into()],
+                        working_dir: None,
+                        terminal: false,
+                    },
+                },
+            }],
             show_all_windows: Some(ContextAction::ShowAllWindows {
                 app_id: "org.rmac.Files".into(),
                 window: rmac_compositor::WindowId(3),
@@ -1149,10 +1177,12 @@ mod tests {
             [
                 RowId::Window(rmac_compositor::WindowId(3)),
                 RowId::NewFinderWindow,
+                RowId::ApplicationCommand("files-go-to-folder".into()),
                 RowId::ShowAllWindows,
                 RowId::Hide,
             ]
         );
+        assert_eq!(session.rows()[2].label, "Go to Folder…");
         assert!(!ids.contains(&RowId::Pin));
         assert!(!ids.contains(&RowId::Quit));
     }

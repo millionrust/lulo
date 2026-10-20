@@ -125,6 +125,13 @@ only. On a tag, the tested ISO and its checksum are attached to the release.
 - The image depends on the Ubuntu archive at build time and on the matching
   GitHub Release. A release ISO is reproducible in content but not
   bit-for-bit (debootstrap pulls the archive's state on that day).
+- niri 26.04 refuses software EGL renderers (llvmpipe). The Lulo session
+  therefore needs a GPU with a Mesa hardware driver. With only a plain
+  framebuffer (`nomodeset`, simpledrm, Hyper-V, a VM without 3D) the session
+  starts but shows nothing. The image has no "safe graphics" entry for that
+  reason, and the CI gives the VM a virgl GPU (virtio-vga-gl, backed by
+  llvmpipe on the runner). Letting niri use llvmpipe when no hardware renderer
+  exists is a follow-up for Lulo's niri build.
 - Proprietary NVIDIA drivers are not on the image (size, and the open
   driver works out of the box). `ubuntu-drivers-common` is installed, so the
   installed system can add them the Ubuntu way.

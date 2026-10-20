@@ -186,7 +186,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             qemu-system-x86 qemu-system-gui qemu-system-modules-opengl qemu-utils ovmf \
-            xvfb imagemagick libgl1-mesa-dri libegl-mesa0 \
+            xvfb imagemagick libgl1-mesa-dri libegl-mesa0 libegl1 libgl1 libgles2 \
             tesseract-ocr tesseract-ocr-eng python3-pil
           # QEMU's GTK display runs on Xvfb; Mesa's llvmpipe backs the
           # guest's virgl GPU (niri needs an accelerated renderer).

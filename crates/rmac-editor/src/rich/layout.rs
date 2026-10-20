@@ -24,14 +24,34 @@ use gpui::{
     TextRun, UnderlineStyle, Window,
 };
 
-use super::model::{line_start_share, Alignment, CharStyle, Ligatures, Paragraph, Rgb};
+use super::model::{
+    has_rtl, line_start_share, Alignment, CharStyle, Ligatures, ListKind, Paragraph, Rgb,
+    WritingDirection,
+};
 
 /// TextEdit's default tab stops: every 28 points.
 const TAB_INTERVAL: f32 = 28.0;
-/// A list item's text starts 36 points in per level, its marker 11 points
-/// in from its level's start.
-const LIST_INDENT: f32 = 36.0;
-const LIST_MARKER_X: f32 = 11.0;
+
+/// Where lists and quotes sit: a list item's text starts `list_indent`
+/// points in per level, its marker `marker_x` points in from its level's
+/// start; a block quote's text starts `quote_indent` points in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ListMetrics {
+    pub list_indent: f32,
+    pub marker_x: f32,
+    pub quote_indent: f32,
+}
+
+impl Default for ListMetrics {
+    /// TextEdit's: 36-point list levels with the marker 11 points in.
+    fn default() -> Self {
+        Self {
+            list_indent: 36.0,
+            marker_x: 11.0,
+            quote_indent: 16.0,
+        }
+    }
+}
 /// Allow Hyphenation: the shortest word split, and the shortest piece on
 /// either side of the hyphen.
 const HYPHEN_MIN_WORD: usize = 6;
@@ -57,6 +77,9 @@ pub(crate) struct LayoutParams {
     pub mono_family: SharedString,
     /// Format ▸ Allow Hyphenation.
     pub hyphenation: bool,
+    pub metrics: ListMetrics,
+    /// View ▸ Show Highlights (Notes): highlight backgrounds are drawn.
+    pub show_highlights: bool,
 }
 
 pub(crate) fn hsla(color: Rgb) -> Hsla {
@@ -130,8 +153,17 @@ pub(crate) fn font_for(style: &CharStyle, params: &LayoutParams) -> Font {
 
 pub(crate) fn text_run(style: &CharStyle, len: usize, params: &LayoutParams) -> TextRun {
     let thickness = px((params.zoom * style.size / 12.0).clamp(1.0, 4.0));
+    let highlight = style.highlight.filter(|_| params.show_highlights);
     let color = if style.link.is_some() && style.color.is_none() {
         params.link_color
+    } else if let (None, Some(highlight)) = (style.color, highlight) {
+        // Automatic text stays readable on a pale highlight, even when the
+        // automatic colour is light (a dark background).
+        if luminance(highlight) > 0.6 && params.default_color.l > 0.6 {
+            gpui::black()
+        } else {
+            params.default_color
+        }
     } else {
         style.color.map(hsla).unwrap_or(params.default_color)
     };
@@ -139,7 +171,7 @@ pub(crate) fn text_run(style: &CharStyle, len: usize, params: &LayoutParams) -> 
         len,
         font: font_for(style, params),
         color,
-        background_color: style.highlight.map(hsla),
+        background_color: highlight.map(hsla),
         underline: (style.underline || style.link.is_some()).then_some(UnderlineStyle {
             thickness,
             color: None,
@@ -150,6 +182,12 @@ pub(crate) fn text_run(style: &CharStyle, len: usize, params: &LayoutParams) -> 
             color: None,
         }),
     }
+}
+
+/// Relative brightness of a document colour, 0 to 1.
+fn luminance(color: Rgb) -> f32 {
+    (0.2126 * f32::from(color.r) + 0.7152 * f32::from(color.g) + 0.0722 * f32::from(color.b))
+        / 255.0
 }
 
 /// The run an outline is filled with: the same glyphs in the paper colour.
@@ -217,11 +255,36 @@ pub(crate) struct LineBox {
     pub gaps: Vec<usize>,
     pub gap_extra: Pixels,
     pub pieces: Vec<Piece>,
+    /// End of the line's text before its trailing white space.
+    pub visual_end: usize,
+    /// Bidirectional text: the line's directional runs in visual order,
+    /// left to right. Empty for a line that reads plainly left to right.
+    pub runs: Vec<VisualRun>,
+}
+
+/// One directional run of a bidirectional line.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct VisualRun {
+    /// The logical bytes the run holds.
+    pub range: Range<usize>,
+    pub rtl: bool,
+    /// Visual left edge, in paragraph coordinates.
+    pub x: Pixels,
+    pub width: Pixels,
+}
+
+/// A Notes checklist item's round checkbox.
+pub(crate) struct Checkbox {
+    pub x: Pixels,
+    pub diameter: Pixels,
+    pub checked: bool,
 }
 
 pub(crate) struct Marker {
     pub x: Pixels,
-    pub line: ShapedLine,
+    /// The marker's glyphs: a list label, or a ticked checkbox's check.
+    pub line: Option<ShapedLine>,
+    pub checkbox: Option<Checkbox>,
 }
 
 pub(crate) struct ParagraphLayout {
@@ -231,7 +294,12 @@ pub(crate) struct ParagraphLayout {
     /// The right edge selection highlights reach.
     pub right: Pixels,
     pub marker: Option<Marker>,
+    /// Format ▸ Block Quote: the x of a bar down the paragraph.
+    pub quote_bar: Option<Pixels>,
+    /// The paragraph reads right to left.
+    pub rtl: bool,
     /// `(byte, x)` for every glyph start, sorted, ending at the text's end.
+    /// x runs along the text in logical (reading) order.
     stops: Vec<(usize, Pixels)>,
 }
 
@@ -382,6 +450,152 @@ pub(crate) fn hyphenation_points(word: &str) -> Vec<usize> {
     points
 }
 
+/// Embedding levels of `paragraph`'s characters (indexed by byte; only a
+/// character's first byte is meaningful) from the Unicode bidirectional
+/// algorithm, with the paragraph's base direction. A run carrying its own
+/// Format ▸ Text ▸ Writing Direction ▸ Selection is embedded as LRE/RLE …
+/// PDF would embed it.
+pub(crate) fn bidi_levels(paragraph: &Paragraph, base_rtl: bool) -> Vec<u8> {
+    use unicode_bidi::{BidiInfo, Level};
+    let text = paragraph.text();
+    let mut analysis = String::with_capacity(text.len() + 8);
+    let mut map = vec![0_usize; text.len()];
+    for (range, style) in paragraph.styled_ranges() {
+        let embedding = match style.embedding {
+            WritingDirection::Default => None,
+            WritingDirection::LeftToRight => Some('\u{202A}'),
+            WritingDirection::RightToLeft => Some('\u{202B}'),
+        };
+        if let Some(control) = embedding {
+            analysis.push(control);
+        }
+        for (offset, character) in text[range.clone()].char_indices() {
+            map[range.start + offset] = analysis.len();
+            analysis.push(character);
+        }
+        if embedding.is_some() {
+            analysis.push('\u{202C}');
+        }
+    }
+    let base = if base_rtl { Level::rtl() } else { Level::ltr() };
+    let mut levels = vec![base.number(); text.len()];
+    if analysis.is_empty() {
+        return levels;
+    }
+    let info = BidiInfo::new(&analysis, Some(base));
+    for (at, _) in text.char_indices() {
+        levels[at] = info
+            .levels
+            .get(map[at])
+            .map_or(base.number(), |level| level.number());
+    }
+    levels
+}
+
+/// Rules L1 and L2 for the line `range` of `text`: its directional runs in
+/// visual order, left to right, each with whether it reads right to left.
+/// Tabs and the white space before them take the paragraph's own level.
+pub(crate) fn visual_runs(
+    text: &str,
+    levels: &[u8],
+    range: Range<usize>,
+    base: u8,
+) -> Vec<(Range<usize>, bool)> {
+    let mut chars: Vec<(usize, char, u8)> = text[range.clone()]
+        .char_indices()
+        .map(|(offset, character)| {
+            let at = range.start + offset;
+            (at, character, levels.get(at).copied().unwrap_or(base))
+        })
+        .collect();
+    let mut before_tab = true;
+    for (_, character, level) in chars.iter_mut().rev() {
+        if *character == '\t' {
+            *level = base;
+            before_tab = true;
+        } else if before_tab && character.is_whitespace() {
+            *level = base;
+        } else {
+            before_tab = false;
+        }
+    }
+    let mut runs: Vec<(Range<usize>, u8)> = Vec::new();
+    for (at, character, level) in chars {
+        let end = at + character.len_utf8();
+        match runs.last_mut() {
+            Some((run, run_level)) if *run_level == level && run.end == at => run.end = end,
+            _ => runs.push((at..end, level)),
+        }
+    }
+    let highest = runs.iter().map(|(_, level)| *level).max().unwrap_or(base);
+    let lowest_odd = runs
+        .iter()
+        .map(|(_, level)| *level)
+        .filter(|level| level % 2 == 1)
+        .min();
+    if let Some(lowest_odd) = lowest_odd {
+        let mut level = highest;
+        while level >= lowest_odd {
+            let mut index = 0;
+            while index < runs.len() {
+                if runs[index].1 >= level {
+                    let mut end = index;
+                    while end < runs.len() && runs[end].1 >= level {
+                        end += 1;
+                    }
+                    runs[index..end].reverse();
+                    index = end;
+                } else {
+                    index += 1;
+                }
+            }
+            if level == 0 {
+                break;
+            }
+            level -= 1;
+        }
+    }
+    runs.into_iter()
+        .map(|(range, level)| (range, level % 2 == 1))
+        .collect()
+}
+
+/// Glyph starts of one shaped stretch, in logical order, as `(byte, x)`
+/// with x the advance of everything before the glyph in reading order.
+/// A right-to-left stretch is shaped right to left, so its glyphs' visual
+/// positions run backwards; their advances are added up in reading order.
+fn logical_stops(shaped: &gpui::LineLayout, rtl: bool) -> Vec<(usize, Pixels)> {
+    let glyphs: Vec<(usize, Pixels)> = shaped
+        .runs
+        .iter()
+        .flat_map(|run| run.glyphs.iter())
+        .map(|glyph| (glyph.index, glyph.position.x))
+        .collect();
+    if !rtl {
+        return glyphs;
+    }
+    let mut by_x = glyphs.clone();
+    by_x.sort_by(|left, right| f32::from(left.1).total_cmp(&f32::from(right.1)));
+    let mut advances: Vec<(usize, Pixels)> = by_x
+        .iter()
+        .enumerate()
+        .map(|(index, (byte, x))| {
+            let next = by_x.get(index + 1).map_or(shaped.width, |(_, x)| *x);
+            (*byte, (next - *x).max(px(0.0)))
+        })
+        .collect();
+    advances.sort_by_key(|(byte, _)| *byte);
+    let mut x = px(0.0);
+    advances
+        .into_iter()
+        .map(|(byte, advance)| {
+            let stop = (byte, x);
+            x += advance;
+            stop
+        })
+        .collect()
+}
+
 pub(crate) fn layout_paragraph(
     paragraph: &Paragraph,
     list_number: u32,
@@ -391,17 +605,44 @@ pub(crate) fn layout_paragraph(
     let text = paragraph.text();
     let style = paragraph.style();
     let zoom = params.zoom;
+    let metrics = params.metrics;
     let level = f32::from(style.list_level);
-    let indent = if style.list.is_some() {
-        px(LIST_INDENT * (level + 1.0) * zoom)
+    let rtl = style.direction.is_rtl(text);
+    let quote_indent = if style.quote {
+        px(metrics.quote_indent * zoom)
     } else {
         px(0.0)
     };
+    // A list item is indented one level more than its nesting; any other
+    // paragraph by its indentation level (Format ▸ Indentation).
+    let indent = quote_indent
+        + if style.list.is_some() {
+            px(metrics.list_indent * (level + 1.0) * zoom)
+        } else {
+            px(metrics.list_indent * level * zoom)
+        };
     let available = (params.width - indent).max(px(1.0));
+    // A right-to-left paragraph is indented from the right.
+    let indent_left = if rtl { px(0.0) } else { indent };
     let tab = px(TAB_INTERVAL * zoom);
     let text_system = window.text_system();
 
-    // Glyph positions along one unwrapped line.
+    // Bidirectional text needs the bidi algorithm; plain left-to-right
+    // text (nearly every paragraph) skips it.
+    let embedded = paragraph
+        .runs()
+        .iter()
+        .any(|run| run.style.embedding != WritingDirection::Default);
+    let base_level = u8::from(rtl);
+    let levels = (rtl || embedded || has_rtl(text)).then(|| bidi_levels(paragraph, rtl));
+    let level_at = |at: usize| -> u8 {
+        levels
+            .as_ref()
+            .and_then(|levels| levels.get(at).copied())
+            .unwrap_or(base_level)
+    };
+
+    // Glyph positions along one unwrapped line, in reading order.
     let atoms = atoms(paragraph);
     let mut stops: Vec<(usize, Pixels)> = Vec::with_capacity(text.len() + 1);
     let mut x = px(0.0);
@@ -414,22 +655,43 @@ pub(crate) fn layout_paragraph(
                 let first = &style_ranges[0].1;
                 let size = size_px(first, params);
                 let extra = tracking(first, params);
-                let runs: Vec<TextRun> = style_ranges
-                    .iter()
-                    .map(|(sub, style)| text_run(style, sub.len(), params))
-                    .collect();
-                let shaped = text_system.layout_line(&text[range.clone()], size, &runs, None);
-                let mut glyphs = 0_usize;
-                for run in &shaped.runs {
-                    for glyph in &run.glyphs {
-                        stops.push((
-                            range.start + glyph.index,
-                            x + glyph.position.x + extra * glyphs as f32,
-                        ));
+                // Each stretch of one direction is shaped on its own.
+                let mut stretches: Vec<Range<usize>> = Vec::new();
+                if levels.is_some() {
+                    let mut stretch_start = range.start;
+                    let mut stretch_level = level_at(range.start);
+                    for (offset, _) in text[range.clone()].char_indices() {
+                        let at = range.start + offset;
+                        let at_level = level_at(at);
+                        if at_level != stretch_level {
+                            stretches.push(stretch_start..at);
+                            stretch_start = at;
+                            stretch_level = at_level;
+                        }
+                    }
+                    stretches.push(stretch_start..range.end);
+                } else {
+                    stretches.push(range.clone());
+                }
+                for stretch in stretches {
+                    let runs: Vec<TextRun> = style_ranges
+                        .iter()
+                        .filter_map(|(sub, style)| {
+                            let start = sub.start.max(stretch.start);
+                            let end = sub.end.min(stretch.end);
+                            (start < end).then(|| text_run(style, end - start, params))
+                        })
+                        .collect();
+                    let shaped =
+                        text_system.layout_line(&text[stretch.clone()], size, &runs, None);
+                    let stretch_rtl = level_at(stretch.start) % 2 == 1;
+                    let mut glyphs = 0_usize;
+                    for (byte, glyph_x) in logical_stops(&shaped, stretch_rtl) {
+                        stops.push((stretch.start + byte, x + glyph_x + extra * glyphs as f32));
                         glyphs += 1;
                     }
+                    x += shaped.width + extra * glyphs as f32;
                 }
-                x += shaped.width + extra * glyphs as f32;
             }
             Atom::Tab { at } => {
                 stops.push((*at, x));
@@ -540,7 +802,6 @@ pub(crate) fn layout_paragraph(
         hyphen: false,
     });
 
-    let rtl = style.direction.is_rtl(text);
     let mut lines = Vec::with_capacity(breaks.len());
     let mut top = px(0.0);
     let last_break = breaks.len() - 1;
@@ -574,13 +835,40 @@ pub(crate) fn layout_paragraph(
         } else {
             free / gaps.len() as f32
         };
-        let left = indent + offset;
+        let left = indent_left + offset;
         let shift_at = |at: usize| gap_extra * gaps.iter().filter(|gap| **gap <= at).count() as f32;
+        // Logical position along the line, justification included.
+        let along = |at: usize| x_at(at) - base_x + shift_at(at);
+
+        // The line's directional runs, placed left to right.
+        let mut runs = Vec::new();
+        if let Some(levels) = &levels {
+            let ordered = visual_runs(text, levels, line.start..trimmed_end, base_level);
+            let plain = ordered.len() <= 1 && ordered.iter().all(|(_, run_rtl)| !run_rtl);
+            if !plain {
+                let mut cursor = left;
+                for (range, run_rtl) in ordered {
+                    let run_width = along(range.end) - along(range.start);
+                    runs.push(VisualRun {
+                        range,
+                        rtl: run_rtl,
+                        x: cursor,
+                        width: run_width,
+                    });
+                    cursor += run_width;
+                }
+            }
+        }
 
         // Pieces: each text atom's share of the line, cut again at
-        // justification gaps so each word can move, and at every character
-        // of a tracked (kerned) atom.
+        // justification gaps so each word can move, at every character of
+        // a tracked (kerned) atom, and where the direction changes.
         let mut pieces = Vec::new();
+        let piece_end_limit = if runs.is_empty() {
+            line.content_end
+        } else {
+            trimmed_end
+        };
         for atom in &atoms {
             let Atom::Text {
                 range,
@@ -590,7 +878,7 @@ pub(crate) fn layout_paragraph(
                 continue;
             };
             let from = range.start.max(line.start);
-            let to = range.end.min(line.content_end);
+            let to = range.end.min(piece_end_limit);
             if from >= to {
                 continue;
             }
@@ -599,6 +887,7 @@ pub(crate) fn layout_paragraph(
             if tracking(atom_style, params) != px(0.0) {
                 cuts.extend(text[from..to].char_indices().map(|(at, _)| from + at));
             }
+            cuts.extend(runs.iter().map(|run: &VisualRun| run.range.start));
             cuts.sort_unstable();
             cuts.push(usize::MAX);
             let rise = px(atom_style.baseline_shift() * zoom);
@@ -626,8 +915,16 @@ pub(crate) fn layout_paragraph(
                             None,
                         )
                     });
+                    let piece_x = match runs
+                        .iter()
+                        .find(|run| run.range.start <= sub.start && sub.start < run.range.end)
+                    {
+                        Some(run) if run.rtl => run.x + along(run.range.end) - along(sub.end),
+                        Some(run) => run.x + along(sub.start) - along(run.range.start),
+                        None => left + along(sub.start),
+                    };
                     pieces.push(Piece {
-                        x: left + (x_at(sub.start) - base_x) + shift_at(sub.start),
+                        x: piece_x,
                         rise,
                         line: shaped,
                         fill,
@@ -642,7 +939,7 @@ pub(crate) fn layout_paragraph(
         if let Some((at, _)) = hyphen {
             let style = paragraph.style_at(at);
             pieces.push(Piece {
-                x: left + (x_at(at) - base_x) + shift_at(at),
+                x: left + along(at),
                 rise: px(style.baseline_shift() * zoom),
                 line: text_system.shape_line(
                     SharedString::from("-"),
@@ -677,22 +974,71 @@ pub(crate) fn layout_paragraph(
             gaps,
             gap_extra,
             pieces,
+            visual_end: trimmed_end,
+            runs,
         });
         top += height;
     }
 
     let marker = style.list.map(|kind| {
-        let label = kind.marker(list_number.max(1));
         let marker_style = paragraph.style_of_char_at(0);
+        let marker_in = px((metrics.marker_x + metrics.list_indent * level) * zoom);
+        let flip = |x: Pixels, width: Pixels| {
+            if rtl {
+                params.width - x - width
+            } else {
+                x
+            }
+        };
+        if kind == ListKind::Checkbox {
+            // The circle is a little taller than the text's capitals and
+            // centred on the first line, as in Notes.
+            let diameter = px((marker_style.size * 1.3 * zoom).round().max(10.0));
+            let line = style.checked.then(|| {
+                let check = marker_style.size * 0.9;
+                let check_style = CharStyle {
+                    bold: true,
+                    size: check,
+                    ..CharStyle::default()
+                };
+                let mut run = text_run(&check_style, "\u{2713}".len(), params);
+                run.color = gpui::white();
+                text_system.shape_line(
+                    SharedString::from("\u{2713}"),
+                    px(check * zoom),
+                    &[run],
+                    None,
+                )
+            });
+            return Marker {
+                x: flip(marker_in - diameter * 0.5 + px(2.0 * zoom), diameter),
+                line,
+                checkbox: Some(Checkbox {
+                    x: flip(marker_in - diameter * 0.5 + px(2.0 * zoom), diameter),
+                    diameter,
+                    checked: style.checked,
+                }),
+            };
+        }
+        let label = kind.marker(list_number.max(1));
         let shaped = text_system.shape_line(
             SharedString::from(label.clone()),
             size_px(marker_style, params),
             &[text_run(marker_style, label.len(), params)],
             None,
         );
+        let width = shaped.width;
         Marker {
-            x: px((LIST_MARKER_X + LIST_INDENT * level) * zoom),
-            line: shaped,
+            x: flip(marker_in, width),
+            line: Some(shaped),
+            checkbox: None,
+        }
+    });
+    let quote_bar = style.quote.then(|| {
+        if rtl {
+            params.width - px(3.0 * zoom)
+        } else {
+            px(0.0)
         }
     });
 
@@ -702,6 +1048,8 @@ pub(crate) fn layout_paragraph(
         height: top,
         right: params.width,
         marker,
+        quote_bar,
+        rtl,
         stops,
     }
 }
@@ -715,6 +1063,13 @@ impl ParagraphLayout {
             .map_or(px(0.0), |(_, x)| *x)
     }
 
+    /// Position of `local` along `line` in reading order, from the line's
+    /// start, justification included.
+    fn along(&self, line: &LineBox, local: usize) -> Pixels {
+        let shift = line.gap_extra * line.gaps.iter().filter(|gap| **gap <= local).count() as f32;
+        self.x_at(local) - line.base_x + shift
+    }
+
     /// The line a caret at `local` sits on.
     pub fn line_for_offset(&self, local: usize) -> usize {
         let last = self.lines.len() - 1;
@@ -725,12 +1080,55 @@ impl ParagraphLayout {
             .min(last)
     }
 
+    /// x of `local` inside one directional run.
+    fn x_in_run(&self, line: &LineBox, run: &VisualRun, local: usize) -> Pixels {
+        if run.rtl {
+            run.x + self.along(line, run.range.end) - self.along(line, local)
+        } else {
+            run.x + self.along(line, local) - self.along(line, run.range.start)
+        }
+    }
+
     /// The caret's x for `local` on line `line`.
     pub fn x_for(&self, line: usize, local: usize) -> Pixels {
         let line = &self.lines[line];
         let local = local.clamp(line.start, line.content_end.max(line.start));
-        let shift = line.gap_extra * line.gaps.iter().filter(|gap| **gap <= local).count() as f32;
-        line.left + (self.x_at(local) - line.base_x) + shift
+        if line.runs.is_empty() {
+            return line.left + self.along(line, local);
+        }
+        if local >= line.visual_end {
+            // Trailing white space continues past the logical end.
+            let beyond = self.along(line, local) - self.along(line, line.visual_end);
+            let (left, right) = line.runs.iter().fold((Pixels::MAX, px(0.0)), |acc, run| {
+                (acc.0.min(run.x), acc.1.max(run.x + run.width))
+            });
+            return if self.rtl { left - beyond } else { right + beyond };
+        }
+        // At a direction change the caret stays with the text before it
+        // when that text reads in the paragraph's own direction.
+        if local > line.start {
+            let previous = self.text[..local]
+                .char_indices()
+                .next_back()
+                .map_or(line.start, |(at, _)| at);
+            if let Some(run) = line
+                .runs
+                .iter()
+                .find(|run| run.range.start <= previous && previous < run.range.end)
+            {
+                if run.range.end == local && run.rtl == self.rtl {
+                    return self.x_in_run(line, run, local);
+                }
+            }
+        }
+        match line
+            .runs
+            .iter()
+            .find(|run| run.range.start <= local && local < run.range.end)
+        {
+            Some(run) => self.x_in_run(line, run, local),
+            None => line.left + self.along(line, local),
+        }
     }
 
     /// The last caret position on `line` that still draws on it.
@@ -779,6 +1177,23 @@ impl ParagraphLayout {
         self.offset_for_x(line, x)
     }
 
+    /// The left and right edges of the character `from..to` on `line`.
+    fn char_extent(&self, index: usize, from: usize, to: usize) -> (Pixels, Pixels) {
+        let line = &self.lines[index];
+        match line
+            .runs
+            .iter()
+            .find(|run| run.range.start <= from && from < run.range.end)
+        {
+            Some(run) => {
+                let a = self.x_in_run(line, run, from);
+                let b = self.x_in_run(line, run, to.min(run.range.end));
+                (a.min(b), a.max(b))
+            }
+            None => (self.x_for(index, from), self.x_for(index, to)),
+        }
+    }
+
     /// The character under a point in paragraph coordinates (not the
     /// nearest boundary): what a click on a link lands on.
     pub fn char_at_point(&self, x: Pixels, y: Pixels) -> Option<usize> {
@@ -793,7 +1208,10 @@ impl ParagraphLayout {
         self.text[line.start..end]
             .char_indices()
             .map(|(at, character)| (line.start + at, line.start + at + character.len_utf8()))
-            .find(|(from, to)| x >= self.x_for(index, *from) && x < self.x_for(index, *to))
+            .find(|(from, to)| {
+                let (left, right) = self.char_extent(index, *from, *to);
+                x >= left && x < right
+            })
             .map(|(from, _)| from)
     }
 
@@ -805,7 +1223,7 @@ impl ParagraphLayout {
     }
 
     /// Selection rectangles `(left, top, right, bottom)` for `range`
-    /// (local); `through_end` extends the last line to the right edge
+    /// (local); `through_end` extends the last line to the trailing edge
     /// because the selection continues past this paragraph.
     pub fn selection_rects(
         &self,
@@ -827,6 +1245,29 @@ impl ParagraphLayout {
             if range.start == range.end && !continues {
                 continue;
             }
+            let bottom = line.top + line.height;
+            if !line.runs.is_empty() {
+                // One highlight per directional run the selection covers.
+                let mut far = (Pixels::MAX, px(0.0));
+                for run in &line.runs {
+                    far = (far.0.min(run.x), far.1.max(run.x + run.width));
+                    let from = range.start.max(run.range.start);
+                    let to = range.end.min(run.range.end);
+                    if from < to {
+                        let a = self.x_in_run(line, run, from);
+                        let b = self.x_in_run(line, run, to);
+                        rects.push((a.min(b), line.top, a.max(b), bottom));
+                    }
+                }
+                if continues {
+                    if self.rtl {
+                        rects.push((px(0.0), line.top, far.0.max(px(0.0)), bottom));
+                    } else {
+                        rects.push((far.1, line.top, self.right.max(far.1), bottom));
+                    }
+                }
+                continue;
+            }
             let from = self.x_for(index, range.start.max(line.start));
             let to = if continues {
                 self.right.max(from)
@@ -834,15 +1275,25 @@ impl ParagraphLayout {
                 self.x_for(index, range.end.min(line.content_end))
             };
             if to > from {
-                rects.push((from, line.top, to, line.top + line.height));
+                rects.push((from, line.top, to, bottom));
             }
         }
         rects
+    }
+
+    /// The checkbox's bounds `(x, top, diameter)` in paragraph
+    /// coordinates, for painting and clicking.
+    pub fn checkbox_bounds(&self) -> Option<(Pixels, Pixels, Pixels, bool)> {
+        let checkbox = self.marker.as_ref()?.checkbox.as_ref()?;
+        let first = self.lines.first()?;
+        let top = first.top + (first.height - checkbox.diameter) / 2.0;
+        Some((checkbox.x, top, checkbox.diameter, checkbox.checked))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::model::ParagraphStyle;
     use super::*;
 
     #[test]
@@ -866,6 +1317,100 @@ mod tests {
         for point in hyphenation_points(word) {
             assert!(word.is_char_boundary(point));
         }
+    }
+
+    fn runs_of(text: &str, style: ParagraphStyle) -> Vec<(String, bool)> {
+        let paragraph = Paragraph::plain(text, &CharStyle::default(), style);
+        let rtl = style.direction.is_rtl(text);
+        let levels = bidi_levels(&paragraph, rtl);
+        visual_runs(text, &levels, 0..text.len(), u8::from(rtl))
+            .into_iter()
+            .map(|(range, rtl)| (text[range].to_owned(), rtl))
+            .collect()
+    }
+
+    #[test]
+    fn hebrew_inside_a_left_to_right_line_is_its_own_right_to_left_run() {
+        let runs = runs_of("abc \u{5d0}\u{5d1}\u{5d2} def", ParagraphStyle::default());
+        assert_eq!(
+            runs,
+            [
+                ("abc ".to_owned(), false),
+                ("\u{5d0}\u{5d1}\u{5d2}".to_owned(), true),
+                (" def".to_owned(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_right_to_left_line_puts_its_first_word_on_the_right() {
+        let text = "\u{5d0}\u{5d1}\u{5d2} abc \u{5d3}\u{5d4}\u{5d5}";
+        let runs = runs_of(text, ParagraphStyle::default());
+        assert_eq!(runs.len(), 3);
+        assert!(runs[0].1 && !runs[1].1 && runs[2].1);
+        assert_eq!(runs[1].0, "abc");
+        assert!(runs[2].0.contains('\u{5d0}'));
+        assert!(runs[0].0.contains('\u{5d3}'));
+    }
+
+    #[test]
+    fn a_forced_right_to_left_paragraph_reverses_latin_words() {
+        // Latin in a right-to-left paragraph keeps its letters in order
+        // but the paragraph reads from the right: one run, left to right.
+        let style = ParagraphStyle {
+            direction: WritingDirection::RightToLeft,
+            ..ParagraphStyle::default()
+        };
+        let runs = runs_of("abc def", style);
+        assert_eq!(runs, [("abc def".to_owned(), false)]);
+    }
+
+    #[test]
+    fn a_right_to_left_selection_embedding_reorders_its_words() {
+        let text = "abc \u{5d0}\u{5d1} def";
+        let mut document =
+            super::super::model::Document::from_plain_text(text, &CharStyle::default());
+        let len = text.len();
+        let words = |levels: &[u8]| -> Vec<String> {
+            visual_runs(text, levels, 0..len, 0)
+                .into_iter()
+                .map(|(range, _)| text[range].trim().to_owned())
+                .collect()
+        };
+        let plain = bidi_levels(document.paragraph(0), false);
+        assert_eq!(words(&plain), ["abc", "\u{5d0}\u{5d1}", "def"]);
+        document.update_char_style(0..len, |style| {
+            style.embedding = WritingDirection::RightToLeft;
+        });
+        let embedded = bidi_levels(document.paragraph(0), false);
+        assert_eq!(words(&embedded), ["def", "\u{5d0}\u{5d1}", "abc"]);
+    }
+
+    #[test]
+    fn right_to_left_glyphs_are_measured_in_reading_order() {
+        use gpui::{point, FontId, GlyphId, LineLayout, ShapedGlyph, ShapedRun};
+        // Three 10-wide glyphs shaped right to left: byte 0 is drawn
+        // rightmost.
+        let glyph = |index: usize, x: f32| ShapedGlyph {
+            id: GlyphId(0),
+            position: point(px(x), px(0.0)),
+            index,
+            is_emoji: false,
+        };
+        let shaped = LineLayout {
+            width: px(30.0),
+            runs: vec![ShapedRun {
+                font_id: FontId(0),
+                glyphs: vec![glyph(4, 0.0), glyph(2, 10.0), glyph(0, 20.0)],
+            }],
+            len: 6,
+            ..LineLayout::default()
+        };
+        assert_eq!(
+            logical_stops(&shaped, true),
+            [(0, px(0.0)), (2, px(10.0)), (4, px(20.0))]
+        );
+        assert_eq!(logical_stops(&shaped, false).len(), 3);
     }
 
     #[test]

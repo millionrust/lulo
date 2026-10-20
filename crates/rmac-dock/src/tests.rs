@@ -940,6 +940,7 @@ fn the_settings_tile_lists_its_panes_alphabetically() {
         rmac_apps::LaunchSpec::Command { args, .. } if args == &["--pane", "about"]
     ));
     assert!(rmac_dock_menu_session_opens(&menu));
+    assert!(model.authorizes_context_action(&menu.application_commands[0].action));
     // Every other app keeps its own commands only.
     let music = model.context_menu("music.desktop").expect("Music is kept");
     assert!(music.application_commands.is_empty());
@@ -989,6 +990,34 @@ fn finder_context_menu_always_offers_a_new_window_and_no_options_or_quit() {
     assert_eq!(menu.windows.len(), 1);
     assert!(menu.show_all_windows.is_some());
     assert!(menu.hide.is_some());
+    // DOCK-05: Find…, Go to Folder… and Connect to Server… launch Files
+    // with their own flag, and the Dock authorizes exactly those launches.
+    let flags = menu
+        .commands
+        .iter()
+        .map(|command| match &command.action {
+            ContextAction::LaunchNew {
+                spec: rmac_apps::LaunchSpec::Command { args, .. },
+                ..
+            } => args.join(" "),
+            _ => String::new(),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(flags, ["--find", "--go-to-folder", "--connect-to-server"]);
+    for command in &menu.commands {
+        assert!(running.authorizes_context_action(&command.action));
+    }
+    assert!(running.authorizes_context_action(menu.new_window.as_ref().unwrap()));
+    let forged = ContextAction::LaunchNew {
+        app_id: rmac_apps::identity::FILES.into(),
+        spec: rmac_apps::LaunchSpec::Command {
+            program: "sh".into(),
+            args: vec!["-c".into(), "true".into()],
+            working_dir: None,
+            terminal: false,
+        },
+    };
+    assert!(!running.authorizes_context_action(&forged));
 }
 
 #[test]

@@ -569,6 +569,28 @@ impl Model {
     /// Revalidates a menu command against the newest Dock projection before a
     /// renderer crosses into an external application, compositor, or process
     /// authority. A menu left open across process/window churn fails closed.
+    /// Every launch a Dock menu offers for `app_id`: Open, its commands
+    /// (desktop actions, the Settings panes), and the Files tile's New
+    /// Finder Window, Find…, Go to Folder… and Connect to Server….
+    pub fn offered_launches(&self, app_id: &str) -> Vec<ContextAction> {
+        let mut launches = Vec::new();
+        if let Some(menu) = self.context_menu(app_id) {
+            launches.extend(menu.open);
+            launches.extend(
+                menu.application_commands
+                    .into_iter()
+                    .map(|command| command.action),
+            );
+        }
+        if canonical_app_id(app_id) == canonical_app_id(rmac_apps::identity::FILES) {
+            if let Some(menu) = self.finder_context_menu() {
+                launches.extend(menu.new_window);
+                launches.extend(menu.commands.into_iter().map(|command| command.action));
+            }
+        }
+        launches
+    }
+
     pub fn authorizes_context_action(&self, action: &ContextAction) -> bool {
         let app_id = match action {
             ContextAction::LaunchNew { app_id, .. }
@@ -593,6 +615,7 @@ impl Model {
             ContextAction::LaunchNew { spec, .. } => {
                 item.launch.as_ref() == Some(spec)
                     || item.actions.iter().any(|action| &action.launch == spec)
+                    || self.offered_launches(&item.id).contains(action)
             }
             ContextAction::FocusWindow { window, .. }
             | ContextAction::CloseWindow { window, .. } => {

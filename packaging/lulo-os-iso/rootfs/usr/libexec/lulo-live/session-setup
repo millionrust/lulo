@@ -13,10 +13,20 @@ home=$(getent passwd "$user" | cut -d: -f6)
 [ -n "$home" ] && [ -d "$home" ] || exit 0
 group=$(id -gn "$user")
 
-# GDM opens the Lulo session (packaging/rmac-session/rmac.desktop).
+# GDM opens the Lulo session (packaging/rmac-session/rmac.desktop). Casper
+# rewrites GDM's custom.conf for the autologin, so the default session goes
+# back in here, and the user's own AccountsService record names it too.
 mkdir -p /var/lib/AccountsService/users
-printf '[User]\nSession=rmac\nSystemAccount=false\n' \
+printf '[User]\nSession=rmac\nXSession=rmac\nSystemAccount=false\n' \
     > "/var/lib/AccountsService/users/$user"
+conf=/etc/gdm3/custom.conf
+if [ -f "$conf" ] && ! grep -q '^DefaultSession=' "$conf"; then
+    if grep -q '^\[daemon\]' "$conf"; then
+        sed -i 's/^\[daemon\]$/[daemon]\nDefaultSession=rmac.desktop/' "$conf"
+    else
+        printf '[daemon]\nDefaultSession=rmac.desktop\n' >> "$conf"
+    fi
+fi
 
 config=$home/.config/rmac
 install -d -o "$user" -g "$group" "$home/.config" "$config"

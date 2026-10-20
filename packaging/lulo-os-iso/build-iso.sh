@@ -121,6 +121,9 @@ cp "$initrd" "$image/casper/initrd"
 chroot "$chroot_dir" dpkg-query -W --showformat='${Package} ${Version}\n' \
     > "$image/casper/filesystem.manifest"
 cp "$image/casper/filesystem.manifest" "$out/${iso_name%.iso}.manifest"
+echo "Largest packages (KiB installed):"
+chroot "$chroot_dir" dpkg-query -W --showformat='${Installed-Size}\t${Package}\n' \
+    | sort -n | tail -n 30
 # Packages Calamares removes from the installed system.
 printf '%s\n' calamares casper > "$image/casper/filesystem.manifest-remove"
 
@@ -183,6 +186,14 @@ mv "$chroot_dir/tmp/eltorito.img" "$image/boot/grub/i386-pc/eltorito.img"
 rm -f "$chroot_dir/tmp/early.cfg"
 cp "$chroot_dir/usr/lib/grub/i386-pc/boot_hybrid.img" "$work/boot_hybrid.img"
 endlog
+
+# casper-md5check verifies the medium against this list at boot. The El
+# Torito image is left out: xorriso patches its boot-info table.
+(
+    cd "$image"
+    find . -type f ! -name md5sum.txt ! -path ./boot/grub/i386-pc/eltorito.img -print0 \
+        | sort -z | xargs -0 md5sum > md5sum.txt
+)
 
 # --- 6. ISO -------------------------------------------------------------------
 log "xorriso"

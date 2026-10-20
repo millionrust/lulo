@@ -119,7 +119,7 @@ impl WindowsWindowInner {
             WM_GPUI_CURSOR_STYLE_CHANGED => self.handle_cursor_changed(lparam),
             WM_GPUI_FORCE_UPDATE_WINDOW => self.draw_window(handle, true),
             WM_GPUI_GPU_DEVICE_LOST => self.handle_device_lost(lparam),
-            DM_POINTERHITTEST => self.handle_dm_pointer_hit_test(wparam),
+            DM_POINTERHITTEST => self.handle_dm_pointer_hit_test(handle, wparam),
             WM_GETOBJECT => self.handle_wm_getobject(wparam, lparam),
             _ => None,
         };
@@ -367,6 +367,19 @@ impl WindowsWindowInner {
                 .hovered_status_change
                 .set(Some(callback));
         }
+        // rmac: say the pointer left, as GPUI's Wayland backend does, so
+        // views drop their hover. Without it a hovered element stayed
+        // hovered once the pointer jumped elsewhere without a last move
+        // inside the window: the menu bar revealed over a full-screen
+        // window never hid again.
+        if let Some(mut func) = self.state.callbacks.input.take() {
+            func(PlatformInput::MouseExited(MouseExitEvent {
+                position: Point::default(),
+                pressed_button: None,
+                modifiers: current_modifiers(),
+            }));
+            self.state.callbacks.input.set(Some(func));
+        }
 
         Some(0)
     }
@@ -445,6 +458,8 @@ impl WindowsWindowInner {
         button: MouseButton,
         lparam: LPARAM,
     ) -> Option<isize> {
+        // rmac: a click stops a wheel glide, as on the Mac.
+        self.state.smooth_scroll.stop();
         unsafe { SetCapture(handle) };
 
         let Some(mut func) = self.state.callbacks.input.take() else {
@@ -546,8 +561,27 @@ impl WindowsWindowInner {
             y: lparam.signed_hiword().into(),
         };
         unsafe { ScreenToClient(handle, &mut cursor_point).ok().log_err() };
+        let position = logical_point(cursor_point.x as f32, cursor_point.y as f32, scale_factor);
+        // rmac: queue it in pixels and hand it out frame by frame.
+        if crate::rmac_smooth_scroll::enabled() {
+            self.state.callbacks.input.set(Some(func));
+            self.state.smooth_scroll.wheel(
+                wparam.signed_hiword() as f32,
+                modifiers.shift,
+                wheel_scroll_amount as f32,
+                position,
+                modifiers,
+            );
+            self.state.frame_loop.wake();
+            return Some(0);
+        }
+        crate::rmac_smooth_scroll::trace(format_args!(
+            "input raw={} touchpad=0 px={:.2}",
+            wparam.signed_hiword(),
+            wheel_distance * crate::rmac_smooth_scroll::PIXELS_PER_LINE
+        ));
         let input = PlatformInput::ScrollWheel(ScrollWheelEvent {
-            position: logical_point(cursor_point.x as f32, cursor_point.y as f32, scale_factor),
+            position,
             delta: ScrollDelta::Lines(match modifiers.shift {
                 true => Point {
                     x: wheel_distance,
@@ -590,8 +624,22 @@ impl WindowsWindowInner {
             y: lparam.signed_hiword().into(),
         };
         unsafe { ScreenToClient(handle, &mut cursor_point).ok().log_err() };
+        let position = logical_point(cursor_point.x as f32, cursor_point.y as f32, scale_factor);
+        // rmac: queue it in pixels and hand it out frame by frame.
+        if crate::rmac_smooth_scroll::enabled() {
+            self.state.callbacks.input.set(Some(func));
+            self.state.smooth_scroll.wheel(
+                -wparam.signed_hiword() as f32,
+                true,
+                wheel_scroll_chars as f32,
+                position,
+                current_modifiers(),
+            );
+            self.state.frame_loop.wake();
+            return Some(0);
+        }
         let event = PlatformInput::ScrollWheel(ScrollWheelEvent {
-            position: logical_point(cursor_point.x as f32, cursor_point.y as f32, scale_factor),
+            position,
             delta: ScrollDelta::Lines(Point {
                 x: wheel_distance,
                 y: 0.0,
@@ -1323,8 +1371,31 @@ impl WindowsWindowInner {
         Some(0)
     }
 
-    fn handle_dm_pointer_hit_test(&self, wparam: WPARAM) -> Option<isize> {
+    fn handle_dm_pointer_hit_test(&self, handle: HWND, wparam: WPARAM) -> Option<isize> {
+        // rmac (WIN-OS-97): Direct Manipulation only pans a window that is
+        // the foreground one. Lulo's shell surfaces (Apps, Spotlight, the
+        // Dock, Control Centre) are never activated: there it held the whole
+        // gesture back and applied it in one frame at the end, with no
+        // inertia. Without a contact Windows sends the touchpad as
+        // high-resolution wheel deltas, which rmac_smooth_scroll hands out
+        // per frame and lets glide on.
+        // WIN-OS-98: the owner's Apps window (activatable, so foreground)
+        // got the same: no content update while the fingers moved. Lulo's
+        // shell surfaces are tool windows (`rmac_shell_layer`); they take
+        // the wheel path too.
+        let foreground = unsafe { GetForegroundWindow() } == handle;
+        let tool_window =
+            unsafe { get_window_long(handle, GWL_EXSTYLE) } & WS_EX_TOOLWINDOW.0 as isize != 0;
+        crate::rmac_smooth_scroll::trace(format_args!(
+            "dm hit test foreground={} tool={}",
+            foreground as u8, tool_window as u8
+        ));
+        if !foreground || tool_window {
+            return None;
+        }
         self.state.direct_manipulation.on_pointer_hit_test(wparam);
+        // rmac: fingers on the touchpad stop a wheel glide.
+        self.state.smooth_scroll.stop();
         // rmac: Direct Manipulation only advances when `update` runs each frame.
         self.state.frame_loop.wake();
         None
@@ -1344,7 +1415,48 @@ impl WindowsWindowInner {
 
         self.state.direct_manipulation.update();
 
-        let events = self.state.direct_manipulation.drain_events();
+        let mut events = self.state.direct_manipulation.drain_events();
+        // rmac: Direct Manipulation's touchpad pan, evened out per frame
+        // (rmac_smooth_scroll::PanSmoother, WIN-OS-96).
+        let mut pan = point(0.0f32, 0.0f32);
+        if crate::rmac_smooth_scroll::enabled() {
+            let (mut started, mut ended, mut meta) = (false, false, None);
+            events.retain(|event| match event {
+                PlatformInput::ScrollWheel(scroll) => {
+                    if let ScrollDelta::Pixels(delta) = scroll.delta {
+                        pan.x += f32::from(delta.x);
+                        pan.y += f32::from(delta.y);
+                    }
+                    started |= scroll.touch_phase == TouchPhase::Started;
+                    ended |= scroll.touch_phase == TouchPhase::Ended;
+                    meta = Some((scroll.position, scroll.modifiers));
+                    false
+                }
+                _ => true,
+            });
+            self.state
+                .pan_smoother
+                .frame(pan, started, ended, meta, &mut events);
+        }
+        // rmac: this frame's share of queued wheel scrolling.
+        events.extend(
+            self.state
+                .smooth_scroll
+                .frame()
+                .map(PlatformInput::ScrollWheel),
+        );
+        // For the scroll trace: this frame's vertical scroll, Direct
+        // Manipulation's included.
+        let scroll_y: f32 = events
+            .iter()
+            .map(|event| match event {
+                PlatformInput::ScrollWheel(ScrollWheelEvent {
+                    delta: ScrollDelta::Pixels(delta),
+                    ..
+                }) => f32::from(delta.y),
+                _ => 0.0,
+            })
+            .sum();
         if !events.is_empty() {
             if let Some(mut func) = self.state.callbacks.input.take() {
                 for event in events {
@@ -1361,19 +1473,32 @@ impl WindowsWindowInner {
             self.state.renderer.borrow_mut().mark_drawable();
         }
         self.state.drew_frame.set(false);
+        let frame_started = std::time::Instant::now();
         request_frame(RequestFrameOptions {
             require_presentation: false,
             force_render,
         });
+        let frame_ms = frame_started.elapsed().as_secs_f64() * 1000.0;
         let drew = self.state.drew_frame.get();
         crate::rmac_trace::wake("frame", if drew { "drew" } else { "idle" });
         if drew {
             static FIRST_DRAW: std::sync::Once = std::sync::Once::new();
             FIRST_DRAW.call_once(|| crate::rmac_trace::startup("first_frame_drawn"));
         }
+        let smooth_active =
+            self.state.smooth_scroll.is_active() || self.state.pan_smoother.is_active();
+        // Frames that drew and scrolled nothing (a parked window's check
+        // after each message) are left out of the trace.
+        if drew || scroll_y != 0.0 || pan.y != 0.0 || smooth_active {
+            crate::rmac_smooth_scroll::trace(format_args!(
+                "frame drew={} dy={scroll_y:.2} dm={:.2} active={} ms={frame_ms:.2}",
+                drew as u8, pan.y, smooth_active as u8
+            ));
+        }
         let keeps_drawing = drew
             || self.state.force_render_after_recovery.get()
-            || self.state.direct_manipulation.is_gesture_active();
+            || self.state.direct_manipulation.is_gesture_active()
+            || smooth_active;
         let active = unsafe { GetActiveWindow() } == handle;
         if self
             .state

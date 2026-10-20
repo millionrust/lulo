@@ -79,6 +79,10 @@ use xkbcommon::xkb::{self, KEYMAP_COMPILE_NO_FLAGS, Keycode};
 
 use super::{
     display::WaylandDisplay,
+    touch_gesture::{
+        TOUCH_HOLD, TouchGesture, TwoFinger, TwoFingerEvent, TwoFingerKind, classify_touch_hold,
+        classify_touch_motion, touch_drag_rule, trace as touch_trace,
+    },
     window::{ImeInput, WaylandWindowStatePtr},
 };
 
@@ -248,6 +252,7 @@ pub(crate) struct WaylandClientState {
     touch_ids: HashSet<i32>,
     touch_suppressed: bool,
     touch: Option<TouchContact>,
+    two_finger: Option<TwoFingerContact>,
     touch_generation: u64,
     touch_hold_token: Option<RegistrationToken>,
     pinch_gesture: Option<zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1>,
@@ -592,14 +597,6 @@ struct PendingWindowMove {
     serial: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TouchGesture {
-    Pending,
-    Scroll,
-    PointerDrag,
-    ContextMenu,
-}
-
 struct TouchContact {
     id: i32,
     window: WaylandWindowStatePtr,
@@ -608,41 +605,18 @@ struct TouchContact {
     serial: u32,
     started: Instant,
     gesture: TouchGesture,
+    /// The press landed on a title bar: dragging moves the window.
     drag_region: bool,
-    files_window: bool,
+    /// The press landed on something a finger drags (ADR 0028).
+    drag: Option<gpui::TouchDragMode>,
     click_count: usize,
 }
 
-const TOUCH_MOVE_THRESHOLD: Pixels = px(8.0);
-const TOUCH_HOLD: Duration = Duration::from_millis(500);
-const FILE_DRAG_HOLD: Duration = Duration::from_millis(160);
-
-/// A quick swipe scrolls. A title bar always drags; a Files item can be
-/// dragged after a short deliberate hold. GPUI does not expose per-element
-/// drag hit testing to the platform backend, so Files uses a window heuristic.
-fn classify_touch_motion(
-    start: Point<Pixels>,
-    position: Point<Pixels>,
-    elapsed: Duration,
-    drag_region: bool,
-    files_window: bool,
-) -> TouchGesture {
-    let delta = position - start;
-    if delta.x.abs() <= TOUCH_MOVE_THRESHOLD && delta.y.abs() <= TOUCH_MOVE_THRESHOLD {
-        TouchGesture::Pending
-    } else if drag_region || (files_window && elapsed >= FILE_DRAG_HOLD) {
-        TouchGesture::PointerDrag
-    } else {
-        TouchGesture::Scroll
-    }
-}
-
-fn classify_touch_hold(gesture: TouchGesture, elapsed: Duration) -> TouchGesture {
-    if gesture == TouchGesture::Pending && elapsed >= TOUCH_HOLD {
-        TouchGesture::ContextMenu
-    } else {
-        gesture
-    }
+/// rmac (ADR 0028): two fingers on one window, scrolling or pinching.
+struct TwoFingerContact {
+    gesture: TwoFinger,
+    window: WaylandWindowStatePtr,
+    started: Instant,
 }
 
 fn next_click_count(
@@ -666,49 +640,6 @@ fn next_click_count(
 #[cfg(test)]
 mod touch_tests {
     use super::*;
-
-    #[test]
-    fn gesture_threshold_and_drag_regions() {
-        let start = point(px(10.0), px(20.0));
-        let near = point(px(18.0), px(20.0));
-        let moved = point(px(19.0), px(20.0));
-        assert_eq!(
-            classify_touch_motion(start, near, Duration::ZERO, false, false),
-            TouchGesture::Pending
-        );
-        assert_eq!(
-            classify_touch_motion(start, moved, Duration::ZERO, false, false),
-            TouchGesture::Scroll
-        );
-        assert_eq!(
-            classify_touch_motion(start, moved, Duration::ZERO, true, false),
-            TouchGesture::PointerDrag
-        );
-        assert_eq!(
-            classify_touch_motion(start, moved, Duration::from_millis(159), false, true),
-            TouchGesture::Scroll
-        );
-        assert_eq!(
-            classify_touch_motion(start, moved, FILE_DRAG_HOLD, false, true),
-            TouchGesture::PointerDrag
-        );
-    }
-
-    #[test]
-    fn hold_only_opens_context_menu_without_movement() {
-        assert_eq!(
-            classify_touch_hold(TouchGesture::Pending, TOUCH_HOLD - Duration::from_millis(1)),
-            TouchGesture::Pending
-        );
-        assert_eq!(
-            classify_touch_hold(TouchGesture::Pending, TOUCH_HOLD),
-            TouchGesture::ContextMenu
-        );
-        assert_eq!(
-            classify_touch_hold(TouchGesture::Scroll, TOUCH_HOLD),
-            TouchGesture::Scroll
-        );
-    }
 
     #[test]
     fn double_tap_uses_click_interval_and_distance() {
@@ -955,6 +886,13 @@ impl WaylandClientStatePtr {
             state.touch = None;
             state.cancel_touch_hold();
             state.touch_generation = state.touch_generation.wrapping_add(1);
+        }
+        if state
+            .two_finger
+            .as_ref()
+            .is_some_and(|contact| contact.window.ptr_eq(&closed_window))
+        {
+            state.two_finger = None;
         }
         if let Some(window) = state.mouse_focused_window.take()
             && !window.ptr_eq(&closed_window)
@@ -1286,6 +1224,7 @@ impl WaylandClient {
             touch_ids: HashSet::new(),
             touch_suppressed: false,
             touch: None,
+            two_finger: None,
             touch_generation: 0,
             touch_hold_token: None,
             wl_keyboard: None,
@@ -1792,6 +1731,7 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for WaylandClientStat
                         wl_touch.release();
                     }
                     state.touch = None;
+                    state.two_finger = None;
                     state.touch_ids.clear();
                     state.cancel_touch_hold();
                     state.touch_generation = state.touch_generation.wrapping_add(1);
@@ -2136,6 +2076,7 @@ impl Dispatch<wl_seat::WlSeat, ()> for WaylandClientStatePtr {
             capabilities: WEnum::Value(capabilities),
         } = event
         {
+            touch_trace(format_args!("seat capabilities {capabilities:?}"));
             let client = state.get_client();
             let mut state = client.borrow_mut();
             if capabilities.contains(wl_seat::Capability::Keyboard) {
@@ -2196,9 +2137,14 @@ impl Dispatch<wl_seat::WlSeat, ()> for WaylandClientStatePtr {
                 state.touch_suppressed = false;
                 state.cancel_touch_hold();
                 state.touch_generation = state.touch_generation.wrapping_add(1);
-                if let Some(contact) = state.touch.take() {
-                    drop(state);
+                let two_finger = state.two_finger.take();
+                let contact = state.touch.take();
+                drop(state);
+                if let Some(contact) = contact {
                     end_touch_contact(&client, contact, true);
+                }
+                if let Some(two_finger) = two_finger {
+                    end_two_finger(&client, two_finger, true);
                 }
             }
         }
@@ -2550,6 +2496,9 @@ fn touch_click(
     let click_count = state.count_click(button, position);
     let modifiers = state.modifiers;
     drop(state);
+    touch_trace(format_args!(
+        "click {button:?} count={click_count} at {position:?}"
+    ));
     window.handle_input(PlatformInput::MouseDown(MouseDownEvent {
         button,
         position,
@@ -2572,6 +2521,12 @@ fn end_touch_contact(
 ) {
     let state = client.borrow();
     let modifiers = state.modifiers;
+    touch_trace(format_args!(
+        "end id={} {:?} cancelled={cancelled} after {:?}",
+        contact.id,
+        contact.gesture,
+        contact.started.elapsed()
+    ));
     match contact.gesture {
         TouchGesture::Pending if !cancelled => {
             drop(state);
@@ -2643,6 +2598,72 @@ fn end_touch_contact(
     }
 }
 
+/// rmac (ADR 0028): deliver one recognised two-finger event to its window.
+fn emit_two_finger(
+    client: &Rc<RefCell<WaylandClientState>>,
+    window: &WaylandWindowStatePtr,
+    event: TwoFingerEvent,
+) {
+    let mut state = client.borrow_mut();
+    let modifiers = state.modifiers;
+    match event {
+        TwoFingerEvent::Scroll {
+            position,
+            delta,
+            phase,
+        } => {
+            if phase != TouchPhase::Ended {
+                state.momentum_generation = state.momentum_generation.wrapping_add(1);
+                track_finger_velocity(&mut state, delta);
+            }
+            drop(state);
+            window.handle_input(PlatformInput::ScrollWheel(ScrollWheelEvent {
+                position,
+                delta: ScrollDelta::Pixels(delta),
+                modifiers,
+                touch_phase: phase,
+            }));
+        }
+        TwoFingerEvent::Pinch {
+            position,
+            delta,
+            phase,
+        } => {
+            drop(state);
+            window.handle_input(PlatformInput::Pinch(gpui::PinchEvent {
+                position,
+                delta,
+                modifiers,
+                phase,
+            }));
+        }
+        TwoFingerEvent::SecondaryTap { position } => {
+            drop(state);
+            touch_click(client, window, MouseButton::Right, position);
+        }
+    }
+}
+
+/// rmac (ADR 0028): a finger of a two-finger contact lifted, or the
+/// contact was cancelled. A lifted scroll glides on with momentum.
+fn end_two_finger(
+    client: &Rc<RefCell<WaylandClientState>>,
+    contact: TwoFingerContact,
+    cancelled: bool,
+) {
+    let kind = contact.gesture.kind();
+    let position = contact.gesture.centroid();
+    if let Some(event) = contact.gesture.end(contact.started.elapsed(), cancelled) {
+        emit_two_finger(client, &contact.window, event);
+    }
+    if kind == TwoFingerKind::Scroll && !cancelled {
+        start_momentum(
+            &mut client.borrow_mut(),
+            Some((contact.window.clone(), position)),
+        );
+    }
+}
+
 impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
     fn event(
         this: &mut Self,
@@ -2663,18 +2684,61 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 ..
             } => {
                 let position = point(px(x as f32), px(y as f32));
+                // Hit targets grow while the PC is used by touch.
+                gpui::set_last_input_was_touch(true);
                 let mut state = client.borrow_mut();
                 state.touch_ids.insert(id);
+                touch_trace(format_args!(
+                    "down id={id} at {x:.0},{y:.0} fingers={} suppressed={}",
+                    state.touch_ids.len(),
+                    state.touch_suppressed
+                ));
+                if state.touch_ids.len() == 2 && !state.touch_suppressed {
+                    // A second finger on the same window, before the first
+                    // has started dragging: a two-finger scroll or pinch.
+                    let window = get_window(&mut state, &surface.id());
+                    let promote = match (&window, state.touch.as_ref()) {
+                        (Some(window), Some(first)) => {
+                            first.window.ptr_eq(window)
+                                && matches!(
+                                    first.gesture,
+                                    TouchGesture::Pending | TouchGesture::Scroll
+                                )
+                        }
+                        _ => false,
+                    };
+                    if let (true, Some(window)) = (promote, window) {
+                        let first = state.touch.take().expect("checked above");
+                        state.cancel_touch_hold();
+                        state.touch_generation = state.touch_generation.wrapping_add(1);
+                        state.momentum_generation = state.momentum_generation.wrapping_add(1);
+                        state.last_finger_scroll = None;
+                        state.scroll_velocity = point(0.0, 0.0);
+                        state.two_finger = Some(TwoFingerContact {
+                            gesture: TwoFinger::new((first.id, first.position), (id, position)),
+                            window,
+                            started: Instant::now(),
+                        });
+                        drop(state);
+                        end_touch_contact(&client, first, true);
+                        return;
+                    }
+                }
                 if state.touch_ids.len() > 1 {
+                    // Three or more fingers, or a second finger elsewhere:
+                    // leave the gesture alone until every finger lifts.
                     state.touch_suppressed = true;
                     state.cancel_touch_hold();
                     state.touch_generation = state.touch_generation.wrapping_add(1);
                     let old = state.touch.take();
+                    let two_finger = state.two_finger.take();
                     drop(state);
                     if let Some(old) = old {
                         end_touch_contact(&client, old, true);
                     }
-                    // Multi-finger gestures, including pinch, are ignored.
+                    if let Some(two_finger) = two_finger {
+                        end_two_finger(&client, two_finger, true);
+                    }
                     return;
                 }
                 if state.touch_suppressed {
@@ -2698,9 +2762,16 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                     pressed_button: None,
                     modifiers,
                 }));
-                let drag_region =
-                    window.hit_test_window_control() == Some(gpui::WindowControlArea::Drag);
-                let files_window = window.is_item_drag_window();
+                // What the finger landed on decides how its movement reads
+                // (one rule for every surface: touch_gesture::touch_drag_rule).
+                let (drag_region, drag) = touch_drag_rule(
+                    window.hit_test_touch_drag(),
+                    window.hit_test_window_control() == Some(gpui::WindowControlArea::Drag),
+                    window.is_item_drag_window(),
+                );
+                touch_trace(format_args!(
+                    "contact id={id} drag={drag:?} title={drag_region}"
+                ));
                 client.borrow_mut().touch = Some(TouchContact {
                     id,
                     window,
@@ -2710,7 +2781,7 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                     started: Instant::now(),
                     gesture: TouchGesture::Pending,
                     drag_region,
-                    files_window,
+                    drag,
                     click_count: 1,
                 });
                 let token = loop_handle
@@ -2748,6 +2819,19 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 if state.touch_suppressed {
                     return;
                 }
+                if let Some(contact) = state
+                    .two_finger
+                    .as_mut()
+                    .filter(|contact| contact.gesture.contains(id))
+                {
+                    let events = contact.gesture.update(id, position);
+                    let window = contact.window.clone();
+                    drop(state);
+                    for event in events.into_iter().flatten() {
+                        emit_two_finger(&client, &window, event);
+                    }
+                    return;
+                }
                 let modifiers = state.modifiers;
                 let Some(contact) = state.touch.as_mut().filter(|contact| contact.id == id) else {
                     return;
@@ -2761,10 +2845,10 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                         contact.start,
                         position,
                         contact.started.elapsed(),
-                        contact.drag_region,
-                        contact.files_window,
+                        contact.drag,
                     );
                     if next != TouchGesture::Pending {
+                        touch_trace(format_args!("id={id} is {next:?}"));
                         contact.gesture = next;
                         if next == TouchGesture::Scroll {
                             phase = TouchPhase::Started;
@@ -2776,7 +2860,9 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 }
                 let gesture = contact.gesture;
                 let window = contact.window.clone();
-                let delta = point(previous.x - position.x, previous.y - position.y);
+                // Content follows the finger: moving up scrolls down, a negative
+                // delta, as natural scrolling on the touchpad gives (ADR 0028).
+                let delta = point(position.x - previous.x, position.y - previous.y);
                 if gesture == TouchGesture::Scroll {
                     state.momentum_generation = state.momentum_generation.wrapping_add(1);
                     track_finger_velocity(&mut state, delta);
@@ -2833,12 +2919,20 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 }
             }
             wl_touch::Event::Up { id, .. } => {
+                touch_trace(format_args!("up id={id}"));
                 let mut state = client.borrow_mut();
                 state.staged_file_drag = None;
                 state.touch_ids.remove(&id);
                 state.cancel_touch_hold();
                 state.touch_generation = state.touch_generation.wrapping_add(1);
                 let contact = state.touch.take().filter(|contact| contact.id == id);
+                let two_finger = state
+                    .two_finger
+                    .take_if(|contact| contact.gesture.contains(id));
+                if two_finger.is_some() && !state.touch_ids.is_empty() {
+                    // The other finger stays down: ignore it until it lifts.
+                    state.touch_suppressed = true;
+                }
                 if state.touch_ids.is_empty() {
                     state.touch_suppressed = false;
                 }
@@ -2846,8 +2940,12 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 if let Some(contact) = contact {
                     end_touch_contact(&client, contact, false);
                 }
+                if let Some(two_finger) = two_finger {
+                    end_two_finger(&client, two_finger, false);
+                }
             }
             wl_touch::Event::Cancel => {
+                touch_trace(format_args!("cancel"));
                 let mut state = client.borrow_mut();
                 state.staged_file_drag = None;
                 state.touch_ids.clear();
@@ -2855,9 +2953,13 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 state.cancel_touch_hold();
                 state.touch_generation = state.touch_generation.wrapping_add(1);
                 let contact = state.touch.take();
+                let two_finger = state.two_finger.take();
                 drop(state);
                 if let Some(contact) = contact {
                     end_touch_contact(&client, contact, true);
+                }
+                if let Some(two_finger) = two_finger {
+                    end_two_finger(&client, two_finger, true);
                 }
             }
             _ => {}
@@ -2973,7 +3075,13 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 if state.mouse_focused_window.is_none() {
                     return;
                 }
-                state.mouse_location = Some(point(px(surface_x as f32), px(surface_y as f32)));
+                let location = point(px(surface_x as f32), px(surface_y as f32));
+                // rmac (ADR 0028): a pointer that really moved ends touch
+                // mode; a re-sent position after a window change does not.
+                if state.mouse_location != Some(location) {
+                    gpui::set_last_input_was_touch(false);
+                }
+                state.mouse_location = Some(location);
                 state.restore_cursor_after_hide();
 
                 if let Some(window) = state.mouse_focused_window.clone() {
@@ -3044,6 +3152,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 state: WEnum::Value(button_state),
                 ..
             } => {
+                gpui::set_last_input_was_touch(false);
                 // Record presses only. Requests referencing this serial (popup grabs,
                 // interactive moves) are declined when given a release serial.
                 if button_state == wl_pointer::ButtonState::Pressed {
@@ -3144,6 +3253,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 value,
                 ..
             } => {
+                gpui::set_last_input_was_touch(false);
                 if state.axis_source == AxisSource::Wheel {
                     return;
                 }

@@ -1,4 +1,54 @@
-# Beta release checklist — 0.9.0-beta.1
+# Beta release checklist
+
+## 0.9.0-beta.2: Lulo 0.9.0 Beta 2 (Ubuntu) + Windows Preview
+
+The first public beta, for Ubuntu and Windows together. `v0.9.0-beta.1`
+was tagged on 2026-10-05/06 (Ubuntu only) but never given to testers, so
+this release is `0.9.0-beta.2` (Debian `0.9.0~beta.2-38`, MSI
+`0.9.<commit count>`). Branch `op/beta-release`.
+
+Release contents (one `release.yml` run on the tag):
+
+- Ubuntu: `rmac-apps` and `rmac-session` (amd64, built twice and compared
+  byte for byte), `niri` and `xwayland-satellite`, their source packages,
+  the `rmac` source package (inside `apt-inputs-<tag>.tar`), and the
+  stamped one-command `install.sh` plus `uninstall.sh`.
+- Windows: `Lulo-Setup-0.9.0-beta.2-x64.msi` (unsigned), built from the
+  same 17 exes as `windows-preview.yml` and `packaging/windows/apps.json`,
+  and installed, launched and uninstalled by `installer_smoke.py` in the
+  same run. The release publishes nothing if the MSI fails.
+- `SHA256SUMS` over every file, `rmac-sbom-<tag>.tar.gz`, the niri and
+  xwayland-satellite SBOMs, and a build-provenance attestation for each
+  file. The Release's title and description come from
+  `docs/release-notes/0.9.0-beta.2.md`; System Settings ▸ Software Update
+  shows `packaging/release-notes/0.9.0~beta.2.txt`.
+
+Gates:
+
+- [x] Version 0.9.0-beta.2 in both workspaces, both lockfiles, the 15
+      AppStream metainfo files, and `verify-application-package.py`; the
+      About panels and Windows VERSIONINFO read `CARGO_PKG_VERSION`.
+- [x] `dependency-policy` refuses a tag that is not `v` plus the workspace
+      version.
+- [x] Release contracts (`scripts/run-release-contract-checks.py`) and
+      `scripts/test_release_workflows.py` /
+      `scripts/test_install_uninstall.py` pass.
+- [ ] `release.yml` dry run (workflow_dispatch on the release branch) green,
+      with the `release-bundle-dry-run` artifact checked: file names, sizes,
+      `SHA256SUMS`.
+- [ ] Owner says "go"; `dev` fast-forwarded to the release commit; tag
+      `v0.9.0-beta.2` pushed.
+- [ ] After publishing: the install line from
+      [Install on Ubuntu](install-ubuntu.md) on a clean Ubuntu 26.04 machine,
+      and the MSI on a Windows 11 PC (SmartScreen: More info ▸ Run anyway).
+
+Waivers carried from Beta 1: no AMD or NVIDIA desktop
+(`owner-2026-10-04-beta1-without-amd-nvidia-desktops`), no signed APT
+repository (no in-place updates), no code signing for the MSI (no paid
+services). Known issues: [Known limitations](known-limitations.md).
+
+## 0.9.0-beta.1 (record)
+
 
 ## Beta 1 go/no-go (updated 2026-10-03)
 

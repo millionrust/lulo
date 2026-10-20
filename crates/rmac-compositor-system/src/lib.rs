@@ -27,6 +27,6 @@ mod win32;
 
 #[cfg(windows)]
 pub use win32::{
-    action_capabilities, execute, execute_action, is_unavailable, minimize_request,
-    minimize_window_in, refresh, snapshot, watch, Error, MinimizeError,
+    action_capabilities, execute, execute_action, full_screen_tile, is_unavailable,
+    minimize_request, minimize_window_in, refresh, snapshot, watch, Error, MinimizeError,
 };

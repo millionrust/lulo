@@ -419,7 +419,10 @@ fn options_list(view: &CardView, host: &Entity<BannerHost>) -> AnyElement {
         .justify_end()
         .child(
             div()
-                .id(SharedString::from(format!("banner-{}-options-menu", id.get())))
+                .id(SharedString::from(format!(
+                    "banner-{}-options-menu",
+                    id.get()
+                )))
                 .role(Role::Menu)
                 .aria_label(OPTIONS_LABEL)
                 .w(px(OPTIONS_MENU_WIDTH))

@@ -47,6 +47,10 @@ pub struct Annotation {
     pub text: String,
     /// Points in the annotation rectangle, each in 0..=1.
     pub path: Vec<(f32, f32)>,
+    /// Set for an annotation read from the PDF itself (PREV-03A): the PDF
+    /// object it came from, so a Save can replace or delete exactly that
+    /// object. `None` for one made in this session.
+    pub origin: Option<(u32, u16)>,
 }
 
 impl Annotation {
@@ -59,6 +63,7 @@ impl Annotation {
             width,
             text: String::new(),
             path: Vec::new(),
+            origin: None,
         }
     }
 
@@ -94,9 +99,59 @@ pub fn normal(rect: UnitRect) -> UnitRect {
     }
 }
 
+impl Tool {
+    /// The name stored in an annotation's `/LuloTool`, so a shape Lulo
+    /// wrote as a plain `Square` (Star, Speech Bubble, Mask, Signature)
+    /// reads back as itself.
+    fn name(self) -> &'static str {
+        match self {
+            Tool::Select => "Select",
+            Tool::Highlight => "Highlight",
+            Tool::Underline => "Underline",
+            Tool::StrikeThrough => "StrikeThrough",
+            Tool::Text => "Text",
+            Tool::Rectangle => "Rectangle",
+            Tool::Oval => "Oval",
+            Tool::Line => "Line",
+            Tool::Arrow => "Arrow",
+            Tool::Sketch => "Sketch",
+            Tool::Signature => "Signature",
+            Tool::Polygon => "Polygon",
+            Tool::Star => "Star",
+            Tool::SpeechBubble => "SpeechBubble",
+            Tool::Mask => "Mask",
+            Tool::Note => "Note",
+        }
+    }
+
+    fn from_name(name: &[u8]) -> Option<Tool> {
+        Some(match name {
+            b"Highlight" => Tool::Highlight,
+            b"Underline" => Tool::Underline,
+            b"StrikeThrough" => Tool::StrikeThrough,
+            b"Text" => Tool::Text,
+            b"Rectangle" => Tool::Rectangle,
+            b"Oval" => Tool::Oval,
+            b"Line" => Tool::Line,
+            b"Arrow" => Tool::Arrow,
+            b"Sketch" => Tool::Sketch,
+            b"Signature" => Tool::Signature,
+            b"Polygon" => Tool::Polygon,
+            b"Star" => Tool::Star,
+            b"SpeechBubble" => Tool::SpeechBubble,
+            b"Mask" => Tool::Mask,
+            b"Note" => Tool::Note,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct Markup {
     pub items: Vec<Annotation>,
+    /// The annotations the PDF already had when it was opened (PREV-03A),
+    /// as read; `items` starts as a copy and Revert returns to it.
+    pub loaded: Vec<Annotation>,
     undo: Vec<Vec<Annotation>>,
     redo: Vec<Vec<Annotation>>,
     pub dirty: bool,
@@ -127,8 +182,19 @@ impl Markup {
         }
     }
 
+    /// Adopts the annotations a PDF already carries as editable items
+    /// without marking the document edited.
+    pub fn adopt(&mut self, existing: Vec<Annotation>) {
+        self.items = existing.clone();
+        self.loaded = existing;
+        self.undo.clear();
+        self.redo.clear();
+        self.dirty = false;
+        self.revision += 1;
+    }
+
     pub fn revert(&mut self) {
-        self.items.clear();
+        self.items = self.loaded.clone();
         self.undo.clear();
         self.redo.clear();
         self.dirty = false;
@@ -548,8 +614,28 @@ pub fn write_pdf_with_author(
 ) -> Result<(), String> {
     let mut doc = Document::load(source).map_err(|e| e.to_string())?;
     let pages: Vec<_> = doc.get_pages().into_values().collect();
+    // PREV-03A: annotations the PDF already had. Ones the user moved,
+    // restyled or deleted are removed here (and the changed ones written
+    // again below); untouched ones stay as the PDF's own objects.
+    let loaded = editable_annotations(&doc);
+    let mut removed = std::collections::HashSet::new();
+    for before in &loaded {
+        let Some(origin) = before.origin else {
+            continue;
+        };
+        let still_same = items
+            .iter()
+            .any(|item| item.origin == Some(origin) && item == before);
+        if !still_same {
+            removed.insert(origin);
+        }
+    }
+    remove_annotation_objects(&mut doc, &pages, &removed);
     for item in items {
         if item.tool == Tool::Select {
+            continue;
+        }
+        if item.origin.is_some_and(|origin| !removed.contains(&origin)) {
             continue;
         }
         let page_id = *pages
@@ -584,6 +670,10 @@ pub fn write_pdf_with_author(
             "NM" => format!("Lulo-{}-{}", item.page, doc.max_id + 1),
         };
         annotation.set("BS", dictionary! { "W" => number(item.width.max(0.5)) });
+        annotation.set(
+            "LuloTool",
+            Object::Name(item.tool.name().as_bytes().to_vec()),
+        );
         if let Some(author) = author {
             annotation.set("T", Object::string_literal(author));
         }
@@ -702,6 +792,320 @@ pub fn write_pdf_with_author(
     }
     doc.save(destination).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// A copy of a PDF without the annotations Preview can edit, used only to
+/// draw pages: those annotations are drawn by Preview itself (so a moved
+/// one is not also drawn where it used to be). Removes its file when
+/// dropped.
+pub struct BaseCopy(std::path::PathBuf);
+
+impl BaseCopy {
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for BaseCopy {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Reads the editable annotations of the PDF at `path` and, when there are
+/// any, writes the page-drawing copy without them (see [`BaseCopy`]).
+/// Blocking; call it from a worker. Unreadable or encrypted PDFs have none.
+pub fn prepare_editable(path: &Path, tag: u64) -> (Vec<Annotation>, Option<BaseCopy>) {
+    let Ok(mut doc) = Document::load(path) else {
+        return (Vec::new(), None);
+    };
+    let existing = editable_annotations(&doc);
+    if existing.is_empty() {
+        return (existing, None);
+    }
+    let pages: Vec<_> = doc.get_pages().into_values().collect();
+    let ids = existing.iter().filter_map(|item| item.origin).collect();
+    remove_annotation_objects(&mut doc, &pages, &ids);
+    let base = std::env::temp_dir().join(format!(
+        "rmac-preview-base-{}-{tag}.pdf",
+        std::process::id()
+    ));
+    if doc.save(&base).is_err() {
+        let _ = std::fs::remove_file(&base);
+        return (Vec::new(), None);
+    }
+    (existing, Some(BaseCopy(base)))
+}
+
+fn annots_of(doc: &Document, page_id: (u32, u16)) -> Vec<Object> {
+    match doc
+        .get_dictionary(page_id)
+        .ok()
+        .and_then(|page| page.get(b"Annots").ok())
+    {
+        Some(Object::Array(items)) => items.clone(),
+        Some(Object::Reference(id)) => doc
+            .get_object(*id)
+            .ok()
+            .and_then(|object| object.as_array().ok())
+            .cloned()
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn remove_annotation_objects(
+    doc: &mut Document,
+    pages: &[(u32, u16)],
+    ids: &std::collections::HashSet<(u32, u16)>,
+) {
+    if ids.is_empty() {
+        return;
+    }
+    for &page_id in pages {
+        let annots = annots_of(doc, page_id);
+        if !annots
+            .iter()
+            .any(|item| item.as_reference().is_ok_and(|id| ids.contains(&id)))
+        {
+            continue;
+        }
+        let kept: Vec<Object> = annots
+            .into_iter()
+            .filter(|item| !item.as_reference().is_ok_and(|id| ids.contains(&id)))
+            .collect();
+        if let Ok(page) = doc.get_dictionary_mut(page_id) {
+            page.set("Annots", kept);
+        }
+    }
+    for id in ids {
+        doc.delete_object(*id);
+    }
+}
+
+fn media_size(doc: &Document, page_id: (u32, u16)) -> Option<(f32, f32)> {
+    let mut ancestor = page_id;
+    for _ in 0..32 {
+        let page = doc.get_dictionary(ancestor).ok()?;
+        if let Ok(value) = page.get(b"MediaBox") {
+            let media = match value {
+                Object::Reference(id) => doc.get_object(*id).ok()?.as_array().ok()?,
+                other => other.as_array().ok()?,
+            };
+            let coord = |i: usize| media.get(i).and_then(|v| v.as_float().ok());
+            let (x0, y0, x1, y1) = (coord(0)?, coord(1)?, coord(2)?, coord(3)?);
+            // The writer places annotations in zero-origin page space.
+            if x0 != 0.0 || y0 != 0.0 || x1 - x0 < 1.0 || y1 - y0 < 1.0 {
+                return None;
+            }
+            return Some((x1 - x0, y1 - y0));
+        }
+        ancestor = page.get(b"Parent").ok()?.as_reference().ok()?;
+    }
+    None
+}
+
+fn floats(object: &Object, doc: &Document) -> Option<Vec<f32>> {
+    let array = match object {
+        Object::Reference(id) => doc.get_object(*id).ok()?.as_array().ok()?,
+        other => other.as_array().ok()?,
+    };
+    array.iter().map(|value| value.as_float().ok()).collect()
+}
+
+/// Reads the annotations Preview can edit from every page of `doc`:
+/// highlights, underlines, strike-throughs, text boxes, rectangles, ovals,
+/// lines, arrows, ink, polygons and notes, plus Lulo's own shapes. Anything
+/// that cannot be reproduced faithfully (a highlight spanning several
+/// lines, a filled shape, a hidden annotation, several ink strokes) is
+/// skipped and stays part of the page as the PDF drew it.
+fn editable_annotations(doc: &Document) -> Vec<Annotation> {
+    let mut out = Vec::new();
+    for (index, page_id) in doc.get_pages().into_values().enumerate() {
+        let Some(size) = media_size(doc, page_id) else {
+            continue;
+        };
+        for entry in annots_of(doc, page_id) {
+            let Ok(id) = entry.as_reference() else {
+                continue;
+            };
+            let Ok(dict) = doc.get_dictionary(id) else {
+                continue;
+            };
+            if let Some(mut item) = parse_annotation(doc, dict, index, size) {
+                item.origin = Some(id);
+                out.push(item);
+            }
+        }
+    }
+    out
+}
+
+fn parse_annotation(
+    doc: &Document,
+    dict: &lopdf::Dictionary,
+    page: usize,
+    size: (f32, f32),
+) -> Option<Annotation> {
+    let subtype = dict.get(b"Subtype").ok()?.as_name().ok()?;
+    if dict
+        .get(b"F")
+        .ok()
+        .and_then(|flags| flags.as_i64().ok())
+        .is_some_and(|flags| flags & 0b10 != 0)
+    {
+        return None;
+    }
+    let lulo = dict
+        .get(b"LuloTool")
+        .ok()
+        .and_then(|name| name.as_name().ok())
+        .and_then(Tool::from_name);
+    let interior = dict.get(b"IC").is_ok();
+    let tool = match (lulo, subtype) {
+        (Some(tool), _) => tool,
+        (None, b"Highlight") => Tool::Highlight,
+        (None, b"Underline") => Tool::Underline,
+        (None, b"StrikeOut") => Tool::StrikeThrough,
+        (None, b"FreeText") => Tool::Text,
+        (None, b"Square") if !interior => Tool::Rectangle,
+        (None, b"Circle") if !interior => Tool::Oval,
+        (None, b"Line") => {
+            let arrow = dict
+                .get(b"LE")
+                .ok()
+                .and_then(|ends| ends.as_array().ok())
+                .is_some_and(|ends| {
+                    ends.iter().any(|end| {
+                        end.as_name()
+                            .is_ok_and(|name| name != b"None" && name != b"")
+                    })
+                });
+            if arrow {
+                Tool::Arrow
+            } else {
+                Tool::Line
+            }
+        }
+        (None, b"Ink") => Tool::Sketch,
+        (None, b"Polygon") if !interior => Tool::Polygon,
+        (None, b"Text") => Tool::Note,
+        _ => return None,
+    };
+    // A Lulo shape must still be the PDF subtype it was written as.
+    let expected: &[&[u8]] = match tool {
+        Tool::Highlight => &[b"Highlight"],
+        Tool::Underline => &[b"Underline"],
+        Tool::StrikeThrough => &[b"StrikeOut"],
+        Tool::Text => &[b"FreeText"],
+        Tool::Oval => &[b"Circle"],
+        Tool::Line | Tool::Arrow => &[b"Line"],
+        Tool::Sketch | Tool::Signature => &[b"Ink"],
+        Tool::Polygon => &[b"Polygon"],
+        Tool::Note => &[b"Text"],
+        _ => &[b"Square"],
+    };
+    if !expected.contains(&subtype) {
+        return None;
+    }
+    let rect = floats(dict.get(b"Rect").ok()?, doc)?;
+    if rect.len() != 4 || rect.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    let bounds = normal(UnitRect {
+        x0: rect[0] / size.0,
+        y0: 1.0 - rect[3] / size.1,
+        x1: rect[2] / size.0,
+        y1: 1.0 - rect[1] / size.1,
+    });
+    let color = dict
+        .get(b"C")
+        .ok()
+        .and_then(|colour| floats(colour, doc))
+        .filter(|channels| channels.len() == 3)
+        .map(|channels| {
+            channels.iter().fold(0u32, |packed, channel| {
+                (packed << 8) | (channel.clamp(0.0, 1.0) * 255.0).round() as u32
+            })
+        })
+        .unwrap_or(0);
+    let width = dict
+        .get(b"BS")
+        .ok()
+        .and_then(|style| match style {
+            Object::Reference(id) => doc.get_dictionary(*id).ok(),
+            other => other.as_dict().ok(),
+        })
+        .and_then(|style| style.get(b"W").ok())
+        .and_then(|value| value.as_float().ok())
+        .or_else(|| {
+            dict.get(b"Border")
+                .ok()
+                .and_then(|border| floats(border, doc))
+                .and_then(|border| border.get(2).copied())
+        })
+        .unwrap_or(1.0);
+    let mut item = Annotation::new(page, tool, bounds, color, width);
+    item.text = dict
+        .get(b"Contents")
+        .ok()
+        .and_then(decode_outline_title)
+        .unwrap_or_default();
+    let spread = (
+        (bounds.x1 - bounds.x0).max(1e-4),
+        (bounds.y1 - bounds.y0).max(1e-4),
+    );
+    let relative = |x: f32, y: f32| {
+        (
+            ((x / size.0 - bounds.x0) / spread.0).clamp(0.0, 1.0),
+            (((1.0 - y / size.1) - bounds.y0) / spread.1).clamp(0.0, 1.0),
+        )
+    };
+    let points = |values: &[f32]| -> Vec<(f32, f32)> {
+        values
+            .chunks_exact(2)
+            .map(|pair| relative(pair[0], pair[1]))
+            .collect()
+    };
+    match tool {
+        Tool::Highlight | Tool::Underline | Tool::StrikeThrough => {
+            // Only a single run of text; a multi-line markup is left as the
+            // PDF drew it.
+            let quads = dict
+                .get(b"QuadPoints")
+                .ok()
+                .and_then(|quads| floats(quads, doc))?;
+            if quads.len() != 8 {
+                return None;
+            }
+        }
+        Tool::Sketch | Tool::Signature => {
+            let strokes = dict.get(b"InkList").ok()?.as_array().ok()?;
+            if strokes.len() != 1 {
+                return None;
+            }
+            item.path = points(&floats(&strokes[0], doc)?);
+            if item.path.len() < 2 {
+                return None;
+            }
+        }
+        Tool::Line | Tool::Arrow => {
+            let line = floats(dict.get(b"L").ok()?, doc)?;
+            if line.len() != 4 {
+                return None;
+            }
+            item.path = points(&line);
+        }
+        Tool::Polygon => {
+            let vertices = floats(dict.get(b"Vertices").ok()?, doc)?;
+            item.path = points(&vertices);
+            if item.path.len() < 3 {
+                return None;
+            }
+        }
+        _ => {}
+    }
+    Some(item)
 }
 
 /// One row of View ▸ Table of Contents: a PDF outline (bookmark) entry,
@@ -1248,5 +1652,148 @@ mod tests {
         assert_eq!(ids.len(), 3);
         assert_eq!(ids[1], second);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    fn one_page_pdf(path: &Path) -> (u32, u16) {
+        let mut doc = Document::with_version("1.4");
+        let pages = doc.new_object_id();
+        let content = doc.add_object(Stream::new(dictionary! {}, b"q Q".to_vec()));
+        let page = doc.add_object(dictionary! { "Type" => "Page", "Parent" => pages, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content });
+        doc.objects.insert(
+            pages,
+            Object::Dictionary(
+                dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 },
+            ),
+        );
+        let root = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        doc.trailer.set("Root", root);
+        doc.save(path).unwrap();
+        page
+    }
+
+    #[test]
+    fn existing_annotations_are_read_back_edited_and_deleted() {
+        let base = std::env::temp_dir().join(format!("rmac-markup-edit-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let (source, first, second) = (
+            base.join("source.pdf"),
+            base.join("first.pdf"),
+            base.join("second.pdf"),
+        );
+        let page = one_page_pdf(&source);
+        let mut line = Annotation::new(0, Tool::Arrow, rect(0.1, 0.1, 0.5, 0.3), 0x0000ff, 3.0);
+        line.path = vec![(0.0, 1.0), (1.0, 0.0)];
+        let mut note = Annotation::new(0, Tool::Note, rect(0.6, 0.6, 0.7, 0.7), 0xffcc00, 1.0);
+        note.text = "remember".into();
+        let star = Annotation::new(0, Tool::Star, rect(0.2, 0.5, 0.4, 0.7), 0xff0000, 2.0);
+        write_pdf(&source, &first, &[line, note, star]).unwrap();
+
+        // A new session reads all three back as themselves.
+        let (existing, copy) = prepare_editable(&first, 9001);
+        assert_eq!(existing.len(), 3);
+        assert_eq!(existing[0].tool, Tool::Arrow);
+        assert_eq!(existing[0].path, vec![(0.0, 1.0), (1.0, 0.0)]);
+        assert!((existing[0].width - 3.0).abs() < 1e-3);
+        assert_eq!(existing[0].color, 0x0000ff);
+        assert_eq!(existing[1].tool, Tool::Note);
+        assert_eq!(existing[1].text, "remember");
+        assert_eq!(existing[2].tool, Tool::Star);
+        assert!((existing[2].rect.x0 - 0.2).abs() < 1e-3);
+        assert!(existing.iter().all(|item| item.origin.is_some()));
+        // The page-drawing copy has none of them, the file keeps all.
+        let copy = copy.expect("a base copy");
+        assert!(Document::load(copy.path())
+            .unwrap()
+            .get_page_annotations(page)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            Document::load(&first)
+                .unwrap()
+                .get_page_annotations(page)
+                .unwrap()
+                .len(),
+            3
+        );
+
+        // Saving with nothing changed leaves the PDF's own objects alone.
+        write_pdf(&first, &second, &existing).unwrap();
+        assert_eq!(
+            Document::load(&second)
+                .unwrap()
+                .get_page_annotations(page)
+                .unwrap()
+                .len(),
+            3
+        );
+
+        // Move the star and delete the note: the star is replaced (not
+        // duplicated), the note is gone, the arrow is untouched.
+        let mut edited = existing.clone();
+        edited[2].translate((0.3, 0.0));
+        edited.remove(1);
+        write_pdf(&first, &second, &edited).unwrap();
+        let (after, _) = prepare_editable(&second, 9002);
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[0].tool, Tool::Arrow);
+        let star = after.iter().find(|item| item.tool == Tool::Star).unwrap();
+        assert!((star.rect.x0 - 0.5).abs() < 1e-3);
+        assert!(after.iter().all(|item| item.tool != Tool::Note));
+        drop(copy);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn other_peoples_annotations_are_read_when_they_are_simple() {
+        let base = std::env::temp_dir().join(format!("rmac-markup-foreign-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let source = base.join("source.pdf");
+        let page = one_page_pdf(&source);
+        let mut doc = Document::load(&source).unwrap();
+        let square = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Square", "Rect" => vec![61.2.into(), 396.0.into(), 244.8.into(), 633.6.into()],
+            "C" => vec![1.0.into(), 0.0.into(), 0.0.into()], "BS" => dictionary! { "W" => 2.5 },
+        });
+        let filled = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Square", "Rect" => vec![10.0.into(), 10.0.into(), 50.0.into(), 50.0.into()],
+            "IC" => vec![0.0.into(), 1.0.into(), 0.0.into()],
+        });
+        let link = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Link", "Rect" => vec![0.0.into(), 0.0.into(), 5.0.into(), 5.0.into()],
+        });
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Annots", vec![square.into(), filled.into(), link.into()]);
+        doc.save(&source).unwrap();
+        let (existing, copy) = prepare_editable(&source, 9003);
+        // Only the plain square is editable; the filled one and the link
+        // stay baked into the page.
+        assert_eq!(existing.len(), 1);
+        assert_eq!(existing[0].tool, Tool::Rectangle);
+        assert_eq!(existing[0].color, 0xff0000);
+        assert!((existing[0].rect.x0 - 0.1).abs() < 1e-3);
+        assert!((existing[0].rect.y0 - 0.2).abs() < 1e-3);
+        let kept = Document::load(copy.unwrap().path())
+            .unwrap()
+            .get_page_annotations(page)
+            .unwrap()
+            .len();
+        assert_eq!(kept, 2);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn revert_returns_to_the_annotations_the_pdf_started_with() {
+        let mut markup = Markup::default();
+        let mut existing = Annotation::new(0, Tool::Rectangle, rect(0.1, 0.1, 0.2, 0.2), 1, 1.0);
+        existing.origin = Some((7, 0));
+        markup.adopt(vec![existing.clone()]);
+        assert!(!markup.dirty);
+        markup.checkpoint();
+        markup.items.clear();
+        assert!(markup.dirty);
+        markup.revert();
+        assert_eq!(markup.items, vec![existing]);
+        assert!(!markup.dirty);
     }
 }

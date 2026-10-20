@@ -360,6 +360,9 @@ struct Slot {
     bookmarks: BTreeSet<usize>,
     text: TextState,
     markup: Markup,
+    /// PREV-03A: the PDF without its editable annotations, which Preview
+    /// draws itself; pages are rendered from this copy when it exists.
+    base: Option<markup::BaseCopy>,
     markup_original: Option<PathBuf>,
     /// Tools ▸ Flip Horizontal/Flip Vertical/Adjust Size…/Crop undo/redo
     /// and dirty/saved tracking for an image document (see `ImageEdits`).
@@ -474,6 +477,7 @@ impl Slot {
             bookmarks: BTreeSet::new(),
             text: TextState::NotLoaded,
             markup: Markup::default(),
+            base: None,
             markup_original: None,
             image_edits: ImageEdits::default(),
             selection: None,
@@ -2382,7 +2386,7 @@ impl PreviewView {
         };
         let (id, path) = (slot.id, slot.path.clone());
         cx.spawn(async move |this, cx| {
-            let (result, bookmarks, has_version, last_page) = cx
+            let (result, bookmarks, has_version, last_page, (existing, base)) = cx
                 .background_executor()
                 .spawn(async move {
                     // Settings ▸ PDF ▸ Start on the last viewed page.
@@ -2390,11 +2394,18 @@ impl PreviewView {
                         .is_ok_and(|settings| settings.start_on_last_viewed_page)
                         .then(|| crate::load_last_page(&path))
                         .flatten();
+                    let loaded = render::load(&path);
+                    let editable = if loaded.as_ref().is_ok_and(|loaded| loaded.kind == Kind::Pdf) {
+                        markup::prepare_editable(&path, id)
+                    } else {
+                        (Vec::new(), None)
+                    };
                     (
-                        render::load(&path),
+                        loaded,
                         crate::load_bookmarks(&path),
                         versions::has_version(&path),
                         last_page,
+                        editable,
                     )
                 })
                 .await;
@@ -2429,6 +2440,8 @@ impl PreviewView {
                 }
                 slot.bookmarks = bookmarks;
                 slot.has_version = has_version;
+                slot.markup.adopt(existing);
+                slot.base = base;
                 // A PDF with several pages opens with its thumbnails, like
                 // Preview; a single image or one-page PDF does not.
                 let pages = slot.loaded().map(Loaded::page_count).unwrap_or(0);
@@ -3531,7 +3544,15 @@ impl PreviewView {
             let reload = match redact_result {
                 Ok(()) => {
                     let reload_source = source.clone();
-                    Some(blocking::unblock(move || render::load(&reload_source)).await)
+                    Some(
+                        blocking::unblock(move || {
+                            (
+                                render::load(&reload_source),
+                                markup::prepare_editable(&reload_source, id),
+                            )
+                        })
+                        .await,
+                    )
                 }
                 Err(error) => {
                     eprintln!("rmac-preview: redact failed: {error}");
@@ -3540,7 +3561,7 @@ impl PreviewView {
             };
             let _ = this.update(cx, |this, cx| {
                 this.markup_save_busy = false;
-                if let Some(Ok(loaded)) = reload {
+                if let Some((Ok(loaded), (existing, base))) = reload {
                     if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
                         let old_display = slot.display.take();
                         let old_pages: Vec<_> =
@@ -3548,6 +3569,8 @@ impl PreviewView {
                         let old_thumbs: Vec<_> =
                             slot.thumbs.drain().map(|(_, (_, image))| image).collect();
                         slot.state = SlotState::Ready(loaded);
+                        slot.markup.adopt(existing);
+                        slot.base = base;
                         slot.text = TextState::NotLoaded;
                         slot.pending.clear();
                         if let Some((_, image)) = old_display {
@@ -3557,7 +3580,7 @@ impl PreviewView {
                         this.garbage.extend(old_thumbs);
                     }
                     this.text_selection = None;
-                } else if let Some(Err(error)) = reload {
+                } else if let Some((Err(error), _)) = reload {
                     eprintln!("rmac-preview: redacted page could not be reloaded: {error}");
                 }
                 cx.notify();
@@ -3579,7 +3602,7 @@ impl PreviewView {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) || !slot.markup.items.is_empty() {
+        if slot.kind() != Some(Kind::Pdf) || slot.markup.dirty || slot.markup_original.is_some() {
             return;
         }
         let receiver = cx.prompt_for_paths(PathPromptOptions {
@@ -3623,7 +3646,7 @@ impl PreviewView {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) || !slot.markup.items.is_empty() {
+        if slot.kind() != Some(Kind::Pdf) || slot.markup.dirty || slot.markup_original.is_some() {
             return;
         }
         let source = slot.path.clone();
@@ -3646,7 +3669,15 @@ impl PreviewView {
             let reload = match written {
                 Ok(()) => {
                     let reload_source = source.clone();
-                    Some(blocking::unblock(move || render::load(&reload_source)).await)
+                    Some(
+                        blocking::unblock(move || {
+                            (
+                                render::load(&reload_source),
+                                markup::prepare_editable(&reload_source, id),
+                            )
+                        })
+                        .await,
+                    )
                 }
                 Err(error) => {
                     eprintln!("rmac-preview: could not {what}: {error}");
@@ -3655,7 +3686,7 @@ impl PreviewView {
             };
             let _ = this.update(cx, |this, cx| {
                 this.markup_save_busy = false;
-                if let Some(Ok(loaded)) = reload {
+                if let Some((Ok(loaded), (existing, base))) = reload {
                     if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
                         let old_display = slot.display.take();
                         let old_pages: Vec<_> =
@@ -3663,6 +3694,8 @@ impl PreviewView {
                         let old_thumbs: Vec<_> =
                             slot.thumbs.drain().map(|(_, (_, image))| image).collect();
                         slot.state = SlotState::Ready(loaded);
+                        slot.markup.adopt(existing);
+                        slot.base = base;
                         slot.text = TextState::NotLoaded;
                         slot.pending.clear();
                         slot.current_page =
@@ -3674,7 +3707,7 @@ impl PreviewView {
                         this.garbage.extend(old_thumbs);
                     }
                     this.text_selection = None;
-                } else if let Some(Err(error)) = reload {
+                } else if let Some((Err(error), _)) = reload {
                     eprintln!("rmac-preview: the edited PDF could not be reloaded: {error}");
                 }
                 cx.notify();
@@ -4146,15 +4179,16 @@ impl PreviewView {
         let source = slot.path.clone();
         let id = slot.id;
         let revision = slot.markup.revision;
-        let marked_pdf =
-            (slot.kind() == Some(Kind::Pdf) && !slot.markup.items.is_empty()).then(|| {
-                (
-                    slot.markup_original
-                        .clone()
-                        .unwrap_or_else(|| source.clone()),
-                    slot.markup.items.clone(),
-                )
-            });
+        let marked_pdf = (slot.kind() == Some(Kind::Pdf)
+            && (slot.markup.dirty || slot.markup_original.is_some()))
+        .then(|| {
+            (
+                slot.markup_original
+                    .clone()
+                    .unwrap_or_else(|| source.clone()),
+                slot.markup.items.clone(),
+            )
+        });
         let image_save = marked_pdf
             .is_none()
             .then(|| slot.final_image_pixels())
@@ -4866,7 +4900,11 @@ impl PreviewView {
                         continue;
                     }
                     self.in_flight += 1;
-                    let (id, path, rotation) = (slot.id, slot.path.clone(), slot.rotation);
+                    let (id, rotation) = (slot.id, slot.rotation);
+                    let path = slot
+                        .base
+                        .as_ref()
+                        .map_or_else(|| slot.path.clone(), |base| base.path().to_path_buf());
                     let page_size = info.pages[page].displayed();
                     cx.spawn(async move |this, cx| {
                         let rendered = cx
@@ -7733,7 +7771,9 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_enabled(
                     action,
                     pdf && !self.markup_save_busy
-                        && self.slot().is_some_and(|slot| slot.markup.items.is_empty()),
+                        && self.slot().is_some_and(|slot| {
+                            !slot.markup.dirty && slot.markup_original.is_none()
+                        }),
                     cx,
                 );
             }

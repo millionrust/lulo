@@ -710,17 +710,24 @@
           "children": []
         },
         {
+          "label": "Adjust Color…",
+          "action": "preview::AdjustColour",
+          "shortcut": "⌥⌘C",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Adjust Size…",
           "action": "preview::AdjustSize",
           "shortcut": "",
-          "separator_before": true,
+          "separator_before": false,
           "children": []
         },
         {
           "label": "Text Selection",
           "action": "preview::TextSelection",
           "shortcut": "",
-          "separator_before": false,
+          "separator_before": true,
           "children": []
         },
         {

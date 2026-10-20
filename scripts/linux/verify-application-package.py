@@ -28,7 +28,8 @@ TEXT_MIME_TYPES = (
     "application/rtf",
 )
 # Preview claims only the formats it decodes (the image crate's PNG, JPEG,
-# GIF, WebP, BMP and TIFF, and PDF through poppler), not every image/*.
+# GIF, WebP, BMP and TIFF; HEIC and AVIF through libheif; Photoshop; camera
+# RAW through libraw; and PDF through poppler), not every image/*.
 PREVIEW_MIME_TYPES = (
     "application/pdf",
     "image/png",
@@ -37,6 +38,11 @@ PREVIEW_MIME_TYPES = (
     "image/webp",
     "image/bmp",
     "image/tiff",
+    "image/heic",
+    "image/heif",
+    "image/avif",
+    "image/vnd.adobe.photoshop",
+    "image/x-dcraw",
 )
 # Archive Utility claims the archives rmac-archive expands (shared-mime-info
 # names, including the older bzip spellings still in use).

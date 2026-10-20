@@ -1,0 +1,38 @@
+{
+  "title": "Preview: Flip Horizontal then Save writes the flipped picture into the file",
+  "app": "preview",
+  "lulo_only": true,
+  "setup": {
+    "files_base64": {
+      "halves.png": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAYAAACinX6EAAAARElEQVR4nO3QsQ0AAAzCMP5/ml5RsXjIDHKadNl4vvMHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwH8HKHrw4mwybOwAAAAASUVORK5CYII="
+    }
+  },
+  "launch": {
+    "file": "halves.png"
+  },
+  "steps": [
+    {
+      "wait": 1.5
+    },
+    {
+      "observe": "opened",
+      "facts": [
+        "image_halves"
+      ]
+    },
+    {
+      "menu_action": "preview::FlipHorizontal",
+      "settle": 0.6
+    },
+    {
+      "key": "cmd-s",
+      "settle": 2.0
+    },
+    {
+      "observe": "flipped_saved",
+      "facts": [
+        "image_halves"
+      ]
+    }
+  ]
+}

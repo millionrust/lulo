@@ -1,0 +1,24 @@
+{
+  "title": "Preview says a damaged Photoshop file cannot be opened",
+  "app": "preview",
+  "lulo_only": true,
+  "setup": {
+    "files_base64": {
+      "broken.psd": "OEJQUwABAAAAAAAAIGN1dCBzaG9ydA=="
+    }
+  },
+  "launch": {
+    "file": "broken.psd"
+  },
+  "steps": [
+    {
+      "wait": 1.5
+    },
+    {
+      "observe": "opened",
+      "facts": [
+        "open_error"
+      ]
+    }
+  ]
+}

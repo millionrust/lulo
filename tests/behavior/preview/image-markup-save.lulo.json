@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "scenario": "preview/image-markup-save",
+  "observations": {
+    "rectangle_saved": {
+      "image_pixels": {
+        "size": [
+          400,
+          300
+        ],
+        "markup_drawn": true,
+        "background_intact": true
+      }
+    }
+  }
+}

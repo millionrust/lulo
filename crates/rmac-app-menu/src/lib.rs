@@ -2889,8 +2889,10 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             // own Show Magnifier and Annotate ▸ Loupe both exist
             // separately (`PreviewView::toggle_loupe`).
             item!("Show Magnifier", "preview::ShowMagnifier", "`"),
-            item!("Adjust Size…", "preview::AdjustSize", "", separator),
-            item!("Text Selection", "preview::TextSelection", ""),
+            // PREV-10: nine sliders over a live preview of the picture.
+            item!("Adjust Color…", "preview::AdjustColour", "⌥⌘C", separator),
+            item!("Adjust Size…", "preview::AdjustSize", ""),
+            item!("Text Selection", "preview::TextSelection", "", separator),
             item!("Rectangular Selection", "preview::RectangularSelection", ""),
             // PRV-MENU-013: a real 4-connected flood fill by colour
             // similarity (`rmac_preview::selection::flood_fill`), stored

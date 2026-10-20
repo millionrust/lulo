@@ -73,7 +73,11 @@ impl Settings {
         if let Some(detail) = &self.login_items_stream_error {
             cards.push(note_card(detail.clone()));
         }
-        cards.push(footer_buttons(vec![refresh]));
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.login_items_error.is_some() || self.login_items_stream_error.is_some() {
+            cards.push(footer_buttons(vec![refresh]));
+        }
         self.pane(cards)
     }
 }

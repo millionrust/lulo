@@ -269,27 +269,33 @@ impl Settings {
         }
         let lock_view = view.clone();
         let refresh_view = view.clone();
-        cards.push(footer_buttons(vec![
-            push_button(
-                "lock-screen-now",
-                if self.lock_request_busy {
-                    "Locking…"
-                } else {
-                    "Lock Now"
-                },
-            )
-            .disabled(self.lock_request_busy)
-            .on_click(move |_, _, cx| {
-                lock_view.update(cx, |settings, cx| settings.request_lock_screen(cx));
-            })
-            .into_any_element(),
-            push_button("lock-policy-refresh", "Refresh")
-                .disabled(self.lock_policy_loading || self.lock_policy_busy)
-                .on_click(move |_, _, cx| {
-                    refresh_view.update(cx, |settings, cx| settings.refresh_lock_policy(cx));
-                })
-                .into_any_element(),
-        ]));
+        let failed = self.lock_policy_error.is_some() || self.lock_policy_stream_error.is_some();
+        let mut buttons = vec![push_button(
+            "lock-screen-now",
+            if self.lock_request_busy {
+                "Locking…"
+            } else {
+                "Lock Now"
+            },
+        )
+        .disabled(self.lock_request_busy)
+        .on_click(move |_, _, cx| {
+            lock_view.update(cx, |settings, cx| settings.request_lock_screen(cx));
+        })
+        .into_any_element()];
+        // Refresh only when reading the policy or its live updates failed
+        // (SET-56).
+        if failed || self.lock_policy.is_none() {
+            buttons.push(
+                push_button("lock-policy-refresh", "Refresh")
+                    .disabled(self.lock_policy_loading || self.lock_policy_busy)
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_lock_policy(cx));
+                    })
+                    .into_any_element(),
+            );
+        }
+        cards.push(footer_buttons(buttons));
         self.pane(cards)
     }
 }

@@ -324,16 +324,20 @@ impl Settings {
             cards.push(self.audio_profile_card(cx));
         }
 
-        cards.push(footer_buttons(vec![push_button(
-            "audio-refresh",
-            "Refresh",
-        )
-        .busy(self.audio_busy)
-        .disabled(self.audio_loading || self.audio_busy)
-        .on_click(move |_, _, cx| {
-            refresh_view.update(cx, |settings, cx| settings.refresh_audio(cx));
-        })
-        .into_any_element()]));
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.audio_error.is_some() || self.audio_stream_error.is_some() {
+            cards.push(footer_buttons(vec![push_button(
+                "audio-refresh",
+                "Refresh",
+            )
+            .busy(self.audio_busy)
+            .disabled(self.audio_loading || self.audio_busy)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_audio(cx));
+            })
+            .into_any_element()]));
+        }
         self.pane(cards)
     }
 

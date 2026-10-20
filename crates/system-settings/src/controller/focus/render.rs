@@ -94,16 +94,22 @@ impl Settings {
                 .collect();
             cards.push(card(mode_rows));
         }
-        let refresh_view = view.clone();
-        footer.push(
-            push_button("focus-refresh", "Refresh")
-                .disabled(busy)
-                .on_click(move |_, _, cx| {
-                    refresh_view.update(cx, |settings, cx| settings.refresh_focus(cx));
-                })
-                .into_any_element(),
-        );
-        cards.push(footer_buttons(footer));
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.focus_policy_error.is_some() || self.focus_policy_stream_error.is_some() {
+            let refresh_view = view.clone();
+            footer.push(
+                push_button("focus-refresh", "Refresh")
+                    .disabled(busy)
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_focus(cx));
+                    })
+                    .into_any_element(),
+            );
+        }
+        if !footer.is_empty() {
+            cards.push(footer_buttons(footer));
+        }
         self.pane(cards)
     }
 }

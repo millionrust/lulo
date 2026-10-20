@@ -6660,7 +6660,7 @@ dependencies = [
  "image",
  "libc",
  "quick-xml 0.39.4",
- "resvg 0.45.1",
+ "resvg 0.46.0",
 ]
 
 [[package]]

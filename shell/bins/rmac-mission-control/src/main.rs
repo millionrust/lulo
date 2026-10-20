@@ -77,6 +77,8 @@ mod linux_wayland {
     /// A window nothing on screen shows whole: the rmac content surface
     /// (docs/measured-colors-2026-09-19.md) with the app's icon (S).
     const CARD_FILL: u32 = 0x2220_25FF;
+    /// App Exposé's divider over the minimised row (S: white ≈ 25 %).
+    const DIVIDER: u32 = 0xFFFF_FF40;
     /// rmac's window corner radius (shell.kdl geometry-corner-radius).
     const WINDOW_RADIUS: f32 = 16.0;
 
@@ -461,6 +463,38 @@ mod linux_wayland {
     }
 
     /// Run compositor actions in order, one socket each.
+    /// Bring a minimised window back to the Space it left and focus it, the
+    /// way the Dock's minimised tile does (the parking store remembers the
+    /// Space). The store's file is read and written off the UI thread.
+    fn restore_minimised(window: WindowId, snapshot: Snapshot, cx: &mut App) {
+        cx.spawn(async move |cx: &mut AsyncApp| {
+            let actions = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut store = rmac_compositor::ParkingStore::load_default();
+                    store.prune(&snapshot);
+                    let mut actions = store.restore_actions(&[window]);
+                    if !actions.is_empty() {
+                        if let Err(error) = store.save_default() {
+                            eprintln!("Mission Control could not save the parking set: {error}");
+                        }
+                    }
+                    actions.push(Action::FocusWindow { window });
+                    actions
+                })
+                .await;
+            for action in actions {
+                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                    eprintln!(
+                        "Mission Control could not run {:?}: {error:?}",
+                        action.kind()
+                    );
+                }
+            }
+        })
+        .detach();
+    }
+
     fn run_actions(actions: Vec<Action>, cx: &mut App) {
         if actions.is_empty() {
             return;
@@ -555,6 +589,8 @@ mod linux_wayland {
     enum Exit {
         Nothing,
         Focus(WindowId),
+        /// Bring a minimised window back from App Exposé's row.
+        Restore(WindowId),
         Space(WorkspaceId),
     }
 
@@ -696,6 +732,33 @@ mod linux_wayland {
                     model::GAP_Y,
                     0.0,
                 ),
+                Mode::AppWindows if self.has_minimised() => {
+                    let (open_area, _, row_area) =
+                        model::app_windows_areas_with_minimised(width, height);
+                    let (minimised, open): (Vec<_>, Vec<_>) = self
+                        .scene
+                        .windows
+                        .iter()
+                        .enumerate()
+                        .partition(|(_, window)| window.minimised);
+                    let mut rects = vec![model::Rect::new(0.0, 0.0, 0.0, 0.0); frames.len()];
+                    for (group, area, gap_y) in [(open, open_area, 0.0), (minimised, row_area, 0.0)]
+                    {
+                        let group_frames: Vec<Rect> =
+                            group.iter().map(|(_, window)| window.frame).collect();
+                        let laid = model::layout(
+                            &group_frames,
+                            area,
+                            model::GAP_X,
+                            gap_y,
+                            model::CAPTION_BAND,
+                        );
+                        for ((index, _), rect) in group.iter().zip(laid) {
+                            rects[*index] = rect;
+                        }
+                    }
+                    rects
+                }
                 Mode::AppWindows => model::layout(
                     &frames,
                     model::app_windows_area(width, height),
@@ -704,6 +767,10 @@ mod linux_wayland {
                     model::CAPTION_BAND,
                 ),
             }
+        }
+
+        fn has_minimised(&self) -> bool {
+            self.scene.windows.iter().any(|window| window.minimised)
         }
 
         /// 0 = the windows where they are on screen, 1 = laid out.
@@ -838,6 +905,10 @@ mod linux_wayland {
                 Exit::Nothing => None,
                 Exit::Focus(window) => Some(Action::FocusWindow { window }),
                 Exit::Space(workspace) => Some(Action::FocusWorkspace { workspace }),
+                Exit::Restore(window) => {
+                    restore_minimised(window, self.snapshot.clone(), cx);
+                    None
+                }
             };
             run_actions(action.into_iter().collect(), cx);
         }
@@ -845,7 +916,12 @@ mod linux_wayland {
         fn commit(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
             if let Some(scene_window) = self.scene.windows.get(index) {
                 let id = scene_window.id;
-                self.dismiss(Exit::Focus(id), window, cx);
+                let exit = if scene_window.minimised {
+                    Exit::Restore(id)
+                } else {
+                    Exit::Focus(id)
+                };
+                self.dismiss(exit, window, cx);
             }
         }
 
@@ -1424,6 +1500,19 @@ mod linux_wayland {
                 Vec::new()
             };
             let bar = (self.mode == Mode::MissionControl).then(|| self.spaces_bar(progress, cx));
+            // App Exposé's divider above the minimised windows' row.
+            let divider = (self.mode == Mode::AppWindows && self.has_minimised()).then(|| {
+                let (_, y, row) =
+                    model::app_windows_areas_with_minimised(self.scene.width, self.scene.height);
+                div()
+                    .absolute()
+                    .left(px(row.x))
+                    .top(px(y))
+                    .w(px(row.width))
+                    .h(px(1.0))
+                    .opacity(progress)
+                    .bg(rgba(DIVIDER))
+            });
             div()
                 .id("mission-control")
                 .track_focus(&self.focus)
@@ -1441,6 +1530,7 @@ mod linux_wayland {
                 )
                 .children(windows)
                 .children(captions)
+                .children(divider)
                 .children(bar)
         }
     }

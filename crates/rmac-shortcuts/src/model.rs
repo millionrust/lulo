@@ -35,6 +35,11 @@ pub fn default_shortcuts() -> Vec<ShortcutSpec> {
     ]
 }
 
+/// Closes Spotlight if it is open; nothing otherwise.
+pub const LAUNCHER_DISMISS: &str = "launcher-dismiss";
+/// Closes Apps if it is open; nothing otherwise.
+pub const APP_DRAWER_DISMISS: &str = "app-drawer-dismiss";
+
 pub fn known_action(id: &ShortcutId) -> bool {
     matches!(
         id.0.as_str(),
@@ -53,6 +58,10 @@ pub fn known_action(id: &ShortcutId) -> bool {
             // ⌘Q and ⌘W, answered by the menu bar for every app (WIN-17).
             | "app-quit"
             | "window-close"
+            // Spotlight and Apps are one panel on the Mac: opening one
+            // closes the other (SPOT-04). Sent with `notify`, never bound.
+            | LAUNCHER_DISMISS
+            | APP_DRAWER_DISMISS
     )
 }
 

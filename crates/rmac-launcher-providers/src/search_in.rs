@@ -36,6 +36,7 @@ impl Provider for SearchInFilesProvider {
             },
             category: Category::SearchIn,
             application_group: None,
+            kind: None,
             title: SEARCH_IN_FILES_TITLE.into(),
             subtitle: None,
             detail: None,

@@ -67,6 +67,7 @@ pub(super) fn normalize_saved_networks(
                 WifiSavedNetwork {
                     ssid: display_ssid(&id.ssid),
                     id,
+                    auto_join: None,
                 },
                 timestamp,
             )

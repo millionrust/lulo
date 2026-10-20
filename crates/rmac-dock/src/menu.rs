@@ -449,11 +449,42 @@ impl Session {
         )
     }
 
+    /// The Apps tile's menu (DOCK-06): the Mac's Launchpad tile offers
+    /// Remove from Dock and Show Apps, flat -- no Options, windows or
+    /// Quit.
+    pub fn apps(menu: &ContextMenu) -> Result<Self, MenuError> {
+        let mut stripped = menu.clone();
+        stripped.windows.clear();
+        stripped.application_commands.clear();
+        stripped.show_in_finder = None;
+        stripped.show_all_windows = None;
+        stripped.hide = None;
+        stripped.hide_others = None;
+        stripped.quit = None;
+        stripped.force_quit = None;
+        let mut rows = Self::context(&stripped)?.rows().to_vec();
+        for row in &mut rows {
+            row.submenu = None;
+            row.checked = false;
+            if row.id == RowId::Open {
+                row.label = "Show Apps".into();
+                row.accessible_label = "Show Apps".into();
+            }
+        }
+        Self::new(
+            EntryId::Application(menu.app_id.clone()),
+            bounded(&menu.application_name),
+            format!("{} Dock menu", bounded(&menu.application_name)),
+            rows,
+        )
+    }
+
     /// The Files tile's menu (DOCK-05): windows, New Finder Window, Show
     /// All Windows, Hide/Hide Others -- no Options ▸, no Quit.
     pub fn finder(menu: &FinderContextMenu) -> Result<Self, MenuError> {
         let row_count = menu.windows.len()
             + usize::from(menu.new_window.is_some())
+            + menu.commands.len()
             + usize::from(menu.show_all_windows.is_some())
             + usize::from(menu.hide.is_some());
         if row_count > MAX_MENU_ROWS {
@@ -501,6 +532,20 @@ impl Session {
                 submenu: None,
             });
         }
+        rows.extend(menu.commands.iter().map(|command| Row {
+            id: RowId::ApplicationCommand(command.id.clone()),
+            section: Section::Lifecycle,
+            label: bounded(&command.name),
+            accessible_label: bounded(&command.name),
+            enabled: true,
+            checked: false,
+            urgent: false,
+            destructive: false,
+            primary: Some(Action::Context(command.action.clone())),
+            secondary: None,
+            alternate_label: None,
+            submenu: None,
+        }));
         if let Some(action) = &menu.show_all_windows {
             rows.push(Row {
                 id: RowId::ShowAllWindows,
@@ -1099,6 +1144,19 @@ mod tests {
                     terminal: false,
                 },
             }),
+            commands: vec![crate::ApplicationCommand {
+                id: "files-go-to-folder".into(),
+                name: "Go to Folder…".into(),
+                action: ContextAction::LaunchNew {
+                    app_id: "org.rmac.Files".into(),
+                    spec: rmac_apps::LaunchSpec::Command {
+                        program: "rmac-files".into(),
+                        args: vec!["--go-to-folder".into()],
+                        working_dir: None,
+                        terminal: false,
+                    },
+                },
+            }],
             show_all_windows: Some(ContextAction::ShowAllWindows {
                 app_id: "org.rmac.Files".into(),
                 window: rmac_compositor::WindowId(3),
@@ -1119,10 +1177,12 @@ mod tests {
             [
                 RowId::Window(rmac_compositor::WindowId(3)),
                 RowId::NewFinderWindow,
+                RowId::ApplicationCommand("files-go-to-folder".into()),
                 RowId::ShowAllWindows,
                 RowId::Hide,
             ]
         );
+        assert_eq!(session.rows()[2].label, "Go to Folder…");
         assert!(!ids.contains(&RowId::Pin));
         assert!(!ids.contains(&RowId::Quit));
     }
@@ -1278,6 +1338,30 @@ mod tests {
             focus: focus("terminal.desktop", id),
             close: close("terminal.desktop", id),
         }
+    }
+
+    #[test]
+    fn apps_tile_menu_is_remove_from_dock_and_show_apps() {
+        let unpin = || PinCommand::Unpin {
+            app_id: "terminal.desktop".into(),
+        };
+        let menu = mac_menu(unpin(), vec![window_menu(2, true)], true);
+        let session = Session::apps(&menu).unwrap();
+        let labels: Vec<&str> = session
+            .rows()
+            .iter()
+            .map(|row| row.label.as_str())
+            .collect();
+        assert_eq!(labels, ["Remove from Dock"]);
+        let menu = mac_menu(unpin(), Vec::new(), false);
+        let session = Session::apps(&menu).unwrap();
+        let labels: Vec<&str> = session
+            .rows()
+            .iter()
+            .map(|row| row.label.as_str())
+            .collect();
+        assert_eq!(labels, ["Remove from Dock", "Show Apps"]);
+        assert!(session.rows().iter().all(|row| row.submenu.is_none()));
     }
 
     #[test]

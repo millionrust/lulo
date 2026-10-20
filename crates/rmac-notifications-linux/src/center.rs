@@ -6,7 +6,8 @@ use rmac_notifications::{Action, AppId, Content, Indicator, NotificationId, Prio
 use rmac_notifications_store::{AppPolicy, LockPreview};
 use std::collections::BTreeSet;
 
-pub type WireAppPolicy = (bool, bool, bool, bool, bool, bool, u8);
+/// The last field is `muted_until` (Unix seconds, 0 when not muted).
+pub type WireAppPolicy = (bool, bool, bool, bool, bool, bool, u8, u64);
 pub type WireHistoryRecord = (
     u32,
     String,
@@ -34,6 +35,7 @@ pub fn encode_policy(policy: AppPolicy) -> WireAppPolicy {
             LockPreview::HideContent => 1,
             LockPreview::Hide => 2,
         },
+        policy.muted_until,
     )
 }
 
@@ -51,6 +53,7 @@ pub fn decode_policy(policy: WireAppPolicy) -> Result<AppPolicy, Error> {
             2 => LockPreview::Hide,
             _ => return Err(Error::Protocol),
         },
+        muted_until: policy.7,
     })
 }
 
@@ -719,9 +722,10 @@ mod tests {
             history: true,
             urgent_through_focus: false,
             lock_preview: LockPreview::HideContent,
+            muted_until: 1_800_000_000,
         };
         assert_eq!(decode_policy(encode_policy(policy)).unwrap(), policy);
-        assert!(decode_policy((true, true, true, true, true, true, 3)).is_err());
+        assert!(decode_policy((true, true, true, true, true, true, 3, 0)).is_err());
         let application = ApplicationPolicy {
             app_id: "org.private.App".into(),
             policy,

@@ -7240,7 +7240,7 @@ dependencies = [
  "libloading 0.8.9",
  "lopdf",
  "raw-window-handle",
- "resvg 0.45.1",
+ "resvg",
  "rmac-portal",
  "rmac-print-linux",
  "rmac-recent-documents",

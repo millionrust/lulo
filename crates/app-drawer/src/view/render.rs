@@ -350,7 +350,7 @@ impl Render for AppDrawer {
 
 /// WIN-OS-98: one grid row's height, tiles and the gap below them.
 #[cfg(windows)]
-const GRID_ROW_H: f32 = 104.0;
+const GRID_ROW_H: f32 = 118.0;
 
 #[cfg(windows)]
 impl AppDrawer {

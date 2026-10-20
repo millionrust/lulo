@@ -272,7 +272,7 @@ impl AppDrawer {
                     .text_color(mac::text())
                     .text_center()
                     .line_height(px(14.0))
-                    .max_h(px(28.0))
+                    .h(px(28.0))
                     .overflow_hidden()
                     .line_clamp(2)
                     .child(app.name.clone()),
@@ -347,7 +347,7 @@ impl AppDrawer {
                     .text_color(mac::text())
                     .text_center()
                     .line_height(px(14.0))
-                    .max_h(px(28.0))
+                    .h(px(28.0))
                     .overflow_hidden()
                     .line_clamp(2)
                     .child(app.name.clone()),

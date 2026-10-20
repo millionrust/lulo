@@ -221,8 +221,8 @@ impl MailState {
     /// Adds or updates one smart mailbox, keeping its place.
     pub fn save_smart_mailbox(&mut self, smart: SmartMailbox) {
         let mut list = self.smart_mailboxes();
-        match list.iter_mut().find(|existing| existing.id == smart.id) {
-            Some(existing) => *existing = smart,
+        match list.iter().position(|existing| existing.id == smart.id) {
+            Some(index) => list[index] = smart,
             None if list.len() < MAX_SMART_MAILBOXES => list.push(smart),
             None => {}
         }

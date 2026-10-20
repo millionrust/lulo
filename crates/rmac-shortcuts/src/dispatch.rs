@@ -95,6 +95,30 @@ fn dispatch_over_socket(id: &ShortcutId) -> Result<(), Error> {
     )
 }
 
+/// Send `id` to its endpoint once, without starting its surface or waiting
+/// for it: a surface that is not running has nothing open to act on. For
+/// the dismiss endpoints, which run on a UI thread's background task.
+#[cfg(not(windows))]
+pub fn notify(id: &ShortcutId) -> Result<(), Error> {
+    let path = shortcut_socket_path(id)?;
+    let socket = std::os::unix::net::UnixDatagram::unbound()
+        .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
+    let bytes =
+        serde_json::to_vec(id).map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
+    match socket.send_to(&bytes, &path) {
+        Ok(_) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(Error::new(Operation::Dispatch, error.to_string())),
+    }
+}
+
 #[cfg(windows)]
 fn dispatch_over_socket(_id: &ShortcutId) -> Result<(), Error> {
     Err(Error::new(

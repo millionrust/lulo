@@ -216,6 +216,17 @@ fn fallback_bounds(cx: &GpuiApp) -> Bounds<Pixels> {
 }
 
 fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
+    // Spotlight and Apps are one panel on the Mac: opening Apps closes
+    // Spotlight (SPOT-04).
+    #[cfg(target_os = "linux")]
+    cx.background_executor()
+        .spawn(async {
+            let id = rmac_shortcuts::ShortcutId(rmac_shortcuts::LAUNCHER_DISMISS.into());
+            if let Err(error) = rmac_shortcuts::notify(&id) {
+                eprintln!("Apps could not close Spotlight: {error}");
+            }
+        })
+        .detach();
     let token = cx.update_global::<AppDrawerService, _>(|service, _| {
         service.next_token = service.next_token.wrapping_add(1).max(1);
         service.next_token
@@ -369,6 +380,31 @@ pub fn run_service(show_on_start: bool) {
                 pending_dismiss: None,
             });
 
+            // Spotlight opening closes Apps (SPOT-04).
+            #[cfg(target_os = "linux")]
+            {
+                let (dismiss_tx, dismiss_rx) = async_channel::bounded(4);
+                cx.background_executor()
+                    .spawn(async move {
+                        if let Err(error) = rmac_shortcuts::watch_dispatches(
+                            rmac_shortcuts::ShortcutId(rmac_shortcuts::APP_DRAWER_DISMISS.into()),
+                            dismiss_tx,
+                        )
+                        .await
+                        {
+                            eprintln!("Apps' dismiss endpoint stopped: {error}");
+                        }
+                    })
+                    .detach();
+                cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+                    while dismiss_rx.recv().await.is_ok() {
+                        cx.update(|cx| {
+                            dismiss_active(cx);
+                        });
+                    }
+                })
+                .detach();
+            }
             #[cfg(target_os = "linux")]
             let (activation_tx, activation_rx) = async_channel::bounded(16);
             #[cfg(target_os = "linux")]

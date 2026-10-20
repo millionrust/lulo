@@ -1468,7 +1468,7 @@ impl PreviewView {
             if self.can_delete_page() {
                 self.edit_pdf_pages(
                     "delete the page",
-                    |source, temporary, page| markup::delete_page(source, temporary, page),
+                    markup::delete_page,
                     false,
                     cx,
                 );

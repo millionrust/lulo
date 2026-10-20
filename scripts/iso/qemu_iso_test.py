@@ -356,9 +356,7 @@ class Machine:
         self.shots += 1
         path = self.out / f"{self.shots:03d}-{name}.png"
         if self.args.display == "virgl":
-            # QEMU's window fills the Xvfb screen (both are SCREEN sized).
-            subprocess.run(["import", "-window", "root", str(path)], check=False,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.capture_window(path)
         else:
             assert self.qmp
             self.qmp.command("screendump", filename=str(path), format="png")
@@ -367,6 +365,32 @@ class Machine:
                 break
             time.sleep(0.1)
         return path
+
+    def capture_window(self, path: Path) -> None:
+        """Capture QEMU's SDL window from Xvfb, cropped to the guest screen.
+
+        SDL opens the window at the firmware's 640x480 centred on the screen
+        and keeps that corner when the guest switches to SCREEN, so the
+        window's position is read back each time.
+        """
+        from PIL import Image
+
+        tree = subprocess.run(["xwininfo", "-root", "-tree"], capture_output=True, text=True).stdout
+        left, top = 0, 0
+        for line in tree.splitlines():
+            if "QEMU" not in line:
+                continue
+            found = re.search(r"(\d+)x(\d+)\+-?\d+\+-?\d+\s+\+(-?\d+)\+(-?\d+)\s*$", line)
+            if found and int(found.group(1)) >= SCREEN[0] // 2:
+                left, top = int(found.group(3)), int(found.group(4))
+                break
+        raw = path.with_suffix(".root.png")
+        subprocess.run(["import", "-window", "root", str(raw)], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if raw.exists():
+            with Image.open(raw) as image:
+                image.crop((left, top, left + SCREEN[0], top + SCREEN[1])).save(path)
+            raw.unlink()
 
     def periodic(self) -> None:
         if time.monotonic() - self.last_periodic >= self.args.shot_interval:
@@ -498,7 +522,7 @@ def check_boot(machine: Machine, live: bool) -> None:
 def scenario_live(machine: Machine) -> None:
     check_boot(machine, live=True)
     session = parse_marker(machine.wait_marker("session-up", timeout=1000))
-    time.sleep(8)  # let the Dock and the wallpaper settle for the screenshot
+    time.sleep(30)  # software-rendered in CI: let the menu bar and Dock draw
     machine.screenshot("live-session")
     expect(session.get("installer-entry") == "1", "the Install Lulo OS app is missing")
     expect(session.get("installer-pinned") == "1", "Install Lulo OS is not in the Dock")
@@ -577,7 +601,7 @@ def scenario_installed(machine: Machine) -> None:
     time.sleep(2)
     machine.type_text(CI_PASSWORD + "\n")
     session = parse_marker(machine.wait_marker("session-up", timeout=600))
-    time.sleep(8)
+    time.sleep(30)
     machine.screenshot("installed-session")
     expect(session.get("installer-entry") == "0", "the installed system still has Install Lulo OS")
     expect(session.get("user") == "lulo", f"signed in as {session.get('user')}, expected lulo")

@@ -371,7 +371,10 @@ impl FinderView {
                 )
                 .child(div().flex_1().min_w(px(0.0)).child(control))
         };
-        let text = |id: &'static str, name: &'static str, input: &Entity<InputState>| {
+        let text = |id: &'static str,
+                    name: &'static str,
+                    input: &Entity<InputState>,
+                    cx: &mut Context<Self>| {
             div()
                 .id(id)
                 .role(Role::TextInput)
@@ -384,10 +387,10 @@ impl FinderView {
         match sheet.mode {
             RenameMode::Replace => {
                 fields = fields
-                    .child(row("Find:", text("batch-find", "Find", &sheet.find)))
+                    .child(row("Find:", text("batch-find", "Find", &sheet.find, cx)))
                     .child(row(
                         "Replace with:",
-                        text("batch-replace", "Replace with", &sheet.replace),
+                        text("batch-replace", "Replace with", &sheet.replace, cx),
                     ));
             }
             RenameMode::Add => {
@@ -395,7 +398,7 @@ impl FinderView {
                     div()
                         .flex()
                         .gap(px(8.0))
-                        .child(div().flex_1().child(text("batch-add", "Text", &sheet.add)))
+                        .child(div().flex_1().child(text("batch-add", "Text", &sheet.add, cx)))
                         .child(self.batch_popup(
                             "batch-add-at",
                             "Where",
@@ -440,12 +443,12 @@ impl FinderView {
                     ))
                     .child(row(
                         "Custom Format:",
-                        text("batch-custom", "Custom Format", &sheet.custom),
+                        text("batch-custom", "Custom Format", &sheet.custom, cx),
                     ))
                     .when(sheet.format != NameFormat::Date, |fields| {
                         fields.child(row(
                             "Start numbers at:",
-                            text("batch-start", "Start numbers at", &sheet.start),
+                            text("batch-start", "Start numbers at", &sheet.start, cx),
                         ))
                     });
             }

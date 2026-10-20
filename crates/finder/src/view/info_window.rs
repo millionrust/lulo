@@ -91,11 +91,11 @@ pub(super) fn info_section_header(section: InfoSection) -> Stateful<Div> {
             secondary_text(),
         ))
         .child(section.title())
-        .on_click(|_, window, _| {
+        .on_click(move |_, window, _| {
             toggle_section(section);
             window.refresh();
         })
-        .on_a11y_action(AccessibleAction::Click, |_, window, _| {
+        .on_a11y_action(AccessibleAction::Click, move |_, window, _| {
             toggle_section(section);
             window.refresh();
         })

@@ -70,57 +70,6 @@ fn windows_defaults(
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::ffi::OsString;
-    use std::path::PathBuf;
-
-    use super::windows_defaults;
-
-    fn absolute(path: &str) -> PathBuf {
-        // An absolute path on every host the tests run on.
-        std::env::temp_dir().join(path)
-    }
-
-    #[test]
-    fn windows_folders_fill_only_the_unset_variables() {
-        let environment = HashMap::from([
-            ("USERPROFILE", absolute("profile").into_os_string()),
-            ("APPDATA", absolute("roaming").into_os_string()),
-            ("LOCALAPPDATA", absolute("local").into_os_string()),
-            ("XDG_CACHE_HOME", OsString::from("/already/set")),
-        ]);
-        let read = |name: &str| environment.get(name).cloned();
-        let defaults = windows_defaults(&read);
-        assert_eq!(
-            defaults,
-            vec![
-                ("HOME", absolute("profile")),
-                (
-                    "XDG_CONFIG_HOME",
-                    absolute("roaming").join("Lulo").join("Config")
-                ),
-                (
-                    "XDG_DATA_HOME",
-                    absolute("roaming").join("Lulo").join("Data")
-                ),
-                (
-                    "XDG_STATE_HOME",
-                    absolute("local").join("Lulo").join("State")
-                ),
-            ]
-        );
-    }
-
-    #[test]
-    fn relative_or_missing_windows_folders_are_ignored() {
-        let environment = HashMap::from([("APPDATA", OsString::from("relative"))]);
-        let read = |name: &str| environment.get(name).cloned();
-        assert!(windows_defaults(&read).is_empty());
-    }
-}
-
 /// The first code of the process that is Lulo's: the C runtime runs it
 /// with its other initializers, before `main`. With the start-up trace on,
 /// time before it is the Windows loader's (mapping the exe and its DLLs),
@@ -177,4 +126,55 @@ pub(crate) fn startup_mark(phase: &str) {
     // One write per line, as gpui_windows' own trace does.
     let line = format!("gpui_windows startup: {phase} at {ms:.1} ms\n");
     let _ = std::io::stderr().lock().write_all(line.as_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    use super::windows_defaults;
+
+    fn absolute(path: &str) -> PathBuf {
+        // An absolute path on every host the tests run on.
+        std::env::temp_dir().join(path)
+    }
+
+    #[test]
+    fn windows_folders_fill_only_the_unset_variables() {
+        let environment = HashMap::from([
+            ("USERPROFILE", absolute("profile").into_os_string()),
+            ("APPDATA", absolute("roaming").into_os_string()),
+            ("LOCALAPPDATA", absolute("local").into_os_string()),
+            ("XDG_CACHE_HOME", OsString::from("/already/set")),
+        ]);
+        let read = |name: &str| environment.get(name).cloned();
+        let defaults = windows_defaults(&read);
+        assert_eq!(
+            defaults,
+            vec![
+                ("HOME", absolute("profile")),
+                (
+                    "XDG_CONFIG_HOME",
+                    absolute("roaming").join("Lulo").join("Config")
+                ),
+                (
+                    "XDG_DATA_HOME",
+                    absolute("roaming").join("Lulo").join("Data")
+                ),
+                (
+                    "XDG_STATE_HOME",
+                    absolute("local").join("Lulo").join("State")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn relative_or_missing_windows_folders_are_ignored() {
+        let environment = HashMap::from([("APPDATA", OsString::from("relative"))]);
+        let read = |name: &str| environment.get(name).cloned();
+        assert!(windows_defaults(&read).is_empty());
+    }
 }

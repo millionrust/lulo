@@ -67,6 +67,7 @@ pub(crate) fn answer_result(
         },
         category: Category::Calculator,
         application_group: None,
+        kind: None,
         title: text.clone(),
         subtitle: Some(query.trim().into()),
         detail,

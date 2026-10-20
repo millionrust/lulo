@@ -41,6 +41,7 @@ fn result(provider: &str, local: &str, category: Category, title: &str) -> Searc
         },
         category,
         application_group: None,
+        kind: None,
         title: title.into(),
         subtitle: None,
         detail: None,
@@ -662,7 +663,7 @@ fn command_arrows_jump_between_sections_without_wrapping() {
 #[test]
 fn the_top_hit_is_a_section_of_its_own() {
     use Category::*;
-    assert_eq!(section_starts(&[]), Vec::<usize>::new());
+    assert_eq!(section_starts::<Category>(&[]), Vec::<usize>::new());
     assert_eq!(section_starts(&[Files]), [0]);
     assert_eq!(section_starts(&[Files, Files, Files, Settings]), [0, 1, 3]);
     assert_eq!(
@@ -835,4 +836,54 @@ fn scattered_letters_match_titles_but_not_long_secondary_text() {
     assert!(query_matches("mount", "Disks", Some("partition mount")));
     // A title still matches by subsequence ("txe" → "Text Editor").
     assert!(query_matches("txe", "Text Editor", None));
+}
+
+#[test]
+fn file_results_are_grouped_by_kind_in_the_order_of_their_best_match() {
+    let files = provider("files", Category::Files, private_files());
+    let file = |local: &str, kind: FileKind| SearchResult {
+        kind: Some(kind),
+        ..result("files", local, Category::Files, local)
+    };
+    let mut session = Session::default();
+    let request = session.begin("plan", vec![files]);
+    session.apply(
+        request.generation,
+        rmac_shell_settings::ProviderId("files".into()),
+        Ok(vec![
+            // Equal scores tie on the title, which interleaves the kinds.
+            file("plan a.pdf", FileKind::PdfDocuments),
+            file("plan b.txt", FileKind::Documents),
+            file("plan c.pdf", FileKind::PdfDocuments),
+            file("plan d", FileKind::Folders),
+            file("plan e.txt", FileKind::Documents),
+        ]),
+    );
+    assert_eq!(
+        titles(&session),
+        ["plan a.pdf", "plan c.pdf", "plan b.txt", "plan e.txt", "plan d"]
+    );
+    let labels = session
+        .results()
+        .iter()
+        .map(|ranked| section_label(ranked.result.category, ranked.result.kind))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        labels,
+        ["PDF Documents", "PDF Documents", "Documents", "Documents", "Folders"]
+    );
+    assert_eq!(section_starts(&labels), [0, 1, 2, 4]);
+}
+
+#[test]
+fn file_kinds_follow_spotlight_categories() {
+    use std::path::Path;
+    assert_eq!(FileKind::of(Path::new("/h/Report.PDF"), false), FileKind::PdfDocuments);
+    assert_eq!(FileKind::of(Path::new("/h/notes.md"), false), FileKind::Documents);
+    assert_eq!(FileKind::of(Path::new("/h/photo.jpeg"), false), FileKind::Images);
+    assert_eq!(FileKind::of(Path::new("/h/budget.ods"), false), FileKind::Spreadsheets);
+    assert_eq!(FileKind::of(Path::new("/h/src.rs"), false), FileKind::Developer);
+    assert_eq!(FileKind::of(Path::new("/h/blob"), false), FileKind::Other);
+    assert_eq!(FileKind::of(Path::new("/h/Projects.pdf"), true), FileKind::Folders);
+    assert_eq!(FileKind::PdfDocuments.label(), "PDF Documents");
 }

@@ -305,6 +305,7 @@ pub(crate) fn assist_row(intent: &Intent, app: Option<SearchResult>) -> Option<S
         },
         category: Category::Intelligence,
         application_group: None,
+        kind: None,
         title,
         subtitle: Some(SUBTITLE.into()),
         detail: None,

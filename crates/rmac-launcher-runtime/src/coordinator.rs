@@ -330,7 +330,11 @@ impl Coordinator {
                 id: ranked.result.id.clone(),
                 category: ranked.result.category,
                 application_group: ranked.result.application_group,
-                category_label: ranked.result.category.label(),
+                kind: ranked.result.kind,
+                category_label: rmac_launcher::section_label(
+                    ranked.result.category,
+                    ranked.result.kind,
+                ),
                 title: ranked.result.title.clone(),
                 subtitle: ranked.result.subtitle.clone(),
                 detail: ranked.result.detail.clone(),

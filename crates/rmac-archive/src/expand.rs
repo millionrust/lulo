@@ -725,6 +725,33 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    /// SUID/SGID/sticky bits in an entry's mode are never applied.
+    #[cfg(unix)]
+    #[test]
+    fn zip_expansion_drops_setuid_setgid_and_sticky_bits() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let root = scratch("zip-suid");
+        let archive = root.join("Bundle.zip");
+        {
+            let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
+            for (name, mode) in [("suid", 0o4755), ("sgid", 0o2755), ("sticky", 0o1755)] {
+                let options = zip::write::SimpleFileOptions::default().unix_permissions(mode);
+                writer.start_file(name, options).unwrap();
+                writer.write_all(b"x").unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let placed = run(&archive).unwrap();
+        for name in ["suid", "sgid", "sticky"] {
+            let mode = fs::metadata(placed.join(name))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o7000, 0, "{name} kept a special mode bit");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn cancelling_removes_the_staging_folder() {
         let root = scratch("cancel");

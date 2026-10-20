@@ -368,6 +368,33 @@ Where the time went, and what changed:
   back until then (WIN-OS-16); a one-shot timer uncloaks it after 750 ms if
   nothing drew.
 
+Results on the laptop, `launch_times.ps1`, mean of two rounds, ms from
+`Start-Process` to the first frame on screen. Cold: a new copy of the exe,
+nothing warmed; warm: the launch after it, which is also what an open from
+the Dock, Apps or Spotlight now gets after the warm-up. Before is beta.2's
+CI build, after is this branch's (`windows-preview.yml`, run 39412597620).
+
+| App | Cold before → after | Warm before → after | Process to first frame before → after |
+|---|---|---|---|
+| Calculator | 1001 → 877 | 304 → 203 | 344 → 297 |
+| Notes | 880 → 781 | 316 → 229 | 312 → 219 |
+| Text Editor | 916 → 821 | 314 → 237 | 318 → 223 |
+| Files | 971 → 902 | 328 → 248 | 330 → 252 |
+| System Settings | 1076 → 913 | 319 → 251 | 366 → 275 |
+| Weather | 876 → 676 | 443 → 198 | 394 → 193 |
+| Clock | 846 → 753 | 332 → 360 (255 and 465) | 326 → 301 |
+| Terminal | 868 → 748 | 329 → 240 | 325 → 228 |
+| Preview (an image) | 944 → 785 | 356 → 186 | 328 → 191 |
+| Mail | 1188 → 835 | 542 → 194 | 542 → 210 |
+| Calendar | 1066 → 893 | 524 → 220 | 520 → 297 |
+| System Monitor | (owner: 951) → 981 to 2028 | → 456 to 513 | → 448 to 1531 |
+
+The cold numbers are Defender's: 480 to 640 ms before the process existed,
+about the same as before for most apps despite the smaller exes. Only the
+warm-up removes it, so an app opened from Explorer or the Start menu, which
+Lulo does not see coming, still pays it on its first launch in a while.
+System Monitor still samples every process before its first frame.
+
 `launch_smoke.py --launch-budget-ms` fails an app whose first frame is on
 screen later than the budget after its process started; CI uses 900 ms for
 its debug builds on a software renderer. `RMAC_GPUI_STARTUP_TRACE` now

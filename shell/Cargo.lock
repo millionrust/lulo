@@ -6273,6 +6273,7 @@ dependencies = [
  "async-io",
  "blocking",
  "futures-util",
+ "notify",
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-compositor",

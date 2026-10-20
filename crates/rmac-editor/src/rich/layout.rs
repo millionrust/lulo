@@ -605,11 +605,11 @@ pub(crate) fn layout_paragraph(
     let text = paragraph.text();
     let style = paragraph.style();
     let zoom = params.zoom;
-    let metrics = params.metrics;
+    let list_metrics = params.metrics;
     let level = f32::from(style.list_level);
     let rtl = style.direction.is_rtl(text);
     let quote_indent = if style.quote {
-        px(metrics.quote_indent * zoom)
+        px(list_metrics.quote_indent * zoom)
     } else {
         px(0.0)
     };
@@ -617,9 +617,9 @@ pub(crate) fn layout_paragraph(
     // paragraph by its indentation level (Format ▸ Indentation).
     let indent = quote_indent
         + if style.list.is_some() {
-            px(metrics.list_indent * (level + 1.0) * zoom)
+            px(list_metrics.list_indent * (level + 1.0) * zoom)
         } else {
-            px(metrics.list_indent * level * zoom)
+            px(list_metrics.list_indent * level * zoom)
         };
     let available = (params.width - indent).max(px(1.0));
     // A right-to-left paragraph is indented from the right.
@@ -982,7 +982,7 @@ pub(crate) fn layout_paragraph(
 
     let marker = style.list.map(|kind| {
         let marker_style = paragraph.style_of_char_at(0);
-        let marker_in = px((metrics.marker_x + metrics.list_indent * level) * zoom);
+        let marker_in = px((list_metrics.marker_x + list_metrics.list_indent * level) * zoom);
         let flip = |x: Pixels, width: Pixels| {
             if rtl {
                 params.width - x - width

@@ -57,8 +57,12 @@ fn row_glyph(glyph: RowGlyph) -> (&'static str, f32, f32) {
         RowGlyph::Wifi => ("cc/wifi.svg", 14.0, 10.0),
         RowGlyph::Bluetooth => ("cc/bluetooth.svg", 8.0, 12.5),
         RowGlyph::Speaker => ("cc/speaker.svg", 7.0, 10.0),
+        RowGlyph::Focus => ("cc/moon.svg", 12.0, 12.0),
     }
 }
+
+/// The ⋯ button at a Focus row's right edge (S: 22 pt circle).
+const TIMER_BUTTON: f32 = 22.0;
 
 impl QuickSettingsView {
     fn target_ring(&self, target: Target) -> bool {
@@ -117,7 +121,11 @@ impl QuickSettingsView {
                         g::CIRCLE / 2.0,
                         width,
                         height,
-                        if row.on { glyph_on() } else { ink() },
+                        match (row.on, row.glyph) {
+                            (true, RowGlyph::Focus) => mac::system_indigo(),
+                            (true, _) => glyph_on(),
+                            (false, _) => ink(),
+                        },
                     )),
             )
             .child(
@@ -129,10 +137,42 @@ impl QuickSettingsView {
                     mac::REGULAR,
                     row_text(),
                 )
-                .w(px(g::ROW_WIDTH - g::NAME_LEFT - 16.0))
+                .w(px(g::ROW_WIDTH
+                    - g::NAME_LEFT
+                    - if row.timer.is_some() {
+                        TIMER_BUTTON + 8.0
+                    } else {
+                        16.0
+                    }))
                 .truncate()
                 .child(row.label.clone()),
             )
+            .when_some(row.timer.clone(), |element, mode| {
+                let label = format!("{} options", row.label);
+                element.child(
+                    div()
+                        .id(("control-center-focus-timer", index))
+                        .role(Role::Button)
+                        .aria_label(label)
+                        .absolute()
+                        .left(px(g::ROW_WIDTH - 4.0 - TIMER_BUTTON))
+                        .top(px((g::ROW_HEIGHT - TIMER_BUTTON) / 2.0))
+                        .size(px(TIMER_BUTTON))
+                        .rounded_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(subtitle_text())
+                        .hover(|style| style.bg(row_hover()))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.open_focus_menu(mode.clone(), event.position(), window, cx);
+                        }))
+                        .child("\u{22ef}"),
+                )
+            })
             .when(row.locked, |element| {
                 element.child(glyph_at(
                     LOCK.0,

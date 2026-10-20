@@ -62,6 +62,7 @@ pub struct Row {
     pub id: ResultId,
     pub category: rmac_launcher::Category,
     pub application_group: Option<rmac_launcher::ApplicationGroup>,
+    pub kind: Option<rmac_launcher::FileKind>,
     pub category_label: &'static str,
     pub title: String,
     pub subtitle: Option<String>,

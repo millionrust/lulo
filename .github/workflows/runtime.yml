@@ -141,7 +141,7 @@ jobs:
               sys.exit(1)
           PY
 
-  # The eighteen checks packed onto four runners, run one after another,
+  # The nineteen checks packed onto four runners, run one after another,
   # each with its own private session and result directory: about six
   # minutes of playback per runner (run 38369865318's timings). idle-cpu
   # runs first on a fresh runner; intelligence-unit, which turns on lingering
@@ -155,7 +155,7 @@ jobs:
       fail-fast: false
       matrix:
         suites:
-          - idle-cpu power-dialogs spotlight-intents foreign-windows
+          - idle-cpu power-dialogs spotlight-intents foreign-windows shell-parity
           - desktop-paint window-move 01-files 02-text-editor 09-menu-bar voice
           - menu-dismiss 03-settings 04-calculator 06-notes
           - 05-preview 07-terminal 08-shell 10-spotlight writing-tools intelligence-unit
@@ -220,6 +220,9 @@ jobs:
               window-move) /usr/bin/python3 scripts/behavior/run_window_move.py --niri "$niri" --bin-dir runtime-bin ;;
               # Third-party windows in the visible frame (crates/rmac-compositor/src/placement.rs).
               foreign-windows) /usr/bin/python3 scripts/behavior/run_foreign_windows.py --niri "$niri" --bin-dir runtime-bin ;;
+              # docs/parity.md SPOT-04, CC-08 and NC-08 in the nested shell.
+              shell-parity) /usr/bin/python3 scripts/interaction/lulo_probe.py --niri "$niri" \
+                --bin-dir runtime-bin --shell-bin-dir runtime-bin --assert-shell-parity --shots "$result/screenshots" ;;
               # Desktop icons and img() loads paint on an idle, inactive surface with no input.
               # ADR 0024: "Lulo can do this" rows off/on, confirm, idle exit.
               spotlight-intents) /usr/bin/python3 scripts/behavior/run_spotlight_intents.py --niri "$niri" --bin-dir runtime-bin ;;

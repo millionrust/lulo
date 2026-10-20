@@ -1099,6 +1099,28 @@ pub fn title_bar_content(children: impl IntoElement) -> impl IntoElement {
     )
 }
 
+/// [`title_bar_content`] for a fixed-size panel such as About: the zoom
+/// light is the inactive grey and does nothing.
+pub fn title_bar_content_fixed(children: impl IntoElement) -> impl IntoElement {
+    let origin = traffic_lights_origin(false);
+    div()
+        .relative()
+        .w_full()
+        .flex_shrink_0()
+        .child(client_bar(
+            rmac_design::Metrics::default().titlebar_height,
+            mac::titlebar_base(),
+            children,
+        ))
+        .child(
+            div()
+                .absolute()
+                .left(px(origin))
+                .top(px(origin))
+                .child(traffic_lights_fixed_size(true)),
+        )
+}
+
 /// A full-bleed page background using the active theme — the base every app
 /// content sits on, below the title bar.
 pub fn page() -> gpui::Div {

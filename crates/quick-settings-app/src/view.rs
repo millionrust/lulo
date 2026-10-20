@@ -135,6 +135,13 @@ pub(crate) struct QuickSettingsView {
     pub(crate) detail: Option<Detail>,
     /// Wi-Fi's "Other Networks" disclosure is open.
     pub(crate) others_expanded: bool,
+    /// The Focus service's modes, read when the Focus view opens.
+    pub(crate) focus_modes: Vec<detail::FocusMode>,
+    /// A Focus row's ⋯ timer menu and the mode it is for.
+    pub(crate) focus_menu: Option<(rmac_ui::ContextMenuState, String)>,
+    /// The mode the last ⋯ menu was opened for; it outlives the menu,
+    /// which closes before the chosen item's action runs.
+    pub(crate) focus_menu_mode: Option<String>,
     /// Keyboard focus in the grid and in a detail view. Rings show only
     /// after a key was pressed, as on the Mac.
     pub(crate) module_focus: Option<Module>,
@@ -361,6 +368,9 @@ impl QuickSettingsView {
             surface_height: initial_surface_height(brightness.is_some(), hidden_pills(&hardware)),
             detail: None,
             others_expanded: false,
+            focus_modes: Vec::new(),
+            focus_menu: None,
+            focus_menu_mode: None,
             module_focus: None,
             detail_focus: None,
             keyboard: false,
@@ -383,6 +393,7 @@ impl QuickSettingsView {
             self.state.inputs(),
             self.others_expanded,
             Some(self.dark_mode()),
+            &self.focus_modes,
         );
         panel.fit(rmac_quick_settings::layout::MAX_SURFACE_HEIGHT as f32);
         Some(panel)
@@ -419,6 +430,19 @@ impl QuickSettingsView {
         } else {
             None
         };
+        if detail == Detail::Focus {
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                let modes = blocking::unblock(rmac_quick_settings_system::focus_modes).await;
+                let _ = this.update(cx, |this, cx| match modes {
+                    Ok(modes) => {
+                        this.focus_modes = modes;
+                        cx.notify();
+                    }
+                    Err(error) => eprintln!("Control Centre could not list Focus modes: {error}"),
+                });
+            })
+            .detach();
+        }
         if detail == Detail::Wifi && self.state.view().wifi.value {
             cx.background_executor()
                 .spawn(async {
@@ -446,6 +470,7 @@ impl QuickSettingsView {
                 Detail::Bluetooth => Module::Bluetooth,
                 Detail::Display => Module::Display,
                 Detail::Sound => Module::Sound,
+                Detail::Focus => Module::Focus,
             });
             self.detail_focus = None;
             cx.notify();
@@ -455,6 +480,42 @@ impl QuickSettingsView {
     pub(crate) fn toggle_others(&mut self, cx: &mut Context<Self>) {
         self.others_expanded = !self.others_expanded;
         cx.notify();
+    }
+
+    /// Opens a Focus row's ⋯ menu of timed activations at the pointer.
+    pub(crate) fn open_focus_menu(
+        &mut self,
+        mode: String,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let state = rmac_ui::ContextMenuState::open(position, &self.focus, window, cx);
+        self.focus_menu_mode = Some(mode.clone());
+        self.focus_menu = Some((state, mode));
+        cx.notify();
+    }
+
+    pub(crate) fn dismiss_focus_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut state = self.focus_menu.take().map(|(state, _)| state);
+        if rmac_ui::ContextMenuState::dismiss(&mut state, window, cx) {
+            cx.notify();
+        }
+    }
+
+    /// One of the ⋯ menu's timers: the menu's mode on for `timer`.
+    pub(crate) fn activate_focus_timer(
+        &mut self,
+        timer: FocusTimer,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.dismiss_focus_menu(window, cx);
+        let mode = self.focus_menu_mode.take();
+        if let Some(mode) = mode {
+            let duration_ms = timer.duration_ms(chrono::Local::now());
+            self.execute(Command::ActivateFocusMode { mode, duration_ms }, cx);
+        }
     }
 
     /// The title switch of the Wi-Fi or Bluetooth list.
@@ -1238,5 +1299,81 @@ mod tests {
         let bulges = SliderBulges::default();
         assert_eq!(bulges.get(SliderKind::Brightness).progress(0), 0.0);
         assert!(!bulges.is_animating(0));
+    }
+}
+
+gpui::actions!(control_centre, [FocusForHour, FocusUntilLater]);
+
+/// The timed activations a Focus row's ⋯ menu offers, as on macOS 26.
+/// "Until I leave this location" needs location services Lulo does not
+/// have, so it is not offered.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FocusTimer {
+    ForAnHour,
+    /// Until 19:00 today, or 08:00 tomorrow once the evening has begun.
+    UntilLater,
+}
+
+/// The evening starts at 19:00 and the morning at 08:00.
+const EVENING_HOUR: u32 = 19;
+const MORNING_HOUR: u32 = 8;
+
+impl FocusTimer {
+    pub(crate) fn label(self, now: chrono::DateTime<chrono::Local>) -> &'static str {
+        use chrono::Timelike as _;
+        match self {
+            Self::ForAnHour => "For 1 hour",
+            Self::UntilLater if now.hour() < EVENING_HOUR => "Until this evening",
+            Self::UntilLater => "Until tomorrow morning",
+        }
+    }
+
+    pub(crate) fn duration_ms(self, now: chrono::DateTime<chrono::Local>) -> u64 {
+        use chrono::{Duration as Days, TimeZone as _, Timelike as _};
+        const HOUR_MS: u64 = 3_600_000;
+        match self {
+            Self::ForAnHour => HOUR_MS,
+            Self::UntilLater => {
+                let (day, hour) = if now.hour() < EVENING_HOUR {
+                    (now.date_naive(), EVENING_HOUR)
+                } else {
+                    (now.date_naive() + Days::days(1), MORNING_HOUR)
+                };
+                day.and_hms_opt(hour, 0, 0)
+                    .and_then(|end| chrono::Local.from_local_datetime(&end).earliest())
+                    .and_then(|end| u64::try_from((end - now).num_milliseconds()).ok())
+                    .filter(|ms| *ms > 0)
+                    .unwrap_or(HOUR_MS)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod focus_timer_tests {
+    use super::FocusTimer;
+    use chrono::TimeZone as _;
+
+    #[test]
+    fn until_later_ends_this_evening_or_tomorrow_morning() {
+        let afternoon = chrono::Local
+            .with_ymd_and_hms(2026, 10, 20, 15, 0, 0)
+            .earliest()
+            .unwrap();
+        assert_eq!(
+            FocusTimer::UntilLater.label(afternoon),
+            "Until this evening"
+        );
+        assert_eq!(FocusTimer::UntilLater.duration_ms(afternoon), 4 * 3_600_000);
+        let night = chrono::Local
+            .with_ymd_and_hms(2026, 10, 20, 22, 0, 0)
+            .earliest()
+            .unwrap();
+        assert_eq!(
+            FocusTimer::UntilLater.label(night),
+            "Until tomorrow morning"
+        );
+        assert_eq!(FocusTimer::UntilLater.duration_ms(night), 10 * 3_600_000);
+        assert_eq!(FocusTimer::ForAnHour.duration_ms(night), 3_600_000);
     }
 }

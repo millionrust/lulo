@@ -45,6 +45,11 @@ pub struct AppPolicy {
     pub history: bool,
     pub urgent_through_focus: bool,
     pub lock_preview: LockPreview,
+    /// Unix seconds until which the app is muted (Notification Centre's
+    /// "Mute for 1 Hour" / "Mute for Today"); 0 means not muted. A muted
+    /// app's notifications still reach Notification Centre, but arrive
+    /// quietly: no banner and no sound, as on macOS.
+    pub muted_until: u64,
 }
 
 impl Default for AppPolicy {
@@ -57,20 +62,33 @@ impl Default for AppPolicy {
             history: true,
             urgent_through_focus: true,
             lock_preview: LockPreview::Hide,
+            muted_until: 0,
         }
     }
 }
 
 impl AppPolicy {
+    /// Whether the app is muted at `now` (Unix seconds).
+    pub fn muted_at(self, now: u64) -> bool {
+        self.muted_until > now
+    }
+
     pub fn delivery(self, focus_active: bool) -> DeliveryPolicy {
+        self.delivery_at(focus_active, 0)
+    }
+
+    /// The delivery policy at `now` (Unix seconds): a muted app delivers to
+    /// history only, without a banner or a sound.
+    pub fn delivery_at(self, focus_active: bool, now: u64) -> DeliveryPolicy {
+        let muted = self.muted_at(now);
         DeliveryPolicy {
             enabled: self.enabled,
-            banner: if self.banners {
+            banner: if self.banners && !muted {
                 BannerPolicy::Allow
             } else {
                 BannerPolicy::Suppress
             },
-            sounds: self.sounds,
+            sounds: self.sounds && !muted,
             history: if self.history {
                 HistoryPolicy::Allow
             } else {

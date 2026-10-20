@@ -95,6 +95,7 @@ mod tests {
             },
             category,
             application_group: None,
+            kind: None,
             category_label: category.label(),
             title: title.into(),
             subtitle: Some("the definition".into()),

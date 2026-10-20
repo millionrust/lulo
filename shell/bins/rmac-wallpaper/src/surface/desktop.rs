@@ -179,6 +179,9 @@ pub(crate) struct DeskState {
     /// The press on bare wallpaper was a plain click that dismissed nothing;
     /// released in place, it shows the desktop (reveal.rs).
     pub reveal_click: bool,
+    /// Letters typed to select an icon by name (DESK-09), and when the
+    /// last one came: a pause of a second starts a new word.
+    pub type_select: (String, Option<std::time::Instant>),
 }
 
 /// An icon's name being edited in place.
@@ -250,6 +253,31 @@ pub(crate) enum Panel {
     /// `None` is the Desktop folder itself.
     Info(Option<PathBuf>),
     ViewOptions,
+}
+
+/// The icon an arrow key moves to from `from`: the nearest one lying in
+/// that direction, preferring the same row or column. With nothing
+/// selected the first icon is chosen. `None` at the edge of the grid.
+fn pick_neighbour(points: &[(f32, f32)], from: Option<usize>, key: &str) -> Option<usize> {
+    let Some(from) = from else {
+        return (!points.is_empty()).then_some(0);
+    };
+    let (x, y) = *points.get(from)?;
+    points
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &(px, py))| {
+            let (along, across) = match key {
+                "left" => (x - px, (y - py).abs()),
+                "right" => (px - x, (y - py).abs()),
+                "up" => (y - py, (x - px).abs()),
+                "down" => (py - y, (x - px).abs()),
+                _ => return None,
+            };
+            (along > 1.0).then_some((index, along + 3.0 * across))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(index, _)| index)
 }
 
 struct Placed {
@@ -1212,6 +1240,24 @@ impl Wallpaper {
         }
         let modifiers = &event.keystroke.modifiers;
         let command = modifiers.platform;
+        if !command && !modifiers.control && !modifiers.alt {
+            if matches!(key, "left" | "right" | "up" | "down") {
+                self.move_selection(key, modifiers.shift, window, cx);
+                cx.notify();
+                return true;
+            }
+            if let Some(text) = event
+                .keystroke
+                .key_char
+                .as_deref()
+                .filter(|text| text.chars().all(|c| !c.is_control()) && !text.trim().is_empty())
+            {
+                if self.type_select(text, window, cx) {
+                    cx.notify();
+                    return true;
+                }
+            }
+        }
         match key {
             "enter" if !command && self.desk.selection.len() == 1 => {
                 if let Some(path) = self.desk.selection.iter().next().cloned() {
@@ -1250,6 +1296,59 @@ impl Wallpaper {
         }
         cx.notify();
         true
+    }
+
+    /// Arrow keys move the selection to the neighbouring icon (DESK-09).
+    fn move_selection(&mut self, key: &str, extend: bool, window: &Window, cx: &App) {
+        let layout = self.desk_layout(window, cx);
+        let icons: Vec<(PathBuf, f32, f32)> = layout
+            .placed
+            .iter()
+            .filter_map(|placed| {
+                layout
+                    .item(placed)
+                    .map(|item| (item.path.clone(), placed.left, placed.top))
+            })
+            .collect();
+        let points: Vec<(f32, f32)> = icons.iter().map(|(_, x, y)| (*x, *y)).collect();
+        let current = icons
+            .iter()
+            .rposition(|(path, _, _)| self.desk.selection.contains(path));
+        let Some(target) = pick_neighbour(&points, current, key) else {
+            return;
+        };
+        let path = icons[target].0.clone();
+        if !extend {
+            self.desk.selection.clear();
+        }
+        self.desk.selection.insert(path);
+    }
+
+    /// Typing a name selects the first icon that begins with it (DESK-09).
+    fn type_select(&mut self, text: &str, window: &Window, cx: &App) -> bool {
+        let now = std::time::Instant::now();
+        let (buffer, last) = &mut self.desk.type_select;
+        if last.is_none_or(|last| now.duration_since(last) > std::time::Duration::from_secs(1)) {
+            buffer.clear();
+        }
+        buffer.push_str(&text.to_lowercase());
+        *last = Some(now);
+        let wanted = buffer.clone();
+        let layout = self.desk_layout(window, cx);
+        let found = layout
+            .placed
+            .iter()
+            .filter_map(|placed| layout.item(placed))
+            .find(|item| item.name.to_lowercase().starts_with(&wanted))
+            .map(|item| item.path.clone());
+        match found {
+            Some(path) => {
+                self.desk.selection.clear();
+                self.desk.selection.insert(path);
+                true
+            }
+            None => false,
+        }
     }
 
     /// ⌘Z: removes the folder New Folder created most recently, if nothing
@@ -2538,6 +2637,19 @@ impl Wallpaper {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arrows_walk_the_grid_to_the_nearest_icon() {
+        // Two columns of two icons, laid out column by column.
+        let points = [(0.0, 0.0), (0.0, 100.0), (100.0, 0.0), (100.0, 100.0)];
+        assert_eq!(pick_neighbour(&points, Some(0), "down"), Some(1));
+        assert_eq!(pick_neighbour(&points, Some(0), "right"), Some(2));
+        assert_eq!(pick_neighbour(&points, Some(3), "up"), Some(2));
+        assert_eq!(pick_neighbour(&points, Some(3), "left"), Some(1));
+        assert_eq!(pick_neighbour(&points, Some(0), "up"), None);
+        assert_eq!(pick_neighbour(&points, None, "down"), Some(0));
+        assert_eq!(pick_neighbour(&[], None, "down"), None);
+    }
 
     #[test]
     fn external_drop_copies_directories_without_clobbering() {

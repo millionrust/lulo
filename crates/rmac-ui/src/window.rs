@@ -88,13 +88,15 @@ const CLIENT_FRAME_INSET: f32 = 0.0;
 /// rounds at the toolbar radius (`packaging/rmac-session/shell.kdl`); every
 /// other window takes the title-bar radius.
 #[cfg(any(windows, test))]
-const TOOLBAR_APPS: [&str; 6] = [
+const TOOLBAR_APPS: [&str; 8] = [
     "org.rmac.Files",
     "org.rmac.SystemSettings",
     "org.rmac.Calculator",
     "org.rmac.Clock",
     "org.rmac.Notes",
     "org.rmac.SystemMonitor",
+    "org.rmac.Preview",
+    "org.rmac.Weather",
 ];
 
 /// The corner radius niri gives `app_id`'s windows on Lulo OS: `toolbar`

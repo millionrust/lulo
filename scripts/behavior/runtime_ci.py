@@ -36,7 +36,7 @@ JOURNEYS = {f"{number:02d}-{name}" for number, name in enumerate(
      "terminal", "shell", "menu-bar", "spotlight"), 1)}
 CHECKS = {"menu-dismiss", "power-dialogs", "window-move", "idle-cpu", "desktop-paint",
           "spotlight-intents", "writing-tools", "intelligence-unit", "voice",
-          "foreign-windows"} | JOURNEYS
+          "foreign-windows", "shell-parity"} | JOURNEYS
 SHARDS = 8
 
 

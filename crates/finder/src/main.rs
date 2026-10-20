@@ -75,7 +75,7 @@ fn trash_drop(paths: &[String]) -> std::io::Result<()> {
     Ok(())
 }
 
-const USAGE: &str = "usage: rmac-files [--trash | --recents | --path DIRECTORY | --reveal PATH | --search QUERY | PATH-OR-FILE-URI…]";
+const USAGE: &str = "usage: rmac-files [--trash | --recents | --path DIRECTORY | --reveal PATH | --search QUERY | --find | --go-to-folder | --connect-to-server | PATH-OR-FILE-URI…]";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 enum StartupDestination {
@@ -90,6 +90,11 @@ enum StartupDestination {
     Reveal(PathBuf),
     /// Spotlight's "Search in Files": search the home folder for this.
     Search(String),
+    /// The Dock tile's Find…, Go to Folder… and Connect to Server…
+    /// (DOCK-05): a new window that runs the command.
+    Find,
+    GoToFolder,
+    ConnectToServer,
 }
 
 impl StartupDestination {
@@ -100,6 +105,9 @@ impl StartupDestination {
             (None, None, None) => Ok(Self::Default),
             (Some(flag), None, None) if flag == "--trash" => Ok(Self::Trash),
             (Some(flag), None, None) if flag == "--recents" => Ok(Self::Recents),
+            (Some(flag), None, None) if flag == "--find" => Ok(Self::Find),
+            (Some(flag), None, None) if flag == "--go-to-folder" => Ok(Self::GoToFolder),
+            (Some(flag), None, None) if flag == "--connect-to-server" => Ok(Self::ConnectToServer),
             (Some(flag), Some(path), None) if flag == "--path" => {
                 let path = PathBuf::from(path);
                 if path.is_absolute() && path.is_dir() {
@@ -189,6 +197,9 @@ impl StartupDestination {
             Self::Directory(path) => path_argument("--path", path),
             Self::Reveal(path) => path_argument("--reveal", path),
             Self::Search(query) => vec!["--search".to_owned(), query.clone()],
+            Self::Find => vec!["--find".to_owned()],
+            Self::GoToFolder => vec!["--go-to-folder".to_owned()],
+            Self::ConnectToServer => vec!["--connect-to-server".to_owned()],
         }
     }
 }
@@ -317,6 +328,18 @@ mod tests {
             StartupDestination::parse(["--search".to_owned(), "a\nb".to_owned()].into_iter())
                 .is_err()
         );
+        // The Dock tile's commands (DOCK-05), forwarded to a running Files.
+        for (flag, destination) in [
+            ("--find", StartupDestination::Find),
+            ("--go-to-folder", StartupDestination::GoToFolder),
+            ("--connect-to-server", StartupDestination::ConnectToServer),
+        ] {
+            assert_eq!(
+                StartupDestination::parse([flag.to_owned()].into_iter()),
+                Ok(destination.clone())
+            );
+            assert_eq!(destination.window_arguments(), [flag]);
+        }
         assert!(StartupDestination::parse(["trash:///".to_owned()].into_iter()).is_err());
         assert!(
             StartupDestination::parse(["--trash".to_owned(), "extra".to_owned()].into_iter())

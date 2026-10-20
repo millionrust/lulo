@@ -206,6 +206,7 @@ fn file_result(path: PathBuf, query: &str) -> Option<SearchResult> {
     }
     let local = path.to_string_lossy().into_owned();
     let subtitle = file_details(&path, &Locale::from_environment(), chrono::Local::now());
+    let kind = rmac_launcher::FileKind::of(&path, path.is_dir());
     Some(SearchResult {
         id: ResultId {
             provider: provider_id(FILES_PROVIDER),
@@ -213,6 +214,7 @@ fn file_result(path: PathBuf, query: &str) -> Option<SearchResult> {
         },
         category: Category::Files,
         application_group: None,
+        kind: Some(kind),
         title,
         subtitle,
         detail: None,

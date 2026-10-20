@@ -351,6 +351,7 @@ binds {
     // -- rather than a direct spawn, since the menu bar (unlike the Dock)
     // has no command IPC of its own yet.
     Ctrl+F2 repeat=false hotkey-overlay-title="Move Focus to the Menu Bar" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "menu-bar-focus"; }
+    Ctrl+F8 repeat=false hotkey-overlay-title="Move Focus to Status Menus" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "status-menus-focus"; }
     // ⌃F3 moves keyboard focus to the Dock, as on macOS. The resident Dock
     // holds the keyboard until Esc, an activation or a click.
     Ctrl+F3 repeat=false hotkey-overlay-title="Move Focus to the Dock" { spawn "/usr/libexec/rmac/rmac-dock" "focus"; }

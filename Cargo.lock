@@ -6350,6 +6350,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-contacts"
+version = "0.9.0-beta.2"
+dependencies = [
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-dbus"
 version = "0.9.0-beta.2"
 dependencies = [
@@ -6431,6 +6440,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-places",
  "rmac-places-system",
+ "rmac-recent-documents",
  "rmac-shell-settings",
  "rmac-storage",
  "rmac-theme",
@@ -6523,6 +6533,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_linux",
+ "image",
  "libc",
  "notify",
  "raw-window-handle",
@@ -6857,6 +6868,7 @@ dependencies = [
  "raw-window-handle",
  "rmac-accounts",
  "rmac-accounts-linux",
+ "rmac-contacts",
  "rmac-editor",
  "rmac-mail-graph",
  "rmac-mail-imap",
@@ -7075,6 +7087,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-system",
+ "rmac-design",
  "rmac-desktop",
  "rmac-desktop-widgets",
  "rmac-hardware",
@@ -7257,8 +7270,10 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "image",
+ "libloading 0.8.9",
  "lopdf",
  "raw-window-handle",
+ "resvg",
  "rmac-portal",
  "rmac-print-linux",
  "rmac-recent-documents",
@@ -7380,6 +7395,7 @@ dependencies = [
  "rmac-shell-activation-runtime",
  "rmac-shell-layer",
  "rmac-shell-runtime",
+ "rmac-shell-settings",
  "rmac-shortcuts",
  "rmac-theme",
  "rmac-ui",
@@ -8537,9 +8553,9 @@ checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",

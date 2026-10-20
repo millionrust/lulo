@@ -9,7 +9,7 @@ Description: Window ▸ Always on Top: keep a floating window above the others
  tiled window is made floating first. Lulo OS's menu bar uses it for
  Calculator's Window ▸ Always on Top (CALC-08).
  .
- See docs/decisions/0029-niri-always-on-top.md in the rmac repository.
+ See docs/decisions/0031-niri-always-on-top.md in the rmac repository.
 Author: Jacob Samas <samasjacob@icloud.com>
 Forwarded: no
 Last-Update: 2026-10-20

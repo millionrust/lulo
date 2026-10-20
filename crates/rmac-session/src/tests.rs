@@ -741,6 +741,10 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     // ⌃⌘Space opens Emoji & Symbols (KB-02).
     assert!(shell.contains("Ctrl+Mod+Space repeat=false hotkey-overlay-title=\"Emoji & Symbols\" { spawn \"/usr/libexec/rmac/rmac-emoji\"; }"));
     assert!(shell.contains("match namespace=r#\"^rmac-emoji$\"#"));
+    // ⌃F8 (CC-05): the same keyboard mode, on the status menus.
+    assert!(shell.contains(
+        "Ctrl+F8 repeat=false hotkey-overlay-title=\"Move Focus to Status Menus\" { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"status-menus-focus\"; }"
+    ));
     // Keyboard-backlight keys (KB-04) go to the OSD.
     assert!(shell.contains("XF86KbdBrightnessUp allow-when-locked=true { spawn \"/usr/libexec/rmac/rmac-osd\" \"keyboard-brightness-up\"; }"));
     assert!(shell.contains("XF86KbdBrightnessDown allow-when-locked=true { spawn \"/usr/libexec/rmac/rmac-osd\" \"keyboard-brightness-down\"; }"));

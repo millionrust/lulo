@@ -164,6 +164,11 @@ PACKAGE_SPECS = (
             "fonts-inter",
             "fonts-jetbrains-mono",
             "libglib2.0-bin",
+            # Preview opens (and saves) HEIC and AVIF through libheif,
+            # loaded at run time; the plugins carry the codecs.
+            "libheif-plugin-aomdec",
+            "libheif-plugin-libde265",
+            "libheif1",
             "libmpv2",
             "network-manager",
             "packagekit",
@@ -182,7 +187,13 @@ PACKAGE_SPECS = (
         # shows Microsoft 365 and Outlook.com calendars through it (CAL-9).
         # Only the -core package: `evolution-ews` itself pulls in the whole
         # Evolution mail client.
-        recommends=("evolution-ews-core",),
+        recommends=(
+            "evolution-ews-core",
+            # Preview: encoders to save HEIC / AVIF, and camera RAW files.
+            "libheif-plugin-aomenc",
+            "libheif-plugin-x265",
+            "libraw23t64 | libraw24t64 | libraw25t64 | libraw25",
+        ),
         summary="macOS-inspired applications for the rmac Linux desktop",
         description=(
             "Provides Files, Terminal, Notes, Text Editor, System Monitor, "
@@ -219,6 +230,11 @@ PACKAGE_SPECS = (
             "gawk | mawk",
             "gir1.2-packagekitglib-1.0",
             "grim",
+            # Screen recording (⇧⌘5 Record): gst-launch-1.0 reading niri's
+            # PipeWire stream and writing the movie.
+            "gstreamer1.0-pipewire",
+            "gstreamer1.0-plugins-good",
+            "gstreamer1.0-tools",
             _third_party_floor("niri"),
             "packagekit",
             "pipewire-bin",
@@ -248,6 +264,9 @@ PACKAGE_SPECS = (
             # Startup Disk (through pkexec).
             "efibootmgr",
             "gdm3",
+            # H.264 movies for screen recording; without it recordings are
+            # VP8 .webm.
+            "gstreamer1.0-plugins-ugly",
             "keyd",
             "libonnxruntime1.23",
             "pkexec",

@@ -375,7 +375,7 @@ pub enum WindowCommand {
     RemoveFromSet,
     /// Window ▸ Always on Top (Calculator only, CALC-08): keeps the window
     /// above every other window until it is chosen again. niri carries the
-    /// state (patch 0003) and Windows puts the window in the topmost band.
+    /// state (patch 0004) and Windows puts the window in the topmost band.
     AlwaysOnTop,
     BringAllToFront,
     /// Window ▸ Arrange in Front: raises every window of the app without

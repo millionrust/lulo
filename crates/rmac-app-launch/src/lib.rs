@@ -15,11 +15,11 @@ mod termination;
 pub use application::{launch, launch_with_color_scheme};
 pub use document::{
     all_applications, file_association, open_document, open_file_with, open_item,
-    record_recent_document, reveal_application, reveal_item,
+    record_recent_document, reveal_application, reveal_item, set_default_application,
 };
 pub use model::{
-    AssociationError, CatalogError, Delivery, Error, ErrorKind, ItemError, ItemOperation,
-    OpenWithError, Outcome, RecentDocumentError,
+    AssociationError, CatalogError, DefaultApplicationError, Delivery, Error, ErrorKind, ItemError,
+    ItemOperation, OpenWithError, Outcome, RecentDocumentError,
 };
 pub use prewarm::prewarm;
 pub use recent::{recent_app_ids, record_recent_launch, RecentLaunchError};

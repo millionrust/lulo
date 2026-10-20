@@ -75,7 +75,11 @@ impl FinderView {
     /// give it the keyboard, as Edit ▸ Find does on the Mac.
     pub(in crate::view) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_name_only = false;
+        if !self.search_open {
+            self.reset_search_scope();
+        }
         self.search_open = true;
+        self.search_find_mode = false;
         self.query.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
     }
@@ -86,7 +90,11 @@ impl FinderView {
         cx: &mut Context<Self>,
     ) {
         self.search_name_only = true;
+        if !self.search_open {
+            self.reset_search_scope();
+        }
         self.search_open = true;
+        self.search_find_mode = false;
         self.query.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
     }

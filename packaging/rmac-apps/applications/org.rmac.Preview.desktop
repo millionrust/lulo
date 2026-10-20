@@ -15,5 +15,5 @@ Exec=/usr/bin/rmac-preview %F
 Icon=org.rmac.Preview
 Terminal=false
 Categories=Graphics;Viewer;
-MimeType=application/pdf;image/png;image/jpeg;image/gif;image/webp;image/bmp;image/tiff;
+MimeType=application/pdf;image/png;image/jpeg;image/gif;image/webp;image/bmp;image/tiff;image/heic;image/heif;image/avif;image/vnd.adobe.photoshop;image/x-dcraw;
 StartupWMClass=org.rmac.Preview

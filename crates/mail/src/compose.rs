@@ -109,6 +109,32 @@ pub fn apply_completion(field: &str, chosen: &Recipient) -> String {
     result
 }
 
+/// Completion candidates: the local contacts first (`rmac-contacts`, so a
+/// contact's own name wins), then [`known_recipients`], each address once.
+pub fn recipients_with_contacts(
+    messages: &[Message],
+    contacts: &rmac_contacts::Contacts,
+) -> Vec<Recipient> {
+    let mut seen = std::collections::HashSet::new();
+    let mut recipients = Vec::new();
+    for contact in &contacts.contacts {
+        for address in &contact.emails {
+            if valid_address(address) && seen.insert(address.to_ascii_lowercase()) {
+                recipients.push(Recipient {
+                    name: contact.name.clone(),
+                    address: address.clone(),
+                });
+            }
+        }
+    }
+    for recipient in known_recipients(messages) {
+        if seen.insert(recipient.address.to_ascii_lowercase()) {
+            recipients.push(recipient);
+        }
+    }
+    recipients
+}
+
 /// Known addresses offered for completion: every distinct sender this
 /// mailbox has seen. EDS contacts (ADR 0022 §3) join this list once
 /// `rmac-accounts` grows an address-book adapter; recents alone already
@@ -465,6 +491,24 @@ mod tests {
         assert_eq!(
             apply_completion("bob@example.test, ann", &anna),
             "bob@example.test, Anna Kim <anna@example.test>, "
+        );
+    }
+
+    #[test]
+    fn contacts_come_first_in_completion_without_duplicates() {
+        let state = crate::MailState::fixture();
+        let mut contacts = rmac_contacts::Contacts::default();
+        contacts.add("Anna K.", "anna@example.test");
+        contacts.add("Zed", "zed@example.test");
+        let recipients = recipients_with_contacts(&state.messages, &contacts);
+        assert_eq!(recipients[0].name, "Anna K.");
+        assert_eq!(recipients[1].address, "zed@example.test");
+        assert_eq!(
+            recipients
+                .iter()
+                .filter(|recipient| recipient.address == "anna@example.test")
+                .count(),
+            1
         );
     }
 

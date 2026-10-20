@@ -68,6 +68,56 @@ DIALOG_ROLES = {"dialog", "alert", "file chooser"}
 HELPER_APPS = {"rmac-file-chooser"}
 
 
+def read_png_rgba(data: bytes) -> tuple[int, int, list[bytes]]:
+    """Decode a non-interlaced 8-bit RGB/RGBA PNG to rows of RGBA bytes."""
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise StepFailed("the saved image is not a PNG")
+    position, header, idat = 8, None, b""
+    while position < len(data):
+        length, kind = struct.unpack(">I4s", data[position : position + 8])
+        chunk = data[position + 8 : position + 8 + length]
+        if kind == b"IHDR":
+            header = struct.unpack(">IIBBBBB", chunk)
+        elif kind == b"IDAT":
+            idat += chunk
+        position += 12 + length
+    if header is None:
+        raise StepFailed("the saved PNG has no header")
+    width, height, depth, colour, _, _, interlace = header
+    channels = {2: 3, 6: 4}.get(colour)
+    if depth != 8 or channels is None or interlace:
+        raise StepFailed("the scenario reads only 8-bit RGB or RGBA PNGs")
+    raw = zlib.decompress(idat)
+    stride = width * channels
+    rows: list[bytes] = []
+    previous = bytearray(stride)
+    offset = 0
+    for _ in range(height):
+        filter_type = raw[offset]
+        line = bytearray(raw[offset + 1 : offset + 1 + stride])
+        offset += 1 + stride
+        for i in range(stride):
+            left = line[i - channels] if i >= channels else 0
+            up = previous[i]
+            upper_left = previous[i - channels] if i >= channels else 0
+            if filter_type == 1:
+                line[i] = (line[i] + left) & 255
+            elif filter_type == 2:
+                line[i] = (line[i] + up) & 255
+            elif filter_type == 3:
+                line[i] = (line[i] + (left + up) // 2) & 255
+            elif filter_type == 4:
+                estimate = left + up - upper_left
+                distances = (abs(estimate - left), abs(estimate - up), abs(estimate - upper_left))
+                best = (left, up, upper_left)[distances.index(min(distances))]
+                line[i] = (line[i] + best) & 255
+        previous = line
+        if channels == 3:
+            line = bytearray(b for i in range(width) for b in (*line[i * 3 : i * 3 + 3], 255))
+        rows.append(bytes(line))
+    return width, height, rows
+
+
 def calculator_visible_size(width: Optional[int], height: Optional[int]) -> tuple[Optional[int], Optional[int]]:
     """Account for Sway versions that report GPUI's 12 px client frame."""
 
@@ -640,6 +690,11 @@ class LuloRun:
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content or "")
+        for entry, content in self.scenario.get("setup", {}).get("files_base64", {}).items():
+            # Binary fixtures (an image) that a JSON string cannot hold.
+            target = self.sandbox / entry
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(base64.b64decode(content, validate=True))
         for entry, content in self.scenario.get("setup", {}).get("config", {}).items():
             target = Path(self.env["XDG_CONFIG_HOME"]) / entry
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -880,6 +935,58 @@ class LuloRun:
             raise StepFailed("PDF annotation fact needs a launched Preview document")
         data = (self.sandbox / filename).read_bytes()
         return {"rectangles": len(re.findall(rb"/Subtype\s*/Square\b", data))}
+
+    def fact_image_pixels(self) -> dict[str, Any]:
+        """What the launched PNG now holds: its size, whether markup was
+        drawn on it (many red pixels), and whether its untouched background
+        survived. Exact counts depend on where the pointer fell, so the
+        scenario compares these two booleans, not the numbers."""
+        filename = self.scenario.get("launch", {}).get("file")
+        if self.app != "preview" or not filename:
+            raise StepFailed("image pixel fact needs a launched Preview image")
+        width, height, rows = read_png_rgba((self.sandbox / filename).read_bytes())
+        # The fixture is plain white, so anything else was drawn on it.
+        red = sum(
+            1
+            for row in rows
+            for x in range(width)
+            if tuple(row[x * 4 : x * 4 + 3]) != (255, 255, 255)
+        )
+        corner = tuple(rows[0][0:4])
+        return {
+            "size": [width, height],
+            "markup_drawn": red > 200,
+            "background_intact": corner == (255, 255, 255, 255),
+        }
+
+    def fact_open_error(self) -> dict[str, Any]:
+        """Whether Preview failed to open the document: a loaded document
+        shows the toolbar's Find field, an unreadable one does not."""
+        frame = self.active_frame()
+        loaded = frame is not None and any(
+            name(node) == "Find" for node in descendants(frame, limit=3000)
+        )
+        return {"shown": not loaded}
+
+    def fact_image_halves(self) -> dict[str, Any]:
+        """The colour on each side of the launched PNG (a red/blue fixture)."""
+        filename = self.scenario.get("launch", {}).get("file")
+        if self.app != "preview" or not filename:
+            raise StepFailed("image halves fact needs a launched Preview image")
+        width, _height, rows = read_png_rgba((self.sandbox / filename).read_bytes())
+
+        def name_of(x: int) -> str:
+            r, g, b = rows[0][x * 4], rows[0][x * 4 + 1], rows[0][x * 4 + 2]
+            return "red" if r > 200 and b < 60 else "blue" if b > 200 and r < 60 else f"other{r},{g},{b}"
+
+        return {"left": name_of(1), "right": name_of(width - 2)}
+
+    def fact_pdf_pages(self) -> dict[str, Any]:
+        filename = self.scenario.get("launch", {}).get("file")
+        if self.app != "preview" or not filename:
+            raise StepFailed("PDF page fact needs a launched Preview document")
+        data = (self.sandbox / filename).read_bytes()
+        return {"pages": len(re.findall(rb"/Type\s*/Page\b", data))}
 
     def fact_pdf_text_marks(self) -> dict[str, Any]:
         filename = self.scenario.get("launch", {}).get("file")
@@ -1204,6 +1311,23 @@ class LuloRun:
                 return {"count": int(match.group(1)), "unread": int(match.group(2)),
                         "flagged": sum("flagged," in name(item) for item in rows)}
         return {"count": 0, "unread": 0, "flagged": 0}
+
+    def fact_mail_mailboxes(self) -> dict[str, Any]:
+        """Mail's sidebar: every mailbox row's name (unread counts left off),
+        and which one is open."""
+        frame = self.active_frame()
+        names, selected = [], None
+        pyatspi = atspi()
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            if role(node) == "list box" and name(node) == "Mailboxes":
+                for row in descendants(node, limit=400):
+                    if role(row) in ("list item", "table row") and name(row):
+                        label = re.sub(r", \d+ unread$", "", name(row))
+                        names.append(label)
+                        if has_state(row, pyatspi.STATE_SELECTED):
+                            selected = label
+                break
+        return {"names": names, "selected": selected}
 
     def fact_mail_viewer(self) -> dict[str, Any]:
         """Mail's message viewer: the find bar's "2 of 5" (or "Not found"),

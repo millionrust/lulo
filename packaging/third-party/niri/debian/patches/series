@@ -1,3 +1,4 @@
 0001-ipc-report-minimize-requests.patch
 0002-virtual-keyboard-binds.patch
-0003-window-always-on-top.patch
+0003-ipc-report-window-move-edges.patch
+0004-window-always-on-top.patch

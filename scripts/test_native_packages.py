@@ -391,6 +391,9 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-screenshot", session.binaries)
         self.assertIn("rmac-mission-control", session.binaries)
         self.assertIn("grim", session.static_dependencies)
+        for gst in ("gstreamer1.0-tools", "gstreamer1.0-pipewire", "gstreamer1.0-plugins-good"):
+            self.assertIn(gst, session.static_dependencies)
+        self.assertIn("gstreamer1.0-plugins-ugly", session.recommends)
         self.assertIn("wl-clipboard", session.static_dependencies)
         self.assertIn("rmac-clipboard-service", session.binaries)
         self.assertIn("rmac-lock-provider", session.binaries)
@@ -471,7 +474,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("Package: rmac-session\n", control)
         self.assertIn("Architecture: arm64\n", control)
         self.assertIn(
-            "Recommends: efibootmgr, gdm3, keyd, libonnxruntime1.23, pkexec, qt6-gtk-platformtheme, wlsunset\n",
+            "Recommends: efibootmgr, gdm3, gstreamer1.0-plugins-ugly, keyd, libonnxruntime1.23, pkexec, qt6-gtk-platformtheme, wlsunset\n",
             control,
         )
         self.assertTrue(control.endswith("\n"))

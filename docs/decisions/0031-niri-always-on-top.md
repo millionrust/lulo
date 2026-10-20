@@ -1,8 +1,8 @@
-# ADR 0029 — Carry a third niri patch so Window ▸ Always on Top is real
+# ADR 0031 — Carry a third niri patch so Window ▸ Always on Top is real
 
 - **Status:** accepted 2026-10-20.
 - **Amends:** ADR 0021 (the niri patch series), ADR 0007.
-- **Scope:** `packaging/third-party/niri/debian/patches/0003-window-always-on-top.patch`,
+- **Scope:** `packaging/third-party/niri/debian/patches/0004-window-always-on-top.patch`,
   `crates/rmac-compositor` (`Action::SetAlwaysOnTop`, `Window::always_on_top`),
   `crates/rmac-compositor-niri`, `crates/rmac-compositor-system` (Windows),
   `shell/bins/rmac-menubar` (Window ▸ Always on Top).
@@ -16,7 +16,7 @@ which is not what the item means.
 
 ## Decision
 
-1. **niri owns the state.** `0003-window-always-on-top.patch` (about 150 lines):
+1. **niri owns the state.** `0004-window-always-on-top.patch` (about 150 lines):
    - `niri msg action set-window-always-on-top --id N --on true|false` (an IPC action; there is no
      key bind for it);
    - `Window.is_always_on_top` in the IPC window (absent in an unpatched niri; clients default it

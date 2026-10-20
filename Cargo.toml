@@ -78,6 +78,7 @@ rmac-bluetooth = { version = "=0.9.0-beta.2", path = "crates/rmac-bluetooth" }
 rmac-clipboard = { version = "=0.9.0-beta.2", path = "crates/rmac-clipboard" }
 rmac-clipboard-linux = { version = "=0.9.0-beta.2", path = "crates/rmac-clipboard-linux" }
 rmac-clock = { version = "=0.9.0-beta.2", path = "crates/clock" }
+rmac-contacts = { version = "=0.9.0-beta.2", path = "crates/rmac-contacts" }
 rmac-compositor = { version = "=0.9.0-beta.2", path = "crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.9.0-beta.2", path = "crates/rmac-compositor-niri" }
 rmac-compositor-system = { version = "=0.9.0-beta.2", path = "crates/rmac-compositor-system" }

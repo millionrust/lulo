@@ -1,0 +1,49 @@
+{
+  "title": "Preview: an annotation already in the PDF can be selected and deleted",
+  "app": "preview",
+  "lulo_only": true,
+  "setup": {
+    "files": {
+      "guide.pdf": "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R /Annots [5 0 R] >>\nendobj\n4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n5 0 obj\n<< /Type /Annot /Subtype /Square /Rect [10 10 602 782] /C [1 0 0] /BS << /W 3 >> /F 4 >>\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000235 00000 n \n0000000284 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n388\n%%EOF\n"
+    }
+  },
+  "launch": {
+    "file": "guide.pdf"
+  },
+  "steps": [
+    {
+      "wait": 1.5
+    },
+    {
+      "key": "shift-cmd-a",
+      "settle": 0.8
+    },
+    {
+      "drag_in_window": [
+        [
+          390,
+          315
+        ],
+        [
+          392,
+          316
+        ]
+      ],
+      "settle": 0.5
+    },
+    {
+      "menu_action": "preview::DeleteSelection",
+      "settle": 0.3
+    },
+    {
+      "key": "cmd-s",
+      "settle": 1.5
+    },
+    {
+      "observe": "existing_deleted",
+      "facts": [
+        "pdf_annotations"
+      ]
+    }
+  ]
+}

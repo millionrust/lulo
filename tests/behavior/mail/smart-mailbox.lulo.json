@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "mail/smart-mailbox",
+  "observations": {
+    "before": {"mail_mailboxes": {"names": ["All Inboxes", "Flagged", "Drafts", "Sent", "Inbox", "Drafts", "Sent", "Junk", "Bin", "Archive", "Receipts", "Inbox", "Sent", "Junk", "Bin"], "selected": "All Inboxes"}, "mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "smart": {"mail_mailboxes": {"names": ["All Inboxes", "Flagged", "Drafts", "Sent", "From Anna", "Inbox", "Drafts", "Sent", "Junk", "Bin", "Archive", "Receipts", "Inbox", "Sent", "Junk", "Bin"], "selected": "From Anna"}, "mail_messages": {"count": 1, "unread": 0, "flagged": 0}},
+    "deleted": {"mail_mailboxes": {"names": ["All Inboxes", "Flagged", "Drafts", "Sent", "Inbox", "Drafts", "Sent", "Junk", "Bin", "Archive", "Receipts", "Inbox", "Sent", "Junk", "Bin"], "selected": "All Inboxes"}}
+  }
+}

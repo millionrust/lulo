@@ -646,6 +646,19 @@ mod bar {
         /// still holds the title a later Esc (backing fully out of the
         /// menu) should return the highlight to.
         title: Option<usize>,
+        /// ⌃F8 (CC-05): the highlighted status item instead of a title,
+        /// in the bar's order (status icons, Spotlight, Control Centre, the
+        /// clock).
+        status: Option<usize>,
+    }
+
+    /// One status item ⌃F8 can reach: its own menu, or the surface its
+    /// click opens.
+    #[derive(Clone)]
+    struct StatusTarget {
+        menu: Option<StatusMenuKind>,
+        shortcut: &'static str,
+        accessible_label: SharedString,
     }
 
     /// What the ⌃F2 focus surface exposes as the focused accessible node.
@@ -657,6 +670,8 @@ mod bar {
     }
 
     const KEYBOARD_MENU_ANNOUNCEMENT_KEY: usize = 1 << 20;
+    /// ⌃F8's status items announce under their own keys (CC-05).
+    const STATUS_ANNOUNCEMENT_KEY: usize = 1 << 19;
 
     /// Never keep an invisible exclusive surface that never got the keyboard.
     const KEYBOARD_ACTIVATION_TIMEOUT: Duration = Duration::from_millis(1_000);
@@ -3799,6 +3814,52 @@ mod bar {
                 .collect()
         }
 
+        /// Every status item ⌃F8 can reach, in the bar's order: the same
+        /// icons the bar draws (`top_bar_indicator_labels`), then Spotlight,
+        /// Control Centre and the clock.
+        fn status_targets(&self, cx: &App) -> Vec<StatusTarget> {
+            let snapshot = &self.status.read(cx).update.snapshot.status;
+            let mut targets: Vec<StatusTarget> = top_bar_indicator_labels(snapshot)
+                .into_iter()
+                .filter(|indicator| indicator.kind != TopBarIndicatorKind::Notifications)
+                .map(|indicator| StatusTarget {
+                    menu: match indicator.kind {
+                        TopBarIndicatorKind::Network => Some(StatusMenuKind::Wifi),
+                        TopBarIndicatorKind::Battery => Some(StatusMenuKind::Battery),
+                        TopBarIndicatorKind::Sound => Some(StatusMenuKind::Sound),
+                        TopBarIndicatorKind::Bluetooth => Some(StatusMenuKind::Bluetooth),
+                        TopBarIndicatorKind::Focus => Some(StatusMenuKind::Focus),
+                        _ => None,
+                    },
+                    shortcut: "quick-settings",
+                    accessible_label: indicator.accessible.into(),
+                })
+                .collect();
+            targets.extend([
+                StatusTarget {
+                    menu: None,
+                    shortcut: "launcher",
+                    accessible_label: "Spotlight".into(),
+                },
+                StatusTarget {
+                    menu: None,
+                    shortcut: "quick-settings",
+                    accessible_label: "Control Centre".into(),
+                },
+                StatusTarget {
+                    menu: None,
+                    shortcut: "notification-center",
+                    accessible_label: "Notification Centre".into(),
+                },
+            ]);
+            targets
+        }
+
+        /// The status item ⌃F8 highlights, by its place in `status_targets`.
+        fn status_keyboard_index(&self) -> Option<usize> {
+            self.keyboard.as_ref().and_then(|mode| mode.status)
+        }
+
         fn set_keyboard_title(&mut self, index: usize) {
             if let Some(mode) = self.keyboard.as_mut() {
                 mode.title = Some(index);
@@ -3812,6 +3873,16 @@ mod bar {
         /// bar's own layer surface only takes keyboard on a click, so a
         /// bare key bind can't reach it directly.
         fn begin_menu_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.begin_keyboard(false, window, cx);
+        }
+
+        /// ⌃F8 (CC-05): the same keyboard mode, starting on the status
+        /// items, as macOS's "Move focus to status menus".
+        fn begin_status_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.begin_keyboard(true, window, cx);
+        }
+
+        fn begin_keyboard(&mut self, status: bool, window: &mut Window, cx: &mut Context<Self>) {
             if self.keyboard.is_some() || self.open_menu.is_some() || self.status_menu.is_some() {
                 return;
             }
@@ -3819,6 +3890,14 @@ mod bar {
             if titles.is_empty() {
                 return;
             }
+            let first_label = if status {
+                match self.status_targets(cx).first() {
+                    Some(target) => target.accessible_label.clone(),
+                    None => return,
+                }
+            } else {
+                titles[0].accessible_label.clone()
+            };
             let Some(top_bar) = window.window_handle().downcast::<TopBar>() else {
                 return;
             };
@@ -3832,8 +3911,8 @@ mod bar {
                 .window_id;
             let announcement = KeyboardAnnouncement {
                 role: Role::MenuItem,
-                label: titles[0].accessible_label.clone(),
-                key: 0,
+                label: first_label,
+                key: if status { STATUS_ANNOUNCEMENT_KEY } else { 0 },
             };
             let options = WindowOptions {
                 titlebar: None,
@@ -3870,7 +3949,8 @@ mod bar {
             self.keyboard = Some(KeyboardMode {
                 surface,
                 previous_window,
-                title: Some(0),
+                title: (!status).then_some(0),
+                status: status.then_some(0),
             });
             cx.notify();
         }
@@ -3953,6 +4033,43 @@ mod bar {
                 }
                 return self.keyboard_announcement(cx);
             }
+            if let Some(current) = self.status_keyboard_index() {
+                let targets = self.status_targets(cx);
+                if targets.is_empty() {
+                    self.leave_menu_keyboard(true, cx);
+                    return None;
+                }
+                let current = current.min(targets.len() - 1);
+                let set = |this: &mut Self, index: usize| {
+                    if let Some(mode) = this.keyboard.as_mut() {
+                        mode.status = Some(index);
+                    }
+                };
+                match event.keystroke.key.as_str() {
+                    "left" => set(self, current.checked_sub(1).unwrap_or(targets.len() - 1)),
+                    "right" => set(self, (current + 1) % targets.len()),
+                    "escape" => {
+                        self.leave_menu_keyboard(true, cx);
+                        return None;
+                    }
+                    "down" | "enter" | "space" => {
+                        let target = targets[current].clone();
+                        match target.menu {
+                            // Its menu opens under the keyboard, as a
+                            // title's does; the arrows then move in it.
+                            Some(kind) => self.open_status_menu(kind, false, window, cx),
+                            None => {
+                                self.leave_menu_keyboard(false, cx);
+                                dispatch_shortcut(target.shortcut, cx);
+                                return None;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                cx.notify();
+                return self.keyboard_announcement(cx);
+            }
             let titles = self.keyboard_titles(cx);
             if titles.is_empty() {
                 self.leave_menu_keyboard(true, cx);
@@ -4026,6 +4143,14 @@ mod bar {
                         label: menu.label.clone().into(),
                         key: KEYBOARD_MENU_ANNOUNCEMENT_KEY + menu_index,
                     },
+                });
+            }
+            if let Some(index) = self.status_keyboard_index() {
+                let targets = self.status_targets(cx);
+                return targets.get(index).map(|target| KeyboardAnnouncement {
+                    role: Role::Button,
+                    label: target.accessible_label.clone(),
+                    key: STATUS_ANNOUNCEMENT_KEY + index,
                 });
             }
             let titles = self.keyboard_titles(cx);
@@ -4128,6 +4253,13 @@ mod bar {
             };
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
+            // ⌃F8's highlight (CC-05): `status_targets`' order, so the icons
+            // come first and Spotlight, Control Centre and the clock follow.
+            let keyboard_status = self.status_keyboard_index();
+            let status_count = indicators
+                .iter()
+                .filter(|indicator| indicator.kind != TopBarIndicatorKind::Notifications)
+                .count();
             // The window the menus act on: remembered as the menu opened.
             let focused_window_id = self.menu_window.or(snapshot.focused.window_id);
 
@@ -5065,7 +5197,9 @@ mod bar {
                                         .rounded(px(tokens::menu_item_radius()))
                                         .cursor_pointer()
                                         .when(
-                                            menu_kind.is_some() && self.status_menu == menu_kind,
+                                            (menu_kind.is_some() && self.status_menu == menu_kind)
+                                                || (self.status_menu.is_none()
+                                                    && keyboard_status == Some(index)),
                                             |style| style.bg(rgba(tokens::light_selection())),
                                         )
                                         .hover(|style| style.bg(rgba(tokens::light_hover())))
@@ -5162,6 +5296,9 @@ mod bar {
                                 .id(format!("spotlight-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("Spotlight")
+                                .when(keyboard_status == Some(status_count), |style| {
+                                    style.bg(rgba(tokens::light_selection()))
+                                })
                                 .h(px(SLOT_HEIGHT + 2.0 * touch_reach()))
                                 .my(px(-touch_reach()))
                                 .px(px(STATUS_PAD))
@@ -5186,6 +5323,9 @@ mod bar {
                                 .id(format!("control-center-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("Control Centre")
+                                .when(keyboard_status == Some(status_count + 1), |style| {
+                                    style.bg(rgba(tokens::light_selection()))
+                                })
                                 .h(px(SLOT_HEIGHT))
                                 .px(px(STATUS_PAD))
                                 .flex()
@@ -5211,6 +5351,9 @@ mod bar {
                                 .aria_label(format!(
                                     "Date and time: {clock_label}. Open Notification Center"
                                 ))
+                                .when(keyboard_status == Some(status_count + 2), |style| {
+                                    style.bg(rgba(tokens::light_selection()))
+                                })
                                 .px(px(TITLE_PAD))
                                 .h(px(SLOT_HEIGHT))
                                 .flex()
@@ -6095,7 +6238,7 @@ mod bar {
                 }
                 // Always on Top (Calculator, CALC-08) is a real toggle: the
                 // compositor keeps the window above the others while it is on
-                // (niri's patch 0003, HWND_TOPMOST on Windows).
+                // (niri's patch 0004, HWND_TOPMOST on Windows).
                 (WindowCommand::AlwaysOnTop, Some(window)) => {
                     let on = snapshot
                         .windows
@@ -7014,6 +7157,7 @@ mod bar {
             watch_power_dialog_requests(cx);
             watch_restart_to_update_requests(cx);
             watch_menu_focus_requests(cx);
+            watch_status_focus_requests(cx);
             watch_log_out_requests(cx);
             start(cx);
         });
@@ -7027,6 +7171,7 @@ mod bar {
         #[cfg(windows)]
         {
             system::requests::register("menu-bar-focus", begin_menu_keyboard_on_first_bar);
+            system::requests::register("status-menus-focus", begin_status_keyboard_on_first_bar);
             system::requests::register("shutdown-dialog", show_power_dialog);
             system::requests::register("log-out-dialog", show_log_out_dialog);
         }
@@ -7306,6 +7451,45 @@ mod bar {
             }
         })
         .detach();
+    }
+
+    /// `Ctrl+F8` (CC-05): niri's bind spawns `rmac-shortcut-dispatch
+    /// status-menus-focus`; the watch waits on the socket, nothing polls.
+    #[cfg(target_os = "linux")]
+    fn watch_status_focus_requests(cx: &mut App) {
+        let (sender, requests) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let id = rmac_shortcuts::ShortcutId("status-menus-focus".to_owned());
+                if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                    eprintln!("Ctrl+F8 cannot move keyboard focus to the status menus: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = requests.recv().await {
+                if matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                    cx.update(begin_status_keyboard_on_first_bar);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Starts ⌃F8 keyboard mode on the first menu bar that can take it.
+    fn begin_status_keyboard_on_first_bar(cx: &mut App) {
+        for handle in cx.windows() {
+            let Some(bar) = handle.downcast::<TopBar>() else {
+                continue;
+            };
+            if bar
+                .update(cx, |bar, window, cx| bar.begin_status_keyboard(window, cx))
+                .is_ok()
+            {
+                return;
+            }
+        }
+        eprintln!("Ctrl+F8 has no menu bar to move keyboard focus to");
     }
 
     /// Starts ⌃F2 keyboard mode on the first menu bar that can take it (see

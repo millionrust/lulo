@@ -1,13 +1,24 @@
+niri (26.04+lulo1-5) resolute; urgency=medium
+
+  * Lulo OS build of upstream niri v26.04
+    (commit 8ed0da44d974c32c6877d2f4630c314da0717ecb) with four patches.
+  * New: debian/patches/0004-window-always-on-top.patch adds the IPC action
+    `set-window-always-on-top` and `is_always_on_top` on IPC windows, so
+    Window > Always on Top can pin a floating window above the others
+    (rmac docs/parity.md CALC-08, docs/decisions/0031-niri-always-on-top.md).
+
+ -- Jacob Samas <samasjacob@icloud.com>  Wed, 21 Oct 2026 08:00:00 +0000
+
 niri (26.04+lulo1-4) resolute; urgency=medium
 
   * Lulo OS build of upstream niri v26.04
     (commit 8ed0da44d974c32c6877d2f4630c314da0717ecb) with three patches.
-  * New: debian/patches/0003-window-always-on-top.patch adds the IPC action
-    `set-window-always-on-top` and `is_always_on_top` on IPC windows, so
-    Window > Always on Top can pin a floating window above the others
-    (rmac docs/parity.md CALC-08, docs/decisions/0029).
+  * New: debian/patches/0003-ipc-report-window-move-edges.patch reports the
+    screen edge or corner a window drag is at (WindowMoveEdgeChanged,
+    WindowMoveEnded), so Lulo can tile a window dropped at an edge
+    (rmac docs/decisions/0029-edge-drag-tiling.md).
 
- -- Jacob Samas <samasjacob@icloud.com>  Tue, 20 Oct 2026 08:00:00 +0000
+ -- Jacob Samas <samasjacob@icloud.com>  Tue, 20 Oct 2026 18:00:00 +0000
 
 niri (26.04+lulo1-3) resolute; urgency=medium
 

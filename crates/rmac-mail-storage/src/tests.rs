@@ -283,7 +283,7 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
         .execute_batch(
             "ALTER TABLE mailboxes DROP COLUMN highest_modseq; \
              ALTER TABLE messages DROP COLUMN cc; \
-             ALTER TABLE messages DROP COLUMN size; \
+             ALTER TABLE messages DROP COLUMN size; ALTER TABLE mailboxes DROP COLUMN delimiter; DROP TABLE mailbox_changes; \
              PRAGMA user_version=2;",
         )
         .unwrap();
@@ -304,7 +304,7 @@ fn existing_v2_cache_adds_cursor_without_losing_messages() {
     assert_eq!(
         db.pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .unwrap(),
-        6
+        7
     );
 }
 
@@ -321,7 +321,7 @@ fn migration_is_idempotent_and_rejects_future_schema() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))
             .expect("version"),
-        6
+        7
     );
     drop(reopened);
     let db = Connection::open(path).expect("open raw");
@@ -385,7 +385,7 @@ fn existing_v1_cache_gains_outbox_without_losing_mail() {
             "DROP TABLE outbox_recipients; DROP TABLE outbox; \
              ALTER TABLE mailboxes DROP COLUMN highest_modseq; \
              ALTER TABLE messages DROP COLUMN cc; \
-             ALTER TABLE messages DROP COLUMN size; \
+             ALTER TABLE messages DROP COLUMN size; ALTER TABLE mailboxes DROP COLUMN delimiter; DROP TABLE mailbox_changes; \
              PRAGMA user_version=1;",
         )
         .unwrap();
@@ -897,7 +897,7 @@ fn existing_v5_cache_gains_message_sizes() {
     fixture
         .store
         .connection
-        .execute_batch("ALTER TABLE messages DROP COLUMN size; PRAGMA user_version=5;")
+        .execute_batch("ALTER TABLE messages DROP COLUMN size; ALTER TABLE mailboxes DROP COLUMN delimiter; DROP TABLE mailbox_changes; PRAGMA user_version=5;")
         .unwrap();
     let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
     let before = reopened.get_message(id).unwrap().unwrap();
@@ -969,4 +969,255 @@ fn replacing_a_draft_source_removes_the_old_blob() {
             .unwrap(),
         b"second draft source"
     );
+}
+
+#[test]
+fn existing_v6_cache_gains_mailbox_changes() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .connection
+        .execute_batch(
+            "ALTER TABLE mailboxes DROP COLUMN delimiter; DROP TABLE mailbox_changes; \
+             PRAGMA user_version=6;",
+        )
+        .unwrap();
+    let mut reopened = MailStorage::open(&fixture.root, fixture.account).unwrap();
+    assert_eq!(reopened.all_mailboxes().unwrap()[0].delimiter, None);
+    reopened
+        .queue_mailbox_change(MailboxChange::Create {
+            parent: None,
+            name: "Receipts".into(),
+        })
+        .unwrap();
+    assert_eq!(reopened.pending_mailbox_changes().unwrap().len(), 1);
+}
+
+#[test]
+fn new_rename_and_delete_mailbox_apply_locally_and_queue_for_the_server() {
+    let mut fixture = Fixture::new();
+    fixture
+        .store
+        .set_mailbox_delimiter(fixture.inbox, Some('/'))
+        .unwrap();
+    let work = fixture.store.upsert_mailbox("Work", 7, None).unwrap();
+    fixture
+        .store
+        .set_mailbox_delimiter(work, Some('/'))
+        .unwrap();
+    // New Mailbox… inside Work, and at the top level.
+    let projects = fixture
+        .store
+        .queue_mailbox_change(MailboxChange::Create {
+            parent: Some(work),
+            name: "Projects".into(),
+        })
+        .unwrap();
+    assert_eq!(
+        fixture.store.mailbox_by_id(projects).unwrap().unwrap().name,
+        "Work/Projects"
+    );
+    assert!(matches!(
+        fixture.store.queue_mailbox_change(MailboxChange::Create {
+            parent: Some(work),
+            name: "Projects".into(),
+        }),
+        Err(Error::MailboxExists)
+    ));
+    assert!(matches!(
+        fixture.store.queue_mailbox_change(MailboxChange::Create {
+            parent: None,
+            name: "a/b".into(),
+        }),
+        Err(Error::InvalidMailboxName)
+    ));
+    assert!(matches!(
+        fixture.store.queue_mailbox_change(MailboxChange::Create {
+            parent: None,
+            name: "  ".into(),
+        }),
+        Err(Error::InvalidMailboxName)
+    ));
+    // Inbox and special mailboxes are protected.
+    assert!(matches!(
+        fixture.store.queue_mailbox_change(MailboxChange::Rename {
+            mailbox_id: fixture.inbox,
+            name: "Old".into(),
+        }),
+        Err(Error::ProtectedMailbox)
+    ));
+    // Renaming a mailbox on the server renames its submailboxes with it;
+    // the not-yet-created child follows in the queue.
+    fixture
+        .store
+        .queue_mailbox_change(MailboxChange::Rename {
+            mailbox_id: work,
+            name: "Office".into(),
+        })
+        .unwrap();
+    assert_eq!(
+        fixture.store.mailbox_by_id(projects).unwrap().unwrap().name,
+        "Office/Projects"
+    );
+    let ops: Vec<_> = fixture
+        .store
+        .pending_mailbox_changes()
+        .unwrap()
+        .into_iter()
+        .map(|change| change.op)
+        .collect();
+    assert_eq!(
+        ops,
+        vec![
+            PendingMailboxOp::Create {
+                name: "Work/Projects".into(),
+                parent_remote_id: None
+            },
+            PendingMailboxOp::Rename {
+                from: "Work".into(),
+                to: "Office".into(),
+                remote_id: None
+            },
+        ]
+    );
+    // Deleting a mailbox queues it, with its children first.
+    fixture
+        .store
+        .queue_mailbox_change(MailboxChange::Delete {
+            mailbox_id: projects,
+        })
+        .unwrap();
+    let child = fixture.store.upsert_mailbox("Office/Old", 8, None).unwrap();
+    let message = fixture
+        .store
+        .put_message(&NewMessage {
+            mailbox_id: child,
+            uid: 3,
+            message_id: None,
+            in_reply_to: None,
+            references: &[],
+            subject: "Kept until deleted",
+            sender: "a@example.test",
+            recipients: "",
+            cc: "",
+            preview: "",
+            received_at: 1,
+            flags: 0,
+            body: None,
+            body_text: None,
+        })
+        .unwrap();
+    fixture
+        .store
+        .queue_mailbox_change(MailboxChange::Delete { mailbox_id: work })
+        .unwrap();
+    assert!(fixture.store.mailbox_by_id(work).unwrap().is_none());
+    assert!(fixture.store.mailbox_by_id(child).unwrap().is_none());
+    assert!(fixture.store.get_message(message).unwrap().is_none());
+    let ops: Vec<_> = fixture
+        .store
+        .pending_mailbox_changes()
+        .unwrap()
+        .into_iter()
+        .map(|change| change.op)
+        .collect();
+    // The server sees the child created, the parent renamed (taking the
+    // child along), then everything deleted, deepest first.
+    assert_eq!(
+        ops,
+        vec![
+            PendingMailboxOp::Create {
+                name: "Work/Projects".into(),
+                parent_remote_id: None
+            },
+            PendingMailboxOp::Rename {
+                from: "Work".into(),
+                to: "Office".into(),
+                remote_id: None
+            },
+            PendingMailboxOp::Delete {
+                name: "Office/Projects".into(),
+                remote_id: None
+            },
+            PendingMailboxOp::Delete {
+                name: "Office/Old".into(),
+                remote_id: None
+            },
+            PendingMailboxOp::Delete {
+                name: "Office".into(),
+                remote_id: None
+            },
+        ]
+    );
+    let first = fixture.store.pending_mailbox_changes().unwrap()[0].id;
+    fixture.store.acknowledge_mailbox_change(first).unwrap();
+    assert_eq!(fixture.store.pending_mailbox_changes().unwrap().len(), 4);
+    // A mailbox made and deleted before the server heard of it never
+    // reaches the server at all.
+    let temp = fixture
+        .store
+        .queue_mailbox_change(MailboxChange::Create {
+            parent: None,
+            name: "Temp".into(),
+        })
+        .unwrap();
+    fixture
+        .store
+        .queue_mailbox_change(MailboxChange::Delete { mailbox_id: temp })
+        .unwrap();
+    assert_eq!(fixture.store.pending_mailbox_changes().unwrap().len(), 4);
+}
+
+#[test]
+fn graph_folder_ids_travel_with_mailbox_changes() {
+    let mut fixture = Fixture::new();
+    let parent = fixture.store.upsert_mailbox("Clients", 1, None).unwrap();
+    fixture
+        .store
+        .set_mailbox_delimiter(parent, Some('/'))
+        .unwrap();
+    fixture
+        .store
+        .bind_remote_mailbox(parent, "folder-clients")
+        .unwrap();
+    fixture
+        .store
+        .queue_mailbox_change(MailboxChange::Create {
+            parent: Some(parent),
+            name: "Acme".into(),
+        })
+        .unwrap();
+    fixture
+        .store
+        .queue_mailbox_change(MailboxChange::Rename {
+            mailbox_id: parent,
+            name: "Customers".into(),
+        })
+        .unwrap();
+    let ops: Vec<_> = fixture
+        .store
+        .pending_mailbox_changes()
+        .unwrap()
+        .into_iter()
+        .map(|change| change.op)
+        .collect();
+    assert_eq!(
+        ops,
+        vec![
+            PendingMailboxOp::Create {
+                name: "Clients/Acme".into(),
+                parent_remote_id: Some("folder-clients".into())
+            },
+            PendingMailboxOp::Rename {
+                from: "Clients".into(),
+                to: "Customers".into(),
+                remote_id: Some("folder-clients".into())
+            },
+        ]
+    );
+    assert_eq!(
+        split_mailbox_name("Customers/Acme", Some('/')),
+        (Some("Customers"), "Acme")
+    );
+    assert_eq!(split_mailbox_name("Notes", None), (None, "Notes"));
 }

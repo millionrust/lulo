@@ -82,6 +82,9 @@ fn settings_pane_commands(item: &Item) -> Vec<ApplicationCommand> {
         .collect()
 }
 
+/// The most recent documents an app's tile menu lists (DOCK-15).
+const MAX_RECENT_DOCUMENTS: usize = 10;
+
 /// Finder's tile commands (DOCK-05): (row id, label, `rmac-files` flag).
 const FINDER_COMMANDS: [(&str, &str, &str); 3] = [
     ("files-find", "Find\u{2026}", "--find"),
@@ -194,6 +197,7 @@ impl Model {
             stacks: project_stacks(stacks, places),
             minimized,
             repeated_click: settings.repeated_click,
+            documents: BTreeMap::new(),
         }
     }
 
@@ -452,6 +456,7 @@ impl Model {
             show_all_windows,
             hide,
             hide_others,
+            recent_documents: self.document_commands(item),
         })
     }
 
@@ -569,6 +574,60 @@ impl Model {
     /// Revalidates a menu command against the newest Dock projection before a
     /// renderer crosses into an external application, compositor, or process
     /// authority. A menu left open across process/window churn fails closed.
+    /// Each app's own recent documents (DOCK-15), from
+    /// `rmac_recent_documents::Store::load_by_app`.
+    pub fn with_recent_documents(mut self, documents: &BTreeMap<String, Vec<PathBuf>>) -> Self {
+        self.documents = documents
+            .iter()
+            .map(|(app_id, paths)| {
+                (
+                    canonical_app_id(app_id),
+                    paths.iter().take(MAX_RECENT_DOCUMENTS).cloned().collect(),
+                )
+            })
+            .collect();
+        self
+    }
+
+    /// `item`'s recent documents as menu commands, each opening the
+    /// document with the app's own command line.
+    fn document_commands(&self, item: &Item) -> Vec<ApplicationCommand> {
+        let Some(rmac_apps::LaunchSpec::Command {
+            program,
+            args,
+            working_dir,
+            terminal,
+        }) = &item.launch
+        else {
+            return Vec::new();
+        };
+        let Some(paths) = self.documents.get(&canonical_app_id(&item.id)) else {
+            return Vec::new();
+        };
+        paths
+            .iter()
+            .enumerate()
+            .filter_map(|(index, path)| {
+                let name = path.file_name()?.to_string_lossy().into_owned();
+                let mut args = args.clone();
+                args.push(path.to_string_lossy().into_owned());
+                Some(ApplicationCommand {
+                    id: format!("recent-document-{index}"),
+                    name,
+                    action: ContextAction::LaunchNew {
+                        app_id: item.id.clone(),
+                        spec: rmac_apps::LaunchSpec::Command {
+                            program: program.clone(),
+                            args,
+                            working_dir: working_dir.clone(),
+                            terminal: *terminal,
+                        },
+                    },
+                })
+            })
+            .collect()
+    }
+
     /// Every launch a Dock menu offers for `app_id`: Open, its commands
     /// (desktop actions, the Settings panes), and the Files tile's New
     /// Finder Window, Find…, Go to Folder… and Connect to Server….
@@ -579,6 +638,7 @@ impl Model {
             launches.extend(
                 menu.application_commands
                     .into_iter()
+                    .chain(menu.recent_documents)
                     .map(|command| command.action),
             );
         }

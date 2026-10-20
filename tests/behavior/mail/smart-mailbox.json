@@ -1,0 +1,18 @@
+{
+  "title": "Mail: Mailbox ▸ New Smart Mailbox… shows only the messages matching its condition, and Delete Mailbox… removes it",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "before", "facts": ["mail_mailboxes", "mail_messages"]},
+    {"menu_action": "mail::NewSmartMailbox"},
+    {"type": "From Anna", "settle": 1},
+    {"key": "tab", "settle": 1},
+    {"type": "Anna", "settle": 1},
+    {"key": "enter", "settle": 1},
+    {"observe": "smart", "facts": ["mail_mailboxes", "mail_messages"]},
+    {"menu_action": "mail::DeleteMailbox"},
+    {"key": "enter", "settle": 1},
+    {"observe": "deleted", "facts": ["mail_mailboxes"]}
+  ]
+}

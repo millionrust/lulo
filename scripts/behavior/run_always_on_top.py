@@ -2,7 +2,7 @@
 """Window ▸ Always on Top (CALC-08), against the patched niri, in a private
 nested session.
 
-Needs the niri built with `0003-window-always-on-top.patch` (`--niri`).
+Needs the niri built with `0004-window-always-on-top.patch` (`--niri`).
 Calculator is dragged over Clock; the overlap is read from niri's own
 screenshot, so what is checked is what is drawn:
 
@@ -216,7 +216,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bin-dir", required=True)
-    parser.add_argument("--niri", required=True, help="the niri built with patch 0003")
+    parser.add_argument("--niri", required=True, help="the niri built with patch 0004")
     parser.add_argument("--override-bin-dir", help="take these binaries instead of --bin-dir's")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", help=argparse.SUPPRESS)

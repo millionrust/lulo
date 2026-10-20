@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "mail/settings-rules",
+  "observations": {
+    "empty": {"pane_text": {"labelled": 10, "labels": ["Add Rule…", "Close window", "Duplicate", "Edit…", "Enter Full Screen", "Mail Settings", "Minimize", "No rules. Rules act on new messages as they arrive in an Inbox.", "Remove", "Rules"], "controls": [], "unnamed": 0}},
+    "sheet": {"pane_text": {"labelled": 17, "labels": ["+", "Cancel", "Choose Mailbox", "Close window", "Description:", "Enter Full Screen", "From", "If", "Mail Settings", "Minimize", "Move Message", "OK", "Perform the following actions:", "any", "contains", "of the following conditions are met:", "−"], "controls": [], "unnamed": 0}},
+    "listed": {"pane_text": {"labelled": 10, "labels": ["Add Rule…", "Close window", "Duplicate", "Edit…", "Enter Full Screen", "Mail Settings", "Minimize", "Remove", "Rule #1", "Rules"], "controls": ["Rule #1"], "unnamed": 0}, "settings_controls": {"checked": {"Rule #1": true}}}
+  }
+}

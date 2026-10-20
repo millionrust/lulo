@@ -9,13 +9,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::{
-    canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, App,
+    div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, App,
     AppContext as _, ClickEvent, ClipboardItem, Context, Entity, ExternalPaths, FocusHandle,
     Focusable as _, FontWeight, Image, ImageFormat, InteractiveElement as _, IntoElement,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
     PathBuilder, PathPromptOptions, Render, RenderImage, Role, ScrollHandle, ScrollWheelEvent,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
+use rmac_preview::adjust::{adjust_colour, ColourAdjust};
 use rmac_preview::document::{self, ImageKind, Kind};
 use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
 use rmac_preview::markup::{self, Annotation, Markup, Tool};
@@ -25,12 +26,12 @@ use rmac_preview::redact;
 use rmac_preview::selection;
 use rmac_preview::versions;
 use rmac_preview::zoom::{self, ContentKind, Zoom};
-use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
+use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState, SliderEvent, SliderState};
 
 use crate::{
-    ActualSize, ActualSizeOnAll, AddBookmark, AdjustSize, AnnotateArrow, AnnotateHighlight,
-    AnnotateLine, AnnotateLoupe, AnnotateMask, AnnotateNote, AnnotateOval, AnnotatePolygon,
-    AnnotateRectangle, AnnotateSignature, AnnotateSpeechBubble, AnnotateStar,
+    ActualSize, ActualSizeOnAll, AddBookmark, AdjustColour, AdjustSize, AnnotateArrow,
+    AnnotateHighlight, AnnotateLine, AnnotateLoupe, AnnotateMask, AnnotateNote, AnnotateOval,
+    AnnotatePolygon, AnnotateRectangle, AnnotateSignature, AnnotateSpeechBubble, AnnotateStar,
     AnnotateStrikeThrough, AnnotateText, AnnotateUnderline, AutomaticSelection, Back,
     BrowseSavedVersions, CheckDocumentNow, CloseAll, CloseSelected, CloseWindow, ContactSheet,
     ContinuousScroll, Copy, Crop, CustomiseToolbar, DeleteSelection, Duplicate, EnterFullScreen,
@@ -91,6 +92,7 @@ pub(crate) fn disable_document_menu(cx: &mut App) {
         "preview::CustomiseToolbar",
         "preview::ZoomToSelection",
         "preview::AdjustSize",
+        "preview::AdjustColour",
         "preview::FlipHorizontal",
         "preview::FlipVertical",
         "preview::RemoveBackground",
@@ -360,6 +362,9 @@ struct Slot {
     bookmarks: BTreeSet<usize>,
     text: TextState,
     markup: Markup,
+    /// PREV-03A: the PDF without its editable annotations, which Preview
+    /// draws itself; pages are rendered from this copy when it exists.
+    base: Option<markup::BaseCopy>,
     markup_original: Option<PathBuf>,
     /// Tools ▸ Flip Horizontal/Flip Vertical/Adjust Size…/Crop undo/redo
     /// and dirty/saved tracking for an image document (see `ImageEdits`).
@@ -474,6 +479,7 @@ impl Slot {
             bookmarks: BTreeSet::new(),
             text: TextState::NotLoaded,
             markup: Markup::default(),
+            base: None,
             markup_original: None,
             image_edits: ImageEdits::default(),
             selection: None,
@@ -511,7 +517,9 @@ impl Slot {
     fn edited(&self) -> bool {
         match self.kind() {
             Some(Kind::Pdf) => self.markup.dirty,
-            Some(Kind::Image(_)) => self.image_edits.dirty || self.rotation != self.saved_rotation,
+            Some(Kind::Image(_)) => {
+                self.image_edits.dirty || self.rotation != self.saved_rotation || self.markup.dirty
+            }
             None => false,
         }
     }
@@ -526,7 +534,25 @@ impl Slot {
         let Content::Image(image) = &self.loaded()?.content else {
             return None;
         };
-        Some((kind, Arc::new(render::rotate(&image.pixels, self.rotation))))
+        let drawn = self.baked_pixels()?;
+        let _ = image;
+        Some((kind, Arc::new(render::rotate(&drawn, self.rotation))))
+    }
+
+    /// The image's pixels with the markup drawn on them (PREV-03B), in the
+    /// unrotated frame the markup lives in; the pixels themselves when there
+    /// is none.
+    fn baked_pixels(&self) -> Option<Arc<image::RgbaImage>> {
+        let Content::Image(image) = &self.loaded()?.content else {
+            return None;
+        };
+        if self.markup.items.is_empty() {
+            return Some(image.pixels.clone());
+        }
+        Some(Arc::new(render::bake_markup(
+            &image.pixels,
+            &self.markup.items,
+        )))
     }
 
     fn content_kind(&self) -> ContentKind {
@@ -665,6 +691,10 @@ pub(crate) struct PreviewView {
     markup_tool: Tool,
     markup_color: u32,
     markup_width: f32,
+    /// Interior colour for new closed shapes (`None` leaves them open).
+    markup_fill: Option<u32>,
+    /// Point size for new text boxes.
+    markup_font_size: f32,
     markup_selected: Option<usize>,
     markup_drag: Option<MarkupDrag>,
     markup_text_input: Entity<InputState>,
@@ -734,6 +764,15 @@ pub(crate) struct PreviewView {
     adjust_size_open: bool,
     adjust_size_width: Entity<InputState>,
     adjust_size_height: Entity<InputState>,
+    /// Tools ▸ Adjust Color… (PREV-10): the sheet, its values and sliders,
+    /// the downsized picture the live preview is computed from, and the
+    /// preview itself (shown over the picture while the sheet is open).
+    adjust_colour_open: bool,
+    adjust_colour_values: ColourAdjust,
+    adjust_colour_sliders: Vec<Entity<SliderState>>,
+    adjust_colour_source: Option<Arc<image::RgbaImage>>,
+    adjust_colour_preview: Option<Arc<RenderImage>>,
+    adjust_colour_generation: u64,
     /// Tools ▸ Rectangular Selection (PRV-MENU-055): the drag-to-select
     /// tool Tools ▸ Crop (⌘K, PRV-MENU-068) crops to (`crop_to_selection`).
     /// `selection_drag` holds the drag's anchor point, in the same
@@ -951,7 +990,17 @@ impl PreviewView {
     }
 
     fn choose_annotation(&mut self, tool: Tool, cx: &mut Context<Self>) {
-        if self.slots.len() != 1 || self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+        // A picture takes the drawn shapes and text; marking up text itself
+        // is for PDFs.
+        let usable = match self.slot().and_then(Slot::kind) {
+            Some(Kind::Pdf) => true,
+            Some(Kind::Image(_)) => !matches!(
+                tool,
+                Tool::Highlight | Tool::Underline | Tool::StrikeThrough
+            ),
+            None => false,
+        };
+        if self.slots.len() != 1 || !usable {
             return;
         }
         self.choose_markup_tool(tool, cx);
@@ -987,6 +1036,91 @@ impl PreviewView {
             }
         }
         cx.notify();
+    }
+
+    /// The colours the Colour and Fill buttons step through (macOS's own
+    /// system colours).
+    fn step_markup_colour(&mut self, cx: &mut Context<Self>) {
+        let next = metrics::MARKUP_COLOURS
+            .iter()
+            .position(|colour| *colour == self.markup_color)
+            .map_or(0, |index| (index + 1) % metrics::MARKUP_COLOURS.len());
+        self.set_markup_color(metrics::MARKUP_COLOURS[next], cx);
+    }
+
+    /// Fill: none, then each system colour in turn; applies to the selected
+    /// shape too.
+    fn step_markup_fill(&mut self, cx: &mut Context<Self>) {
+        self.markup_fill = match self.markup_fill {
+            None => Some(metrics::MARKUP_COLOURS[0]),
+            Some(current) => metrics::MARKUP_COLOURS
+                .iter()
+                .position(|colour| *colour == current)
+                .and_then(|index| metrics::MARKUP_COLOURS.get(index + 1).copied()),
+        };
+        let fill = self.markup_fill;
+        if let Some(index) = self.markup_selected {
+            if let Some(slot) = self.slot_mut() {
+                if slot
+                    .markup
+                    .items
+                    .get(index)
+                    .is_some_and(|item| item.tool != Tool::Select)
+                {
+                    slot.markup.checkpoint();
+                    if let Some(item) = slot.markup.items.get_mut(index) {
+                        if matches!(
+                            item.tool,
+                            Tool::Rectangle
+                                | Tool::Oval
+                                | Tool::Polygon
+                                | Tool::Star
+                                | Tool::SpeechBubble
+                        ) {
+                            item.fill = fill;
+                        }
+                    }
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Type size for text boxes: steps through [`metrics::MARKUP_FONT_SIZES`].
+    fn step_markup_font_size(&mut self, cx: &mut Context<Self>) {
+        let next = metrics::MARKUP_FONT_SIZES
+            .iter()
+            .position(|size| *size >= self.markup_font_size + 0.5)
+            .map_or(metrics::MARKUP_FONT_SIZES[0], |index| {
+                metrics::MARKUP_FONT_SIZES[index]
+            });
+        self.markup_font_size = next;
+        if let Some(index) = self.markup_selected {
+            if let Some(slot) = self.slot_mut() {
+                if slot
+                    .markup
+                    .items
+                    .get(index)
+                    .is_some_and(|item| item.tool == Tool::Text)
+                {
+                    slot.markup.checkpoint();
+                    if let Some(item) = slot.markup.items.get_mut(index) {
+                        item.font_size = next;
+                    }
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// The shape button cycles Polygon, Star, Speech Bubble and Mask.
+    fn step_markup_shape(&mut self, cx: &mut Context<Self>) {
+        const SHAPES: [Tool; 4] = [Tool::Polygon, Tool::Star, Tool::SpeechBubble, Tool::Mask];
+        let next = SHAPES
+            .iter()
+            .position(|tool| *tool == self.markup_tool)
+            .map_or(SHAPES[0], |index| SHAPES[(index + 1) % SHAPES.len()]);
+        self.choose_markup_tool(next, cx);
     }
 
     fn step_markup_width(&mut self, cx: &mut Context<Self>) {
@@ -1042,6 +1176,23 @@ impl PreviewView {
         cx.notify();
     }
 
+    /// The page (always 0 for a picture) and the point on it, in the
+    /// unrotated frame markup is stored in, under a window-space position.
+    fn markup_point(&self, position: gpui::Point<gpui::Pixels>) -> Option<(usize, (f32, f32))> {
+        let slot = self.slot()?;
+        if matches!(slot.kind(), Some(Kind::Image(_))) {
+            return self.screen_to_image_point(position).map(|point| (0, point));
+        }
+        let (page, point) = self.screen_to_page_point(position)?;
+        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
+            x0: point.0,
+            y0: point.1,
+            x1: point.0,
+            y1: point.1,
+        });
+        Some((page, (raw.x0, raw.y0)))
+    }
+
     fn markup_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -1057,19 +1208,12 @@ impl PreviewView {
         ) {
             return false;
         }
-        let Some((page, point)) = self.screen_to_page_point(event.position) else {
+        let Some((page, point)) = self.markup_point(event.position) else {
             return false;
         };
         let Some(slot) = self.slot() else {
             return false;
         };
-        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
-            x0: point.0,
-            y0: point.1,
-            x1: point.0,
-            y1: point.1,
-        });
-        let point = (raw.x0, raw.y0);
         window.focus(&self.page_focus, cx);
         if self.markup_tool == Tool::Select {
             let hit = slot
@@ -1081,7 +1225,7 @@ impl PreviewView {
                 .find(|(_, item)| item.page == page && item.contains(point))
                 .map(|(i, item)| (i, item.rect));
             if let Some((index, rect)) = hit {
-                let text = (slot.markup.items[index].tool == Tool::Text)
+                let text = matches!(slot.markup.items[index].tool, Tool::Text | Tool::Note)
                     .then(|| slot.markup.items[index].text.clone());
                 let near_corner =
                     (rect.x1 - point.0).abs() < 0.02 && (rect.y1 - point.1).abs() < 0.02;
@@ -1113,6 +1257,8 @@ impl PreviewView {
         let tool = self.markup_tool;
         let color = self.markup_color;
         let width = self.markup_width;
+        let fill = self.markup_fill;
+        let font_size = self.markup_font_size;
         let saved_signature = (tool == Tool::Signature && !self.signature_capture)
             .then(|| self.signatures.get(self.signature_active).cloned())
             .flatten();
@@ -1126,6 +1272,16 @@ impl PreviewView {
         if let Some(slot) = self.slot_mut() {
             slot.markup.checkpoint();
             let mut item = Annotation::new(page, tool, rect, color, width);
+            item.font_size = font_size;
+            if matches!(
+                tool,
+                Tool::Rectangle | Tool::Oval | Tool::Polygon | Tool::Star | Tool::SpeechBubble
+            ) {
+                item.fill = fill;
+            }
+            if tool == Tool::Polygon {
+                item.path = markup::regular_polygon(6);
+            }
             if matches!(
                 tool,
                 Tool::Sketch | Tool::Signature | Tool::Line | Tool::Arrow
@@ -1150,10 +1306,21 @@ impl PreviewView {
                 };
                 item.text = "Text".into();
             }
+            if tool == Tool::Note {
+                // A note is a small icon placed with a click; its text is
+                // edited in the toolbar's field.
+                item.rect = layout::UnitRect {
+                    x0: point.0,
+                    y0: point.1,
+                    x1: (point.0 + 0.04).min(1.0),
+                    y1: (point.1 + 0.04).min(1.0),
+                };
+                item.text = "Note".into();
+            }
             slot.markup.items.push(item);
         }
         self.markup_selected = Some(index);
-        self.markup_drag = (tool != Tool::Text
+        self.markup_drag = (!matches!(tool, Tool::Text | Tool::Note)
             && (tool != Tool::Signature || self.signature_capture))
             .then_some(MarkupDrag {
                 page,
@@ -1163,13 +1330,16 @@ impl PreviewView {
                 mode: DragMode::Create,
                 started: true,
             });
-        if tool == Tool::Text {
+        if matches!(tool, Tool::Text | Tool::Note) {
+            let initial = if tool == Tool::Note { "Note" } else { "Text" };
             self.markup_text_input.update(cx, |input, cx| {
-                input.set_value("Text", window, cx);
+                input.set_value(initial, window, cx);
             });
             cx.spawn_in(window, async move |this, cx| {
                 let _ = this.update_in(cx, |this, window, cx| {
-                    if this.markup_tool == Tool::Text && this.markup_selected.is_some() {
+                    if matches!(this.markup_tool, Tool::Text | Tool::Note)
+                        && this.markup_selected.is_some()
+                    {
                         this.markup_text_input
                             .update(cx, |input, cx| input.focus(window, cx));
                     }
@@ -1185,20 +1355,12 @@ impl PreviewView {
         let Some(mut drag) = self.markup_drag else {
             return;
         };
-        let Some((page, point)) = self.screen_to_page_point(event.position) else {
+        let Some((page, point)) = self.markup_point(event.position) else {
             return;
         };
         if page != drag.page {
             return;
         }
-        let Some(slot) = self.slot() else { return };
-        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
-            x0: point.0,
-            y0: point.1,
-            x1: point.0,
-            y1: point.1,
-        });
-        let point = (raw.x0, raw.y0);
         if !drag.started {
             if let Some(slot) = self.slot_mut() {
                 slot.markup.checkpoint();
@@ -1286,8 +1448,26 @@ impl PreviewView {
         cx.notify();
     }
 
+    /// Whether Edit ▸ Delete would remove the current page: the thumbnails
+    /// are showing, the PDF has another page, and no markup waits to be saved
+    /// (page numbers in it would shift).
+    fn can_delete_page(&self) -> bool {
+        self.sidebar
+            && self.sidebar_mode == SidebarMode::Thumbnails
+            && !self.markup_save_busy
+            && self.slot().is_some_and(|slot| {
+                slot.kind() == Some(Kind::Pdf)
+                    && slot.loaded().is_some_and(|loaded| loaded.page_count() > 1)
+                    && !slot.markup.dirty
+                    && slot.markup_original.is_none()
+            })
+    }
+
     fn delete_markup(&mut self, cx: &mut Context<Self>) {
         let Some(index) = self.markup_selected.take() else {
+            if self.can_delete_page() {
+                self.edit_pdf_pages("delete the page", markup::delete_page, false, cx);
+            }
             return;
         };
         if let Some(slot) = self.slot_mut() {
@@ -1365,6 +1545,7 @@ impl PreviewView {
                 let source = slot.path.clone();
                 let id = slot.id;
                 let revision = slot.image_edits.revision;
+                let markup_revision = slot.markup.revision;
                 let rotation = slot.rotation;
                 let needs_version = !slot.version_recorded;
                 self.markup_save_busy = true;
@@ -1396,6 +1577,9 @@ impl PreviewView {
                                 Ok(()) => {
                                     if slot.image_edits.revision == revision {
                                         slot.image_edits.dirty = false;
+                                    }
+                                    if slot.markup.revision == markup_revision {
+                                        slot.markup.dirty = false;
                                     }
                                     if slot.rotation == rotation {
                                         slot.saved_rotation = rotation;
@@ -2199,7 +2383,7 @@ impl PreviewView {
                             .slot_mut()
                             .and_then(|slot| slot.markup.items.get_mut(index))
                         {
-                            if item.tool == Tool::Text {
+                            if matches!(item.tool, Tool::Text | Tool::Note) {
                                 item.text = value;
                                 cx.notify();
                             }
@@ -2222,6 +2406,27 @@ impl PreviewView {
             .map(|(index, path)| Slot::new(index as u64, path))
             .collect();
         let next_id = slots.len() as u64;
+        let adjust_colour_sliders: Vec<Entity<SliderState>> = ADJUST_COLOUR_ROWS
+            .iter()
+            .enumerate()
+            .map(|(index, (_, min, max))| {
+                let (min, max) = (*min, *max);
+                let slider = cx.new(|_| {
+                    SliderState::new()
+                        .min(min)
+                        .max(max)
+                        .step(0.01)
+                        .default_value(0.0_f32)
+                });
+                cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
+                    if let SliderEvent::Change(value) = event {
+                        this.adjust_colour_changed(index, value.start(), cx);
+                    }
+                })
+                .detach();
+                slider
+            })
+            .collect();
         let mut view = Self {
             focus: cx.focus_handle(),
             page_focus: cx.focus_handle(),
@@ -2253,6 +2458,8 @@ impl PreviewView {
             markup_tool: Tool::Select,
             markup_color: palette().find,
             markup_width: 2.0,
+            markup_fill: None,
+            markup_font_size: markup::DEFAULT_FONT_SIZE,
             markup_selected: None,
             markup_drag: None,
             markup_text_input,
@@ -2293,6 +2500,12 @@ impl PreviewView {
             adjust_size_open: false,
             adjust_size_width,
             adjust_size_height,
+            adjust_colour_open: false,
+            adjust_colour_values: ColourAdjust::default(),
+            adjust_colour_sliders,
+            adjust_colour_source: None,
+            adjust_colour_preview: None,
+            adjust_colour_generation: 0,
             selection_tool_active: false,
             selection_drag: None,
             automatic_selection_tool_active: false,
@@ -2382,7 +2595,7 @@ impl PreviewView {
         };
         let (id, path) = (slot.id, slot.path.clone());
         cx.spawn(async move |this, cx| {
-            let (result, bookmarks, has_version, last_page) = cx
+            let (result, bookmarks, has_version, last_page, (existing, base)) = cx
                 .background_executor()
                 .spawn(async move {
                     // Settings ▸ PDF ▸ Start on the last viewed page.
@@ -2390,11 +2603,18 @@ impl PreviewView {
                         .is_ok_and(|settings| settings.start_on_last_viewed_page)
                         .then(|| crate::load_last_page(&path))
                         .flatten();
+                    let loaded = render::load(&path);
+                    let editable = if loaded.as_ref().is_ok_and(|loaded| loaded.kind == Kind::Pdf) {
+                        markup::prepare_editable(&path, id)
+                    } else {
+                        (Vec::new(), None)
+                    };
                     (
-                        render::load(&path),
+                        loaded,
                         crate::load_bookmarks(&path),
                         versions::has_version(&path),
                         last_page,
+                        editable,
                     )
                 })
                 .await;
@@ -2429,6 +2649,8 @@ impl PreviewView {
                 }
                 slot.bookmarks = bookmarks;
                 slot.has_version = has_version;
+                slot.markup.adopt(existing);
+                slot.base = base;
                 // A PDF with several pages opens with its thumbnails, like
                 // Preview; a single image or one-page PDF does not.
                 let pages = slot.loaded().map(Loaded::page_count).unwrap_or(0);
@@ -2994,14 +3216,25 @@ impl PreviewView {
         let Some(slot) = self.slots.get_mut(self.selected) else {
             return;
         };
+        // Markup lives in the frame of the pixels as they are now: draw it
+        // into them before they are cropped, flipped or resized.
+        let drawn = if slot.markup.items.is_empty() {
+            None
+        } else {
+            let drawn = slot.baked_pixels();
+            slot.markup.items.clear();
+            slot.markup.dirty = false;
+            slot.markup.revision += 1;
+            drawn
+        };
         let Some(loaded) = slot.loaded_mut() else {
             return;
         };
         let Content::Image(image) = &mut loaded.content else {
             return;
         };
-        let previous = image.pixels.clone();
-        let edited = edit(&image.pixels);
+        let previous = drawn.unwrap_or_else(|| image.pixels.clone());
+        let edited = edit(&previous);
         image.size = edited.dimensions();
         image.thumbnail = render::image_thumbnail(&edited);
         image.pixels = Arc::new(edited);
@@ -3126,6 +3359,236 @@ impl PreviewView {
         }
         self.adjust_size_open = false;
         cx.notify();
+    }
+
+    // ---- Tools ▸ Adjust Color… (⌥⌘C, PREV-10) ----------------------------
+    //
+    // Nine sliders over a live preview. The preview is computed from a
+    // downsized copy off the UI thread (a newer slider value supersedes an
+    // older one still being computed); OK applies the same adjustment to
+    // the full picture off the UI thread, as one undoable image edit.
+
+    fn open_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.adjust_colour_open || self.markup_save_busy {
+            return;
+        }
+        let Some(pixels) = self.slot().and_then(Slot::baked_pixels) else {
+            return;
+        };
+        if !matches!(self.slot().and_then(Slot::kind), Some(Kind::Image(_))) {
+            return;
+        }
+        self.adjust_colour_open = true;
+        self.reset_adjust_colour(window, cx);
+        cx.spawn(async move |this, cx| {
+            let small = blocking::unblock(move || {
+                let (width, height) = pixels.dimensions();
+                let longest = width.max(height).max(1);
+                if longest <= ADJUST_COLOUR_PREVIEW_SIDE {
+                    return pixels;
+                }
+                let scale = ADJUST_COLOUR_PREVIEW_SIDE as f32 / longest as f32;
+                Arc::new(image::imageops::thumbnail(
+                    pixels.as_ref(),
+                    ((width as f32 * scale) as u32).max(1),
+                    ((height as f32 * scale) as u32).max(1),
+                ))
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.adjust_colour_open {
+                    this.adjust_colour_source = Some(small);
+                    this.refresh_adjust_preview(cx);
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn reset_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.adjust_colour_values = ColourAdjust::default();
+        for slider in &self.adjust_colour_sliders {
+            slider.update(cx, |state, cx| state.set_value(0.0_f32, window, cx));
+        }
+        self.adjust_colour_generation += 1;
+        if let Some(old) = self.adjust_colour_preview.take() {
+            self.garbage.push(old);
+        }
+        cx.notify();
+    }
+
+    fn close_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.adjust_colour_open = false;
+        self.adjust_colour_source = None;
+        self.adjust_colour_generation += 1;
+        if let Some(old) = self.adjust_colour_preview.take() {
+            self.garbage.push(old);
+        }
+        window.focus(&self.page_focus, cx);
+        cx.notify();
+    }
+
+    fn adjust_colour_changed(&mut self, index: usize, value: f32, cx: &mut Context<Self>) {
+        let values = &mut self.adjust_colour_values;
+        match index {
+            0 => values.exposure = value,
+            1 => values.contrast = value,
+            2 => values.highlights = value,
+            3 => values.shadows = value,
+            4 => values.saturation = value,
+            5 => values.temperature = value,
+            6 => values.tint = value,
+            7 => values.sepia = value,
+            8 => values.sharpness = value,
+            _ => return,
+        }
+        self.refresh_adjust_preview(cx);
+    }
+
+    fn refresh_adjust_preview(&mut self, cx: &mut Context<Self>) {
+        self.adjust_colour_generation += 1;
+        let generation = self.adjust_colour_generation;
+        let values = self.adjust_colour_values;
+        if values.is_identity() {
+            if let Some(old) = self.adjust_colour_preview.take() {
+                self.garbage.push(old);
+            }
+            cx.notify();
+            return;
+        }
+        let Some(source) = self.adjust_colour_source.clone() else {
+            return;
+        };
+        let rotation = self.slot().map(|slot| slot.rotation).unwrap_or_default();
+        cx.spawn(async move |this, cx| {
+            let image = blocking::unblock(move || {
+                let adjusted = adjust_colour(&source, &values);
+                render::to_render_image(render::rotate(&adjusted, rotation))
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.adjust_colour_open && this.adjust_colour_generation == generation {
+                    if let Some(old) = this.adjust_colour_preview.replace(image) {
+                        this.garbage.push(old);
+                    }
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn commit_adjust_colour(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let values = self.adjust_colour_values;
+        let pixels = self.slot().and_then(Slot::baked_pixels);
+        self.close_adjust_colour(window, cx);
+        if values.is_identity() {
+            return;
+        }
+        let Some(pixels) = pixels else { return };
+        self.markup_save_busy = true;
+        cx.spawn(async move |this, cx| {
+            let adjusted = blocking::unblock(move || adjust_colour(&pixels, &values)).await;
+            let _ = this.update(cx, |this, cx| {
+                this.markup_save_busy = false;
+                this.edit_image(move |_| adjusted, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// The Adjust Color sheet: a slider per adjustment, Reset All, Cancel
+    /// and OK.
+    fn render_adjust_colour(
+        &self,
+        palette: Palette,
+        width: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id("preview-adjust-colour")
+            .absolute()
+            .left(px((width - 300.0).max(8.0)))
+            .top(px(self.toolbar_height() + 8.0))
+            .w(px(292.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(10.0))
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child("Adjust Color"),
+            )
+            .children(
+                ADJUST_COLOUR_ROWS
+                    .iter()
+                    .zip(self.adjust_colour_sliders.iter())
+                    .map(|((label, _, _), slider)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .w(px(78.0))
+                                    .text_size(px(12.0))
+                                    .text_color(rgb(palette.glyph))
+                                    .child(*label),
+                            )
+                            .child(
+                                rmac_ui::Slider::new(slider)
+                                    .accessible_name(*label)
+                                    .w(px(180.0)),
+                            )
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .pt(px(6.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-adjust-colour-reset",
+                            "Reset All",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.reset_adjust_colour(window, cx);
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-adjust-colour-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.close_adjust_colour(window, cx);
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "preview-adjust-colour-ok",
+                            "OK",
+                            rmac_ui::DialogButtonKind::Primary,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.commit_adjust_colour(window, cx);
+                        })),
+                    ),
+            )
+            .into_any_element()
     }
 
     // ---- Tools ▸ Rectangular Selection / Crop (⌘K, PRV-MENU-055/068) -------
@@ -3531,7 +3994,15 @@ impl PreviewView {
             let reload = match redact_result {
                 Ok(()) => {
                     let reload_source = source.clone();
-                    Some(blocking::unblock(move || render::load(&reload_source)).await)
+                    Some(
+                        blocking::unblock(move || {
+                            (
+                                render::load(&reload_source),
+                                markup::prepare_editable(&reload_source, id),
+                            )
+                        })
+                        .await,
+                    )
                 }
                 Err(error) => {
                     eprintln!("rmac-preview: redact failed: {error}");
@@ -3540,7 +4011,7 @@ impl PreviewView {
             };
             let _ = this.update(cx, |this, cx| {
                 this.markup_save_busy = false;
-                if let Some(Ok(loaded)) = reload {
+                if let Some((Ok(loaded), (existing, base))) = reload {
                     if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
                         let old_display = slot.display.take();
                         let old_pages: Vec<_> =
@@ -3548,6 +4019,8 @@ impl PreviewView {
                         let old_thumbs: Vec<_> =
                             slot.thumbs.drain().map(|(_, (_, image))| image).collect();
                         slot.state = SlotState::Ready(loaded);
+                        slot.markup.adopt(existing);
+                        slot.base = base;
                         slot.text = TextState::NotLoaded;
                         slot.pending.clear();
                         if let Some((_, image)) = old_display {
@@ -3557,7 +4030,7 @@ impl PreviewView {
                         this.garbage.extend(old_thumbs);
                     }
                     this.text_selection = None;
-                } else if let Some(Err(error)) = reload {
+                } else if let Some((Err(error), _)) = reload {
                     eprintln!("rmac-preview: redacted page could not be reloaded: {error}");
                 }
                 cx.notify();
@@ -3569,7 +4042,7 @@ impl PreviewView {
     /// Edit ▸ Insert ▸ Blank Page (PRV-MENU-007): an empty, same-size page
     /// after the current one.
     fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
-        self.edit_pdf_pages("insert a blank page", markup::insert_blank_page, cx);
+        self.edit_pdf_pages("insert a blank page", markup::insert_blank_page, true, cx);
     }
 
     /// Edit ▸ Insert ▸ Page from File… (PRV-MENU-005): choose a PDF or an
@@ -3579,7 +4052,7 @@ impl PreviewView {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) || !slot.markup.items.is_empty() {
+        if slot.kind() != Some(Kind::Pdf) || slot.markup.dirty || slot.markup_original.is_some() {
             return;
         }
         let receiver = cx.prompt_for_paths(PathPromptOptions {
@@ -3600,6 +4073,7 @@ impl PreviewView {
                         let incoming = markup::document_for_insertion(&other)?;
                         markup::insert_pages_from(source, incoming, temporary, after).map(|_| ())
                     },
+                    true,
                     cx,
                 );
             });
@@ -3617,13 +4091,14 @@ impl PreviewView {
         &mut self,
         what: &'static str,
         edit: impl FnOnce(&Path, &Path, usize) -> Result<(), String> + Send + 'static,
+        lands_after: bool,
         cx: &mut Context<Self>,
     ) {
         if self.markup_save_busy {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) || !slot.markup.items.is_empty() {
+        if slot.kind() != Some(Kind::Pdf) || slot.markup.dirty || slot.markup_original.is_some() {
             return;
         }
         let source = slot.path.clone();
@@ -3646,7 +4121,15 @@ impl PreviewView {
             let reload = match written {
                 Ok(()) => {
                     let reload_source = source.clone();
-                    Some(blocking::unblock(move || render::load(&reload_source)).await)
+                    Some(
+                        blocking::unblock(move || {
+                            (
+                                render::load(&reload_source),
+                                markup::prepare_editable(&reload_source, id),
+                            )
+                        })
+                        .await,
+                    )
                 }
                 Err(error) => {
                     eprintln!("rmac-preview: could not {what}: {error}");
@@ -3655,7 +4138,7 @@ impl PreviewView {
             };
             let _ = this.update(cx, |this, cx| {
                 this.markup_save_busy = false;
-                if let Some(Ok(loaded)) = reload {
+                if let Some((Ok(loaded), (existing, base))) = reload {
                     if let Some(slot) = this.slots.iter_mut().find(|slot| slot.id == id) {
                         let old_display = slot.display.take();
                         let old_pages: Vec<_> =
@@ -3663,10 +4146,14 @@ impl PreviewView {
                         let old_thumbs: Vec<_> =
                             slot.thumbs.drain().map(|(_, (_, image))| image).collect();
                         slot.state = SlotState::Ready(loaded);
+                        slot.markup.adopt(existing);
+                        slot.base = base;
                         slot.text = TextState::NotLoaded;
                         slot.pending.clear();
-                        slot.current_page =
-                            (after + 1).min(slot.page_sizes().len().saturating_sub(1));
+                        // An insert lands on the new page after the current
+                        // one; a delete on the page that took its place.
+                        slot.current_page = (after + usize::from(lands_after))
+                            .min(slot.page_sizes().len().saturating_sub(1));
                         if let Some((_, image)) = old_display {
                             this.garbage.push(image);
                         }
@@ -3674,7 +4161,7 @@ impl PreviewView {
                         this.garbage.extend(old_thumbs);
                     }
                     this.text_selection = None;
-                } else if let Some(Err(error)) = reload {
+                } else if let Some((Err(error), _)) = reload {
                     eprintln!("rmac-preview: the edited PDF could not be reloaded: {error}");
                 }
                 cx.notify();
@@ -3803,8 +4290,25 @@ impl PreviewView {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        let Some((_, pixels)) = slot.final_image_pixels() else {
-            return;
+        // A PDF exports the page on screen as a picture (PREV-26); a
+        // picture exports its pixels.
+        let pdf_page = match (slot.kind(), slot.loaded().map(|loaded| &loaded.content)) {
+            (Some(Kind::Pdf), Some(Content::Pdf(info))) => {
+                info.pages.get(slot.current_page).map(|page| {
+                    (
+                        slot.path.clone(),
+                        slot.current_page,
+                        page.displayed(),
+                        slot.rotation,
+                    )
+                })
+            }
+            _ => None,
+        };
+        let pixels = match (&pdf_page, slot.final_image_pixels()) {
+            (Some(_), _) => None,
+            (None, Some((_, pixels))) => Some(pixels),
+            (None, None) => return,
         };
         let directory = slot
             .path
@@ -3822,7 +4326,18 @@ impl PreviewView {
         cx.spawn_in(window, async move |this, cx| {
             let result = match receiver.await {
                 Ok(Ok(Some(path))) => {
-                    blocking::unblock(move || render::export_image(&pixels, &path)).await
+                    blocking::unblock(move || {
+                        let pixels = match (pixels, pdf_page) {
+                            (Some(pixels), _) => pixels,
+                            (None, Some((source, page, size, rotation))) => {
+                                // Twice the point size: 144 dpi.
+                                Arc::new(render::render_page(&source, page, size, 2.0, rotation)?)
+                            }
+                            (None, None) => return Ok(()),
+                        };
+                        render::export_image(&pixels, &path)
+                    })
+                    .await
                 }
                 _ => Ok(()),
             };
@@ -4045,7 +4560,7 @@ impl PreviewView {
         }
         let Some(slot) = self.slot() else { return };
         let image = match slot.loaded().map(|loaded| &loaded.content) {
-            Some(Content::Image(image)) => Some((image.pixels.clone(), slot.rotation)),
+            Some(Content::Image(_)) => slot.baked_pixels().map(|pixels| (pixels, slot.rotation)),
             Some(Content::Pdf(_)) => None,
             None => return,
         };
@@ -4146,15 +4661,16 @@ impl PreviewView {
         let source = slot.path.clone();
         let id = slot.id;
         let revision = slot.markup.revision;
-        let marked_pdf =
-            (slot.kind() == Some(Kind::Pdf) && !slot.markup.items.is_empty()).then(|| {
-                (
-                    slot.markup_original
-                        .clone()
-                        .unwrap_or_else(|| source.clone()),
-                    slot.markup.items.clone(),
-                )
-            });
+        let marked_pdf = (slot.kind() == Some(Kind::Pdf)
+            && (slot.markup.dirty || slot.markup_original.is_some()))
+        .then(|| {
+            (
+                slot.markup_original
+                    .clone()
+                    .unwrap_or_else(|| source.clone()),
+                slot.markup.items.clone(),
+            )
+        });
         let image_save = marked_pdf
             .is_none()
             .then(|| slot.final_image_pixels())
@@ -4194,7 +4710,13 @@ impl PreviewView {
                         }
                         Some(backup)
                     } else if let Some((kind, pixels)) = image_save {
-                        render::write_image(&pixels, kind, &temporary)?;
+                        if kind.is_writable() {
+                            render::write_image(&pixels, kind, &temporary)?;
+                        } else {
+                            // SVG, Photoshop and RAW can’t be written back:
+                            // Save As writes the format the new name asks for.
+                            render::export_image_to(&pixels, &destination, &temporary)?;
+                        }
                         None
                     } else {
                         std::fs::copy(&source, &temporary).map_err(|error| error.to_string())?;
@@ -4249,8 +4771,13 @@ impl PreviewView {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) {
-            eprintln!("rmac-preview: exporting an image as PDF isn't supported yet");
+        // A picture becomes a one-page PDF (with its markup and rotation).
+        let picture = match slot.kind() {
+            Some(Kind::Pdf) => None,
+            Some(Kind::Image(_)) => slot.baked_pixels().map(|pixels| (pixels, slot.rotation)),
+            None => return,
+        };
+        if slot.kind() != Some(Kind::Pdf) && picture.is_none() {
             return;
         }
         let source = slot.path.clone();
@@ -4258,11 +4785,21 @@ impl PreviewView {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."));
-        let suggested_name = source
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(str::to_owned)
-            .unwrap_or_else(|| "Untitled.pdf".to_owned());
+        let suggested_name = if picture.is_some() {
+            format!(
+                "{}.pdf",
+                source
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Untitled".to_owned())
+            )
+        } else {
+            source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+                .unwrap_or_else(|| "Untitled.pdf".to_owned())
+        };
         self.export_busy = true;
         cx.notify();
         let receiver = cx.prompt_for_new_path(&directory, Some(&suggested_name));
@@ -4277,7 +4814,20 @@ impl PreviewView {
             };
             let result = cx
                 .background_executor()
-                .spawn(async move { std::fs::copy(&source, &destination).map(|_| ()) })
+                .spawn(async move {
+                    match picture {
+                        None => std::fs::copy(&source, &destination).map(|_| ()),
+                        Some((pixels, rotation)) => {
+                            let (jpeg, width, height) =
+                                render::encode_print_jpeg(&pixels, rotation)
+                                    .map_err(std::io::Error::other)?;
+                            std::fs::write(
+                                &destination,
+                                rmac_preview::pdfwriter::wrap_jpeg(&jpeg, width, height),
+                            )
+                        }
+                    }
+                })
                 .await;
             let _ = this.update_in(cx, |this, _, cx| {
                 this.export_busy = false;
@@ -4866,7 +5416,11 @@ impl PreviewView {
                         continue;
                     }
                     self.in_flight += 1;
-                    let (id, path, rotation) = (slot.id, slot.path.clone(), slot.rotation);
+                    let (id, rotation) = (slot.id, slot.rotation);
+                    let path = slot
+                        .base
+                        .as_ref()
+                        .map_or_else(|| slot.path.clone(), |base| base.path().to_path_buf());
                     let page_size = info.pages[page].displayed();
                     cx.spawn(async move |this, cx| {
                         let rendered = cx
@@ -4973,6 +5527,15 @@ impl PreviewView {
                 "escape" => self.slideshow = false,
                 "left" | "up" => self.slideshow_step(-1, cx),
                 "right" | "down" | "space" => self.slideshow_step(1, cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if self.adjust_colour_open {
+            match event.keystroke.key.as_str() {
+                "escape" => self.close_adjust_colour(window, cx),
+                "enter" => self.commit_adjust_colour(window, cx),
                 _ => return,
             }
             cx.stop_propagation();
@@ -5563,6 +6126,11 @@ impl PreviewView {
                 "markup-line" => "Line",
                 "markup-arrow" => "Arrow",
                 "markup-text" => "Text",
+                "markup-shapes" => "Shapes",
+                "markup-note" => "Note",
+                "markup-colour" => "Colour",
+                "markup-fill" => "Fill",
+                "markup-font-size" => "Text size",
                 "markup-color-yellow" => "Yellow",
                 "markup-color-blue" => "Blue",
                 _ => label,
@@ -5606,6 +6174,7 @@ impl PreviewView {
             .flex()
             .items_center()
             .gap(px(5.0))
+            .overflow_x_scroll()
             .bg(rgb(palette.window))
             .border_b_1()
             .border_color(rgb(palette.divider))
@@ -5684,10 +6253,38 @@ impl PreviewView {
                 control("markup-width", "Line width", false)
                     .on_click(cx.listener(|this, _, _, cx| this.step_markup_width(cx))),
             )
+            .child(
+                control(
+                    "markup-shapes",
+                    "Shapes",
+                    matches!(
+                        self.markup_tool,
+                        Tool::Polygon | Tool::Star | Tool::SpeechBubble | Tool::Mask
+                    ),
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.step_markup_shape(cx))),
+            )
+            .child(
+                control("markup-note", "Note", self.markup_tool == Tool::Note).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Note, cx)),
+                ),
+            )
+            .child(
+                control("markup-colour", "Colour", false)
+                    .on_click(cx.listener(|this, _, _, cx| this.step_markup_colour(cx))),
+            )
+            .child(
+                control("markup-fill", "Fill", self.markup_fill.is_some())
+                    .on_click(cx.listener(|this, _, _, cx| this.step_markup_fill(cx))),
+            )
+            .child(
+                control("markup-font-size", "Aa", false)
+                    .on_click(cx.listener(|this, _, _, cx| this.step_markup_font_size(cx))),
+            )
             .when(
                 self.markup_selected
                     .and_then(|i| self.slot()?.markup.items.get(i))
-                    .is_some_and(|a| a.tool == Tool::Text),
+                    .is_some_and(|a| matches!(a.tool, Tool::Text | Tool::Note)),
                 |row| {
                     row.child(
                         div()
@@ -6128,6 +6725,12 @@ impl PreviewView {
                         let scale = slot.zoom.resolve(slot.fit_scale(viewport));
                         let shown = (size.0 * scale, size.1 * scale);
                         let origin = layout::centred_origin(shown, viewport);
+                        // Adjust Color shows its live preview over the picture.
+                        let shown_image = self
+                            .adjust_colour_preview
+                            .clone()
+                            .filter(|_| self.adjust_colour_open)
+                            .or_else(|| slot.display.clone().map(|(_, image)| image));
                         div()
                             .relative()
                             .w(px(shown.0.max(viewport.0)))
@@ -6143,7 +6746,7 @@ impl PreviewView {
                                         .bg(rgb(0xFFFFFF)),
                                 )
                             })
-                            .when_some(slot.display.clone(), |content, (_, image)| {
+                            .when_some(shown_image, |content, image| {
                                 content.child(
                                     img(image)
                                         .absolute()
@@ -6151,6 +6754,38 @@ impl PreviewView {
                                         .top(px(origin.1))
                                         .w(px(shown.0))
                                         .h(px(shown.1)),
+                                )
+                            })
+                            .when(!slot.markup.items.is_empty(), |content| {
+                                let canvas = match &loaded.content {
+                                    Content::Image(image) => {
+                                        let (w, h) = image.pixels.dimensions();
+                                        (w as f32, h as f32)
+                                    }
+                                    Content::Pdf(_) => (1.0, 1.0),
+                                };
+                                let annotations: Vec<_> =
+                                    slot.markup.items.iter().cloned().enumerate().collect();
+                                content.child(
+                                    div()
+                                        .absolute()
+                                        .left(px(origin.0))
+                                        .top(px(origin.1))
+                                        .w(px(shown.0))
+                                        .h(px(shown.1))
+                                        .children(markup_elements(
+                                            shown.0,
+                                            shown.1,
+                                            PageMarkupRender {
+                                                annotations,
+                                                rotation: slot.rotation,
+                                                selected: self.markup_selected,
+                                                drawing: self.markup_drag.map(|drag| drag.index),
+                                                selection_color: palette.selection,
+                                                canvas,
+                                                unit: rmac_preview::shapes::image_unit(canvas),
+                                            },
+                                        )),
                                 )
                             })
                             .when_some(slot.selection, |content, selection| {
@@ -6215,6 +6850,8 @@ impl PreviewView {
                                     selected: self.markup_selected,
                                     drawing: self.markup_drag.map(|drag| drag.index),
                                     selection_color: palette.selection,
+                                    canvas: slot.rotation.inverse().apply(sizes[page]),
+                                    unit: 1.0,
                                 },
                             )
                         });
@@ -6294,21 +6931,26 @@ impl PreviewView {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                            this.selection_mouse_down(event, window, cx);
+                            if !this.markup_mouse_down(event, window, cx) {
+                                this.selection_mouse_down(event, window, cx);
+                            }
                         }),
                     )
                     .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                        this.markup_mouse_move(event, cx);
                         this.selection_mouse_move(event, cx);
                     }))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.markup_mouse_up(cx);
                             this.selection_mouse_up(cx);
                         }),
                     )
                     .on_mouse_up_out(
                         MouseButton::Left,
                         cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.markup_mouse_up(cx);
                             this.selection_mouse_up(cx);
                         }),
                     )
@@ -7290,12 +7932,33 @@ fn message(text: &str, palette: Palette) -> AnyElement {
         .into_any_element()
 }
 
+/// Adjust Color's rows: label and slider range.
+const ADJUST_COLOUR_ROWS: [(&str, f32, f32); 9] = [
+    ("Exposure", -2.0, 2.0),
+    ("Contrast", -1.0, 1.0),
+    ("Highlights", -1.0, 1.0),
+    ("Shadows", -1.0, 1.0),
+    ("Saturation", -1.0, 1.0),
+    ("Temperature", -1.0, 1.0),
+    ("Tint", -1.0, 1.0),
+    ("Sepia", 0.0, 1.0),
+    ("Sharpness", 0.0, 1.0),
+];
+
+/// Longest side of the copy the Adjust Color preview is computed from.
+const ADJUST_COLOUR_PREVIEW_SIDE: u32 = 1000;
+
 struct PageMarkupRender {
     annotations: Vec<(usize, Annotation)>,
     rotation: Rotation,
     selected: Option<usize>,
     drawing: Option<usize>,
     selection_color: u32,
+    /// The canvas the annotations are placed on, unrotated, in its own
+    /// units (PDF points, or image pixels), and how many of those units
+    /// one markup "point" of line width or type size is.
+    canvas: (f32, f32),
+    unit: f32,
 }
 
 fn render_page(
@@ -7304,14 +7967,6 @@ fn render_page(
     highlights: Vec<(layout::UnitRect, u32)>,
     markup: PageMarkupRender,
 ) -> AnyElement {
-    let PageMarkupRender {
-        annotations,
-        rotation,
-        selected,
-        drawing,
-        selection_color,
-    } = markup;
-    let draw_items = annotations.clone();
     div()
         .absolute()
         .left(px(rect.x))
@@ -7331,29 +7986,57 @@ fn render_page(
                 .rounded(px(2.0))
                 .bg(rgba(color))
         }))
-        .children(annotations.into_iter().filter_map(move |(index, item)| {
+        .children(markup_elements(rect.width, rect.height, markup))
+        .into_any_element()
+}
+
+/// The markup drawn over a page or an image `width` x `height` on screen:
+/// text boxes and markers as elements, every other shape as paths from
+/// [`rmac_preview::shapes`] (the same outlines a saved PDF or a baked image
+/// uses), and a handle on the selected item.
+fn markup_elements(width: f32, height: f32, markup: PageMarkupRender) -> Vec<AnyElement> {
+    let PageMarkupRender {
+        annotations,
+        rotation,
+        selected,
+        drawing,
+        selection_color,
+        canvas,
+        unit,
+    } = markup;
+    if annotations.is_empty() {
+        return Vec::new();
+    }
+    // Screen pixels per canvas unit, and per markup point.
+    let shown_canvas = rotation.apply(canvas);
+    let per_unit = width / shown_canvas.0.max(1.0);
+    let per_point = per_unit * unit;
+    let draw_items = annotations.clone();
+    let mut elements: Vec<AnyElement> = annotations
+        .into_iter()
+        .filter_map(move |(index, item)| {
             let r = rotation.apply_unit_rect(item.rect);
             match item.tool {
                 Tool::Highlight => Some(
                     div()
                         .absolute()
-                        .left(px(r.x0 * rect.width))
-                        .top(px(r.y0 * rect.height))
-                        .w(px((r.x1 - r.x0) * rect.width))
-                        .h(px((r.y1 - r.y0) * rect.height))
+                        .left(px(r.x0 * width))
+                        .top(px(r.y0 * height))
+                        .w(px((r.x1 - r.x0) * width))
+                        .h(px((r.y1 - r.y0) * height))
                         .bg(rgba((item.color << 8) | 0x66))
                         .into_any_element(),
                 ),
                 Tool::Underline | Tool::StrikeThrough => Some(
                     div()
                         .absolute()
-                        .left(px(r.x0 * rect.width))
+                        .left(px(r.x0 * width))
                         .top(px(if item.tool == Tool::Underline {
-                            r.y1 * rect.height - 2.0
+                            r.y1 * height - 2.0
                         } else {
-                            (r.y0 + r.y1) * rect.height / 2.0
+                            (r.y0 + r.y1) * height / 2.0
                         }))
-                        .w(px((r.x1 - r.x0) * rect.width))
+                        .w(px((r.x1 - r.x0) * width))
                         .h(px(2.0))
                         .bg(rgb(item.color))
                         .into_any_element(),
@@ -7361,164 +8044,108 @@ fn render_page(
                 Tool::Text => Some(
                     div()
                         .absolute()
-                        .left(px(r.x0 * rect.width))
-                        .top(px(r.y0 * rect.height))
-                        .text_size(px(16.0))
+                        .left(px(r.x0 * width))
+                        .top(px(r.y0 * height))
+                        .text_size(px((item.font_size * per_point).max(4.0)))
                         .text_color(rgb(item.color))
                         .child(item.text)
-                        .into_any_element(),
-                ),
-                Tool::Rectangle | Tool::Oval => Some(
-                    div()
-                        .absolute()
-                        .left(px(r.x0 * rect.width))
-                        .top(px(r.y0 * rect.height))
-                        .w(px((r.x1 - r.x0) * rect.width))
-                        .h(px((r.y1 - r.y0) * rect.height))
-                        .border(px(item.width.max(1.0)))
-                        .border_color(rgb(item.color))
-                        .when(item.tool == Tool::Oval, |shape| shape.rounded_full())
-                        .when(selected == Some(index), |shape| {
-                            shape.child(
-                                div()
-                                    .absolute()
-                                    .right(px(-5.0))
-                                    .bottom(px(-5.0))
-                                    .size(px(10.0))
-                                    .rounded_full()
-                                    .bg(rgb(selection_color)),
-                            )
-                        })
                         .into_any_element(),
                 ),
                 _ => (selected == Some(index)).then(|| {
                     div()
                         .absolute()
-                        .left(px(r.x1 * rect.width - 5.0))
-                        .top(px(r.y1 * rect.height - 5.0))
+                        .left(px(r.x1 * width - 5.0))
+                        .top(px(r.y1 * height - 5.0))
                         .size(px(10.0))
                         .rounded_full()
                         .bg(rgb(selection_color))
                         .into_any_element()
                 }),
             }
-        }))
-        .child(
-            canvas(
-                |_, _, _| (),
-                move |bounds, (), window, _| {
-                    let origin = bounds.origin;
-                    let width = f32::from(bounds.size.width);
-                    let height = f32::from(bounds.size.height);
-                    let at = |p: (f32, f32)| {
-                        point(origin.x + px(p.0 * width), origin.y + px(p.1 * height))
-                    };
-                    for (index, item) in &draw_items {
-                        if matches!(
-                            item.tool,
-                            Tool::Highlight
-                                | Tool::Underline
-                                | Tool::StrikeThrough
-                                | Tool::Select
-                                | Tool::Text
-                        ) {
-                            continue;
-                        }
-                        let r = rotation.apply_unit_rect(item.rect);
-                        let mut path = PathBuilder::stroke(px(item.width.max(1.0)));
-                        match item.tool {
-                            Tool::Rectangle | Tool::Oval => continue,
-                            Tool::Line | Tool::Arrow => {
-                                let point_on_page = |normalized: (f32, f32)| {
-                                    let raw = if drawing == Some(*index) {
-                                        normalized
-                                    } else {
-                                        (
-                                            item.rect.x0
-                                                + normalized.0 * (item.rect.x1 - item.rect.x0),
-                                            item.rect.y0
-                                                + normalized.1 * (item.rect.y1 - item.rect.y0),
-                                        )
-                                    };
-                                    let p = rotation.apply_unit_rect(layout::UnitRect {
-                                        x0: raw.0,
-                                        y0: raw.1,
-                                        x1: raw.0,
-                                        y1: raw.1,
-                                    });
-                                    (p.x0, p.y0)
-                                };
-                                let start = item
-                                    .path
-                                    .first()
-                                    .copied()
-                                    .map(point_on_page)
-                                    .unwrap_or((r.x0, r.y0));
-                                let end = item
-                                    .path
-                                    .get(1)
-                                    .copied()
-                                    .map(point_on_page)
-                                    .unwrap_or((r.x1, r.y1));
-                                path.move_to(at(start));
-                                path.line_to(at(end));
-                                if item.tool == Tool::Arrow {
-                                    let dx = (end.0 - start.0) * width;
-                                    let dy = (end.1 - start.1) * height;
-                                    let length = dx.hypot(dy).max(1.0);
-                                    let ux = dx / length;
-                                    let uy = dy / length;
-                                    let tip = at(end);
-                                    path.move_to(tip);
-                                    path.line_to(point(
-                                        tip.x - px(12.0 * ux - 5.0 * uy),
-                                        tip.y - px(12.0 * uy + 5.0 * ux),
-                                    ));
-                                    path.move_to(tip);
-                                    path.line_to(point(
-                                        tip.x - px(12.0 * ux + 5.0 * uy),
-                                        tip.y - px(12.0 * uy - 5.0 * ux),
-                                    ));
-                                }
-                            }
-                            Tool::Sketch | Tool::Signature => {
-                                for (n, &(x, y)) in item.path.iter().enumerate() {
-                                    let raw = if drawing == Some(*index) {
-                                        (x, y)
-                                    } else {
-                                        (
-                                            item.rect.x0 + x * (item.rect.x1 - item.rect.x0),
-                                            item.rect.y0 + y * (item.rect.y1 - item.rect.y0),
-                                        )
-                                    };
-                                    let p = rotation.apply_unit_rect(layout::UnitRect {
-                                        x0: raw.0,
-                                        y0: raw.1,
-                                        x1: raw.0,
-                                        y1: raw.1,
-                                    });
-                                    if n == 0 {
-                                        path.move_to(at((p.x0, p.y0)));
-                                    } else {
-                                        path.line_to(at((p.x0, p.y0)));
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
+        })
+        .collect();
+    elements.push(canvas_element(
+        width, height, draw_items, rotation, drawing, canvas, unit, per_unit,
+    ));
+    elements
+}
+
+#[allow(clippy::too_many_arguments)]
+fn canvas_element(
+    width: f32,
+    height: f32,
+    items: Vec<(usize, Annotation)>,
+    rotation: Rotation,
+    drawing: Option<usize>,
+    canvas_size: (f32, f32),
+    unit: f32,
+    per_unit: f32,
+) -> AnyElement {
+    gpui::canvas(
+        |_, _, _| (),
+        move |bounds, (), window, _| {
+            let origin = bounds.origin;
+            // A point on the unrotated canvas, to the screen.
+            let at = |p: (f32, f32)| {
+                let moved = rotation.apply_unit_rect(layout::UnitRect {
+                    x0: p.0 / canvas_size.0,
+                    y0: p.1 / canvas_size.1,
+                    x1: p.0 / canvas_size.0,
+                    y1: p.1 / canvas_size.1,
+                });
+                point(
+                    origin.x + px(moved.x0 * width),
+                    origin.y + px(moved.y0 * height),
+                )
+            };
+            for (index, item) in &items {
+                if matches!(
+                    item.tool,
+                    Tool::Highlight
+                        | Tool::Underline
+                        | Tool::StrikeThrough
+                        | Tool::Select
+                        | Tool::Text
+                ) {
+                    continue;
+                }
+                let absolute = drawing == Some(*index)
+                    && matches!(
+                        item.tool,
+                        Tool::Line | Tool::Arrow | Tool::Sketch | Tool::Signature
+                    );
+                for outline in rmac_preview::shapes::outlines(item, canvas_size, unit, absolute) {
+                    let points: Vec<_> = outline.points.iter().map(|&p| at(p)).collect();
+                    if points.len() < 2 {
+                        continue;
+                    }
+                    if let Some((colour, alpha)) = outline.fill {
+                        let mut path = PathBuilder::fill();
+                        path.add_polygon(&points, true);
                         if let Ok(path) = path.build() {
-                            window.paint_path(path, rgb(item.color));
+                            window.paint_path(
+                                path,
+                                rgba((colour << 8) | (alpha.clamp(0.0, 1.0) * 255.0) as u32),
+                            );
                         }
                     }
-                },
-            )
-            .absolute()
-            .left_0()
-            .top_0()
-            .w(px(rect.width))
-            .h(px(rect.height)),
-        )
-        .into_any_element()
+                    if let Some((colour, line)) = outline.stroke {
+                        let mut path = PathBuilder::stroke(px((line * per_unit).max(1.0)));
+                        path.add_polygon(&points, outline.closed);
+                        if let Ok(path) = path.build() {
+                            window.paint_path(path, rgb(colour));
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .absolute()
+    .left_0()
+    .top_0()
+    .w(px(width))
+    .h(px(height))
+    .into_any_element()
 }
 
 impl Render for PreviewView {
@@ -7689,10 +8316,12 @@ impl Render for PreviewView {
             );
             rmac_ui::set_menu_enabled(
                 "preview::DeleteSelection",
-                self.markup_selected
+                (self
+                    .markup_selected
                     .and_then(|index| self.slot()?.markup.items.get(index))
                     .is_some()
-                    && !self.markup_save_busy,
+                    && !self.markup_save_busy)
+                    || self.can_delete_page(),
                 cx,
             );
             rmac_ui::set_menu_enabled("preview::MoveToTrash", loaded && !self.markup_save_busy, cx);
@@ -7733,14 +8362,16 @@ impl Render for PreviewView {
                 rmac_ui::set_menu_enabled(
                     action,
                     pdf && !self.markup_save_busy
-                        && self.slot().is_some_and(|slot| slot.markup.items.is_empty()),
+                        && self.slot().is_some_and(|slot| {
+                            !slot.markup.dirty && slot.markup_original.is_none()
+                        }),
                     cx,
                 );
             }
+            let picture = self
+                .slot()
+                .is_some_and(|slot| matches!(slot.kind(), Some(Kind::Image(_))));
             for action in [
-                "preview::AnnotateHighlight",
-                "preview::AnnotateUnderline",
-                "preview::AnnotateStrikeThrough",
                 "preview::AnnotateRectangle",
                 "preview::AnnotateSignature",
                 "preview::AnnotateArrow",
@@ -7752,6 +8383,13 @@ impl Render for PreviewView {
                 "preview::AnnotateSpeechBubble",
                 "preview::AnnotateMask",
                 "preview::AnnotateNote",
+            ] {
+                rmac_ui::set_menu_enabled(action, pdf || picture, cx);
+            }
+            for action in [
+                "preview::AnnotateHighlight",
+                "preview::AnnotateUnderline",
+                "preview::AnnotateStrikeThrough",
                 "preview::ShowTableOfContents",
                 "preview::ShowHighlightsAndNotes",
                 "preview::ContinuousScroll",
@@ -7810,7 +8448,12 @@ impl Render for PreviewView {
                 cx,
             );
             rmac_ui::set_menu_enabled("preview::AdjustSize", is_image, cx);
-            rmac_ui::set_menu_enabled("preview::ExportAs", is_image && !self.export_as_busy, cx);
+            rmac_ui::set_menu_enabled(
+                "preview::AdjustColour",
+                is_image && !self.markup_save_busy && !self.adjust_colour_open,
+                cx,
+            );
+            rmac_ui::set_menu_enabled("preview::ExportAs", loaded && !self.export_as_busy, cx);
             rmac_ui::set_menu_enabled("preview::UseDarkAppearanceForPdf", pdf, cx);
             rmac_ui::set_menu_enabled(
                 "preview::ZoomToSelection",
@@ -7819,7 +8462,7 @@ impl Render for PreviewView {
             );
             rmac_ui::set_menu_enabled("preview::Back", !self.back.is_empty(), cx);
             rmac_ui::set_menu_enabled("preview::Forward", !self.forward.is_empty(), cx);
-            rmac_ui::set_menu_enabled("preview::ExportAsPdf", pdf, cx);
+            rmac_ui::set_menu_enabled("preview::ExportAsPdf", loaded && !self.export_busy, cx);
             rmac_ui::set_menu_enabled("preview::ShowBookmarks", pdf && !multiple, cx);
             rmac_ui::set_menu_enabled("preview::AddBookmark", pdf && !multiple, cx);
             rmac_ui::set_menu_enabled("preview::UseSelectionForFind", selected_text, cx);
@@ -8035,7 +8678,7 @@ impl Render for PreviewView {
                 this.choose_annotation(Tool::Rectangle, cx);
             }))
             .on_action(cx.listener(|this, _: &AnnotateSignature, _, cx| {
-                if this.slot().and_then(Slot::kind) == Some(Kind::Pdf) {
+                if this.slot().is_some_and(|slot| slot.loaded().is_some()) {
                     this.choose_signature(cx);
                     this.markup_shown = true;
                 }
@@ -8129,6 +8772,9 @@ impl Render for PreviewView {
             .on_action(cx.listener(|this, _: &AdjustSize, window, cx| {
                 this.open_adjust_size(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &AdjustColour, window, cx| {
+                this.open_adjust_colour(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &ExportAs, window, cx| this.export_as(window, cx)))
             .on_action(cx.listener(|_, _: &TakeScreenshotSelection, _, _| {
                 PreviewView::take_screenshot("selection");
@@ -8164,7 +8810,19 @@ impl Render for PreviewView {
                 this.markup_shown = !this.markup_shown;
                 cx.notify();
             }))
-            .on_action(cx.listener(|this, _: &SaveMarkup, _, cx| this.save_markup(cx)))
+            .on_action(cx.listener(|this, _: &SaveMarkup, window, cx| {
+                // SVG, Photoshop and RAW pictures have no way to be written
+                // back as themselves: Save asks where to put a PNG instead.
+                let read_only = this.slot().is_some_and(|slot| {
+                    slot.edited()
+                        && matches!(slot.kind(), Some(Kind::Image(kind)) if !kind.is_writable())
+                });
+                if read_only {
+                    this.save_as(window, cx);
+                } else {
+                    this.save_markup(cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &RevertMarkup, _, cx| this.revert_markup(cx)))
             .on_action(cx.listener(|this, _: &UndoMarkup, _, cx| {
                 match this.slot().and_then(Slot::kind) {
@@ -8233,6 +8891,9 @@ impl Render for PreviewView {
                     &self.adjust_size_width,
                     &self.adjust_size_height,
                 ))
+            })
+            .when(self.adjust_colour_open, |root| {
+                root.child(self.render_adjust_colour(palette, width, cx))
             })
             .when(self.manage_signatures_open, |root| {
                 root.child(self.render_manage_signatures(palette, width, height, cx))

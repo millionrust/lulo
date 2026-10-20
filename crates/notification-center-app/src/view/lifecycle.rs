@@ -157,6 +157,7 @@ impl NotificationCenterView {
             scale_factor: window.scale_factor(),
             app_menu: None,
             menu_target: None,
+            clear_menu: None,
             opened: std::time::Instant::now(),
             closing: None,
             reduce_motion: rmac_hardware::adaptations().reduce_motion,

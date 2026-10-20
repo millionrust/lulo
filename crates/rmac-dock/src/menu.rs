@@ -39,6 +39,8 @@ pub enum Section {
     Applications,
     Commands,
     Windows,
+    /// The app's recent documents, under its windows (DOCK-15).
+    Documents,
     Organization,
     /// Open or Quit, always last in a macOS Dock menu.
     Lifecycle,
@@ -262,6 +264,7 @@ impl Session {
     pub fn context(menu: &ContextMenu) -> Result<Self, MenuError> {
         let row_count = usize::from(menu.open.is_some())
             + menu.application_commands.len()
+            + menu.recent_documents.len()
             + menu.windows.len()
             + 1
             + usize::from(menu.show_in_finder.is_some())
@@ -297,6 +300,24 @@ impl Session {
                 alternate_label: None,
                 submenu: None,
             }
+        }));
+        rows.extend(menu.recent_documents.iter().map(|document| Row {
+            id: RowId::ApplicationCommand(document.id.clone()),
+            section: Section::Documents,
+            label: bounded(&document.name),
+            accessible_label: bounded(&format!(
+                "{}, recent document of {}",
+                bounded(&document.name),
+                bounded(&menu.application_name)
+            )),
+            enabled: true,
+            checked: false,
+            urgent: false,
+            destructive: false,
+            primary: Some(Action::Context(document.action.clone())),
+            secondary: None,
+            alternate_label: None,
+            submenu: None,
         }));
         rows.extend(menu.application_commands.iter().map(|command| Row {
             id: RowId::ApplicationCommand(command.id.clone()),
@@ -1085,6 +1106,7 @@ mod tests {
             app_id: "terminal.desktop".into(),
             application_name: "Terminal".into(),
             open: None,
+            recent_documents: Vec::new(),
             application_commands: Vec::new(),
             windows: vec![WindowMenu {
                 id: rmac_compositor::WindowId(7),
@@ -1193,6 +1215,7 @@ mod tests {
             app_id: "music.desktop".into(),
             application_name: "Music".into(),
             open: None,
+            recent_documents: Vec::new(),
             application_commands: Vec::new(),
             windows: Vec::new(),
             show_in_finder: None,
@@ -1233,6 +1256,7 @@ mod tests {
             app_id: "music.desktop".into(),
             application_name: "Music".into(),
             open: Some(launch.clone()),
+            recent_documents: Vec::new(),
             application_commands: Vec::new(),
             windows: Vec::new(),
             show_in_finder: None,
@@ -1292,6 +1316,7 @@ mod tests {
                     terminal: false,
                 },
             }),
+            recent_documents: Vec::new(),
             application_commands: vec![crate::ApplicationCommand {
                 id: "new-window".into(),
                 name: "New Window".into(),

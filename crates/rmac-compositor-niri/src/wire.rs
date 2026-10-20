@@ -64,7 +64,7 @@ pub enum Action {
     DoScreenTransition {
         delay_ms: Option<u16>,
     },
-    /// Lulo OS's niri patch 0003 (Window ▸ Always on Top).
+    /// Lulo OS's niri patch 0004 (Window ▸ Always on Top).
     SetWindowAlwaysOnTop {
         id: Option<u64>,
         on: bool,
@@ -201,7 +201,7 @@ pub struct Window {
     pub is_focused: bool,
     pub is_floating: bool,
     pub is_urgent: bool,
-    /// Absent from a niri without Lulo OS's patch 0003.
+    /// Absent from a niri without Lulo OS's patch 0004.
     #[serde(default)]
     pub is_always_on_top: bool,
     pub layout: WindowLayout,

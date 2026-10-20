@@ -387,6 +387,22 @@ impl FinderView {
         self.reload(cx);
     }
 
+    /// View ▸ Sort By and the Sort By menus: choosing the key already in use
+    /// keeps its direction, as Finder does; only a column title reverses it.
+    pub(super) fn choose_sort(&mut self, key: SortKey, cx: &mut Context<Self>) {
+        if self.sort_key == key && !self.search_relevance_order {
+            self.menu_at = None;
+            cx.notify();
+            return;
+        }
+        if self.sort_key == key {
+            // Leaving search-relevance order: `set_sort` would flip the
+            // direction, so pre-flip it to keep the current one.
+            self.sort_asc = !self.sort_asc;
+        }
+        self.set_sort(key, cx);
+    }
+
     pub(super) fn set_sort(&mut self, key: SortKey, cx: &mut Context<Self>) {
         if self.sort_key == key {
             self.sort_asc = !self.sort_asc;

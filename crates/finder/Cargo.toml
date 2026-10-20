@@ -32,6 +32,8 @@ rmac-storage.workspace = true
 rmac-sound.workspace = true
 rmac-thumbnails.workspace = true
 chrono.workspace = true
+# Quick Actions ▸ Rotate Left; the same codecs rmac-thumbnails already builds.
+image = { workspace = true, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
 libc.workspace = true
 rust-embed.workspace = true
 serde.workspace = true

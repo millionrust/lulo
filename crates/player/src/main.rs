@@ -1,6 +1,11 @@
 //! rmac Media Player: QuickTime Player's minimal window for audio and video,
 //! played by libmpv and published over MPRIS.
 
+// A GUI app on Windows: no console behind it (ADR 0023). Without this
+// Windows made a console host for the process before `main` ran, about
+// 200 ms of every launch on the reference laptop (WIN-OS-99).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 #[cfg(target_os = "linux")]
 mod mpris;
 mod mpv;

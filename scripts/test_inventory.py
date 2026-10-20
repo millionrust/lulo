@@ -531,7 +531,12 @@ class SynthesizedStandardMenusTests(unittest.TestCase):
         menu = li._synthesize_window_menu("Finder", [tab])
         labels = [item.label for item in menu.items]
         self.assertIn("Show Next Tab", labels)
-        self.assertLess(labels.index("Show Next Tab"), labels.index("Bring All to Front"))
+        # MENU-13: the Mac lists the tab block under Arrange in Front …
+        self.assertGreater(labels.index("Show Next Tab"), labels.index("Arrange in Front"))
+        # … except in Terminal, whose own rows stay above Bring All to Front.
+        terminal = li._synthesize_window_menu("Terminal", [li._item("Show Next Tab", "terminal::NextTab")])
+        terminal_labels = [item.label for item in terminal.items]
+        self.assertLess(terminal_labels.index("Show Next Tab"), terminal_labels.index("Bring All to Front"))
 
     def test_help_menu_has_app_help_with_its_shortcut(self):
         menu = li._synthesize_help_menu("Calculator", [])

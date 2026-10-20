@@ -183,9 +183,9 @@ def _synthesize_window_menu(
     shell/bins/rmac-menubar/src/menu_model.rs): Minimise, Minimise All,
     Zoom, Zoom All, Fill, Centre, Move & Resize (halves, quarters, the 8
     "Arrange" combinations, Return to Previous Size), Full-Screen Tile,
-    Remove Window from Set, the app's own Window items (Files' tabs),
-    Always on Top (Calculator only), Bring All to Front, then Arrange in
-    Front. The live window list is left out: it is a runtime fact (open
+    Remove Window from Set, Always on Top (Calculator only), Cycle Through
+    Windows, Bring All to Front, Arrange in Front, then the app's own Window
+    items (Files' tabs). The live window list is left out: it is a runtime fact (open
     windows), not something static source analysis can read."""
     is_fixed_size = app_display_name in _FIXED_SIZE_WINDOW_APPS
     move_and_resize_children = [
@@ -253,13 +253,31 @@ def _synthesize_window_menu(
     ]
     if is_fixed_size:
         items.append(_item("Always on Top", "window::always-on-top", separator_before=True))
-    if exported_items:
-        exported_items[0].separator_before = True
-        items.extend(exported_items)
+    # MENU-13 (`window_menu`): an app's own Cycle Through Windows right
+    # under Remove Window from Set with its other pre-tab rows, then Bring
+    # All to Front and Arrange in Front, then the tab block; Terminal keeps
+    # every row of its own above Bring All to Front.
+    tab_rows = {"Show Previous Tab", "Show Next Tab", "Move Tab to New Window", "Merge All Windows"}
+    cycle = [item for item in exported_items if item.label == "Cycle Through Windows"]
+    rest = [item for item in exported_items if item.label != "Cycle Through Windows"]
+    if app_display_name == "Terminal":
+        split = len(rest)
+    else:
+        split = next((index for index, item in enumerate(rest) if item.label in tab_rows), len(rest))
+    head, tabs = rest[:split], rest[split:]
+    for item in cycle:
+        item.separator_before = False
+        items.append(item)
+    if head:
+        head[0].separator_before = not cycle
+        items.extend(head)
     items.append(
         _item("Bring All to Front", "window::bring-all-to-front", "", separator_before=True)
     )
     items.append(_item("Arrange in Front", "window::arrange-in-front"))
+    if tabs:
+        tabs[0].separator_before = True
+        items.extend(tabs)
     return rmp.Menu(WINDOW_MENU, items)
 
 

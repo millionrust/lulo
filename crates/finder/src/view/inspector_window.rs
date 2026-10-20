@@ -186,7 +186,7 @@ fn summary_details(
             summary
                 .common_parent
                 .as_ref()
-                .map(|parent| parent.display().to_string())
+                .map(|parent| super::filesystem_helpers::where_breadcrumb(parent))
                 .unwrap_or_else(|| "Multiple locations".to_owned()),
         ),
         ("Modified", modified_range_label(summary, date)),
@@ -689,6 +689,6 @@ mod tests {
         summary.common_parent = Some(PathBuf::from("/home/user"));
         let details = summary_details(&summary, date);
         assert_eq!(value(&details, "Modified"), "t10");
-        assert_eq!(value(&details, "Where"), "/home/user");
+        assert!(value(&details, "Where").ends_with("home ▸ user"));
     }
 }

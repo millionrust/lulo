@@ -69,6 +69,7 @@ impl Render for Settings {
         });
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
         let wifi_other_dialog = self.render_wifi_other_dialog(cx);
+        let wifi_advanced_sheet = self.render_wifi_advanced_sheet(cx);
         let wifi_enterprise_dialog = self.render_wifi_enterprise_dialog(cx);
         let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);
         let bluetooth_pairing_dialog = self.render_bluetooth_pairing_dialog(cx);
@@ -83,6 +84,7 @@ impl Render for Settings {
         let keyboard_shortcuts_sheet = self.render_keyboard_shortcuts_sheet(cx);
         let battery_health_sheet = self.render_battery_health_sheet(cx);
         let hot_corners_sheet = self.render_hot_corners_sheet(cx);
+        let menu_bar_sheet = self.render_menu_bar_sheet(cx);
         let night_shift_sheet = self.render_night_shift_sheet(cx);
         let startup_disk_alert = self.render_startup_disk_alert(cx);
         let internet_account_sheet = self.render_internet_account_sheet(cx);
@@ -113,10 +115,21 @@ impl Render for Settings {
                     cx.stop_propagation();
                     this.set_battery_health_sheet(false, cx);
                 } else if (event.keystroke.key == "escape" || event.keystroke.key == "enter")
+                    && this.wifi_advanced_sheet
+                    && this.wifi_forget_confirmation.is_none()
+                {
+                    cx.stop_propagation();
+                    this.set_wifi_advanced_sheet(false, cx);
+                } else if (event.keystroke.key == "escape" || event.keystroke.key == "enter")
                     && this.hot_corners_sheet
                 {
                     cx.stop_propagation();
                     this.set_hot_corners_sheet(false, cx);
+                } else if (event.keystroke.key == "escape" || event.keystroke.key == "enter")
+                    && this.menu_bar_sheet.is_some()
+                {
+                    cx.stop_propagation();
+                    this.set_menu_bar_sheet(None, cx);
                 } else if (event.keystroke.key == "escape" || event.keystroke.key == "enter")
                     && this.night_shift_sheet
                 {
@@ -520,6 +533,7 @@ impl Render for Settings {
             })
             .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_other_dialog, |root, dialog| root.child(dialog))
+            .when_some(wifi_advanced_sheet, |root, sheet| root.child(sheet))
             .when_some(wifi_enterprise_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_forget_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_pairing_dialog, |root, dialog| root.child(dialog))
@@ -534,6 +548,7 @@ impl Render for Settings {
             .when_some(keyboard_shortcuts_sheet, |root, sheet| root.child(sheet))
             .when_some(battery_health_sheet, |root, sheet| root.child(sheet))
             .when_some(hot_corners_sheet, |root, sheet| root.child(sheet))
+            .when_some(menu_bar_sheet, |root, sheet| root.child(sheet))
             .when_some(night_shift_sheet, |root, sheet| root.child(sheet))
             .when_some(startup_disk_alert, |root, alert| root.child(alert))
             .when_some(internet_account_sheet, |root, sheet| root.child(sheet))

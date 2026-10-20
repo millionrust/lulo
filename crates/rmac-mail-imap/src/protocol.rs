@@ -271,6 +271,12 @@ fn bracket_number(line: &str, name: &str) -> Option<u64> {
         .and_then(|(value, _)| value.parse().ok())
 }
 
+/// `RFC822.SIZE` from a FETCH response line, when the server sent one.
+pub(crate) fn parse_rfc822_size(response: &Response) -> Option<u64> {
+    let line = String::from_utf8_lossy(response.first_line());
+    field_number(&line, "RFC822.SIZE ")
+}
+
 fn field_number(line: &str, name: &str) -> Option<u64> {
     line.split_once(name)
         .and_then(|(_, rest)| rest.split(|ch: char| !ch.is_ascii_digit()).next())

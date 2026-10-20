@@ -74,6 +74,13 @@
           "children": []
         },
         {
+          "label": "New Viewer Window",
+          "action": "mail::NewViewerWindow",
+          "shortcut": "⌥⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Open Messages",
           "action": "mail::OpenMessage",
           "shortcut": "⌘O",
@@ -119,6 +126,13 @@
           "label": "Save Attachments…",
           "action": "mail::SaveAttachments",
           "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Quick Look Attachments…",
+          "action": "mail::QuickLookAttachments",
+          "shortcut": "⌘Y",
           "separator_before": false,
           "children": []
         },
@@ -205,6 +219,20 @@
           "children": []
         },
         {
+          "label": "Add Link…",
+          "action": "mail::AddLink",
+          "shortcut": "⌘K",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Remove Link",
+          "action": "mail::RemoveLink",
+          "shortcut": "⌥⌘K",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Find",
           "action": "mail::FindMenu",
           "shortcut": "",
@@ -218,10 +246,132 @@
               "children": []
             },
             {
+              "label": "Find…",
+              "action": "mail::FindInMessage",
+              "shortcut": "⌘F",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Find Next",
+              "action": "mail::FindNext",
+              "shortcut": "⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Find Previous",
+              "action": "mail::FindPrevious",
+              "shortcut": "⇧⌘G",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Selection",
+              "action": "mail::JumpToSelection",
+              "shortcut": "⌘J",
+              "separator_before": true,
+              "children": []
+            },
+            {
               "label": "Jump to Top",
               "action": "mail::JumpToTop",
               "shortcut": "⌃⌘T",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Spelling and Grammar",
+          "action": "mail::SpellingAndGrammarMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Show Spelling and Grammar",
+              "action": "mail::ShowSpellingAndGrammar",
+              "shortcut": "⌘:",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Check Document Now",
+              "action": "mail::CheckDocumentNow",
+              "shortcut": "⌘;",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Check Spelling",
+              "action": "mail::CheckSpellingMenu",
+              "shortcut": "",
               "separator_before": true,
+              "children": [
+                {
+                  "label": "While Typing",
+                  "action": "mail::CheckSpellingWhileTyping",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Before Sending",
+                  "action": "mail::CheckSpellingBeforeSending",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Never",
+                  "action": "mail::CheckSpellingNever",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "label": "Check Grammar with Spelling",
+              "action": "mail::ToggleCheckGrammarWithSpelling",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Correct Spelling Automatically",
+              "action": "mail::ToggleCorrectSpellingAutomatically",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Substitutions",
+          "action": "mail::SubstitutionsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Smart Quotes",
+              "action": "mail::ToggleSmartQuotes",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Smart Dashes",
+              "action": "mail::ToggleSmartDashes",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Text Replacement",
+              "action": "mail::ToggleTextReplacement",
+              "shortcut": "",
+              "separator_before": false,
               "children": []
             }
           ]
@@ -388,6 +538,13 @@
               "children": []
             },
             {
+              "label": "Size",
+              "action": "mail::SortBySize",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Subject",
               "action": "mail::SortBySubject",
               "shortcut": "",
@@ -503,6 +660,13 @@
           "children": []
         },
         {
+          "label": "Show Message Size",
+          "action": "mail::ToggleMessageSize",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Show Contact Photo",
           "action": "mail::ToggleContactPhoto",
           "shortcut": "",
@@ -552,11 +716,25 @@
           "children": []
         },
         {
+          "label": "Reply-To Address Field",
+          "action": "mail::ToggleReplyToField",
+          "shortcut": "⌥⌘R",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Message",
           "action": "mail::ViewMessageMenu",
           "shortcut": "",
           "separator_before": true,
           "children": [
+            {
+              "label": "All Headers",
+              "action": "mail::ShowAllHeaders",
+              "shortcut": "⇧⌘H",
+              "separator_before": false,
+              "children": []
+            },
             {
               "label": "Raw Source",
               "action": "mail::ShowRawSource",
@@ -811,16 +989,94 @@
           "separator_before": false,
           "children": [
             {
+              "label": "Orange",
+              "action": "mail::FlagOrange",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Red",
+              "action": "mail::FlagRed",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Purple",
+              "action": "mail::FlagPurple",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Blue",
+              "action": "mail::FlagBlue",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Yellow",
+              "action": "mail::FlagYellow",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Green",
+              "action": "mail::FlagGreen",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Grey",
+              "action": "mail::FlagGrey",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Clear Flag",
               "action": "mail::ClearFlag",
               "shortcut": "",
-              "separator_before": false,
+              "separator_before": true,
               "children": []
             },
             {
               "label": "Toggle Flag",
               "action": "mail::Flag",
               "shortcut": "⇧⌘L",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Set Priority",
+          "action": "mail::SetPriorityMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Low",
+              "action": "mail::PriorityLow",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Normal",
+              "action": "mail::PriorityNormal",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "High",
+              "action": "mail::PriorityHigh",
+              "shortcut": "",
               "separator_before": false,
               "children": []
             }

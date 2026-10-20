@@ -124,6 +124,7 @@ fn summary_to_message(mailbox: Mailbox, account: Uuid, summary: MessageSummary) 
         body,
         body_state: rmac_mail::BodyState::NotLoaded,
         junk_origin: None,
+        size: summary.size,
     }
 }
 

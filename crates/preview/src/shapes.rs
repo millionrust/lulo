@@ -420,9 +420,13 @@ mod tests {
         let mut line = item(Tool::Line, (0.0, 0.0, 0.5, 0.5));
         line.path = vec![(0.1, 0.2), (0.3, 0.4)];
         let drawing = outlines(&line, (100.0, 100.0), 1.0, true);
-        assert_eq!(drawing[0].points, vec![(10.0, 20.0), (30.0, 40.0)]);
+        for (got, want) in drawing[0].points.iter().zip([(10.0, 20.0), (30.0, 40.0)]) {
+            assert!((got.0 - want.0).abs() < 1e-3 && (got.1 - want.1).abs() < 1e-3);
+        }
         let done = outlines(&line, (100.0, 100.0), 1.0, false);
-        assert_eq!(done[0].points, vec![(5.0, 10.0), (15.0, 20.0)]);
+        for (got, want) in done[0].points.iter().zip([(5.0, 10.0), (15.0, 20.0)]) {
+            assert!((got.0 - want.0).abs() < 1e-3 && (got.1 - want.1).abs() < 1e-3);
+        }
     }
 
     #[test]

@@ -204,7 +204,9 @@ objc2-foundation = { version = "0.3", features = ["NSData", "NSString", "NSGeome
 [target.'cfg(target_os = "windows")'.dependencies]
 # Native menu (NativeMenu) — drives Win32 popup menus.
 raw-window-handle = { workspace = true }
-resvg = "0.45.1"
+# rmac: the resvg GPUI already builds (0.46), not a second copy of it in
+# every Windows exe (WIN-OS-99).
+resvg = { version = "0.46.0", default-features = false }
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

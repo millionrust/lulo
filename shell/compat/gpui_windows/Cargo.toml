@@ -31,7 +31,11 @@ dunce = "1.0"
 etagere = "0.2"
 futures = "0.3.32"
 gpui_util = { version = "=0.1.0", git = "https://github.com/zed-industries/zed.git", package = "gpui_util" }
-image = "0.25.1"
+# rmac: only the formats GPUI's `ImageFormat` decodes. The defaults also
+# built in an AV1 encoder (rav1e, via `avif`), OpenEXR, DDS, HDR, QOI, TGA
+# and rayon, megabytes of code in every exe that nothing calls, and
+# Microsoft Defender reads all of it before each cold launch (WIN-OS-99).
+image = { version = "0.25.1", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "pnm", "tiff", "webp"] }
 itertools = "0.14.0"
 log = { version = "0.4.16", features = ["kv_unstable_serde", "serde"] }
 parking_lot = "0.12.1"

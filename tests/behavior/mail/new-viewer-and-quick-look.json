@@ -1,0 +1,15 @@
+{
+  "title": "Mail: File ▸ New Viewer Window opens a second viewer; Quick Look Attachments previews the attachment",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "one", "facts": ["windows"]},
+    {"menu_action": "mail::NewViewerWindow"},
+    {"wait": 2},
+    {"observe": "two", "facts": ["windows"]},
+    {"menu_action": "mail::QuickLookAttachments"},
+    {"wait": 2},
+    {"observe": "quick_look", "facts": ["windows"]}
+  ]
+}

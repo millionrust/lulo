@@ -19,7 +19,7 @@ use rmac_quick_settings::detail::{geometry as g, Detail};
 use rmac_quick_settings::layout;
 use rmac_ui::mac;
 
-use crate::view::{QuickSettingsView, SliderKind};
+use crate::view::{FocusForHour, FocusTimer, FocusUntilLater, QuickSettingsView, SliderKind};
 
 /// Inter's vertical metrics (hhea), used to put a baseline where measured.
 const INTER_ASCENT: f32 = 0.968_75;
@@ -226,8 +226,12 @@ impl Render for QuickSettingsView {
         let detail = shown_panel.as_ref().map(|shown| match reveal {
             None => self.detail_view(shown, g::PANEL_LEFT, banner_block, cx),
             Some((detail, amount)) => {
-                let (tile_x, tile_y, tile_width, tile_height) =
-                    tile_rect(detail, &modules, self.hardware.wifi);
+                let (tile_x, tile_y, tile_width, tile_height) = tile_rect(
+                    detail,
+                    &modules,
+                    self.hardware.wifi,
+                    usize::from(self.hardware.wifi) + usize::from(self.hardware.bluetooth),
+                );
                 let lerp = |from: f32, to: f32| from + (to - from) * amount;
                 let (x, y) = (lerp(tile_x, g::PANEL_LEFT), lerp(tile_y, banner_block));
                 let width = lerp(tile_width, g::PANEL_WIDTH);
@@ -289,6 +293,13 @@ impl Render for QuickSettingsView {
             modules.content_height() as f32
         };
 
+        let focus_menu = self.focus_menu.as_ref().map(|(state, _)| {
+            let now = chrono::Local::now();
+            let menu = rmac_ui::ContextMenu::new(state.position())
+                .item(FocusTimer::ForAnHour.label(now), Box::new(FocusForHour))
+                .item(FocusTimer::UntilLater.label(now), Box::new(FocusUntilLater));
+            (menu, state.clone())
+        });
         let surface = div()
             .id("control-center")
             .role(Role::Group)
@@ -335,7 +346,19 @@ impl Render for QuickSettingsView {
                     .opacity(reveal.map_or(1.0, |(_, amount)| 1.0 - amount))
                     .children(children),
             )
-            .children(detail);
+            .children(detail)
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
+                this.dismiss_focus_menu(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FocusForHour, window, cx| {
+                this.activate_focus_timer(FocusTimer::ForAnHour, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FocusUntilLater, window, cx| {
+                this.activate_focus_timer(FocusTimer::UntilLater, window, cx);
+            }))
+            .when_some(focus_menu, |surface, (menu, state)| {
+                surface.child(menu.render(&state))
+            });
         // On Windows the blur under the tint is drawn here, not by the
         // compositor (`rmac_shell_layer::over_backdrop`).
         #[cfg(windows)]
@@ -348,13 +371,24 @@ impl Render for QuickSettingsView {
 /// The tile a detail view grows out of, in surface coordinates: Wi-Fi and
 /// Bluetooth are the first pills beside Now Playing (Bluetooth first when
 /// there is no Wi-Fi), Display and Sound the full-width rows.
-fn tile_rect(detail: Detail, modules: &layout::Modules, wifi: bool) -> (f32, f32, f32, f32) {
+fn tile_rect(
+    detail: Detail,
+    modules: &layout::Modules,
+    wifi: bool,
+    radios: usize,
+) -> (f32, f32, f32, f32) {
     let top = |row: usize| PADDING + modules.row_top(row) as f32;
     match detail {
         Detail::Wifi => (PADDING, top(0), PILL_WIDTH, CELL),
         Detail::Bluetooth => (PADDING, top(usize::from(wifi)), PILL_WIDTH, CELL),
         Detail::Display => (PADDING, top(modules.display_row()), GRID_WIDTH, CELL),
         Detail::Sound => (PADDING, top(modules.sound_row()), GRID_WIDTH, CELL),
+        Detail::Focus => {
+            // The Focus pill follows the radios and the circles' slot.
+            let slot = modules.slot(radios + 1);
+            let left = PADDING + if slot.right { PITCH * 2.0 } else { 0.0 };
+            (left, top(slot.row), PILL_WIDTH, CELL)
+        }
     }
 }
 

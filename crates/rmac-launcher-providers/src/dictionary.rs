@@ -395,6 +395,7 @@ impl Provider for DictionaryProvider {
                     },
                     category: Category::Dictionary,
                     application_group: None,
+                    kind: None,
                     title: word.clone(),
                     subtitle: Some(definition.clone()),
                     detail: Some(dictionary.name.clone()),

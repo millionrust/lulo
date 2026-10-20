@@ -162,6 +162,10 @@ pub struct ClockSettings {
     pub show_date: bool,
     pub show_seconds: bool,
     pub show_workspace: bool,
+    /// Menu Bar ▸ Clock Options… ▸ Show the day of the week.
+    pub show_weekday: bool,
+    /// Menu Bar ▸ Clock Options… ▸ Show am/pm (12-hour clocks only).
+    pub show_am_pm: bool,
 }
 
 impl Default for ClockSettings {
@@ -171,6 +175,8 @@ impl Default for ClockSettings {
             show_date: true,
             show_seconds: false,
             show_workspace: false,
+            show_weekday: true,
+            show_am_pm: true,
         }
     }
 }

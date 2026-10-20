@@ -12,6 +12,7 @@ mod display;
 mod events;
 mod keyboard;
 mod platform;
+mod rmac_first_frame;
 mod rmac_frame_loop;
 mod rmac_input_region;
 mod rmac_smooth_scroll;

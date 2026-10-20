@@ -2253,9 +2253,8 @@ const CALENDAR_MENUS: &[MenuSpec] = &[
 ];
 
 // Mac Mail's menus (tests/robot/mac/Mail.json), minus what has no backend
-// here: tabs, Insert From iPhone, Quick Look, mailbox import/export, local
-// and smart mailboxes, Remind Me, Send Later, follow-ups, muting, flag
-// colours (the cache keeps one flag bit), message size, categories, rules,
+// here: tabs, Insert From iPhone, mailbox import/export, local and smart
+// mailboxes, Remind Me, Send Later, follow-ups, muting, categories, rules,
 // Contacts and the predicted mailbox. The Move to ▸, Copy to ▸, Get New
 // Mail ▸ and Erase Deleted Items ▸ rows are rebuilt from the live mailbox
 // list (`crates/mail/src/view.rs`); the static child of each keeps the
@@ -2272,6 +2271,7 @@ const MAIL_MENUS: &[MenuSpec] = &[
         label: "File",
         items: &[
             item!("New Message", "mail::NewMessage", "⌘N"),
+            item!("New Viewer Window", "mail::NewViewerWindow", "⌥⌘N"),
             item!("Open Messages", "mail::OpenMessage", "⌘O"),
             item!("Close", "mail::CloseWindow", "⌘W", separator),
             item!("Close All", "mail::CloseAll", "⌥⌘W"),
@@ -2279,6 +2279,11 @@ const MAIL_MENUS: &[MenuSpec] = &[
             item!("Save As…", "mail::SaveAs", "⇧⌘S"),
             item!("Attach Files…", "mail::AttachFile", "⇧⌘A", separator),
             item!("Save Attachments…", "mail::SaveAttachments", ""),
+            item!(
+                "Quick Look Attachments…",
+                "mail::QuickLookAttachments",
+                "⌘Y"
+            ),
             item!("Export as PDF…", "mail::ExportAsPdf", "", separator),
             item!("Print…", "mail::PrintMessage", "⌘P", separator),
         ],
@@ -2304,14 +2309,70 @@ const MAIL_MENUS: &[MenuSpec] = &[
                 "rmac_ui::PasteAndMatchStyle",
                 "⌥⇧⌘V"
             ),
+            // Mail composes plain text: a link is written as "words <url>".
+            item!("Add Link…", "mail::AddLink", "⌘K", separator),
+            item!("Remove Link", "mail::RemoveLink", "⌥⌘K"),
             submenu!(
                 "Find",
                 "mail::FindMenu",
                 [
                     item!("Mailbox Search", "mail::Search", "⌥⌘F"),
-                    item!("Jump to Top", "mail::JumpToTop", "⌃⌘T", separator),
+                    item!("Find…", "mail::FindInMessage", "⌘F", separator),
+                    item!("Find Next", "mail::FindNext", "⌘G"),
+                    item!("Find Previous", "mail::FindPrevious", "⇧⌘G"),
+                    item!(
+                        "Jump to Selection",
+                        "mail::JumpToSelection",
+                        "⌘J",
+                        separator
+                    ),
+                    item!("Jump to Top", "mail::JumpToTop", "⌃⌘T"),
                 ],
                 separator
+            ),
+            submenu!(
+                "Spelling and Grammar",
+                "mail::SpellingAndGrammarMenu",
+                [
+                    item!(
+                        "Show Spelling and Grammar",
+                        "mail::ShowSpellingAndGrammar",
+                        "⌘:"
+                    ),
+                    item!("Check Document Now", "mail::CheckDocumentNow", "⌘;"),
+                    submenu!(
+                        "Check Spelling",
+                        "mail::CheckSpellingMenu",
+                        [
+                            item!("While Typing", "mail::CheckSpellingWhileTyping", ""),
+                            item!("Before Sending", "mail::CheckSpellingBeforeSending", ""),
+                            item!("Never", "mail::CheckSpellingNever", ""),
+                        ],
+                        separator
+                    ),
+                    item!(
+                        "Check Grammar with Spelling",
+                        "mail::ToggleCheckGrammarWithSpelling",
+                        ""
+                    ),
+                    item!(
+                        "Correct Spelling Automatically",
+                        "mail::ToggleCorrectSpellingAutomatically",
+                        ""
+                    ),
+                ]
+            ),
+            // Smart Copy/Paste and Smart Links have no effect in Lulo's
+            // text fields yet (`rmac_ui::text_assist`), so only the
+            // substitutions that work are offered.
+            submenu!(
+                "Substitutions",
+                "mail::SubstitutionsMenu",
+                [
+                    item!("Smart Quotes", "mail::ToggleSmartQuotes", ""),
+                    item!("Smart Dashes", "mail::ToggleSmartDashes", ""),
+                    item!("Text Replacement", "mail::ToggleTextReplacement", ""),
+                ]
             ),
             transformations_submenu!("mail"),
             speech_submenu!("mail"),
@@ -2329,6 +2390,7 @@ const MAIL_MENUS: &[MenuSpec] = &[
                     item!("Date", "mail::SortByDate", ""),
                     item!("Flags", "mail::SortByFlags", ""),
                     item!("From", "mail::SortByFrom", ""),
+                    item!("Size", "mail::SortBySize", ""),
                     item!("Subject", "mail::SortBySubject", ""),
                     item!("To", "mail::SortByTo", ""),
                     item!("Unread", "mail::SortByUnread", ""),
@@ -2367,6 +2429,7 @@ const MAIL_MENUS: &[MenuSpec] = &[
             item!("Show Bottom Preview", "mail::ToggleBottomPreview", ""),
             item!("Show Date and Time", "mail::ToggleDateAndTime", ""),
             item!("Show To/Cc Label", "mail::ToggleToCcLabel", ""),
+            item!("Show Message Size", "mail::ToggleMessageSize", ""),
             item!("Show Contact Photo", "mail::ToggleContactPhoto", ""),
             item!(
                 "Highlight Conversations",
@@ -2387,10 +2450,14 @@ const MAIL_MENUS: &[MenuSpec] = &[
             ),
             item!("Cc Address Field", "mail::ToggleCcField", "", separator),
             item!("Bcc Address Field", "mail::ToggleBccField", "⌥⌘B"),
+            item!("Reply-To Address Field", "mail::ToggleReplyToField", "⌥⌘R"),
             submenu!(
                 "Message",
                 "mail::ViewMessageMenu",
-                [item!("Raw Source", "mail::ShowRawSource", "⌥⌘U")],
+                [
+                    item!("All Headers", "mail::ShowAllHeaders", "⇧⌘H"),
+                    item!("Raw Source", "mail::ShowRawSource", "⌥⌘U"),
+                ],
                 separator
             ),
             item!("Hide Sidebar", "mail::ToggleSidebar", "⌃⌘S", separator),
@@ -2473,8 +2540,24 @@ const MAIL_MENUS: &[MenuSpec] = &[
                 "Flag",
                 "mail::FlagMenu",
                 [
-                    item!("Clear Flag", "mail::ClearFlag", ""),
+                    item!("Orange", "mail::FlagOrange", ""),
+                    item!("Red", "mail::FlagRed", ""),
+                    item!("Purple", "mail::FlagPurple", ""),
+                    item!("Blue", "mail::FlagBlue", ""),
+                    item!("Yellow", "mail::FlagYellow", ""),
+                    item!("Green", "mail::FlagGreen", ""),
+                    item!("Grey", "mail::FlagGrey", ""),
+                    item!("Clear Flag", "mail::ClearFlag", "", separator),
                     item!("Toggle Flag", "mail::Flag", "⇧⌘L"),
+                ]
+            ),
+            submenu!(
+                "Set Priority",
+                "mail::SetPriorityMenu",
+                [
+                    item!("Low", "mail::PriorityLow", ""),
+                    item!("Normal", "mail::PriorityNormal", ""),
+                    item!("High", "mail::PriorityHigh", ""),
                 ]
             ),
             item!("Archive", "mail::Archive", "⌃⌘A", separator),
@@ -4782,6 +4865,17 @@ mod tests {
             ("mail::Redirect", "⇧⌘E"),
             ("mail::Archive", "⌃⌘A"),
             ("mail::ShowMessageViewer", "⌘0"),
+            ("mail::NewViewerWindow", "⌥⌘N"),
+            ("mail::QuickLookAttachments", "⌘Y"),
+            ("mail::FindInMessage", "⌘F"),
+            ("mail::FindNext", "⌘G"),
+            ("mail::FindPrevious", "⇧⌘G"),
+            ("mail::JumpToSelection", "⌘J"),
+            ("mail::ShowAllHeaders", "⇧⌘H"),
+            ("mail::ToggleReplyToField", "⌥⌘R"),
+            ("mail::AddLink", "⌘K"),
+            ("mail::RemoveLink", "⌥⌘K"),
+            ("mail::CheckDocumentNow", "⌘;"),
         ] {
             assert_eq!(
                 shortcuts.get(action).map(String::as_str),

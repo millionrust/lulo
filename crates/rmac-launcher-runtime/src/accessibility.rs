@@ -441,7 +441,7 @@ fn validate_snapshot(snapshot: &Snapshot) -> Result<(), AccessibilityProjectionE
         if !result_ids.insert(&row.id) {
             return Err(AccessibilityProjectionError::DuplicateResult);
         }
-        if row.category_label != row.category.label() {
+        if row.category_label != rmac_launcher::section_label(row.category, row.kind) {
             return Err(AccessibilityProjectionError::InvalidCategory);
         }
         if row.has_alternate != row.alternate_label.is_some() {
@@ -659,6 +659,7 @@ mod tests {
             },
             category,
             application_group: None,
+            kind: None,
             category_label: category.label(),
             title: title.into(),
             subtitle: Some(format!("Private subtitle for {title}")),

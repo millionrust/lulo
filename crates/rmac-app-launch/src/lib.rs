@@ -8,6 +8,7 @@
 mod application;
 mod document;
 mod model;
+mod prewarm;
 mod recent;
 mod termination;
 
@@ -20,6 +21,7 @@ pub use model::{
     AssociationError, CatalogError, Delivery, Error, ErrorKind, ItemError, ItemOperation,
     OpenWithError, Outcome, RecentDocumentError,
 };
+pub use prewarm::prewarm;
 pub use recent::{recent_app_ids, record_recent_launch, RecentLaunchError};
 pub use termination::{terminate_application, TerminationError, TerminationKind};
 

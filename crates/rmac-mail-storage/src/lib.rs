@@ -11,11 +11,18 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 pub const FLAG_SEEN: i64 = 1;
 pub const FLAG_ANSWERED: i64 = 2;
 pub const FLAG_FLAGGED: i64 = 4;
 pub const FLAG_DRAFT: i64 = 8;
+/// Mac Mail's flag colour, kept in the same bitmask as the IMAP keywords
+/// `$MailFlagBit0`, `$MailFlagBit1` and `$MailFlagBit2` that carry it on the
+/// server: the three bits read as a number, 0 red to 6 grey.
+pub const FLAG_COLOUR_BIT0: i64 = 16;
+pub const FLAG_COLOUR_BIT1: i64 = 32;
+pub const FLAG_COLOUR_BIT2: i64 = 64;
+pub const FLAG_COLOUR_MASK: i64 = FLAG_COLOUR_BIT0 | FLAG_COLOUR_BIT1 | FLAG_COLOUR_BIT2;
 
 #[derive(Debug)]
 pub enum Error {
@@ -95,6 +102,8 @@ pub struct MessageSummary {
     pub received_at: i64,
     pub flags: i64,
     pub body_hash: Option<String>,
+    /// The message's size in bytes, 0 while unknown.
+    pub size: i64,
 }
 
 /// One row from the `mailboxes` table: every mailbox this account's cache
@@ -233,6 +242,14 @@ impl MailStorage {
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)?;
             tx.execute_batch(include_str!("schema_v5.sql"))?;
+            tx.pragma_update(None, "user_version", 5)?;
+            tx.commit()?;
+        }
+        if version < 6 {
+            let tx = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(include_str!("schema_v6.sql"))?;
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             tx.commit()?;
         }
@@ -440,7 +457,7 @@ impl MailStorage {
 
     pub fn message_by_uid(&self, mailbox_id: i64, uid: i64) -> Result<Option<MessageSummary>> {
         self.connection.query_row(
-            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash FROM messages WHERE mailbox_id=?1 AND uid=?2",
+            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash,size FROM messages WHERE mailbox_id=?1 AND uid=?2",
             params![mailbox_id, uid], summary_from_row,
         ).optional().map_err(Error::from)
     }
@@ -472,7 +489,7 @@ impl MailStorage {
         limit: usize,
     ) -> Result<Vec<MessageSummary>> {
         let mut statement = self.connection.prepare(
-            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash \
+            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash,size \
              FROM messages WHERE mailbox_id=?1 ORDER BY received_at DESC LIMIT ?2",
         )?;
         let rows = statement.query_map(
@@ -531,19 +548,35 @@ impl MailStorage {
     /// but can never leave a committed row pointing to a partial blob.
     pub fn put_message(&mut self, message: &NewMessage<'_>) -> Result<i64> {
         let body_hash = message.body.map(|body| self.write_blob(body)).transpose()?;
+        // A draft autosave replaces its row's source each time; the source
+        // it replaces is removed once nothing else refers to it.
+        let replaced: Option<String> = if body_hash.is_some() {
+            self.connection
+                .query_row(
+                    "SELECT body_hash FROM messages WHERE mailbox_id=?1 AND uid=?2",
+                    params![message.mailbox_id, message.uid],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .flatten()
+        } else {
+            None
+        };
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
-            "INSERT INTO messages(mailbox_id, uid, message_id, in_reply_to, subject, sender, recipients, cc, preview, received_at, flags, body_hash, body_text) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) \
+            "INSERT INTO messages(mailbox_id, uid, message_id, in_reply_to, subject, sender, recipients, cc, preview, received_at, flags, body_hash, body_text, size) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) \
              ON CONFLICT(mailbox_id,uid) DO UPDATE SET message_id=excluded.message_id, in_reply_to=excluded.in_reply_to, \
              subject=excluded.subject, sender=excluded.sender, recipients=excluded.recipients, cc=excluded.cc, preview=excluded.preview, \
              received_at=excluded.received_at, flags=excluded.flags, body_hash=COALESCE(excluded.body_hash,messages.body_hash), \
-             body_text=COALESCE(excluded.body_text,messages.body_text)",
+             body_text=COALESCE(excluded.body_text,messages.body_text), \
+             size=CASE WHEN excluded.size>0 THEN excluded.size ELSE messages.size END",
             params![message.mailbox_id, message.uid, message.message_id, message.in_reply_to,
                 message.subject, message.sender, message.recipients, message.cc, message.preview,
-                message.received_at, message.flags, body_hash, message.body_text],
+                message.received_at, message.flags, body_hash, message.body_text,
+                message.body.map_or(0, |body| body.len() as i64)],
         )?;
         let id = tx.query_row(
             "SELECT id FROM messages WHERE mailbox_id=?1 AND uid=?2",
@@ -558,7 +591,32 @@ impl MailStorage {
             )?;
         }
         tx.commit()?;
+        if let Some(old) = replaced.filter(|old| Some(old) != body_hash.as_ref()) {
+            self.release_blob(&old)?;
+        }
         Ok(id)
+    }
+
+    /// Deletes blob `hash` when no message or attachment refers to it.
+    fn release_blob(&self, hash: &str) -> Result<()> {
+        if hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(Error::InvalidBlob);
+        }
+        let referenced: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE body_hash=?1) \
+             OR EXISTS(SELECT 1 FROM attachments WHERE blob_hash=?1)",
+            [hash],
+            |row| row.get(0),
+        )?;
+        if !referenced {
+            match fs::remove_file(self.blobs.join(hash)) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(error.into())
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     /// Compute conversations from cached headers. Message indices in the forest
@@ -597,7 +655,7 @@ impl MailStorage {
 
     pub fn get_message(&self, id: i64) -> Result<Option<MessageSummary>> {
         Ok(self.connection.query_row(
-            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash FROM messages WHERE id=?1",
+            "SELECT id,mailbox_id,uid,subject,sender,recipients,cc,preview,received_at,flags,body_hash,size FROM messages WHERE id=?1",
             [id], summary_from_row,
         ).optional()?)
     }
@@ -609,8 +667,19 @@ impl MailStorage {
     pub fn attach_body(&mut self, message_id: i64, bytes: &[u8], body_text: &str) -> Result<()> {
         let hash = self.write_blob(bytes)?;
         self.connection.execute(
-            "UPDATE messages SET body_hash=?1, body_text=?2 WHERE id=?3",
-            params![hash, body_text, message_id],
+            "UPDATE messages SET body_hash=?1, body_text=?2, \
+             size=CASE WHEN size>0 THEN size ELSE ?4 END WHERE id=?3",
+            params![hash, body_text, message_id, bytes.len() as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Records a message's size as the server reports it (IMAP
+    /// `RFC822.SIZE`), for one synced header-only.
+    pub fn set_message_size(&mut self, message_id: i64, size: i64) -> Result<()> {
+        self.connection.execute(
+            "UPDATE messages SET size=?1 WHERE id=?2",
+            params![size.max(0), message_id],
         )?;
         Ok(())
     }
@@ -650,7 +719,7 @@ impl MailStorage {
             return Ok(Vec::new());
         }
         let mut statement = self.connection.prepare(
-            "SELECT m.id,m.mailbox_id,m.uid,m.subject,m.sender,m.recipients,m.cc,m.preview,m.received_at,m.flags,m.body_hash \
+            "SELECT m.id,m.mailbox_id,m.uid,m.subject,m.sender,m.recipients,m.cc,m.preview,m.received_at,m.flags,m.body_hash,m.size \
              FROM messages_fts JOIN messages m ON m.id=messages_fts.rowid \
              WHERE messages_fts MATCH ?1 AND (?2 IS NULL OR m.mailbox_id=?2) \
              ORDER BY bm25(messages_fts), m.received_at DESC LIMIT ?3",
@@ -915,7 +984,7 @@ impl MailStorage {
     /// The cached message bound to a Graph message id, in any mailbox.
     pub fn message_by_remote_id(&self, remote_id: &str) -> Result<Option<MessageSummary>> {
         self.connection.query_row(
-            "SELECT m.id,m.mailbox_id,m.uid,m.subject,m.sender,m.recipients,m.cc,m.preview,m.received_at,m.flags,m.body_hash \
+            "SELECT m.id,m.mailbox_id,m.uid,m.subject,m.sender,m.recipients,m.cc,m.preview,m.received_at,m.flags,m.body_hash,m.size \
              FROM remote_messages r JOIN messages m ON m.id=r.message_id WHERE r.remote_id=?1",
             [remote_id], summary_from_row,
         ).optional().map_err(Error::from)
@@ -993,6 +1062,7 @@ fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary>
         received_at: row.get(8)?,
         flags: row.get(9)?,
         body_hash: row.get(10)?,
+        size: row.get(11)?,
     })
 }
 

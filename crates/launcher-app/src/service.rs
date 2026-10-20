@@ -232,6 +232,29 @@ fn watch_endpoint(cx: &mut App) {
         )
         .await
     });
+    // Apps opening closes Spotlight (SPOT-04).
+    #[cfg(target_os = "linux")]
+    {
+        let (dismiss_tx, dismiss_rx) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = rmac_shortcuts::watch_dispatches(
+                    rmac_shortcuts::ShortcutId(rmac_shortcuts::LAUNCHER_DISMISS.into()),
+                    dismiss_tx,
+                )
+                .await
+                {
+                    eprintln!("Spotlight's dismiss endpoint stopped: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+            while dismiss_rx.recv().await.is_ok() {
+                cx.update(overlay::dismiss_active);
+            }
+        })
+        .detach();
+    }
     #[cfg(target_os = "linux")]
     cx.spawn(async move |cx: &mut gpui::AsyncApp| {
         let consume = async {

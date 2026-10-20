@@ -6478,7 +6478,6 @@ version = "0.9.0-beta.2"
 dependencies = [
  "futures-lite",
  "gpui",
- "gpui-component-assets",
  "libc",
  "rmac-compositor",
  "rmac-compositor-system",

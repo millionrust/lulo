@@ -14,7 +14,6 @@ path = "src/main.rs"
 
 [dependencies]
 gpui.workspace = true
-gpui-component-assets.workspace = true
 rmac-ui.workspace = true
 rmac-emoji.workspace = true
 

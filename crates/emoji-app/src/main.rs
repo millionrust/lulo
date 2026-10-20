@@ -38,15 +38,17 @@ mod linux {
     /// The layer-shell namespace niri's layer-rule matches (blur, radius).
     const NAMESPACE: &str = "rmac-emoji";
 
+    /// The panel has no icons of its own; the shared ones come from
+    /// `rmac_ui::layered_assets`.
     struct Assets;
 
     impl AssetSource for Assets {
-        fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-            gpui_component_assets::Assets.load(path)
+        fn load(&self, _path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+            Ok(None)
         }
 
-        fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-            gpui_component_assets::Assets.list(path)
+        fn list(&self, _path: &str) -> Result<Vec<SharedString>> {
+            Ok(Vec::new())
         }
     }
 
@@ -146,7 +148,7 @@ mod linux {
         let outcome = Rc::new(RefCell::new(Outcome::default()));
         let shown = outcome.clone();
         rmac_ui::application()
-            .with_assets(Assets)
+            .with_assets(rmac_ui::layered_assets(Assets))
             .run(move |cx: &mut App| {
                 rmac_ui::init_application(cx);
                 let opened = cx.open_window(options(), |window, cx| {

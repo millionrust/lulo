@@ -23,11 +23,11 @@ mod linux_wayland {
     use std::time::{Duration, Instant};
 
     use gpui::{
-        AnyElement, App, AssetSource, AsyncApp, Bounds, BoxShadow, Context, CursorStyle, Entity,
-        FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-        MouseUpEvent, Pixels, QuitMode, Role, SharedString, Size, WeakEntity, Window,
-        WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, canvas,
-        div, fill, img, layer_shell::*, point, prelude::*, px, rgba, svg,
+        canvas, div, fill, img, layer_shell::*, point, prelude::*, px, rgba, svg, AnyElement, App,
+        AssetSource, AsyncApp, Bounds, BoxShadow, Context, CursorStyle, Entity, FocusHandle,
+        FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+        Pixels, QuitMode, Role, SharedString, Size, WeakEntity, Window, WindowBackgroundAppearance,
+        WindowBounds, WindowHandle, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use uuid::Uuid;
@@ -1465,15 +1465,13 @@ mod linux_wayland {
             window: &mut Window,
             cx: &mut Context<Self>,
         ) -> Self {
-            cx.spawn_in(window, async move |this, cx| {
-                loop {
-                    cx.background_executor().timer(FRAME).await;
-                    let running = this
-                        .update_in(cx, |this, window, cx| this.tick(window, cx))
-                        .unwrap_or(false);
-                    if !running {
-                        break;
-                    }
+            cx.spawn_in(window, async move |this, cx| loop {
+                cx.background_executor().timer(FRAME).await;
+                let running = this
+                    .update_in(cx, |this, window, cx| this.tick(window, cx))
+                    .unwrap_or(false);
+                if !running {
+                    break;
                 }
             })
             .detach();
@@ -1720,18 +1718,16 @@ mod linux_wayland {
         let (command_tx, command_rx) = async_channel::bounded(32);
         std::thread::Builder::new()
             .name("rmac-screenshot-ipc".into())
-            .spawn(move || {
-                loop {
-                    match listener.receive() {
-                        Ok(command) => {
-                            if command_tx.send_blocking(command).is_err() {
-                                return;
-                            }
+            .spawn(move || loop {
+                match listener.receive() {
+                    Ok(command) => {
+                        if command_tx.send_blocking(command).is_err() {
+                            return;
                         }
-                        Err(error) => {
-                            eprintln!("screenshot endpoint stopped: {error}");
-                            std::process::exit(1);
-                        }
+                    }
+                    Err(error) => {
+                        eprintln!("screenshot endpoint stopped: {error}");
+                        std::process::exit(1);
                     }
                 }
             })

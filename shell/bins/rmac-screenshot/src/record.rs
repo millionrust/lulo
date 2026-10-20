@@ -156,7 +156,7 @@ mod linux {
     use zbus::blocking::{Connection, Proxy};
     use zbus::zvariant::{OwnedObjectPath, Value};
 
-    use super::{Crop, Encoder, pipeline_arguments, state_text};
+    use super::{pipeline_arguments, state_text, Crop, Encoder};
 
     const BUS: &str = "org.gnome.Mutter.ScreenCast";
     const ROOT: &str = "/org/gnome/Mutter/ScreenCast";

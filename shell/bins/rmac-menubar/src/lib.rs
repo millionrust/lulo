@@ -5515,14 +5515,23 @@ mod bar {
                 Item::new("Recent Items", "system::recents", menu_model::SUBMENU_MARK).separated(),
                 Item::new("Force Quit…", "system::force-quit", "⌥⌘⎋").separated(),
                 Item::new("Sleep", "system::sleep", "").separated(),
-                Item::new("Restart…", "system::restart", ""),
-                Item::new("Shut Down…", "system::shutdown", ""),
+                // Holding ⌥ drops the "…" and the confirmation (BAR-04).
+                Item::new("Restart…", "system::restart", "")
+                    .with_alternate(Item::new("Restart", "system::restart-now", "")),
+                Item::new("Shut Down…", "system::shutdown", "")
+                    .with_alternate(Item::new("Shut Down", "system::shutdown-now", "")),
                 Item::new("Lock Screen", "system::lock", "⌃⌘Q").separated(),
                 // The Mac shows ⇧⌘Q here. Nothing binds it yet: the
                 // confirmation lives in this menu, which no key can open
                 // (the ⌃F2 gap), so no hint is shown rather than one that
                 // does nothing.
-                Item::new(logout_label, "system::logout", ""),
+                Item::new(logout_label.clone(), "system::logout", "").with_alternate(
+                    Item::new(
+                        logout_label.trim_end_matches('…').to_owned(),
+                        "system::logout-now",
+                        "",
+                    ),
+                ),
             ]
             .into_iter()
             .chain(system::extra_menu::rows().into_iter().map(|row| {
@@ -6270,6 +6279,10 @@ mod bar {
             #[cfg(windows)]
             "system::sleep" => system::power(PowerCommand::Sleep),
             "system::restart" | "system::shutdown" | "system::logout" => quit_all_then(action, cx),
+            // ⌥ alternates run without the confirmation (BAR-04).
+            "system::restart-now" => quit_all_then("system::restart".to_owned(), cx),
+            "system::shutdown-now" => quit_all_then("system::shutdown".to_owned(), cx),
+            "system::logout-now" => quit_all_then("system::logout".to_owned(), cx),
             #[cfg(target_os = "linux")]
             "system::lock" => dispatch_shortcut("lock", cx),
             #[cfg(windows)]

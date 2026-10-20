@@ -20,14 +20,17 @@ use gpui::{
 
 use crate::{mac, text_px, StyledExt as _};
 
-/// S: TextEdit's About panel, by eye.
+/// TextEdit's About panel, measured on the Mac: 284 x 204, 66 pt icon (BAR-09).
 const WIDTH: f32 = 284.0;
-const HEIGHT: f32 = 250.0;
-const ICON_EDGE: f32 = 64.0;
+const HEIGHT: f32 = 204.0;
+const ICON_EDGE: f32 = 66.0;
 /// Resolve the icon at twice its drawn size for a sharp HiDPI image.
 const ICON_PIXELS: u32 = 128;
 /// From the project's LICENSE.
-const COPYRIGHT: &str = "Copyright © 2026 rmac contributors";
+const COPYRIGHT: [&str; 2] = [
+    "Copyright © 2026 rmac contributors",
+    "Released under the MIT licence.",
+];
 const CONTEXT: &str = "RmacAboutPanel";
 
 /// The open panel, so a second About brings it forward instead of opening
@@ -59,6 +62,12 @@ pub(crate) fn show(app_id: &'static str, cx: &mut App) {
                 Some(CONTEXT),
             )],
         );
+        // Esc closes the panel, as it does on the Mac.
+        cx.bind_keys([KeyBinding::new(
+            "escape",
+            crate::RequestClose,
+            Some(CONTEXT),
+        )]);
         cx.set_global(AboutKeysBound);
     }
     let name = rmac_apps::identity::window_title(app_id).unwrap_or(app_id);
@@ -204,13 +213,14 @@ impl Render for AboutPanel {
             .overflow_hidden()
             .bg(mac::window())
             .text_color(mac::text())
-            .child(crate::title_bar_content(div()))
+            .child(crate::chrome::title_bar_content_fixed(div()))
             .child(
                 div()
                     .flex_1()
                     .v_flex()
                     .items_center()
                     .px(px(20.0))
+                    .pt(px(6.0))
                     .child(icon)
                     .child(
                         div()
@@ -229,9 +239,11 @@ impl Render for AboutPanel {
                     .child(
                         div()
                             .mt(px(14.0))
+                            .v_flex()
+                            .items_center()
                             .text_size(text_px(11.0))
                             .text_color(mac::text_secondary())
-                            .child(COPYRIGHT),
+                            .children(COPYRIGHT.map(|line| div().child(line))),
                     ),
             )
     }

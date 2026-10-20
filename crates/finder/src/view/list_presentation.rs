@@ -186,7 +186,10 @@ impl FinderView {
                         }),
                     )
                     .on_drag_move(cx.listener(
-                        |this, event: &gpui::DragMoveEvent<list_columns::ResizingListColumn>, _, cx| {
+                        |this,
+                         event: &gpui::DragMoveEvent<list_columns::ResizingListColumn>,
+                         _,
+                         cx| {
                             this.drag_column_resize(f32::from(event.event.position.x), cx);
                         },
                     ))
@@ -974,24 +977,36 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ViewAsGallery, _, cx| {
                 this.select_view_mode(ViewMode::Gallery, cx)
             }))
-            .on_action(cx.listener(|this, _: &SortByName, _, cx| this.choose_sort(SortKey::Name, cx)))
-            .on_action(cx.listener(|this, _: &SortByDate, _, cx| this.choose_sort(SortKey::Date, cx)))
-            .on_action(cx.listener(|this, _: &SortBySize, _, cx| this.choose_sort(SortKey::Size, cx)))
-            .on_action(cx.listener(|this, _: &SortByKind, _, cx| this.choose_sort(SortKey::Kind, cx)))
+            .on_action(
+                cx.listener(|this, _: &SortByName, _, cx| this.choose_sort(SortKey::Name, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SortByDate, _, cx| this.choose_sort(SortKey::Date, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SortBySize, _, cx| this.choose_sort(SortKey::Size, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SortByKind, _, cx| this.choose_sort(SortKey::Kind, cx)),
+            )
             .on_action(cx.listener(|this, _: &SortByLastOpened, _, cx| {
                 this.choose_sort(SortKey::LastOpened, cx)
             }))
             .on_action(
                 cx.listener(|this, _: &SortByAdded, _, cx| this.choose_sort(SortKey::Added, cx)),
             )
-            .on_action(cx.listener(|this, _: &SortByTags, _, cx| this.choose_sort(SortKey::Tags, cx)))
+            .on_action(
+                cx.listener(|this, _: &SortByTags, _, cx| this.choose_sort(SortKey::Tags, cx)),
+            )
             .on_action(cx.listener(
                 |this, action: &list_columns::ToggleListColumnAction, _, cx| {
                     this.toggle_list_column(action.index, cx)
                 },
             ))
             .on_action(
-                cx.listener(|this, _: &SortByCreated, _, cx| this.choose_sort(SortKey::Created, cx)),
+                cx.listener(|this, _: &SortByCreated, _, cx| {
+                    this.choose_sort(SortKey::Created, cx)
+                }),
             )
             .on_action(cx.listener(|this, _: &CleanUp, _, cx| this.clean_up(cx)))
             .on_action(cx.listener(|this, _: &CleanUpSelection, _, cx| this.clean_up_selection(cx)))

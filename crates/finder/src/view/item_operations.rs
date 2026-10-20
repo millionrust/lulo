@@ -6,7 +6,8 @@ const FILE_TAG_XATTR: &str = "com.rmac.tag";
 #[cfg(not(any(target_os = "macos", windows)))]
 const FILE_TAG_XATTR: &str = "user.rmac.tag";
 
-pub(super) const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
+pub(super) const FILE_TAGS: [&str; 7] =
+    ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
 
 impl FinderView {
     pub(super) fn add_paths_to_dock(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {

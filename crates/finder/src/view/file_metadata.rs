@@ -246,7 +246,8 @@ mod tests {
 
     #[test]
     fn a_tag_can_be_set_and_cleared_without_one_present() {
-        let path = std::env::temp_dir().join(format!("rmac-tag-apply-{}.txt", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("rmac-tag-apply-{}.txt", uuid::Uuid::new_v4()));
         std::fs::write(&path, b"body").unwrap();
         assert!(apply_file_tag(&path, None).is_ok());
         if apply_file_tag(&path, Some("green")).is_ok() {

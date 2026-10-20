@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    AssociationError, CatalogError, DefaultApplicationError, ItemError, ItemOperation, OpenWithError,
-    RecentDocumentError,
+    AssociationError, CatalogError, DefaultApplicationError, ItemError, ItemOperation,
+    OpenWithError, RecentDocumentError,
 };
 
 /// Open one local item through the user-mediated desktop boundary.

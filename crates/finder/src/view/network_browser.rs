@@ -62,9 +62,11 @@ pub(super) fn parse_gio_list(output: &str) -> Vec<NetworkHost> {
 
 /// The schemes Connect to Server can mount.
 fn network_uri(uri: &str) -> bool {
-    ["smb://", "sftp://", "ftp://", "dav://", "davs://", "afp://", "nfs://"]
-        .iter()
-        .any(|scheme| uri.starts_with(scheme))
+    [
+        "smb://", "sftp://", "ftp://", "dav://", "davs://", "afp://", "nfs://",
+    ]
+    .iter()
+    .any(|scheme| uri.starts_with(scheme))
 }
 
 /// A found computer is listed under its address, which is never an
@@ -256,7 +258,10 @@ mod tests {
             name: "NAS".into(),
             uri: "smb://nas.local/".into(),
         });
-        assert_eq!(network_address(&entry.path).as_deref(), Some("smb://nas.local/"));
+        assert_eq!(
+            network_address(&entry.path).as_deref(),
+            Some("smb://nas.local/")
+        );
         assert!(!entry.is_dir);
     }
 }

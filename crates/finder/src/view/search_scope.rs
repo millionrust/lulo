@@ -77,8 +77,12 @@ impl SearchKind {
             "png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "svg",
             "ico", "avif", "raw",
         ];
-        const MOVIE: &[&str] = &["mp4", "m4v", "mov", "mkv", "webm", "avi", "mpg", "mpeg", "ogv"];
-        const MUSIC: &[&str] = &["mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "aiff"];
+        const MOVIE: &[&str] = &[
+            "mp4", "m4v", "mov", "mkv", "webm", "avi", "mpg", "mpeg", "ogv",
+        ];
+        const MUSIC: &[&str] = &[
+            "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "aiff",
+        ];
         const ARCHIVE: &[&str] = &["zip", "tar", "gz", "tgz", "bz2", "xz", "zst", "7z", "rar"];
         const PRESENTATION: &[&str] = &["key", "ppt", "pptx", "odp"];
         const OFFICE: &[&str] = &[
@@ -133,7 +137,12 @@ impl FinderView {
 
     /// File ▸ Find (⌘F) and Find by Name (⌃⇧⌘F): the search field with its
     /// scope bar shown at once; ⌘F also adds the "Kind is Any" criterion.
-    pub(super) fn open_find(&mut self, name_only: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_find(
+        &mut self,
+        name_only: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if name_only {
             self.open_name_search(window, cx);
         } else {
@@ -208,7 +217,9 @@ impl FinderView {
             .flex()
             .items_center()
             .rounded(px(rmac_ui::mac::radius_control()))
-            .when(selected, |choice| choice.bg(stripe()).font_weight(rmac_ui::mac::SEMIBOLD))
+            .when(selected, |choice| {
+                choice.bg(stripe()).font_weight(rmac_ui::mac::SEMIBOLD)
+            })
             .text_color(primary_text())
             .cursor_pointer()
             .child(text)
@@ -284,9 +295,10 @@ impl FinderView {
                                     PopupMenuItem::new(choice.label())
                                         .checked(choice == kind)
                                         .on_click(move |_, _, cx| {
-                                            let _ = entity.update(cx, |this: &mut FinderView, cx| {
-                                                this.set_search_kind(Some(choice), cx)
-                                            });
+                                            let _ =
+                                                entity.update(cx, |this: &mut FinderView, cx| {
+                                                    this.set_search_kind(Some(choice), cx)
+                                                });
                                         }),
                                 )
                             })

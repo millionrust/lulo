@@ -33,7 +33,8 @@ pub(super) fn rotate_image_left(path: &Path) -> Result<(), String> {
         .into_decoder()
         .map_err(|error| error.to_string())?;
     let orientation = decoder.orientation().map_err(|error| error.to_string())?;
-    let mut picture = image::DynamicImage::from_decoder(decoder).map_err(|error| error.to_string())?;
+    let mut picture =
+        image::DynamicImage::from_decoder(decoder).map_err(|error| error.to_string())?;
     picture.apply_orientation(orientation);
     let rotated = picture.rotate270();
 
@@ -77,7 +78,10 @@ impl FinderView {
     /// Whether Quick Actions has anything for the current selection.
     pub(super) fn selection_quick_actions(&self) -> bool {
         let paths = self.selected_entries();
-        !paths.is_empty() && paths.iter().all(|entry| can_rotate(&entry.path, entry.is_dir))
+        !paths.is_empty()
+            && paths
+                .iter()
+                .all(|entry| can_rotate(&entry.path, entry.is_dir))
     }
 
     fn selected_entries(&self) -> Vec<&Entry> {

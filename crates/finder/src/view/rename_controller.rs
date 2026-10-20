@@ -149,7 +149,10 @@ impl FinderView {
         }
     }
 
-    pub(super) fn render_extension_prompt(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    pub(super) fn render_extension_prompt(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         let pending = self.extension_prompt.as_ref()?;
         let prompt = &pending.prompt;
         Some(
@@ -399,7 +402,8 @@ pub(super) fn extension_prompt(old: &str, new: &str, is_dir: bool) -> Option<Ext
     if is_dir || old == new || new.is_empty() {
         return None;
     }
-    const MESSAGE: &str = "If you make this change, your document may open in a different application.";
+    const MESSAGE: &str =
+        "If you make this change, your document may open in a different application.";
     match (extension_of(old), extension_of(new)) {
         (Some(from), Some(to)) if from != to => Some(ExtensionPrompt {
             title: format!(
@@ -471,11 +475,15 @@ mod tests {
         assert_eq!(change.keep_label, "Keep .txt");
         assert_eq!(change.use_label, "Use .md");
         assert_eq!(
-            extension_prompt("report.txt", "report", false).unwrap().use_label,
+            extension_prompt("report.txt", "report", false)
+                .unwrap()
+                .use_label,
             "Remove"
         );
         assert_eq!(
-            extension_prompt("README", "README.md", false).unwrap().use_label,
+            extension_prompt("README", "README.md", false)
+                .unwrap()
+                .use_label,
             "Add"
         );
         assert_eq!(extension_prompt("report.txt", "memo.txt", false), None);

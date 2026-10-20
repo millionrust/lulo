@@ -620,9 +620,9 @@ impl FinderView {
                                 SortKey::Date => SortKey::Size,
                                 SortKey::Size => SortKey::Tags,
                                 SortKey::Tags => SortKey::Created,
-                                SortKey::Created
-                                | SortKey::Version
-                                | SortKey::Comments => SortKey::Name,
+                                SortKey::Created | SortKey::Version | SortKey::Comments => {
+                                    SortKey::Name
+                                }
                             }
                         },
                         cx,

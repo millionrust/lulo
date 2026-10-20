@@ -102,7 +102,12 @@ impl FinderView {
         cx.notify();
     }
 
-    pub(super) fn set_connect_address(&mut self, uri: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn set_connect_address(
+        &mut self,
+        uri: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(sheet) = self.connect.as_ref() else {
             return;
         };

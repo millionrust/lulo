@@ -79,7 +79,9 @@ impl FinderView {
             let info_owner = owner.clone();
             let opened = cx.open_window(options, move |window, cx| {
                 rmac_ui::prepare_surface_window(window, cx);
-                let view = cx.new(|cx| super::info_window::InfoWindow::new(entry, thumbnail, info_owner, window, cx));
+                let view = cx.new(|cx| {
+                    super::info_window::InfoWindow::new(entry, thumbnail, info_owner, window, cx)
+                });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);
                 cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))

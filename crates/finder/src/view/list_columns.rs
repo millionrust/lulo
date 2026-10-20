@@ -179,7 +179,10 @@ pub(super) fn reorder_columns(options: &mut FolderOptions, moved: ListColumn, ta
     };
     let column = order.remove(from);
     order.insert(to, column);
-    options.column_order = order.into_iter().map(|column| column.index() as u8).collect();
+    options.column_order = order
+        .into_iter()
+        .map(|column| column.index() as u8)
+        .collect();
 }
 
 /// Right-click the list header, or View ▸ Show View Options ▸ Show Columns.
@@ -238,7 +241,10 @@ impl FinderView {
             return;
         }
         self.menu_at = None;
-        self.change_options(|options| options.columns[index] = !options.columns[index], cx);
+        self.change_options(
+            |options| options.columns[index] = !options.columns[index],
+            cx,
+        );
         if index == ListColumn::Comments.index() {
             cx.notify();
         }
@@ -356,7 +362,10 @@ impl FinderView {
             .items_center()
             .child(
                 div()
-                    .id(SharedString::from(format!("head-resize-{}", column.index())))
+                    .id(SharedString::from(format!(
+                        "head-resize-{}",
+                        column.index()
+                    )))
                     .w(px(7.0))
                     .h_full()
                     .flex_none()
@@ -376,9 +385,7 @@ impl FinderView {
                             this.start_column_resize(column, f32::from(event.position.x));
                         }),
                     )
-                    .on_drag(ResizingListColumn, |_, _, _, cx| {
-                        cx.new(|_| EmptyDragView)
-                    }),
+                    .on_drag(ResizingListColumn, |_, _, _, cx| cx.new(|_| EmptyDragView)),
             )
             .child(
                 div()
@@ -417,9 +424,11 @@ impl FinderView {
                 cx.new(|_| DraggedListColumn { column })
             })
             .drag_over::<DraggedListColumn>(|style, _, _, _| style.bg(stripe()))
-            .on_drop(cx.listener(move |this, dragged: &DraggedListColumn, _, cx| {
-                this.reorder_list_column(dragged.column, column, cx);
-            }))
+            .on_drop(
+                cx.listener(move |this, dragged: &DraggedListColumn, _, cx| {
+                    this.reorder_list_column(dragged.column, column, cx);
+                }),
+            )
             .on_click(cx.listener(move |this, _, _, cx| this.set_sort(key, cx)))
     }
 
@@ -472,11 +481,7 @@ impl FinderView {
     ) -> Div {
         let text = self.list_cell_text(entry, column, options);
         let width = column_width(options, column);
-        let cell = div()
-            .w(px(width))
-            .flex_none()
-            .truncate()
-            .text_color(color);
+        let cell = div().w(px(width)).flex_none().truncate().text_color(color);
         let cell = if column.right_aligned() {
             cell.flex().justify_end().pr(px(LIST_SIZE_TRAILING))
         } else {
@@ -484,14 +489,18 @@ impl FinderView {
         };
         if column == ListColumn::Tags {
             if let Some(tag) = &entry.tag {
-                return cell.flex().items_center().gap(px(4.0)).child(
-                    div()
-                        .size(px(8.0))
-                        .flex_none()
-                        .rounded_full()
-                        .bg(super::file_metadata::tag_colour(tag)),
-                )
-                .child(div().truncate().child(text));
+                return cell
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .child(
+                        div()
+                            .size(px(8.0))
+                            .flex_none()
+                            .rounded_full()
+                            .bg(super::file_metadata::tag_colour(tag)),
+                    )
+                    .child(div().truncate().child(text));
             }
         }
         cell.child(text)
@@ -589,7 +598,10 @@ mod tests {
 
     #[test]
     fn options_without_column_layout_load_with_defaults() {
-        let options: FolderOptions = serde_json::from_str(r#"{"columns":[true,true,false,false,true,true,false,false,false]}"#).unwrap();
+        let options: FolderOptions = serde_json::from_str(
+            r#"{"columns":[true,true,false,false,true,true,false,false,false]}"#,
+        )
+        .unwrap();
         assert_eq!(options.column_order, default_column_order());
         assert_eq!(options.column_widths, default_column_widths());
         assert_eq!(

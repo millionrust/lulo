@@ -13,8 +13,7 @@
 use std::sync::atomic::AtomicU8;
 
 use super::file_metadata::{
-    apply_file_tag, file_tags, read_file_comment, tag_colour, tag_display_name,
-    write_file_comment,
+    apply_file_tag, file_tags, read_file_comment, tag_colour, tag_display_name, write_file_comment,
 };
 use super::search_info_controller::{
     format_folder_size, info_artwork, info_block, info_body, info_card, info_header, info_rows,
@@ -70,7 +69,10 @@ fn toggle_section(section: InfoSection) {
 pub(super) fn info_section_header(section: InfoSection) -> Stateful<Div> {
     let open = section_open(section);
     div()
-        .id(SharedString::from(format!("info-section-{}", section as u8)))
+        .id(SharedString::from(format!(
+            "info-section-{}",
+            section as u8
+        )))
         .role(Role::Button)
         .aria_label(section.title().trim_end_matches(':').to_owned())
         .aria_expanded(open)
@@ -343,7 +345,10 @@ pub(super) struct InfoWindow {
 
 fn stored_tag(entry: &Entry) -> Option<&'static str> {
     let tag = entry.tag.as_ref()?;
-    file_tags().iter().copied().find(|candidate| *candidate == tag.as_ref())
+    file_tags()
+        .iter()
+        .copied()
+        .find(|candidate| *candidate == tag.as_ref())
 }
 
 impl InfoWindow {
@@ -544,8 +549,7 @@ impl InfoWindow {
             let association = rmac_app_launch::file_association(path.clone()).await;
             let chosen_path = path.clone();
             let own_choice =
-                blocking::unblock(move || super::file_metadata::read_open_with(&chosen_path))
-                    .await;
+                blocking::unblock(move || super::file_metadata::read_open_with(&chosen_path)).await;
             let _ = this.update(cx, |this: &mut InfoWindow, cx| {
                 if this.entry.path != path {
                     return;
@@ -937,18 +941,22 @@ impl InfoWindow {
         );
         let editable = e.application.is_none();
 
-        let general = info_general(details).when(editable && section_open(InfoSection::General), |block| {
-            block.child(
-                div().pt(px(6.0)).pl(px(INFO_LABEL_RIGHT - INFO_SECTION_INSET - 13.0)).child(
-                    Checkbox::new("info-locked")
-                        .label("Locked")
-                        .checked(self.access.locked)
-                        .on_change(cx.listener(|this, checked: &bool, _, cx| {
-                            this.toggle_locked(*checked, cx)
-                        })),
-                ),
-            )
-        });
+        let general =
+            info_general(details).when(editable && section_open(InfoSection::General), |block| {
+                block.child(
+                    div()
+                        .pt(px(6.0))
+                        .pl(px(INFO_LABEL_RIGHT - INFO_SECTION_INSET - 13.0))
+                        .child(
+                            Checkbox::new("info-locked")
+                                .label("Locked")
+                                .checked(self.access.locked)
+                                .on_change(cx.listener(|this, checked: &bool, _, cx| {
+                                    this.toggle_locked(*checked, cx)
+                                })),
+                        ),
+                )
+            });
 
         // Finder's Name & Extension field: edit and press Return to rename.
         let name_field = self.name_input.as_ref().map(|input| {
@@ -1156,7 +1164,11 @@ mod tests {
         assert!(unix.mine);
         assert_eq!(unix.mode, 0o640);
         assert_eq!(Privilege::from_bits(unix.mode & 0o7), Privilege::NoAccess);
-        set_mode(&path, with_privilege(unix.mode, 0, Privilege::ReadOnly, false)).unwrap();
+        set_mode(
+            &path,
+            with_privilege(unix.mode, 0, Privilege::ReadOnly, false),
+        )
+        .unwrap();
         assert_eq!(read_access(&path).unix.unwrap().mode, 0o644);
         std::fs::remove_file(path).unwrap();
     }

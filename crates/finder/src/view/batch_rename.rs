@@ -398,7 +398,11 @@ impl FinderView {
                     div()
                         .flex()
                         .gap(px(8.0))
-                        .child(div().flex_1().child(text("batch-add", "Text", &sheet.add, cx)))
+                        .child(
+                            div()
+                                .flex_1()
+                                .child(text("batch-add", "Text", &sheet.add, cx)),
+                        )
                         .child(self.batch_popup(
                             "batch-add-at",
                             "Where",
@@ -499,7 +503,7 @@ impl FinderView {
             .child(
                 div()
                     .id("batch-example")
-                            .text_size(rmac_ui::text_px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(secondary_text())
                     .truncate()
                     .child(format!("Example: {example}")),
@@ -517,13 +521,9 @@ impl FinderView {
                     .flex()
                     .justify_end()
                     .gap(px(8.0))
-                    .child(
-                        Button::new("batch-cancel", "Cancel")
-                            .small()
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_batch_rename(window, cx)
-                            })),
-                    )
+                    .child(Button::new("batch-cancel", "Cancel").small().on_click(
+                        cx.listener(|this, _, window, cx| this.close_batch_rename(window, cx)),
+                    ))
                     .child(
                         Button::new("batch-rename-button", "Rename")
                             .small()
@@ -650,9 +650,11 @@ mod tests {
             plan_problem(&sources, &["a.txt".into(), "c.txt".into()], none),
             None
         );
-        assert!(plan_problem(&sources, &["a.txt".into(), "c.txt".into()], |path: &Path| {
-            path == Path::new("/d/c.txt")
-        })
+        assert!(plan_problem(
+            &sources,
+            &["a.txt".into(), "c.txt".into()],
+            |path: &Path| { path == Path::new("/d/c.txt") }
+        )
         .is_some());
     }
 }

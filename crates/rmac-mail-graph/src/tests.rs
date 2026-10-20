@@ -439,6 +439,7 @@ fn journal_replays_read_move_delete_and_outbox_sends_mime_with_bcc() {
     h.fake
         .on(Method::Delete, &url("/me/messages/AAMkOld%3D"), 204, b"");
     h.fake.on(Method::Get, EMPTY_CURSOR, 200, EMPTY_DELTA);
+    h.fake.on(Method::Get, INBOX_CURSOR_1, 200, EMPTY_DELTA);
     h.fake.clear_log();
     h.sync().unwrap();
     let writes = h.fake.writes();
@@ -728,6 +729,7 @@ fn mailbox_changes_become_mail_folder_calls_before_the_folder_sync() {
         200,
         b"{}",
     );
+    h.fake.on(Method::Get, INBOX_CURSOR_1, 200, EMPTY_DELTA);
     h.fake.clear_log();
     h.sync().unwrap();
     let bodies: Vec<(Method, String, String)> = h

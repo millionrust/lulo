@@ -361,6 +361,10 @@ impl FinderView {
             self.launch_applications(vec![application.launch], cx);
             return;
         }
+        if let Some(address) = network_browser::network_address(&entry.path) {
+            self.connect_to_network_address(address, cx);
+            return;
+        }
         if entry.is_dir {
             self.navigate(entry.path, cx);
         } else {

@@ -33,6 +33,7 @@ mod list_presentation;
 mod list_tree;
 mod mount_controller;
 mod navigation;
+mod network_browser;
 mod open_with_controller;
 mod operations;
 mod permanent_delete_controller;
@@ -351,6 +352,9 @@ enum PlaceKind {
     Tag,
     /// Recently-used files from the platform search provider, not a folder.
     Recents,
+    /// The Network location: connected servers and computers GVFS finds.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    Network,
     // The sidebar lists the Trash only where it is backed by the freedesktop.org Trash.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Trash,
@@ -502,6 +506,9 @@ struct FinderView {
     column_resize: Option<list_columns::ColumnResize>,
     /// The open "Rename N Items…" sheet (FILES-26).
     batch_rename: Option<batch_rename::BatchRenameSheet>,
+    /// A found network computer to connect to on the next frame, when a
+    /// window is at hand (FILES-07).
+    pending_connect: Option<String>,
     sort_key: SortKey,
     sort_asc: bool,
     query: gpui::Entity<InputState>,

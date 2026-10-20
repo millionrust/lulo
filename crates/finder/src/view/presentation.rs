@@ -2,6 +2,9 @@ use super::*;
 
 impl Render for FinderView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.pending_connect.is_some() {
+            self.start_pending_connect(window, cx);
+        }
         // The application menu is shared by every Files window, so only the
         // active window may publish its window-specific validation state.
         if window.is_window_active() {

@@ -209,6 +209,7 @@ impl FinderView {
             column_selection: None,
             column_resize: None,
             batch_rename: None,
+            pending_connect: None,
             sort_key: SortKey::Name,
             sort_asc: true,
             query,

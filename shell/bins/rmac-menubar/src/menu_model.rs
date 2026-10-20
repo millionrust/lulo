@@ -3814,6 +3814,7 @@ mod tests {
             focused: false,
             floating: true,
             urgent: false,
+            always_on_top: false,
             focus_timestamp: Some(Timestamp {
                 seconds,
                 nanoseconds: 0,

@@ -25,6 +25,7 @@ fn focused_fixture() -> rmac_compositor::Snapshot {
             focused: true,
             floating: false,
             urgent: false,
+            always_on_top: false,
             focus_timestamp: None,
             layout: WindowLayout {
                 scrolling_position: None,

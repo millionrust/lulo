@@ -63,8 +63,13 @@ impl Settings {
         let value = popup_value(&choices, &fallback);
         // The Mac warns under the row when the display never turns off.
         let warning: Option<SharedString> = current.is_none().then(|| {
-            "⚠ Never letting your display turn off may shorten its lifespan and increase energy usage."
-                .into()
+            if on_battery {
+                "⚠ Energy usage may be higher when this computer is inactive for longer periods."
+                    .into()
+            } else {
+                "⚠ Never letting your display turn off may shorten its lifespan and increase energy usage."
+                    .into()
+            }
         });
         let (id, title) = if on_battery {
             (

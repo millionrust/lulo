@@ -135,6 +135,10 @@ pub(super) enum MenuBarChange {
     Notifications(bool),
     Focus(bool),
     ShowSeconds(bool),
+    /// Menu Bar ▸ Clock Options…: Show date, the day of the week, am/pm.
+    ShowDate(bool),
+    ShowWeekday(bool),
+    ShowAmPm(bool),
     /// Date & Time's "24-Hour Time" switch (SET-78): the same
     /// `rmac_shell_settings::ClockFormat` the menu bar clock reads
     /// (`top_bar_clock_pattern`), so it takes effect there immediately.
@@ -157,6 +161,9 @@ impl MenuBarChange {
             Self::Notifications(value) => indicators.notifications = value,
             Self::Focus(value) => indicators.focus = value,
             Self::ShowSeconds(value) => settings.clock.show_seconds = value,
+            Self::ShowDate(value) => settings.clock.show_date = value,
+            Self::ShowWeekday(value) => settings.clock.show_weekday = value,
+            Self::ShowAmPm(value) => settings.clock.show_am_pm = value,
             Self::TwentyFourHour(value) => {
                 settings.clock.format = if value {
                     rmac_shell_settings::ClockFormat::TwentyFourHour

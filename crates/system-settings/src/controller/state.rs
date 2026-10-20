@@ -426,6 +426,8 @@ pub(super) struct Settings {
     pub(super) battery_history_long: bool,
     pub(super) battery_health_sheet: bool,
     pub(super) hot_corners_sheet: bool,
+    /// Menu Bar ▸ Clock Options… / Battery Options….
+    pub(super) menu_bar_sheet: Option<super::menu_bar::MenuBarSheet>,
     // General ▸ Startup Disk
     pub(super) startup_disks: Option<crate::startup_disk::StartupDisks>,
     pub(super) startup_disk_selected: Option<u16>,

@@ -1043,6 +1043,11 @@ def screen_box(node, fallback_origin: tuple[float, float]) -> Optional[tuple[flo
     return (fallback_origin[0] + local[0], fallback_origin[1] + local[1], local[2], local[3])
 
 
+# --shots: where assert_shell_parity's screenshots go (outside the run's own
+# temporary directory, which is removed).
+SHOTS_DIR: Optional[str] = None
+
+
 def assert_shell_parity(shell: ShellSession) -> None:
     """docs/parity.md shell rows, end to end in the private nested shell:
 
@@ -1058,7 +1063,7 @@ def assert_shell_parity(shell: ShellSession) -> None:
     shots.mkdir(exist_ok=True)
 
     def shot(label: str) -> None:
-        destination = Path(os.environ.get("LULO_PARITY_SHOTS", str(shots))) / f"{label}.png"
+        destination = Path(SHOTS_DIR or str(shots)) / f"{label}.png"
         destination.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["grim", str(destination)], env=shell.env, capture_output=True, timeout=15)
 
@@ -1447,9 +1452,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="also assert Notification Center's populated AT-SPI tree")
     parser.add_argument("--assert-shell-parity", action="store_true",
                         help="assert the SPOT-04, CC-08 and NC-08 shell behaviours (docs/parity.md)")
+    parser.add_argument("--shots", default=None, help="directory for --assert-shell-parity screenshots")
     parser.add_argument("--inner", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.inner:
+        global SHOTS_DIR
+        SHOTS_DIR = args.shots
         return inner(args)
     if not args.bin_dir:
         parser.error("--bin-dir is required")
@@ -1468,6 +1476,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--assert-notification-center")
     if args.assert_shell_parity:
         rebuilt.append("--assert-shell-parity")
+    if args.shots:
+        rebuilt += ["--shots", str(Path(args.shots).resolve())]
     if args.all:
         rebuilt.append("--all")
     rebuilt += args.surfaces

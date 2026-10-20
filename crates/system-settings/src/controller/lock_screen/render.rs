@@ -20,7 +20,71 @@ const SUSPEND_TIMEOUTS: [(Option<u32>, &str); 5] = [
     (Some(3 * 60 * 60), "After 3 hours"),
 ];
 
+/// The Mac's "Turn display off … when inactive" choices.
+const DISPLAY_OFF_TIMEOUTS: [(Option<u32>, &str); 10] = [
+    (None, "Never"),
+    (Some(60), "For 1 minute"),
+    (Some(2 * 60), "For 2 minutes"),
+    (Some(5 * 60), "For 5 minutes"),
+    (Some(10 * 60), "For 10 minutes"),
+    (Some(20 * 60), "For 20 minutes"),
+    (Some(30 * 60), "For 30 minutes"),
+    (Some(60 * 60), "For 1 hour"),
+    (Some(2 * 60 * 60), "For 2 hours"),
+    (Some(3 * 60 * 60), "For 3 hours"),
+];
+
 impl Settings {
+    fn display_off_row(
+        &self,
+        view: &Entity<Self>,
+        on_battery: bool,
+        current: Option<u32>,
+        enabled: bool,
+    ) -> AnyElement {
+        let choices: Vec<PopupChoice> = DISPLAY_OFF_TIMEOUTS
+            .into_iter()
+            .map(|(timeout, title)| {
+                let option_view = view.clone();
+                let selected = current == timeout;
+                choice(title, selected, move |_, cx| {
+                    if !selected {
+                        option_view.update(cx, |settings, cx| {
+                            settings.set_display_off(on_battery, timeout, cx)
+                        });
+                    }
+                })
+            })
+            .collect();
+        let fallback = current
+            .map(u64::from)
+            .map(format_power_duration)
+            .unwrap_or_else(|| "Never".into());
+        let value = popup_value(&choices, &fallback);
+        // The Mac warns under the row when the display never turns off.
+        let warning: Option<SharedString> = current.is_none().then(|| {
+            if on_battery {
+                "⚠ Energy usage may be higher when this computer is inactive for longer periods."
+                    .into()
+            } else {
+                "⚠ Never letting your display turn off may shorten its lifespan and increase energy usage."
+                    .into()
+            }
+        });
+        let (id, title) = if on_battery {
+            (
+                "display-off-battery",
+                "Turn display off on battery when inactive",
+            )
+        } else {
+            (
+                "display-off-adapter",
+                "Turn display off on power adapter when inactive",
+            )
+        };
+        popup_row(id, title, warning, value, choices, enabled)
+    }
+
     pub(in crate::controller) fn render_lock_screen(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let mut cards = Vec::new();
@@ -102,6 +166,26 @@ impl Settings {
                     Some("⚠ Not supported by this computer’s system service.".into())
                 }
             };
+            let mut rows = Vec::new();
+            if policy.display_off_supported {
+                if self.hardware.has_battery {
+                    rows.push(self.display_off_row(
+                        &view,
+                        true,
+                        policy.display_off_on_battery_seconds,
+                        enabled,
+                    ));
+                }
+                rows.push(self.display_off_row(
+                    &view,
+                    false,
+                    policy.display_off_on_adapter_seconds,
+                    enabled,
+                ));
+            }
+            if !rows.is_empty() {
+                cards.push(card(rows));
+            }
             cards.push(card(vec![
                 popup_row(
                     "lock-after",

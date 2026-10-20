@@ -1193,14 +1193,14 @@
           "label": "Cycle Through Windows",
           "action": "rmac_ui::CycleThroughWindows",
           "shortcut": "⌘`",
-          "separator_before": true,
+          "separator_before": false,
           "children": []
         },
         {
           "label": "Show Previous Tab",
           "action": "terminal::PrevTab",
           "shortcut": "⇧⌘[",
-          "separator_before": true,
+          "separator_before": false,
           "children": []
         },
         {

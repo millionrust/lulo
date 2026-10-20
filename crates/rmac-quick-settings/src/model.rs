@@ -41,6 +41,12 @@ pub enum Command {
     SetOutputMuted(bool),
     SetPowerProfile(rmac_power::PowerProfile),
     SetFocusEnabled(bool),
+    /// Turn on one Focus mode (its service id) for `duration_ms`, or until
+    /// it is turned off when that is 0.
+    ActivateFocusMode {
+        mode: String,
+        duration_ms: u64,
+    },
     /// Join a saved or open network from the Wi-Fi detail list.
     JoinWifi(rmac_network::WifiNetworkId),
     /// Connect or disconnect a paired device from the Bluetooth detail list.
@@ -63,7 +69,7 @@ impl Command {
                 Control::Sound
             }
             Self::SetPowerProfile(_) => Control::Power,
-            Self::SetFocusEnabled(_) => Control::Focus,
+            Self::SetFocusEnabled(_) | Self::ActivateFocusMode { .. } => Control::Focus,
         }
     }
 }

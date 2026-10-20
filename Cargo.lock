@@ -6848,6 +6848,8 @@ dependencies = [
  "rmac-portal",
  "rmac-print",
  "rmac-print-linux",
+ "rmac-quick-look",
+ "rmac-spelling",
  "rmac-storage",
  "rmac-ui",
  "rmac-windows-resource-build",
@@ -7056,6 +7058,7 @@ dependencies = [
  "rmac-compositor-system",
  "rmac-desktop",
  "rmac-desktop-widgets",
+ "rmac-hardware",
  "rmac-locale",
  "rmac-locale-linux",
  "rmac-notifications",
@@ -7340,6 +7343,7 @@ version = "0.9.0-beta.2"
 dependencies = [
  "async-channel",
  "blocking",
+ "chrono",
  "futures-util",
  "gpui",
  "gpui-component",
@@ -8234,6 +8238,8 @@ version = "0.9.0-beta.2"
 dependencies = [
  "async-channel",
  "gpui",
+ "rmac-app-menu",
+ "rmac-apps",
  "rmac-intelligence",
  "rmac-ui",
 ]

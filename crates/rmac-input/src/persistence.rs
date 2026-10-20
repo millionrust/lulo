@@ -27,6 +27,14 @@ pub(super) fn validate_settings(settings: &InputSettings) -> Result<(), Error> {
             ));
         }
     }
+    if !settings.mouse_scroll_factor.is_finite()
+        || !(0.1..=10.0).contains(&settings.mouse_scroll_factor)
+    {
+        return Err(Error::new(
+            "validate pointer settings",
+            "mouse scrolling speed must be between 0.1 and 10",
+        ));
+    }
     if settings.double_click_ms.is_some() || settings.wheel_scroll_lines.is_some() {
         return Err(Error::new(
             "validate pointer settings",
@@ -169,6 +177,7 @@ pub(super) fn update_managed_source(
     }
 
     if settings.mouse != authority.effective.settings.mouse
+        || settings.mouse_scroll_factor != authority.effective.settings.mouse_scroll_factor
         || settings.mouse_scroll_with_middle_button
             != authority.effective.settings.mouse_scroll_with_middle_button
         || input.get("mouse").is_some()
@@ -187,6 +196,13 @@ pub(super) fn update_managed_source(
             .expect("mouse node exists")
             .ensure_children();
         write_pointer(mouse, &settings.mouse);
+        // libinput's own speed needs no line; anything else is niri's
+        // mouse `scroll-factor`.
+        if (settings.mouse_scroll_factor - 1.0).abs() < f64::EPSILON {
+            remove_named(mouse, "scroll-factor");
+        } else {
+            replace_value(mouse, "scroll-factor", settings.mouse_scroll_factor);
+        }
         if settings.mouse_scroll_with_middle_button
             != authority.effective.settings.mouse_scroll_with_middle_button
         {

@@ -33,6 +33,7 @@ use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 use windows::Win32::System::SystemServices::{
     GUID_ACDC_POWER_SOURCE, GUID_ACTIVE_POWERSCHEME, GUID_SLEEP_SUBGROUP, GUID_STANDBY_TIMEOUT,
+    GUID_VIDEO_POWERDOWN_TIMEOUT, GUID_VIDEO_SUBGROUP,
 };
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -62,11 +63,72 @@ pub fn lock_workstation() -> windows::core::Result<()> {
 }
 
 pub fn settings() -> Result<Snapshot, Error> {
+    let (battery, adapter) = read_display_off().unwrap_or((None, None));
     Ok(Snapshot {
         lock_after_seconds: read_lock_after()?,
         suspend_after_seconds: read_suspend_after()?,
         suspend_capability: suspend_capability(),
+        display_off_on_battery_seconds: battery,
+        display_off_on_adapter_seconds: adapter,
+        display_off_supported: true,
     })
+}
+
+/// The active scheme's "Turn off the display after" on battery (DC) and on
+/// power (AC).
+fn read_display_off() -> Result<(Option<u32>, Option<u32>), Error> {
+    let scheme = ActiveScheme::get()?;
+    let (mut dc, mut ac) = (0u32, 0u32);
+    // SAFETY: the scheme pointer lives until `scheme` drops; the GUID
+    // constants are 'static; the values are plain out-parameters.
+    let (dc_result, ac_result) = unsafe {
+        let scheme = Some(scheme.0 as *const GUID);
+        let subgroup = Some(&GUID_VIDEO_SUBGROUP as *const GUID);
+        let setting = Some(&GUID_VIDEO_POWERDOWN_TIMEOUT as *const GUID);
+        (
+            WIN32_ERROR(PowerReadDCValueIndex(
+                None, scheme, subgroup, setting, &mut dc,
+            )),
+            PowerReadACValueIndex(None, scheme, subgroup, setting, &mut ac),
+        )
+    };
+    if dc_result != ERROR_SUCCESS || ac_result != ERROR_SUCCESS {
+        return Err(Error::Call);
+    }
+    Ok(((dc != 0).then_some(dc), (ac != 0).then_some(ac)))
+}
+
+/// Set "Turn off the display after" for battery or power, then re-activate
+/// the scheme so it applies.
+pub fn set_display_off(on_battery: bool, seconds: Option<u32>) -> Result<Snapshot, Error> {
+    if let Some(seconds) = seconds {
+        if !(60..=24 * 60 * 60).contains(&seconds) {
+            return Err(Error::Invalid);
+        }
+    }
+    let value = seconds.unwrap_or(0);
+    let scheme = ActiveScheme::get()?;
+    // SAFETY: as in `read_display_off`.
+    let result = unsafe {
+        let subgroup = Some(&GUID_VIDEO_SUBGROUP as *const GUID);
+        let setting = Some(&GUID_VIDEO_POWERDOWN_TIMEOUT as *const GUID);
+        if on_battery {
+            WIN32_ERROR(PowerWriteDCValueIndex(
+                None, scheme.0, subgroup, setting, value,
+            ))
+        } else {
+            PowerWriteACValueIndex(None, scheme.0, subgroup, setting, value)
+        }
+    };
+    if result != ERROR_SUCCESS {
+        return Err(Error::Persistence);
+    }
+    // SAFETY: as above.
+    if unsafe { PowerSetActiveScheme(None, Some(scheme.0 as *const GUID)) } != ERROR_SUCCESS {
+        return Err(Error::Persistence);
+    }
+    drop(scheme);
+    settings()
 }
 
 pub fn set_lock_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
@@ -76,6 +138,8 @@ pub fn set_lock_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
                 version: 1,
                 lock_after_seconds: Some(seconds),
                 suspend_after_seconds: None,
+                display_off_on_battery_seconds: None,
+                display_off_on_adapter_seconds: None,
             }
             .validate()
             .map_err(|_| Error::Invalid)?;
@@ -100,6 +164,8 @@ pub fn set_suspend_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
             version: 1,
             lock_after_seconds: None,
             suspend_after_seconds: Some(seconds),
+            display_off_on_battery_seconds: None,
+            display_off_on_adapter_seconds: None,
         }
         .validate()
         .map_err(|_| Error::Invalid)?;

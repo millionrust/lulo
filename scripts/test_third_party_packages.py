@@ -153,6 +153,22 @@ class PinTests(unittest.TestCase):
             (PACKAGING / "niri" / "debian" / "changelog").read_text(encoding="utf-8"),
         )
 
+    def test_niri_move_edge_patch_matches_the_events_rmac_listens_for(self):
+        # DESK-03 (docs/decisions/0029-edge-drag-tiling.md): the move grab
+        # reports edges, and the adapter matches the exact event names.
+        patch = (
+            PACKAGING / "niri" / "debian" / "patches" / "0003-ipc-report-window-move-edges.patch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("WindowMoveEdgeChanged {", patch)
+        self.assertIn("WindowMoveEnded {", patch)
+        self.assertIn("fn screen_edge(", patch)
+        self.assertIn("data.ipc_window_move_ended(id, self.edge.take());", patch)
+        adapter = (
+            REPO_ROOT / "crates" / "rmac-compositor-niri" / "src" / "edge_drag.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn('MOVE_EDGE_EVENT: &str = "WindowMoveEdgeChanged"', adapter)
+        self.assertIn('MOVE_ENDED_EVENT: &str = "WindowMoveEnded"', adapter)
+
     def test_vendor_epoch_stays_on_the_first_entry_of_an_upstream_version(self):
         changelog = (
             "niri (26.04+lulo1-2) resolute; urgency=medium\n\n  * Patch.\n\n"

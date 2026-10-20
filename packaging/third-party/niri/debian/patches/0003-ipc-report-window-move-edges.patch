@@ -1,0 +1,215 @@
+Description: Report the screen edge a window drag is at on the IPC event stream
+ macOS tiles a window dragged to a screen edge or corner: a half, a quarter, or
+ the whole screen from the top edge, with a preview while the pointer rests
+ there. niri does not know these zones. This adds two transient event-stream
+ events: WindowMoveEdgeChanged { id, edge } while an interactive move enters
+ or leaves an edge or corner, and WindowMoveEnded { id, edge } when it ends.
+ niri still leaves the window where it was dropped; the Lulo OS window service
+ (rmac-mission-control) previews and applies the tile, through the same
+ floating-frame actions as Window > Move & Resize.
+ .
+ See docs/decisions/0029-edge-drag-tiling.md in the rmac repository.
+Author: Jacob Samas <samasjacob@icloud.com>
+Forwarded: no
+Last-Update: 2026-10-20
+---
+--- a/niri-ipc/src/lib.rs
++++ b/niri-ipc/src/lib.rs
+@@ -1715,6 +1715,28 @@
+         /// Id of the window.
+         id: u64,
+     },
++    /// The pointer dragging a window reached a screen edge or corner, or left it.
++    ///
++    /// `edge` is `left`, `right`, `top`, `bottom`, `top-left`, `top-right`, `bottom-left` or
++    /// `bottom-right`, or `None` once the pointer left every edge. A desktop shell uses it to
++    /// preview where the window would tile. Transient, like `WindowMinimizeRequested`. (Lulo OS
++    /// patch.)
++    WindowMoveEdgeChanged {
++        /// Id of the window being dragged.
++        id: u64,
++        /// The edge or corner under the pointer, if any.
++        edge: Option<String>,
++    },
++    /// A window drag ended, with the edge or corner the pointer was at when it was released.
++    ///
++    /// niri leaves the window where it was dropped; a desktop shell may tile it to `edge`.
++    /// Transient. (Lulo OS patch.)
++    WindowMoveEnded {
++        /// Id of the window that was dragged.
++        id: u64,
++        /// The edge or corner under the pointer at release, if any.
++        edge: Option<String>,
++    },
+ }
+ 
+ impl From<Duration> for Timestamp {
+@@ -2056,6 +2078,19 @@
+     use super::*;
+ 
+     #[test]
++    fn window_move_edge_wire_format() {
++        // Lulo OS patch: the shell matches on these exact JSON lines.
++        let line = serde_json::to_string(&Event::WindowMoveEdgeChanged {
++            id: 7,
++            edge: Some("left".into()),
++        })
++        .unwrap();
++        assert_eq!(line, r#"{"WindowMoveEdgeChanged":{"id":7,"edge":"left"}}"#);
++        let line = serde_json::to_string(&Event::WindowMoveEnded { id: 7, edge: None }).unwrap();
++        assert_eq!(line, r#"{"WindowMoveEnded":{"id":7,"edge":null}}"#);
++    }
++
++    #[test]
+     fn window_minimize_requested_wire_format() {
+         // Lulo OS patch: the shell matches on this exact JSON line.
+         let line = serde_json::to_string(&Event::WindowMinimizeRequested { id: 7 }).unwrap();
+--- a/src/input/move_grab.rs	2026-10-20 21:23:59.580532565 +0530
++++ b/src/input/move_grab.rs	2026-10-20 21:24:01.664909634 +0530
+@@ -30,6 +30,10 @@
+     enable_view_offset: bool,
+     move_icon: CursorIcon,
+ 
++    /// The screen edge or corner the pointer is at while moving, reported on the IPC event
++    /// stream so a desktop shell can preview and apply edge tiling. (Lulo OS patch.)
++    edge: Option<&'static str>,
++
+     // Accumulated and applied in frame().
+     new_location: Point<f64, Logical>,
+     event_timestamp: Option<Duration>,
+@@ -64,6 +68,7 @@
+             enable_view_offset,
+             // Moving windows by their titlebars uses the default cursor by default.
+             move_icon: move_icon.unwrap_or(CursorIcon::Default),
++            edge: None,
+             new_location: location,
+             event_timestamp: None,
+             relative_delta: None,
+@@ -99,7 +104,12 @@
+ 
+                 layout.activate_window(&self.window);
+             }
+-            GestureState::Move => layout.interactive_move_end(&self.window),
++            GestureState::Move => {
++                layout.interactive_move_end(&self.window);
++                if let Some(id) = window_id(data, &self.window) {
++                    data.ipc_window_move_ended(id, self.edge.take());
++                }
++            }
+             GestureState::ViewOffset => {
+                 layout.view_offset_gesture_end(Some(false));
+             }
+@@ -228,12 +238,19 @@
+ 
+                 // Interactive move always uses absolute delta since the window must remain pinned
+                 // to the cursor even when it's clamped to monitor bounds.
++                let edge = screen_edge(pos_within_output, crate::utils::output_size(&output));
+                 let ongoing = data.niri.layout.interactive_move_update(
+                     &self.window,
+                     delta,
+                     output,
+                     pos_within_output,
+                 );
++                if ongoing && edge != self.edge {
++                    self.edge = edge;
++                    if let Some(id) = window_id(data, &self.window) {
++                        data.ipc_window_move_edge_changed(id, edge);
++                    }
++                }
+                 if ongoing {
+                     // FIXME: only redraw the previous and the new output.
+                     data.niri.queue_redraw_all();
+@@ -294,6 +311,47 @@
+     }
+ }
+ 
++/// How close to a screen edge the pointer must be for it to count, in logical pixels.
++/// The pointer is clamped to the output, so it rests at the edge itself. (Lulo OS patch.)
++const EDGE_ZONE: f64 = 2.;
++/// How far along an edge from a corner still counts as that corner. (Lulo OS patch.)
++const CORNER_ZONE: f64 = 48.;
++
++/// The edge or corner of an output of `size` that `pos` is at, as the IPC event names it.
++fn screen_edge(
++    pos: Point<f64, Logical>,
++    size: smithay::utils::Size<f64, Logical>,
++) -> Option<&'static str> {
++    let left = pos.x <= EDGE_ZONE;
++    let right = pos.x >= size.w - 1. - EDGE_ZONE;
++    let top = pos.y <= EDGE_ZONE;
++    let bottom = pos.y >= size.h - 1. - EDGE_ZONE;
++    let near_left = pos.x <= CORNER_ZONE;
++    let near_right = pos.x >= size.w - 1. - CORNER_ZONE;
++    let near_top = pos.y <= CORNER_ZONE;
++    let near_bottom = pos.y >= size.h - 1. - CORNER_ZONE;
++    Some(match () {
++        _ if (top && near_left) || (left && near_top) => "top-left",
++        _ if (top && near_right) || (right && near_top) => "top-right",
++        _ if (bottom && near_left) || (left && near_bottom) => "bottom-left",
++        _ if (bottom && near_right) || (right && near_bottom) => "bottom-right",
++        _ if left => "left",
++        _ if right => "right",
++        _ if top => "top",
++        _ if bottom => "bottom",
++        _ => return None,
++    })
++}
++
++/// The IPC id of `window`, if it is mapped.
++fn window_id(data: &State, window: &Window) -> Option<u64> {
++    data.niri.layout.workspaces().find_map(|(_, _, ws)| {
++        ws.windows()
++            .find(|mapped| mapped.window == *window)
++            .map(|mapped| mapped.id().get())
++    })
++}
++
+ impl PointerGrab<State> for MoveGrab {
+     fn motion(
+         &mut self,
+--- a/src/ipc/client.rs	2026-10-20 21:23:59.590766154 +0530
++++ b/src/ipc/client.rs	2026-10-20 21:24:01.668157021 +0530
+@@ -509,6 +509,12 @@
+                     Event::WindowMinimizeRequested { id } => {
+                         println!("Window minimize requested: {id}");
+                     }
++                    Event::WindowMoveEdgeChanged { id, edge } => {
++                        println!("Window move edge changed: {id} {edge:?}");
++                    }
++                    Event::WindowMoveEnded { id, edge } => {
++                        println!("Window move ended: {id} {edge:?}");
++                    }
+                 }
+             }
+         }
+--- a/src/ipc/server.rs
++++ b/src/ipc/server.rs
+@@ -951,4 +951,28 @@
+ 
+         server.send_event(Event::WindowMinimizeRequested { id });
+     }
++
++    /// Tell event-stream clients which screen edge a window drag is at. (Lulo OS patch.)
++    pub fn ipc_window_move_edge_changed(&mut self, id: u64, edge: Option<&'static str>) {
++        let Some(server) = &self.niri.ipc_server else {
++            return;
++        };
++
++        server.send_event(Event::WindowMoveEdgeChanged {
++            id,
++            edge: edge.map(str::to_owned),
++        });
++    }
++
++    /// Tell event-stream clients that a window drag ended, and at which edge. (Lulo OS patch.)
++    pub fn ipc_window_move_ended(&mut self, id: u64, edge: Option<&'static str>) {
++        let Some(server) = &self.niri.ipc_server else {
++            return;
++        };
++
++        server.send_event(Event::WindowMoveEnded {
++            id,
++            edge: edge.map(str::to_owned),
++        });
++    }
+ }

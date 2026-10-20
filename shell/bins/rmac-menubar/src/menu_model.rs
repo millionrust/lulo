@@ -1515,9 +1515,13 @@ pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
     rows
 }
 
+/// The Battery menu. `energy` lists the apps using significant energy
+/// (BAR-05), once sampled; `None` until then, so the section does not flash
+/// "No Apps …" before the sample lands.
 pub fn battery_menu_rows(
     snapshot: Option<&rmac_power::Snapshot>,
     error: Option<&str>,
+    energy: Option<&[String]>,
 ) -> Vec<StatusRow> {
     let battery = snapshot.and_then(|snapshot| snapshot.battery.as_ref());
     let mut rows = vec![StatusRow::Title {
@@ -1571,6 +1575,15 @@ pub fn battery_menu_rows(
             action: Some(StatusAction::ToggleLowPower),
         });
         rows.push(StatusRow::GroupEnd);
+    }
+    if let Some(energy) = energy.filter(|_| battery.is_some()) {
+        rows.push(StatusRow::Separator);
+        rows.push(StatusRow::Header("Using Significant Energy".into()));
+        if energy.is_empty() {
+            rows.push(StatusRow::Info("No Apps Using Significant Energy".into()));
+        } else {
+            rows.extend(energy.iter().map(|app| StatusRow::Info(app.clone())));
+        }
     }
     rows.push(StatusRow::Separator);
     rows.push(StatusRow::Item {
@@ -3146,6 +3159,7 @@ mod tests {
         let rows = battery_menu_rows(
             Some(&snapshot),
             Some("Couldn't change the energy mode: not authorized"),
+            None,
         );
         assert_eq!(
             labels(&rows)[..2],
@@ -3288,7 +3302,7 @@ mod tests {
             profiles: rmac_power::Profiles::default(),
         };
         assert_eq!(
-            labels(&battery_menu_rows(Some(&snapshot), None)),
+            labels(&battery_menu_rows(Some(&snapshot), None, None)),
             [
                 "title:Battery",
                 "info:Power Source: Battery",
@@ -3305,7 +3319,7 @@ mod tests {
             ],
             performance_degraded: None,
         };
-        let rows = battery_menu_rows(Some(&snapshot), None);
+        let rows = battery_menu_rows(Some(&snapshot), None, None);
         assert_eq!(
             labels(&rows),
             [
@@ -3325,6 +3339,21 @@ mod tests {
         assert!(matches!(rows[4], StatusRow::Badge { on: true, .. }));
         // Measured Battery menu without the per-app energy section.
         assert_eq!(status_menu_height(&rows), 159.5);
+
+        // BAR-05: the apps using significant energy, above Battery Settings….
+        let none = battery_menu_rows(Some(&snapshot), None, Some(&[]));
+        assert_eq!(
+            labels(&none)[6..],
+            [
+                "---",
+                "head:Using Significant Energy",
+                "info:No Apps Using Significant Energy",
+                "---",
+                "item:Battery Settings…",
+            ]
+        );
+        let busy = battery_menu_rows(Some(&snapshot), None, Some(&["Terminal".to_owned()]));
+        assert_eq!(labels(&busy)[8], "info:Terminal");
     }
 
     #[test]

@@ -273,6 +273,26 @@ class ShellSession:
             raise StepFailed("the launcher did not register its shortcut endpoint")
         self.popover_processes["spotlight"] = self.launcher_process
 
+    def start_app_drawer(self) -> None:
+        if "app-drawer" in self.popover_processes:
+            return
+        drawer = find_bin(self.bins, "rmac-app-drawer")
+        self.app_drawer_process = self._spawn([str(drawer), "--service"], "app-drawer")
+        endpoint = Path(self.env["XDG_RUNTIME_DIR"]) / "rmac" / "shortcut-app-drawer.sock"
+        if not self._wait_for(endpoint.exists, 20):
+            raise StepFailed("Apps did not register its shortcut endpoint")
+        self.popover_processes["app-drawer"] = self.app_drawer_process
+
+    def start_service(self, label: str, *candidates: str) -> subprocess.Popen:
+        """A background service of the session (the notification authority,
+        Focus), on this run's private D-Bus session bus."""
+
+        process = self._spawn([str(find_bin(self.bins, *candidates))], label)
+        time.sleep(1.0)
+        if process.poll() is not None:
+            raise StepFailed(f"{label} exited at start:\n{(self.logs / (label + '.log')).read_text()[-800:]}")
+        return process
+
     def dispatch(self, shortcut: str) -> None:
         dispatcher = find_bin(self.bins, "rmac-shortcut-dispatch")
         result = subprocess.run([str(dispatcher), shortcut], env=self.env,
@@ -949,7 +969,8 @@ def explore(shell: ShellSession, items: list[dict[str, Any]]) -> None:
 
 
 def record_shell_surfaces(nested: "run_lulo.Nested", bins: list[Path], niri_bin: Optional[Path],
-                          items: list[dict[str, Any]], assert_notification_center: bool = False) -> list[dict[str, Any]]:
+                          items: list[dict[str, Any]], assert_notification_center: bool = False,
+                          assert_parity: bool = False) -> list[dict[str, Any]]:
     results = []
     shell = ShellSession(nested, bins, niri_bin)
     try:
@@ -969,6 +990,8 @@ def record_shell_surfaces(nested: "run_lulo.Nested", bins: list[Path], niri_bin:
             (OUT_DIR / f"{result['surface']}.json").write_text(json.dumps(result, indent=2) + "\n")
             print(f"{'ERROR' if 'error' in result else 'ok   '} {item['id']}: "
                   f"{result.get('error') or json.dumps(result['probes'])}", flush=True)
+        if assert_parity:
+            assert_shell_parity(shell)
         if assert_notification_center:
             shell.start_notification_center()
             shell.dispatch("notification-center")
@@ -990,6 +1013,155 @@ def record_shell_surfaces(nested: "run_lulo.Nested", bins: list[Path], niri_bin:
     finally:
         shell.close()
     return results
+
+
+def showing(shell: ShellSession, pid: int) -> bool:
+    pyatspi = atspi()
+    return any(has_state(frame, pyatspi.STATE_SHOWING) or has_state(frame, pyatspi.STATE_VISIBLE)
+               for frame in shell.frames_by_pid(pid))
+
+
+def find_named(shell: ShellSession, pid: int, wanted: str, roles: Optional[set[str]] = None):
+    for frame in shell.frames_by_pid(pid):
+        for node in descendants(frame, limit=4000):
+            if name(node) == wanted and (roles is None or role(node) in roles):
+                return node
+    return None
+
+
+def screen_box(node, fallback_origin: tuple[float, float]) -> Optional[tuple[float, float, float, float]]:
+    try:
+        rect = node.queryComponent().getExtents(atspi().SCREEN_COORDS)
+        box = (rect.x, rect.y, rect.width, rect.height)
+        if box[2] > 0 and box[3] > 0 and (box[0] > 0 or box[1] > 0):
+            return box
+    except Exception:
+        pass
+    local = extents(node)
+    if not local:
+        return None
+    return (fallback_origin[0] + local[0], fallback_origin[1] + local[1], local[2], local[3])
+
+
+def assert_shell_parity(shell: ShellSession) -> None:
+    """docs/parity.md shell rows, end to end in the private nested shell:
+
+    SPOT-04  opening Apps closes Spotlight, and opening Spotlight closes Apps;
+    CC-08    the Focus module opens a Focus view listing the modes and
+             Focus Settings…;
+    NC-08    right-clicking a Notification Centre card offers Mute for 1
+             Hour / Mute for Today / Turn Off / Notification Settings…, and
+             Mute for 1 Hour reaches the notification authority's policy.
+    """
+
+    shots = shell.nested.work / "parity-shots"
+    shots.mkdir(exist_ok=True)
+
+    def shot(label: str) -> None:
+        destination = Path(os.environ.get("LULO_PARITY_SHOTS", str(shots))) / f"{label}.png"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["grim", str(destination)], env=shell.env, capture_output=True, timeout=15)
+
+    # SPOT-04 -----------------------------------------------------------
+    shell.start_launcher()
+    shell.start_app_drawer()
+    launcher, drawer = shell.launcher_process.pid, shell.app_drawer_process.pid
+    shell.dispatch("launcher")
+    if not shell._wait_for(lambda: showing(shell, launcher), 20):
+        raise StepFailed("SPOT-04: Spotlight did not open")
+    shell.dispatch("app-drawer")
+    if not shell._wait_for(lambda: showing(shell, drawer), 20):
+        raise StepFailed("SPOT-04: Apps did not open")
+    if shell._wait_for(lambda: not showing(shell, launcher), 5) is None:
+        shot("spot-04-both-open")
+        raise StepFailed("SPOT-04: Spotlight stayed open under Apps")
+    shell.dispatch("launcher")
+    if not shell._wait_for(lambda: showing(shell, launcher), 20):
+        raise StepFailed("SPOT-04: Spotlight did not reopen over Apps")
+    if shell._wait_for(lambda: not showing(shell, drawer), 5) is None:
+        raise StepFailed("SPOT-04: Apps stayed open under Spotlight")
+    shell.input.key("escape")
+    shell._wait_for(lambda: not showing(shell, launcher), 5)
+    print("SPOT-04: Apps and Spotlight close each other", flush=True)
+
+    # CC-08 -------------------------------------------------------------
+    shell.start_service("focus", "rmac-focus-service")
+    shell.start_quick_settings()
+    quick = shell.quick_settings_process.pid
+    shell.dispatch("quick-settings")
+    if not shell._wait_for(lambda: shell.wait_for_populated_frame(quick, 5) and showing(shell, quick), 25):
+        raise StepFailed("CC-08: Control Centre did not open")
+    trigger = shell._wait_for(lambda: find_named(shell, quick, "Focus details"), 10)
+    if trigger is None:
+        dump_tree(shell.frames_by_pid(quick), "Control Centre without a Focus details control")
+        raise StepFailed("CC-08: the Focus module has no details control")
+    click_node(shell, trigger)
+    settings = shell._wait_for(lambda: find_named(shell, quick, "Focus Settings\u2026"), 10)
+    if settings is None:
+        dump_tree(shell.frames_by_pid(quick), "Control Centre after Focus details")
+        raise StepFailed("CC-08: the Focus view has no Focus Settings… row")
+    mode = shell._wait_for(lambda: find_named(shell, quick, "Do Not Disturb"), 10)
+    time.sleep(0.6)
+    shot("cc-08-focus-view")
+    if mode is None:
+        dump_tree(shell.frames_by_pid(quick), "Control Centre Focus view")
+        raise StepFailed("CC-08: the Focus view lists no Do Not Disturb mode")
+    print("CC-08: Focus view lists Do Not Disturb and Focus Settings…", flush=True)
+    shell.input.key("escape")
+    time.sleep(0.3)
+    shell.input.key("escape")
+    time.sleep(0.5)
+
+    # NC-08 -------------------------------------------------------------
+    shell.start_service("notifications", "rmac-notification-center")
+    notify = subprocess.run(
+        ["gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
+         "--object-path", "/org/freedesktop/Notifications",
+         "--method", "org.freedesktop.Notifications.Notify",
+         "Parity Probe", "0", "", "Lunch", "Pasta at one", "[]", "{}", "5000"],
+        env=shell.env, capture_output=True, text=True, timeout=15)
+    if notify.returncode != 0:
+        raise StepFailed(f"NC-08: posting a notification failed: {notify.stderr[-300:]}")
+    time.sleep(1.0)
+    shell.start_notification_center()
+    panel = shell.notification_center_process.pid
+    shell.dispatch("notification-center")
+    card = shell._wait_for(lambda: next(
+        (node for frame in shell.frames_by_pid(panel) for node in descendants(frame, limit=4000)
+         if name(node).endswith(": Lunch")), None), 20)
+    if card is None:
+        dump_tree(shell.frames_by_pid(panel), "Notification Centre without the posted card")
+        raise StepFailed("NC-08: the posted notification is not in Notification Centre")
+    time.sleep(0.6)
+    box = screen_box(card, (OUTPUT_W - 420, 0))
+    if box is None:
+        raise StepFailed("NC-08: the card has no bounds")
+    shell.click(box[0] + box[2] / 2, box[1] + box[3] / 2, button="right")
+    mute = shell._wait_for(lambda: find_named(shell, panel, "Mute for 1 Hour"), 10)
+    time.sleep(0.4)
+    shot("nc-08-card-menu")
+    if mute is None:
+        dump_tree(shell.frames_by_pid(panel), "Notification Centre after a right-click")
+        raise StepFailed("NC-08: right-clicking a card opened no Mute for 1 Hour item")
+    for label in ("Mute for Today", "Turn Off", "Notification Settings\u2026"):
+        if find_named(shell, panel, label) is None:
+            raise StepFailed(f"NC-08: the card menu has no {label!r}")
+    click_node(shell, mute)
+
+    def muted() -> bool:
+        reply = subprocess.run(
+            ["gdbus", "call", "--session", "--dest", "org.rmac.NotificationCenter1",
+             "--object-path", "/org/rmac/NotificationCenter1",
+             "--method", "org.rmac.NotificationCenter1.Applications"],
+            env=shell.env, capture_output=True, text=True, timeout=10)
+        # (bbbbbbyt): the last field is muted_until, seconds since 1970.
+        import re as _re
+        return any(int(value) > time.time() for value in
+                   _re.findall(r"uint64 (\d+)", reply.stdout))
+
+    if not shell._wait_for(muted, 10):
+        raise StepFailed("NC-08: Mute for 1 Hour did not reach the notification policy")
+    print("NC-08: the card menu mutes the app for an hour", flush=True)
 
 
 # --------------------------------------------------------------------------
@@ -1245,6 +1417,8 @@ def inner(args: argparse.Namespace) -> int:
         return 0
     results = []
     try:
+        if args.assert_shell_parity:
+            record_shell_surfaces(nested, bins, niri_bin, [], assert_parity=True)
         if shell_wanted:
             results.extend(record_shell_surfaces(nested, bins, niri_bin, shell_wanted,
                                                  args.assert_notification_center))
@@ -1270,13 +1444,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--explore", action="store_true", help="dump the AT-SPI tree instead of probing")
     parser.add_argument("--assert-notification-center", action="store_true",
                         help="also assert Notification Center's populated AT-SPI tree")
+    parser.add_argument("--assert-shell-parity", action="store_true",
+                        help="assert the SPOT-04, CC-08 and NC-08 shell behaviours (docs/parity.md)")
     parser.add_argument("--inner", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.inner:
         return inner(args)
     if not args.bin_dir:
         parser.error("--bin-dir is required")
-    if not args.all and not args.surfaces:
+    if not args.all and not args.surfaces and not args.assert_shell_parity:
         parser.error("name surfaces or pass --all")
     args.bin_dir = [str(Path(p).resolve()) for p in args.bin_dir]
     args.shell_bin_dir = [str(Path(p).resolve()) for p in args.shell_bin_dir]
@@ -1289,6 +1465,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--explore")
     if args.assert_notification_center:
         rebuilt.append("--assert-notification-center")
+    if args.assert_shell_parity:
+        rebuilt.append("--assert-shell-parity")
     if args.all:
         rebuilt.append("--all")
     rebuilt += args.surfaces

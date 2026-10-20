@@ -115,6 +115,49 @@ fn without_hidden(items: Vec<Item>, hidden: &BTreeSet<String>) -> Vec<Item> {
     kept
 }
 
+/// The live state of the published submenu whose own action is `action`
+/// (Edit ▸ Speech is `"notes::SpeechMenu"`): the app's checkmarks, enabled
+/// states, labels and hidden rows applied, as the menu bar would show it
+/// now. A text right-click menu mirrors these, so its Font, Spelling and
+/// Substitutions rows run the same commands and show the same ticks.
+/// `None` when this app publishes no such submenu, or it is hidden.
+pub fn menu_submenu(action: &str, cx: &App) -> Option<Item> {
+    fn find<'a>(items: &'a [Item], action: &str) -> Option<&'a Item> {
+        items.iter().find_map(|item| {
+            if item.action == action && !item.children.is_empty() {
+                Some(item)
+            } else {
+                find(&item.children, action)
+            }
+        })
+    }
+    let model = cx.try_global::<MenuModel>()?;
+    if model.hidden.contains(action) {
+        return None;
+    }
+    let found = model
+        .definition
+        .iter()
+        .find_map(|menu| find(&menu.items, action))?
+        .clone();
+    let wrapped = [Menu {
+        label: String::new(),
+        items: vec![found],
+    }];
+    let mut item =
+        rmac_app_menu::apply_state(&wrapped, |item| model.overrides.get(&item.action).cloned())
+            .into_iter()
+            .next()?
+            .items
+            .into_iter()
+            .next()?;
+    if let Some(children) = model.dynamic_children.get(action) {
+        item.children = children.clone();
+    }
+    item.children = without_hidden(std::mem::take(&mut item.children), &model.hidden);
+    (!item.children.is_empty()).then_some(item)
+}
+
 /// Replace a submenu's children with app-owned rows, such as a live list of
 /// recently visited notes. The parent action must exist in the definition.
 pub fn set_menu_children(action: &str, children: Vec<Item>, cx: &mut App) {

@@ -1,0 +1,17 @@
+{
+  "title": "Notes: right-clicking a note's text shows the text menu with Font, Spelling, Substitutions, Transformations and Speech (MROBOT-13)",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "Shopping list"},
+    {"key": "cmd-a", "settle": 0.5},
+    {"context_in_window": [600, 160], "settle": 1.5},
+    {"observe": "menu", "facts": ["menu"]},
+    {"key": "escape", "settle": 0.5},
+    {"observe": "closed", "facts": ["menu"]}
+  ],
+  "tolerance": {"menu.menu.items": "subset"}
+}

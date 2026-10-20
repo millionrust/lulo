@@ -2,35 +2,17 @@
 //! Mail's File, Edit, View, Mailbox, Message and Window menus, and the
 //! live state each row shows.
 
-use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
 use gpui::{
-    div, px, relative, AnyElement, AnyWindowHandle, App, Context, Focusable as _,
-    InteractiveElement as _, IntoElement, ParentElement as _, SharedString, Styled as _, Window,
+    div, px, relative, AnyElement, App, Context, Focusable as _, InteractiveElement as _,
+    IntoElement, ParentElement as _, SharedString, Styled as _, Window,
 };
 use rmac_mail::{compose::ComposeKind, Erase, Mailbox, SortKey, SpecialUse};
 use rmac_ui::{mac, DialogButtonKind, MenuItem};
 
 use super::MailView;
 use crate::{ACCOUNT_ROWS, MAILBOX_ROWS};
-
-thread_local! {
-    /// The message viewer, for Window ▸ Message Viewer.
-    static VIEWER: Cell<Option<AnyWindowHandle>> = const { Cell::new(None) };
-}
-
-/// Remembers the main window for Window ▸ Message Viewer.
-pub fn set_viewer_window(handle: AnyWindowHandle) {
-    VIEWER.with(|viewer| viewer.set(Some(handle)));
-}
-
-/// Window ▸ Message Viewer (⌘0): brings the main window to the front.
-pub fn show_viewer(cx: &mut App) {
-    if let Some(handle) = VIEWER.with(Cell::get) {
-        let _ = handle.update(cx, |_, window, _| window.activate_window());
-    }
-}
 
 /// File ▸ Close All (⌥⌘W): every Mail window closes the way its own Close
 /// does, so an unsent message is kept in Drafts.
@@ -61,11 +43,12 @@ pub(super) fn open_internet_accounts(cx: &mut App) {
     .detach();
 }
 
-const SORT_ACTIONS: [(&str, SortKey); 7] = [
+const SORT_ACTIONS: [(&str, SortKey); 8] = [
     ("mail::SortByAttachments", SortKey::Attachments),
     ("mail::SortByDate", SortKey::Date),
     ("mail::SortByFlags", SortKey::Flags),
     ("mail::SortByFrom", SortKey::From),
+    ("mail::SortBySize", SortKey::Size),
     ("mail::SortBySubject", SortKey::Subject),
     ("mail::SortByTo", SortKey::To),
     ("mail::SortByUnread", SortKey::Unread),
@@ -99,6 +82,7 @@ enum ViewOption {
     ToCcLabel,
     ContactPhoto,
     HighlightConversations,
+    MessageSize,
     Sidebar,
     Toolbar,
 }
@@ -335,6 +319,7 @@ impl MailView {
             enable("mail::PasteAsQuotation", false, cx);
         }
         self.publish_dynamic_rows(syncing, cx);
+        self.sync_tools_menu(cx);
     }
 
     /// Message ▸ Move to ▸ / Copy to ▸, Mailbox ▸ Get New Mail ▸ and Erase
@@ -409,6 +394,9 @@ impl MailView {
     /// What every selection change needs: the body loaded, the read mark
     /// saved and the menus brought up to date.
     pub(super) fn after_selection(&mut self, cx: &mut Context<Self>) {
+        self.find_current = 0;
+        self.find_scroll = true;
+        self.load_all_headers(cx);
         self.ensure_body_loaded(cx);
         self.dispatch_persist(cx);
         self.sync_menu(cx);
@@ -452,6 +440,7 @@ impl MailView {
             ViewOption::ToCcLabel => &mut self.show_to_cc,
             ViewOption::ContactPhoto => &mut self.show_contact_photo,
             ViewOption::HighlightConversations => &mut self.highlight_conversations,
+            ViewOption::MessageSize => &mut self.show_size,
             ViewOption::Sidebar => &mut self.sidebar_hidden,
             ViewOption::Toolbar => &mut self.toolbar_hidden,
         };
@@ -472,7 +461,7 @@ impl MailView {
 
     /// The selected message's original source when its body is cached, off
     /// the UI thread; `None` for fixture data and header-only messages.
-    fn load_raw_source(&self, cx: &mut Context<Self>) -> gpui::Task<Option<Vec<u8>>> {
+    pub(super) fn load_raw_source(&self, cx: &mut Context<Self>) -> gpui::Task<Option<Vec<u8>>> {
         let target = self
             .state
             .selected_message()
@@ -739,7 +728,7 @@ impl MailView {
 
     /// The list and viewer, arranged as View ▸ Use Column Layout and Show
     /// Bottom Preview ask, beside the sidebar unless it is hidden.
-    pub(super) fn content(&self, list: AnyElement, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn content(&self, list: AnyElement, viewer: AnyElement) -> AnyElement {
         let left = if self.sidebar_hidden {
             0.0
         } else {
@@ -751,7 +740,6 @@ impl MailView {
             (true, true) => 36.0,
             (true, false) => 0.0,
         };
-        let viewer = self.viewer(cx);
         let pane = div()
             .absolute()
             .left(px(left))
@@ -958,6 +946,43 @@ impl MailView {
             }))
             .on_action(cx.listener(|this, _: &ToggleToolbar, _, cx| {
                 this.toggle_view_option(ViewOption::Toolbar, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleMessageSize, _, cx| {
+                this.toggle_view_option(ViewOption::MessageSize, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SortBySize, _, cx| this.sort_by(SortKey::Size, cx)))
+            .on_action(cx.listener(|this, _: &NewViewerWindow, _, cx| this.new_viewer(cx)))
+            .on_action(cx.listener(|this, _: &QuickLookAttachments, _, cx| this.quick_look(cx)))
+            .on_action(
+                cx.listener(|this, _: &FindInMessage, window, cx| this.open_find(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &FindNext, _, cx| this.step_find(1, cx)))
+            .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.step_find(-1, cx)))
+            .on_action(cx.listener(|this, _: &JumpToSelection, _, cx| this.jump_to_find(cx)))
+            .on_action(
+                cx.listener(|this, _: &CloseFindBar, window, cx| this.close_find(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &ShowAllHeaders, _, cx| this.toggle_all_headers(cx)))
+            .on_action(cx.listener(|this, _: &FlagOrange, _, cx| {
+                this.flag_with(rmac_mail::FlagColour::Orange, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FlagRed, _, cx| {
+                this.flag_with(rmac_mail::FlagColour::Red, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FlagPurple, _, cx| {
+                this.flag_with(rmac_mail::FlagColour::Purple, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FlagBlue, _, cx| {
+                this.flag_with(rmac_mail::FlagColour::Blue, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FlagYellow, _, cx| {
+                this.flag_with(rmac_mail::FlagColour::Yellow, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FlagGreen, _, cx| {
+                this.flag_with(rmac_mail::FlagColour::Green, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FlagGrey, _, cx| {
+                this.flag_with(rmac_mail::FlagColour::Grey, cx)
             }))
             .on_action(cx.listener(|this, _: &ExpandAllConversations, _, cx| {
                 this.state.expand_all_conversations();

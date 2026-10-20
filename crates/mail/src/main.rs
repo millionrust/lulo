@@ -11,14 +11,13 @@ mod live;
 mod settings_view;
 mod view;
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::borrow::Cow;
 use std::sync::Arc;
 
-use gpui::{App, AppContext as _, KeyBinding, WeakEntity};
+use gpui::{App, AssetSource, KeyBinding, SharedString};
 use rmac_mail::compose::ComposeKind;
 use rmac_mail::MailState;
-use rmac_ui::{app_id::MAIL, Root};
+use rmac_ui::app_id::MAIL;
 use view::MailView;
 
 gpui::actions!(
@@ -193,6 +192,68 @@ gpui::actions!(
     ]
 );
 
+// MROBOT-03 round two: the rest of Mac Mail's menus.
+gpui::actions!(
+    mail,
+    [
+        NewViewerWindow,
+        QuickLookAttachments,
+        FindInMessage,
+        FindNext,
+        FindPrevious,
+        JumpToSelection,
+        CloseFindBar,
+        ShowAllHeaders,
+        SortBySize,
+        ToggleMessageSize,
+        FlagOrange,
+        FlagRed,
+        FlagPurple,
+        FlagBlue,
+        FlagYellow,
+        FlagGreen,
+        FlagGrey,
+        ToggleReplyToField,
+        PriorityLow,
+        PriorityNormal,
+        PriorityHigh,
+        ShowSpellingAndGrammar,
+        CheckDocumentNow,
+        CheckSpellingWhileTyping,
+        CheckSpellingBeforeSending,
+        CheckSpellingNever,
+        ToggleCheckGrammarWithSpelling,
+        ToggleCorrectSpellingAutomatically,
+        ToggleSmartQuotes,
+        ToggleSmartDashes,
+        ToggleTextReplacement,
+        AddLink,
+        RemoveLink
+    ]
+);
+
+/// Mail's assets: the shared ones, and Quick Look's own glyphs for File ▸
+/// Quick Look Attachments….
+struct MailAssets;
+
+impl AssetSource for MailAssets {
+    fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+        if let Some(asset) = rmac_quick_look::asset(path) {
+            return Ok(Some(asset));
+        }
+        rmac_ui::shared_assets().load(path)
+    }
+
+    fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
+        let mut assets: Vec<SharedString> = rmac_quick_look::asset_paths(path)
+            .into_iter()
+            .map(SharedString::from)
+            .collect();
+        assets.extend(rmac_ui::shared_assets().list(path)?);
+        Ok(assets)
+    }
+}
+
 /// Set only for development, the Mac-parity screenshots and the behaviour
 /// suite's accessibility/performance scenarios — never for a real user.
 /// With it unset, `main()` only ever builds `MailState` from live
@@ -200,8 +261,6 @@ gpui::actions!(
 /// there are no accounts yet, exactly as `docs/design/calendar-mail.md` §3
 /// requires: Mail never shows sample messages to a real person.
 const FIXTURE_ENV: &str = "RMAC_MAIL_FIXTURE";
-
-type ViewHandle = Rc<RefCell<Option<WeakEntity<MailView>>>>;
 
 /// Starts GOA account discovery and per-account IMAP sync (MAIL-4) and
 /// bridges its snapshot/new-mail/open-message events into the window.
@@ -216,7 +275,6 @@ type ViewHandle = Rc<RefCell<Option<WeakEntity<MailView>>>>;
 #[cfg(any(target_os = "linux", windows))]
 fn forward_events(
     accounts: Vec<delivery::ComposeAccount>,
-    view_handle: ViewHandle,
     cx: &mut App,
 ) -> std::sync::mpsc::Sender<rmac_mail_runtime::UiEvent> {
     use rmac_mail_runtime::UiEvent;
@@ -236,9 +294,6 @@ fn forward_events(
         let Ok(event) = async_rx.recv().await else {
             break;
         };
-        let Some(handle) = view_handle.borrow().clone() else {
-            continue;
-        };
         match event {
             UiEvent::Snapshot(_) | UiEvent::NewMail(_) | UiEvent::AccountRemoved(_) => {
                 // Windows lets accounts come and go while Mail runs, so each
@@ -253,25 +308,41 @@ fn forward_events(
                         live::load(&accounts)
                     })
                     .await;
-                let _ = handle.update(cx, |view, cx| {
-                    view.refresh_live(mailboxes, messages, cx);
-                });
+                // Every viewer window shows the same mail.
+                refresh_viewers(mailboxes, messages, cx);
             }
             UiEvent::OpenMessage {
                 account,
                 message_id,
             } => {
-                let _ = handle.update(cx, |view, cx| {
-                    if let Some(full_id) = view.message_id_for_row(account, message_id) {
-                        view.open_message(&full_id, cx);
-                    }
-                });
+                if let Some(handle) = cx.update(|_| view::viewers().into_iter().next()) {
+                    handle.update(cx, |view: &mut MailView, cx| {
+                        if let Some(full_id) = view.message_id_for_row(account, message_id) {
+                            view.open_message(&full_id, cx);
+                        }
+                    });
+                }
             }
             UiEvent::Failure { .. } => {}
         }
     })
     .detach();
     std_tx
+}
+
+/// Hands a fresh load to every viewer window.
+#[cfg(any(target_os = "linux", windows))]
+fn refresh_viewers(
+    mailboxes: Vec<rmac_mail::Mailbox>,
+    messages: Vec<rmac_mail::Message>,
+    cx: &mut gpui::AsyncApp,
+) {
+    cx.update(|cx| {
+        for view in view::viewers() {
+            let (mailboxes, messages) = (mailboxes.clone(), messages.clone());
+            view.update(cx, |view, cx| view.refresh_live(mailboxes, messages, cx));
+        }
+    });
 }
 
 /// Starts GOA account discovery and per-account IMAP sync (MAIL-4) and
@@ -281,13 +352,12 @@ fn forward_events(
 #[cfg(target_os = "linux")]
 fn start_live_sync(
     accounts: Vec<delivery::ComposeAccount>,
-    view_handle: ViewHandle,
     cx: &mut App,
 ) -> Option<Arc<rmac_mail_runtime::Runtime>> {
     use rmac_mail_runtime::linux::{self, DesktopSink};
 
     let root = delivery::data_root()?;
-    let std_tx = forward_events(accounts, view_handle, cx);
+    let std_tx = forward_events(accounts, cx);
     let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(DesktopSink::new(Some(std_tx)));
     // GOA `ms_graph` accounts (Microsoft 365, Outlook.com) sync through
     // Microsoft Graph (MAIL-9); `linux::resolve_goa` routes them here.
@@ -309,13 +379,12 @@ fn start_live_sync(
 #[cfg(windows)]
 fn start_live_sync(
     accounts: Vec<delivery::ComposeAccount>,
-    view_handle: ViewHandle,
     cx: &mut App,
 ) -> Option<Arc<rmac_mail_runtime::Runtime>> {
     use rmac_mail_runtime::windows::{self, ToastSink};
 
     let root = delivery::data_root()?;
-    let std_tx = forward_events(accounts, view_handle, cx);
+    let std_tx = forward_events(accounts, cx);
     let sink: Arc<dyn rmac_mail_runtime::EventSink> = Arc::new(ToastSink::new(Some(std_tx)));
     let factory = Arc::new(rmac_mail_runtime::ProviderFactory {
         imap: windows::imap_factory(),
@@ -330,7 +399,6 @@ fn start_live_sync(
 #[cfg(not(any(target_os = "linux", windows)))]
 fn start_live_sync(
     _accounts: Vec<delivery::ComposeAccount>,
-    _view_handle: ViewHandle,
     _cx: &mut App,
 ) -> Option<Arc<rmac_mail_runtime::Runtime>> {
     // GOA and the sync runtime are session services of Lulo OS and the
@@ -362,11 +430,10 @@ fn handle_launch(arguments: Vec<String>, cx: &mut App) {
 /// Windows: when accounts are added or removed in Settings, start or stop
 /// their sync workers and show the new list.
 #[cfg(windows)]
-fn watch_account_changes(
-    view_handle: ViewHandle,
-    runtime: Option<Arc<rmac_mail_runtime::Runtime>>,
-) {
+fn watch_account_changes(runtime: Option<Arc<rmac_mail_runtime::Runtime>>) {
+    use std::cell::RefCell;
     use std::collections::HashSet;
+    use std::rc::Rc;
 
     let known: Rc<RefCell<HashSet<String>>> = Rc::new(RefCell::new(
         delivery::accounts()
@@ -388,17 +455,16 @@ fn watch_account_changes(
             std::thread::spawn(move || rmac_mail_runtime::windows::seed_accounts(&runtime));
         }
         *known.borrow_mut() = paths;
-        let Some(handle) = view_handle.borrow().clone() else {
-            return;
-        };
-        let shown = accounts.clone();
-        let _ = handle.update(cx, |view, cx| view.set_accounts(shown, cx));
+        for view in view::viewers() {
+            let shown = accounts.clone();
+            view.update(cx, |view: &mut MailView, cx| view.set_accounts(shown, cx));
+        }
         cx.spawn(async move |cx| {
             let (mailboxes, messages) = cx
                 .background_executor()
                 .spawn(async move { live::load(&accounts) })
                 .await;
-            let _ = handle.update(cx, |view, cx| view.refresh_live(mailboxes, messages, cx));
+            refresh_viewers(mailboxes, messages, cx);
         })
         .detach();
     });
@@ -453,7 +519,7 @@ fn main() {
     let mailto_accounts = accounts.clone();
     let sync_accounts = accounts.clone();
     rmac_ui::application()
-        .with_assets(rmac_ui::shared_assets())
+        .with_assets(MailAssets)
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
             cx.bind_keys([
@@ -466,6 +532,18 @@ fn main() {
                 KeyBinding::new("cmd-shift-z", Redo, Some("Mail")),
                 KeyBinding::new("cmd-shift-v", PasteAsQuotation, Some("MailCompose")),
                 KeyBinding::new("alt-cmd-f", Search, Some("Mail")),
+                KeyBinding::new("cmd-f", FindInMessage, Some("Mail")),
+                KeyBinding::new("cmd-g", FindNext, Some("Mail")),
+                KeyBinding::new("cmd-shift-g", FindPrevious, Some("Mail")),
+                KeyBinding::new("cmd-j", JumpToSelection, Some("Mail")),
+                KeyBinding::new("escape", CloseFindBar, Some("MailFind")),
+                KeyBinding::new("alt-cmd-n", NewViewerWindow, Some("Mail")),
+                KeyBinding::new("cmd-y", QuickLookAttachments, Some("Mail")),
+                KeyBinding::new("cmd-shift-h", ShowAllHeaders, Some("Mail")),
+                KeyBinding::new("alt-cmd-r", ToggleReplyToField, None),
+                KeyBinding::new("cmd-;", CheckDocumentNow, Some("MailCompose")),
+                KeyBinding::new("cmd-k", AddLink, Some("MailCompose")),
+                KeyBinding::new("alt-cmd-k", RemoveLink, Some("MailCompose")),
                 KeyBinding::new("ctrl-cmd-t", JumpToTop, Some("Mail")),
                 KeyBinding::new("cmd-l", ToggleMessageFilter, Some("Mail")),
                 KeyBinding::new("alt-cmd-b", ToggleBccField, None),
@@ -502,7 +580,6 @@ fn main() {
                 KeyBinding::new("cmd-z", Undo, Some("Mail")),
                 KeyBinding::new("cmd-z", Undo, Some("MailCompose")),
                 KeyBinding::new("cmd-shift-z", Redo, Some("MailCompose")),
-                KeyBinding::new("cmd-f", Search, Some("Mail")),
                 KeyBinding::new("ctrl-cmd-m", Move, Some("Mail")),
                 KeyBinding::new("cmd-n", NewMessage, Some("Mail")),
                 KeyBinding::new("cmd-r", Reply, Some("Mail")),
@@ -558,45 +635,69 @@ fn main() {
             rmac_ui::set_menu_hidden("mail::PrintMessage", true, cx);
             cx.on_action(|_: &CloseAll, cx| view::close_all(cx));
             cx.on_action(|_: &ShowMessageViewer, cx| view::show_viewer(cx));
-            cx.on_action(|_: &ToggleCcField, cx| compose_window::toggle_field(true, cx));
-            cx.on_action(|_: &ToggleBccField, cx| compose_window::toggle_field(false, cx));
+            cx.on_action(|_: &ToggleCcField, cx| {
+                compose_window::toggle_field(compose_window::Field::Cc, cx)
+            });
+            cx.on_action(|_: &ToggleBccField, cx| {
+                compose_window::toggle_field(compose_window::Field::Bcc, cx)
+            });
+            cx.on_action(|_: &ToggleReplyToField, cx| {
+                compose_window::toggle_field(compose_window::Field::ReplyTo, cx)
+            });
+            cx.on_action(|_: &CheckSpellingWhileTyping, cx| {
+                compose_window::set_spelling_mode(compose_window::SpellingMode::WhileTyping, cx)
+            });
+            cx.on_action(|_: &CheckSpellingBeforeSending, cx| {
+                compose_window::set_spelling_mode(compose_window::SpellingMode::BeforeSending, cx)
+            });
+            cx.on_action(|_: &CheckSpellingNever, cx| {
+                compose_window::set_spelling_mode(compose_window::SpellingMode::Never, cx)
+            });
+            cx.on_action(|_: &ToggleCheckGrammarWithSpelling, cx| {
+                compose_window::change_assist(
+                    |settings| {
+                        settings.check_grammar_with_spelling = !settings.check_grammar_with_spelling
+                    },
+                    cx,
+                )
+            });
+            cx.on_action(|_: &ToggleCorrectSpellingAutomatically, cx| {
+                compose_window::change_assist(
+                    |settings| {
+                        settings.correct_spelling_automatically =
+                            !settings.correct_spelling_automatically
+                    },
+                    cx,
+                )
+            });
+            cx.on_action(|_: &ToggleSmartQuotes, cx| {
+                compose_window::change_assist(
+                    |settings| settings.smart_quotes = !settings.smart_quotes,
+                    cx,
+                )
+            });
+            cx.on_action(|_: &ToggleSmartDashes, cx| {
+                compose_window::change_assist(
+                    |settings| settings.smart_dashes = !settings.smart_dashes,
+                    cx,
+                )
+            });
+            cx.on_action(|_: &ToggleTextReplacement, cx| {
+                compose_window::change_assist(
+                    |settings| settings.text_replacement = !settings.text_replacement,
+                    cx,
+                )
+            });
             compose_window::publish_field_state(cx);
-            let mut options = rmac_ui::window_options_for_app(MAIL, 1200.0, 750.0, cx);
-            options.window_min_size = Some(gpui::size(gpui::px(860.0), gpui::px(540.0)));
-            // `view_handle` is an empty slot `start_live_sync` only reads
-            // from once an event actually arrives, by which time the
-            // window below has filled it in; this breaks what would
-            // otherwise be a circular dependency (the view needs the
-            // runtime to wake workers after an organise action, and the
-            // runtime's background loop needs a handle to the view).
-            let view_handle: ViewHandle = Rc::new(RefCell::new(None));
             let runtime = if fixture_mode {
                 None
             } else {
-                start_live_sync(sync_accounts, Rc::clone(&view_handle), cx)
+                start_live_sync(sync_accounts, cx)
             };
             #[cfg(windows)]
-            watch_account_changes(Rc::clone(&view_handle), runtime.clone());
-            let view_handle_for_window = Rc::clone(&view_handle);
-            let runtime_for_window = runtime.clone();
-            let opened = cx.open_window(options, move |window, cx| {
-                rmac_ui::prepare_surface_window(window, cx);
-                rmac_ui::fit_to_display_after_first_frame(window, cx);
-                let view = cx.new(|cx| {
-                    rmac_ui::observe_window_state(MAIL, window, cx);
-                    MailView::new(initial_state, accounts, runtime_for_window, window, cx)
-                });
-                *view_handle_for_window.borrow_mut() = Some(view.downgrade());
-                let focus = view.read(cx).focus.clone();
-                window.focus(&focus, cx);
-                cx.new(|cx| Root::new(view, window, cx))
-            });
-            match opened {
-                Ok(handle) => view::set_viewer_window(handle.into()),
-                Err(error) => {
-                    eprintln!("rmac-mail: could not open a window: {error}");
-                    cx.quit();
-                }
+            watch_account_changes(runtime.clone());
+            if view::open_viewer(initial_state, accounts, runtime, cx).is_none() {
+                cx.quit();
             }
             if let Some(draft) = mailto_draft {
                 compose_window::open(

@@ -6847,6 +6847,8 @@ dependencies = [
  "rmac-portal",
  "rmac-print",
  "rmac-print-linux",
+ "rmac-quick-look",
+ "rmac-spelling",
  "rmac-storage",
  "rmac-ui",
  "rmac-windows-resource-build",
@@ -8233,6 +8235,8 @@ version = "0.9.0-beta.2"
 dependencies = [
  "async-channel",
  "gpui",
+ "rmac-app-menu",
+ "rmac-apps",
  "rmac-intelligence",
  "rmac-ui",
 ]

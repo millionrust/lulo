@@ -6,9 +6,22 @@
     "menu": {
       "menu": {
         "present": true,
-        "items": ["Select All"]
+        "items": [
+          "Cut",
+          "Copy",
+          "Paste",
+          "Paste and Match Style",
+          "Font",
+          "Spelling and Grammar",
+          "Substitutions",
+          "Speech"
+        ]
       }
     },
-    "closed": {"menu": {"present": false}}
+    "closed": {
+      "menu": {
+        "present": false
+      }
+    }
   }
 }

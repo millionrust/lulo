@@ -40,8 +40,8 @@ mod window_frame_windows;
 
 pub use accessibility::AccessibleTextInput;
 pub use app_menu::{
-    set_menu_checked, set_menu_children, set_menu_enabled, set_menu_hidden, set_menu_label,
-    set_menu_mixed, ShowAboutPanel,
+    menu_submenu, set_menu_checked, set_menu_children, set_menu_enabled, set_menu_hidden,
+    set_menu_label, set_menu_mixed, ShowAboutPanel,
 };
 pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{

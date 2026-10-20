@@ -12,3 +12,7 @@ async-channel.workspace = true
 gpui.workspace = true
 rmac-intelligence = { workspace = true, features = ["client"] }
 rmac-ui.workspace = true
+rmac-app-menu.workspace = true
+
+[dev-dependencies]
+rmac-apps.workspace = true

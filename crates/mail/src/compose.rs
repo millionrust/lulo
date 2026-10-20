@@ -334,8 +334,93 @@ pub fn format_lines(
     (replaced != block).then_some((range, replaced))
 }
 
+/// Edit ▸ Add Link…'s address, made whole: a bare `example.com` gains
+/// `https://`. `None` for anything that is not a web or mail link.
+pub fn normalise_link(input: &str) -> Option<String> {
+    let input = input.trim();
+    if input.is_empty() || input.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let lower = input.to_ascii_lowercase();
+    if lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")
+    {
+        Some(input.to_owned())
+    } else if input.contains('@') && !input.contains('/') {
+        Some(format!("mailto:{input}"))
+    } else if input.contains('.') {
+        Some(format!("https://{input}"))
+    } else {
+        None
+    }
+}
+
+/// Edit ▸ Add Link… in a plain-text message: the selected words keep
+/// their place with the address after them in angle brackets, the way
+/// plain-text mail writes a link; with nothing selected, the address alone.
+pub fn link_text(selection: &str, url: &str) -> String {
+    let selection = selection.trim();
+    if selection.is_empty() || selection == url {
+        url.to_owned()
+    } else {
+        format!("{selection} <{url}>")
+    }
+}
+
+/// Edit ▸ Remove Link: `text` with every `<scheme:…>` link Add Link wrote
+/// taken out (and the space before it), or `None` when it has none.
+pub fn remove_links(text: &str) -> Option<String> {
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut removed = false;
+    while let Some(start) = rest.find('<') {
+        let Some(length) = rest[start..].find('>') else {
+            break;
+        };
+        let inner = &rest[start + 1..start + length];
+        if normalise_link(inner).as_deref() == Some(inner) && inner.contains(':') {
+            result.push_str(rest[..start].trim_end_matches(' '));
+            rest = &rest[start + length + 1..];
+            removed = true;
+        } else {
+            result.push_str(&rest[..start + length + 1]);
+            rest = &rest[start + length + 1..];
+        }
+    }
+    result.push_str(rest);
+    removed.then_some(result)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn links_are_written_and_removed_as_plain_text() {
+        use super::{link_text, normalise_link, remove_links};
+        assert_eq!(
+            normalise_link("lulo.example/beta").as_deref(),
+            Some("https://lulo.example/beta")
+        );
+        assert_eq!(
+            normalise_link("HTTP://a.test").as_deref(),
+            Some("HTTP://a.test")
+        );
+        assert_eq!(
+            normalise_link("anna@example.test").as_deref(),
+            Some("mailto:anna@example.test")
+        );
+        assert_eq!(normalise_link("not a link"), None);
+        assert_eq!(normalise_link("word"), None);
+        assert_eq!(
+            link_text("the notes", "https://a.test"),
+            "the notes <https://a.test>"
+        );
+        assert_eq!(link_text("", "https://a.test"), "https://a.test");
+        assert_eq!(
+            remove_links("Read the notes <https://a.test> and <b>").as_deref(),
+            Some("Read the notes and <b>")
+        );
+        assert_eq!(remove_links("Nothing <here>"), None);
+    }
+
     use super::*;
     use crate::MailState;
 

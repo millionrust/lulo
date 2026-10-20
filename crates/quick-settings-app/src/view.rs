@@ -578,7 +578,6 @@ impl QuickSettingsView {
 
     /// The grid's keyboard order, as the modules are laid out.
     pub(crate) fn module_order(&self) -> Vec<Module> {
-        let view = self.state.view();
         let mut order = Vec::new();
         if self.hardware.wifi {
             order.push(Module::Wifi);
@@ -1411,9 +1410,10 @@ mod tests {
     fn the_opening_height_is_the_height_every_later_state_draws() {
         let with_backlight = initial_surface_height(true, 0);
         let without_backlight = initial_surface_height(false, 0);
-        // Five rows of 64 pt and four 12 pt gaps, then the 12 pt padding.
-        assert_eq!(with_backlight, 5.0 * 64.0 + 4.0 * 12.0 + 24.0);
-        assert_eq!(without_backlight, 4.0 * 64.0 + 3.0 * 12.0 + 24.0);
+        // Five rows of 64 pt and four 12 pt gaps, the Edit Controls pill
+        // (12 pt gap, 26 pt), then the 12 pt padding.
+        assert_eq!(with_backlight, 5.0 * 64.0 + 4.0 * 12.0 + 38.0 + 24.0);
+        assert_eq!(without_backlight, 4.0 * 64.0 + 3.0 * 12.0 + 38.0 + 24.0);
         assert_eq!(with_backlight - without_backlight, 64.0 + 12.0);
         for display in [true, false] {
             for hidden_pills in 0..=2 {
@@ -1423,7 +1423,7 @@ mod tests {
                     banners: 0,
                     hidden_pills,
                     edit_rows: 1,
-                    circles: 2,
+                    circles: 2 + usize::from(mirroring_available()),
                 };
                 assert_eq!(
                     initial_surface_height(display, hidden_pills),

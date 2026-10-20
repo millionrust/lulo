@@ -534,6 +534,7 @@ fn supported(touchpad: bool) -> Supported {
         mouse_left_handed: true,
         mouse_middle_emulation: false,
         mouse_scroll_with_middle_button: false,
+        mouse_scroll_factor: false,
         touchpad,
         touchpad_enabled: false,
         touchpad_natural_scroll: touchpad,
@@ -590,6 +591,7 @@ fn settings_from(system: &SystemValues, touchpad: Option<TouchpadValues>) -> Inp
         },
         mouse,
         mouse_scroll_with_middle_button: false,
+        mouse_scroll_factor: 1.0,
         touchpad,
         trackpoint: PointerSettings::default(),
         trackpoint_scroll_with_middle_button: false,
@@ -809,6 +811,11 @@ fn unsupported_changes(
         supported.wheel_scroll_lines,
         current.wheel_scroll_lines != requested.wheel_scroll_lines,
         "wheel scrolling",
+    );
+    check(
+        supported.mouse_scroll_factor,
+        current.mouse_scroll_factor != requested.mouse_scroll_factor,
+        "mouse scrolling speed",
     );
     changes
 }

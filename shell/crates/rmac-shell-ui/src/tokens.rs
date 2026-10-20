@@ -159,6 +159,13 @@ pub fn top_bar_tint() -> u32 {
     hex(current().materials.menubar.fallback)
 }
 
+/// The menu bar's fill when it is revealed over a full-screen window. The
+/// Mac draws it solid there, so the window's content never shows through
+/// the bar's labels: the bar's fallback material, made opaque.
+pub fn top_bar_full_screen_fill() -> u32 {
+    top_bar_tint() | 0xff
+}
+
 pub fn regular_dark_tint() -> u32 {
     hex(current().materials.menu.tint)
 }
@@ -398,12 +405,14 @@ mod tests {
             ResolvedColorScheme::Light,
         )));
         assert_eq!(top_bar_tint(), 0xf6f6f6f2);
+        assert_eq!(top_bar_full_screen_fill(), 0xf6f6f6ff);
         assert_eq!(primary_text(), 0x1d1d1fff);
         assert_eq!(menubar_text(), 0x010206ff);
         assert_eq!(menu_radius(), 10.0);
 
         set(DesignTokens::resolve(appearance(ResolvedColorScheme::Dark)));
         assert_eq!(top_bar_tint(), 0x1e1e20f2);
+        assert_eq!(top_bar_full_screen_fill(), 0x1e1e20ff);
         assert_eq!(primary_text(), 0xf5f5f7ff);
         assert_eq!(menubar_text(), 0xffffffff);
 

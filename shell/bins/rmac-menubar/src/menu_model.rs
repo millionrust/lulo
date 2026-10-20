@@ -736,10 +736,36 @@ pub fn window_menu(
                 .separated(),
         );
     }
-    let mut app_items = app_items.into_iter();
-    if let Some(first) = app_items.next() {
-        items.push(first.separated());
-        items.extend(app_items);
+    // The Mac's order (tests/inventory/mac): an app's own Cycle Through
+    // Windows sits right under Remove Window from Set (only Finder and
+    // Terminal have one), with the app's other rows before its tabs
+    // (Finder's Show Progress Window); then Bring All to Front and Arrange
+    // in Front; then the tab block. Terminal keeps every row of its own
+    // above Bring All to Front, as the Mac's Terminal does.
+    let (cycle, mut rest): (Vec<_>, Vec<_>) = app_items
+        .into_iter()
+        .partition(|item| item.label == CYCLE_THROUGH_WINDOWS);
+    let split = if app_id == Some(rmac_apps::identity::TERMINAL) {
+        rest.len()
+    } else {
+        rest.iter()
+            .position(|item| TAB_ROWS.contains(&item.label.as_str()))
+            .unwrap_or(rest.len())
+    };
+    let tabs = rest.split_off(split);
+    let follows_cycle = !cycle.is_empty();
+    for mut item in cycle {
+        item.separator_before = false;
+        items.push(item);
+    }
+    let mut head = rest.into_iter();
+    if let Some(first) = head.next() {
+        items.push(if follows_cycle {
+            first
+        } else {
+            first.separated()
+        });
+        items.extend(head);
     }
     items.push(
         Item::new(
@@ -758,6 +784,11 @@ pub fn window_menu(
         )
         .enabled(!windows.is_empty()),
     );
+    let mut tabs = tabs.into_iter();
+    if let Some(first) = tabs.next() {
+        items.push(first.separated());
+        items.extend(tabs);
+    }
     for (index, window) in windows.iter().enumerate() {
         let title = if window.title.trim().is_empty() {
             "Untitled".to_owned()
@@ -773,6 +804,15 @@ pub fn window_menu(
         items,
     }
 }
+
+const CYCLE_THROUGH_WINDOWS: &str = "Cycle Through Windows";
+/// The Window menu's tab block, which the Mac lists under Arrange in Front.
+const TAB_ROWS: &[&str] = &[
+    "Show Previous Tab",
+    "Show Next Tab",
+    "Move Tab to New Window",
+    "Merge All Windows",
+];
 
 fn shorten(text: &str, limit: usize) -> String {
     let mut characters = text.chars();
@@ -1492,9 +1532,13 @@ pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
     rows
 }
 
+/// The Battery menu. `energy` lists the apps using significant energy
+/// (BAR-05), once sampled; `None` until then, so the section does not flash
+/// "No Apps …" before the sample lands.
 pub fn battery_menu_rows(
     snapshot: Option<&rmac_power::Snapshot>,
     error: Option<&str>,
+    energy: Option<&[String]>,
 ) -> Vec<StatusRow> {
     let battery = snapshot.and_then(|snapshot| snapshot.battery.as_ref());
     let mut rows = vec![StatusRow::Title {
@@ -1548,6 +1592,15 @@ pub fn battery_menu_rows(
             action: Some(StatusAction::ToggleLowPower),
         });
         rows.push(StatusRow::GroupEnd);
+    }
+    if let Some(energy) = energy.filter(|_| battery.is_some()) {
+        rows.push(StatusRow::Separator);
+        rows.push(StatusRow::Header("Using Significant Energy".into()));
+        if energy.is_empty() {
+            rows.push(StatusRow::Info("No Apps Using Significant Energy".into()));
+        } else {
+            rows.extend(energy.iter().map(|app| StatusRow::Info(app.clone())));
+        }
     }
     rows.push(StatusRow::Separator);
     rows.push(StatusRow::Item {
@@ -2366,9 +2419,9 @@ mod tests {
                 "Move & Resize",
                 "Full-Screen Tile",
                 "Remove Window from Set",
-                "Show Next Tab",
                 "Bring All to Front",
                 "Arrange in Front",
+                "Show Next Tab",
                 "Documents",
                 "Untitled",
             ]
@@ -2419,14 +2472,68 @@ mod tests {
         );
         assert!(menu.items[9].separator_before);
         assert_eq!(
-            WindowCommand::parse(&menu.items[11].action),
+            WindowCommand::parse(&menu.items[10].action),
             Some(WindowCommand::ArrangeInFront)
         );
+        // The tab block sits under Arrange in Front, as on the Mac.
+        assert!(menu.items[11].separator_before);
         assert_eq!(menu.items[13].checked, rmac_app_menu::CheckState::On);
         assert_eq!(menu.items[12].checked, rmac_app_menu::CheckState::Off);
         assert_eq!(
             WindowCommand::parse(&menu.items[12].action),
             Some(WindowCommand::Focus(rmac_compositor::WindowId(7)))
+        );
+
+        // Files' own Cycle Through Windows sits right under Remove Window
+        // from Set with Show Progress Window; Terminal keeps its own rows
+        // above Bring All to Front (tests/inventory/mac).
+        let files_items = vec![
+            Item::new("Show Progress Window", "finder::ShowProgressWindow", ""),
+            Item::new(
+                "Cycle Through Windows",
+                "rmac_ui::CycleThroughWindows",
+                "⌘`",
+            )
+            .separated(),
+            Item::new("Show Previous Tab", "finder::PreviousTab", "").separated(),
+        ];
+        let files = window_menu(&[], None, files_items, words, Some("org.rmac.Files"));
+        let tail = files.items[8..]
+            .iter()
+            .map(|item| (item.label.as_str(), item.separator_before))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tail,
+            [
+                ("Remove Window from Set", true),
+                ("Cycle Through Windows", false),
+                ("Show Progress Window", false),
+                ("Bring All to Front", true),
+                ("Arrange in Front", false),
+                ("Show Previous Tab", true),
+            ]
+        );
+        let terminal_items = vec![
+            Item::new("Show Next Tab", "terminal::NextTab", "⇧⌘]"),
+            Item::new(
+                "Return to Default Size",
+                "terminal::ReturnToDefaultSize",
+                "",
+            ),
+        ];
+        let terminal = window_menu(&[], None, terminal_items, words, Some("org.rmac.Terminal"));
+        let labels = terminal.items[9..]
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels,
+            [
+                "Show Next Tab",
+                "Return to Default Size",
+                "Bring All to Front",
+                "Arrange in Front",
+            ]
         );
         assert!(rmac_app_menu::validate_menus(std::slice::from_ref(&menu)).is_ok());
 
@@ -3088,6 +3195,7 @@ mod tests {
         let rows = battery_menu_rows(
             Some(&snapshot),
             Some("Couldn't change the energy mode: not authorized"),
+            None,
         );
         assert_eq!(
             labels(&rows)[..2],
@@ -3230,7 +3338,7 @@ mod tests {
             profiles: rmac_power::Profiles::default(),
         };
         assert_eq!(
-            labels(&battery_menu_rows(Some(&snapshot), None)),
+            labels(&battery_menu_rows(Some(&snapshot), None, None)),
             [
                 "title:Battery",
                 "info:Power Source: Battery",
@@ -3247,7 +3355,7 @@ mod tests {
             ],
             performance_degraded: None,
         };
-        let rows = battery_menu_rows(Some(&snapshot), None);
+        let rows = battery_menu_rows(Some(&snapshot), None, None);
         assert_eq!(
             labels(&rows),
             [
@@ -3267,6 +3375,21 @@ mod tests {
         assert!(matches!(rows[4], StatusRow::Badge { on: true, .. }));
         // Measured Battery menu without the per-app energy section.
         assert_eq!(status_menu_height(&rows), 159.5);
+
+        // BAR-05: the apps using significant energy, above Battery Settings….
+        let none = battery_menu_rows(Some(&snapshot), None, Some(&[]));
+        assert_eq!(
+            labels(&none)[6..],
+            [
+                "---",
+                "head:Using Significant Energy",
+                "info:No Apps Using Significant Energy",
+                "---",
+                "item:Battery Settings…",
+            ]
+        );
+        let busy = battery_menu_rows(Some(&snapshot), None, Some(&["Terminal".to_owned()]));
+        assert_eq!(labels(&busy)[8], "info:Terminal");
     }
 
     #[test]

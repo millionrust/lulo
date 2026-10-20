@@ -265,6 +265,7 @@ impl Provider for SettingsProvider {
                 },
                 category: Category::Settings,
                 application_group: None,
+                kind: None,
                 title: entry.title.clone(),
                 subtitle: entry.subtitle.clone(),
                 detail: None,

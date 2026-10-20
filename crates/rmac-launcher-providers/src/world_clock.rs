@@ -110,6 +110,7 @@ pub fn city_result(city: &CityTime) -> SearchResult {
         },
         category: Category::Clock,
         application_group: None,
+        kind: None,
         title: format!("{}, {}", city.city, city.country),
         subtitle: Some(format!(
             "{} · {}, {}",

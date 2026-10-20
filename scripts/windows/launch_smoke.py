@@ -431,6 +431,53 @@ def process_memory_mb(pid: int) -> dict[str, float] | None:
         kernel32.CloseHandle(wintypes.HANDLE(handle))
 
 
+def now_filetime() -> int:
+    """The system clock in 100 ns units since 1601 (a FILETIME)."""
+    value = ctypes.c_ulonglong()
+    ctypes.windll.kernel32.GetSystemTimePreciseAsFileTime(ctypes.byref(value))
+    return value.value
+
+
+def process_created_filetime(pid: int) -> int | None:
+    """When Windows created `pid`, as a FILETIME (None if unreadable)."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        times = [ctypes.c_ulonglong() for _ in range(4)]
+        if not kernel32.GetProcessTimes(
+            wintypes.HANDLE(handle), *(ctypes.byref(time) for time in times)
+        ):
+            return None
+        return times[0].value
+    finally:
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+
+def startup_phase_ms(phases: list[str], name: str) -> float | None:
+    """The time of start-up phase `name` ("<name> at <ms> ms, ...")."""
+    for phase in phases:
+        head, _, rest = phase.partition(" at ")
+        if head == name:
+            try:
+                return float(rest.split(" ms", 1)[0])
+            except ValueError:
+                return None
+    return None
+
+
+# WIN-OS-99: the budget from process creation to the first frame on screen
+# (`first_frame_shown`: the window is uncloaked by the frame that first
+# draws it; `first_present` on builds without it). None: report only.
+LAUNCH_BUDGET_MS: float | None = None
+
+# What an app prints when it cannot find Lulo's fonts (rmac_ui's
+# `fonts_windows`); text would fall back to Segoe UI.
+FONT_FAILURES = ("font files were not found", "fonts could not be added")
+
+
 # Apps whose window redraws on a timer while it is active (and only then).
 LIVE_APPS = ("rmac-system-monitor",)
 
@@ -1432,6 +1479,7 @@ def launch(
         (profile / folder).mkdir(parents=True, exist_ok=True)
     log = profile / "output.log"
     launch_started = time.monotonic()
+    requested = now_filetime()
     with log.open("wb") as output:
         process = subprocess.Popen(
             [str(binary), *(arguments or [])],
@@ -1472,11 +1520,38 @@ def launch(
         # ADR 0023 task 1 (idle CPU): before any input reaches this
         # window, not after — `check_menu_strip`/`check_menu_command`/
         # `check_new_shortcut` below all inject keys and mouse clicks.
-        phases = startup_phases(log.read_text(encoding="utf-8", errors="replace"))
+        log_text = log.read_text(encoding="utf-8", errors="replace")
+        phases = startup_phases(log_text)
         for phase in phases:
             print(f"{app}: startup {phase}")
         measurement: dict = {"launch_ms": round(launch_ms), "startup": phases}
         MEASUREMENTS[app] = measurement
+        launch_errors = [
+            f"Lulo's fonts did not load ({line.strip()})"
+            for line in log_text.splitlines()
+            if line.startswith("rmac: ") and any(failure in line for failure in FONT_FAILURES)
+        ][:1]
+        # Before the process existed: Windows (Microsoft Defender's scan of
+        # an exe it has not cached) holds CreateProcess until it is done.
+        created = process_created_filetime(process.pid)
+        if created is not None:
+            measurement["before_process_ms"] = round(max(0, created - requested) / 10_000)
+        first_frame = startup_phase_ms(phases, "first_frame_shown")
+        if first_frame is None:
+            first_frame = startup_phase_ms(phases, "first_present")
+        if first_frame is not None:
+            measurement["first_frame_ms"] = round(first_frame)
+            print(
+                f"{app}: first frame on screen {first_frame:.0f} ms after the process started "
+                f"({measurement.get('before_process_ms', '?')} ms before it existed)"
+            )
+            if LAUNCH_BUDGET_MS is not None and first_frame > LAUNCH_BUDGET_MS:
+                launch_errors.append(
+                    f"first frame {first_frame:.0f} ms after start, over the "
+                    f"{LAUNCH_BUDGET_MS:.0f} ms launch budget"
+                )
+        elif LAUNCH_BUDGET_MS is not None:
+            launch_errors.append("no first-frame phase in the start-up trace")
         idle = measure_idle_cpu(process.pid, log=log)
         if app in LIVE_APPS and idle is not None:
             # A process monitor redraws on its refresh timer while its window
@@ -1542,7 +1617,7 @@ def launch(
         frame_error = check_window_frame(app, hwnd, screenshots)
         if not bring_forward(hwnd):
             return "could not bring the window forward to test its keys"
-        errors = [
+        errors = launch_errors + [
             error
             for error in (
                 frame_error,
@@ -1996,6 +2071,14 @@ def main() -> int:
         help="Also check the Lulo layer (lulo-session.exe and lulo-shell.exe in bin_dir).",
     )
     parser.add_argument(
+        "--launch-budget-ms",
+        type=float,
+        help=(
+            "Fail an app whose first frame reaches the screen more than this "
+            "many ms after its process started (WIN-OS-99)."
+        ),
+    )
+    parser.add_argument(
         "--results",
         type=Path,
         help="Write each app's launch time, idle ticks and wake-ups here as JSON.",
@@ -2008,6 +2091,8 @@ def main() -> int:
         return 2
     # Physical pixels, so window rectangles and captures agree.
     ctypes.windll.user32.SetProcessDPIAware()
+    global LAUNCH_BUDGET_MS
+    LAUNCH_BUDGET_MS = arguments.launch_budget_ms
 
     failures = 0
     for app in arguments.apps:

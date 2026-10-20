@@ -57,8 +57,15 @@ fn clock_policy_controls_hour_cycle_seconds_date_and_single_deadline() {
     settings.format = rmac_shell_settings::ClockFormat::TwentyFourHour;
     settings.show_date = false;
     settings.show_seconds = true;
+    let weekday = clock_label(now(), &settings, LocaleHourCycle::TwelveHour);
+    assert_eq!(weekday.visible, "Sun  21:07:08");
+    settings.show_weekday = false;
     let twenty_four = clock_label(now(), &settings, LocaleHourCycle::TwelveHour);
     assert_eq!(twenty_four.visible, "21:07:08");
+    settings.format = rmac_shell_settings::ClockFormat::TwelveHour;
+    settings.show_am_pm = false;
+    let no_am_pm = clock_label(now(), &settings, LocaleHourCycle::TwelveHour);
+    assert_eq!(no_am_pm.visible, "9:07:08");
     assert_eq!(
         delay_until_next_clock_update(8_999, true),
         Duration::from_millis(1)

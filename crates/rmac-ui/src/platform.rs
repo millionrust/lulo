@@ -70,6 +70,64 @@ fn windows_defaults(
         .collect()
 }
 
+/// The first code of the process that is Lulo's: the C runtime runs it
+/// with its other initializers, before `main`. With the start-up trace on,
+/// time before it is the Windows loader's (mapping the exe and its DLLs),
+/// time after it and before an app's first mark is the app's own.
+#[cfg(windows)]
+#[used]
+#[link_section = ".CRT$XCU"]
+static CRT_INIT_MARK: extern "C" fn() = crt_init_mark;
+
+#[cfg(windows)]
+extern "C" fn crt_init_mark() {
+    startup_mark("crt_init");
+}
+
+/// See [`crate::startup_mark`].
+#[cfg(windows)]
+pub(crate) fn startup_mark(phase: &str) {
+    use std::io::Write as _;
+    use std::sync::OnceLock;
+    use windows::Win32::{
+        Foundation::FILETIME,
+        System::Threading::{GetCurrentProcess, GetProcessTimes},
+    };
+
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    if !*ENABLED
+        .get_or_init(|| std::env::var("RMAC_GPUI_STARTUP_TRACE").is_ok_and(|value| value == "1"))
+    {
+        return;
+    }
+    let [mut creation, mut exit, mut kernel, mut user] = [FILETIME::default(); 4];
+    // SAFETY: the pseudo handle is always valid and the out pointers point
+    // at live locals.
+    if unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    }
+    .is_err()
+    {
+        return;
+    }
+    let created = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+    // FILETIME counts 100 ns from 1601; the Unix epoch is 11 644 473 600 s on.
+    let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) else {
+        return;
+    };
+    let now = (now.as_nanos() / 100) as u64 + 11_644_473_600 * 10_000_000;
+    let ms = now.saturating_sub(created) as f64 / 10_000.0;
+    // One write per line, as gpui_windows' own trace does.
+    let line = format!("gpui_windows startup: {phase} at {ms:.1} ms\n");
+    let _ = std::io::stderr().lock().write_all(line.as_bytes());
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

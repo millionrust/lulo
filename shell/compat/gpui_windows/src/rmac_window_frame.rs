@@ -75,6 +75,9 @@ pub(crate) struct MacFrame {
     style: Cell<Option<WindowFrameStyle>>,
     shadow: Cell<Option<HWND>>,
     active: Cell<bool>,
+    /// The window is shown but cloaked until its first frame
+    /// (`rmac_first_frame`): no shadow round an empty space.
+    held_back: Cell<bool>,
     drawn: Cell<Option<Drawn>>,
     /// Nine-slice sources, at most one for the active and one for the
     /// inactive shadow.
@@ -123,6 +126,12 @@ impl MacFrame {
         self.active.set(active);
     }
 
+    /// Keep the shadow hidden (`true`) until the window's first frame is
+    /// on screen; the caller updates the frame when it lets it go.
+    pub(crate) fn hold_back(&self, held_back: bool) {
+        self.held_back.set(held_back);
+    }
+
     /// The window moved, resized, changed state, was shown or hidden, or
     /// changed activation: round its corners and place its shadow to match.
     pub(crate) fn update(
@@ -146,7 +155,7 @@ impl MacFrame {
         if let Ok(mut renderer) = renderer.try_borrow_mut() {
             renderer.set_corner_radius(radius);
         }
-        if !shown || flat {
+        if !shown || flat || self.held_back.get() {
             self.hide_shadow();
             return;
         }

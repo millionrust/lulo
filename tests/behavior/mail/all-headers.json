@@ -1,0 +1,14 @@
+{
+  "title": "Mail: View ▸ Message ▸ All Headers shows and hides the message's headers",
+  "app": "mail",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"observe": "before", "facts": ["mail_viewer"]},
+    {"menu_action": "mail::ShowAllHeaders"},
+    {"wait": 1},
+    {"observe": "shown", "facts": ["mail_viewer"]},
+    {"key": "cmd-shift-h", "settle": 0.5},
+    {"observe": "hidden", "facts": ["mail_viewer"]}
+  ]
+}

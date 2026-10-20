@@ -37,6 +37,9 @@ use rmac_intelligence::writing::{self, Refusal};
 use rmac_intelligence::Task;
 use rmac_ui::{mac, Button, EditableText, NativeMenu};
 
+pub mod text_menu;
+pub use text_menu::{context_menu, text_menu, TextMenuSpec, TextState};
+
 gpui::actions!(
     writing_tools,
     [
@@ -289,43 +292,21 @@ pub fn locate(text: &str, range: &Range<usize>, original: &str) -> Option<Range<
 
 // ---- Context menus -------------------------------------------------------------
 
-/// A plain text field's right-click menu: the standard Cut, Copy, Paste and
-/// Select All, then Writing Tools while it is available and the field is
-/// editable.
-pub fn text_menu(field: Entity<rmac_ui::InputState>, editable: bool) -> rmac_ui::TextMenuBuilder {
-    Rc::new(
-        move |menu: NativeMenu, _window: &mut Window, cx: &mut App| {
-            let selected = !field.read(cx).selected_range().is_empty();
-            let pasteable = editable && cx.read_from_clipboard().is_some();
-            let menu = menu
-                .menu_with_disabled(
-                    "Cut",
-                    !(editable && selected),
-                    Box::new(rmac_ui::input_actions::Cut),
-                )
-                .menu_with_disabled("Copy", !selected, Box::new(rmac_ui::input_actions::Copy))
-                .menu_with_disabled("Paste", !pasteable, Box::new(rmac_ui::input_actions::Paste))
-                .separator()
-                .menu("Select All", Box::new(rmac_ui::input_actions::SelectAll));
-            let found = availability(cx);
-            if !(found.shown && editable) {
-                return menu;
-            }
-            let mut tools =
-                NativeMenu::new().menu("Show Writing Tools", Box::new(ShowWritingTools));
-            for (index, (task, _)) in TASK_ACTIONS.iter().enumerate() {
-                if matches!(index, 0 | 2 | 5) {
-                    tools = tools.separator();
-                }
-                tools = tools.menu_with_disabled(
-                    label(*task),
-                    !found.offered(*task),
-                    task_action(*task),
-                );
-            }
-            menu.separator().submenu("Writing Tools", tools)
-        },
-    )
+/// Writing Tools appended to a native text menu, after a separator, while
+/// it is available and the field is editable.
+fn append_native_writing_tools(menu: NativeMenu, editable: bool, cx: &App) -> NativeMenu {
+    let found = availability(cx);
+    if !(found.shown && editable) {
+        return menu;
+    }
+    let mut tools = NativeMenu::new().menu("Show Writing Tools", Box::new(ShowWritingTools));
+    for (index, (task, _)) in TASK_ACTIONS.iter().enumerate() {
+        if matches!(index, 0 | 2 | 5) {
+            tools = tools.separator();
+        }
+        tools = tools.menu_with_disabled(label(*task), !found.offered(*task), task_action(*task));
+    }
+    menu.separator().submenu("Writing Tools", tools)
 }
 
 /// The same Writing Tools rows for a Lulo-drawn [`rmac_ui::ContextMenu`]

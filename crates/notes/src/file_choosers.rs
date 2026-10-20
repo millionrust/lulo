@@ -136,9 +136,9 @@ pub(crate) fn export_destination(
 }
 
 /// Where a save dialog starts: Documents, else the home folder.
-#[cfg(not(target_os = "linux"))]
-fn documents_directory() -> PathBuf {
+pub(super) fn documents_directory() -> PathBuf {
     let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."));

@@ -112,4 +112,49 @@ impl Settings {
         })
         .detach();
     }
+
+    pub(in crate::controller) fn set_wifi_advanced_sheet(
+        &mut self,
+        open: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.wifi_advanced_sheet != open {
+            self.wifi_advanced_sheet = open;
+            cx.notify();
+        }
+    }
+
+    /// Auto-Join on or off for a saved network, keeping its password
+    /// (`rmac_network::set_auto_join`).
+    pub(in crate::controller) fn set_wifi_auto_join(
+        &mut self,
+        network: rmac_network::WifiNetworkId,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.wifi_busy {
+            return;
+        }
+        self.begin_wifi_mutation();
+        self.wifi_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            // Blocking D-Bus / WLAN calls stay off GPUI's executor
+            // (LINUX-HW-07).
+            let result =
+                blocking::unblock(move || rmac_network::set_auto_join(&network, enabled)).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.wifi_busy = false;
+                match result {
+                    Ok(snapshot) => this.apply_wifi_snapshot(snapshot),
+                    Err(error) => {
+                        this.wifi_error =
+                            Some(format!("Could not change Auto-Join: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 }

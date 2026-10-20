@@ -173,7 +173,7 @@ window-rule {
 
 // rmac apps drawn with a unified 52 pt toolbar get the toolbar radius.
 window-rule {
-    match app-id=r#"^org\.rmac\.(Files|SystemSettings|Calculator|Clock|Notes|SystemMonitor)$"#
+    match app-id=r#"^org\.rmac\.(Files|SystemSettings|Calculator|Clock|Notes|SystemMonitor|Preview|Weather)$"#
     geometry-corner-radius 27
 }
 

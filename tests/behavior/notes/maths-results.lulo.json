@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "notes/maths-results",
+  "observations": {
+    "inserted": {
+      "note_body": {"value": "12+30=42"}
+    }
+  }
+}

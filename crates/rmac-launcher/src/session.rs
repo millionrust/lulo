@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use crate::engine::{match_quality, normalize, score};
 use crate::{
-    Action, ActivationMode, ApplicationGroup, Cancellation, Category, Learning, MoveSelection,
-    Privacy, ProviderDescriptor, ProviderError, RankedResult, Request, ResultId, SearchResult,
-    CONFIDENT_MATCH, DEFAULT_CATEGORY_LIMIT, DEFAULT_LIMIT, INTELLIGENCE_PROVIDER,
+    section_label, Action, ActivationMode, ApplicationGroup, Cancellation, Category, Learning,
+    MoveSelection, Privacy, ProviderDescriptor, ProviderError, RankedResult, Request, ResultId,
+    SearchResult, CONFIDENT_MATCH, DEFAULT_CATEGORY_LIMIT, DEFAULT_LIMIT, INTELLIGENCE_PROVIDER,
 };
 
 #[derive(Clone, Debug)]
@@ -361,12 +361,12 @@ impl Session {
     /// the top hit alone, then each run of one category, as on macOS. The
     /// selection does not wrap.
     pub fn move_selection_by_section(&mut self, direction: MoveSelection) -> Option<&ResultId> {
-        let categories = self
+        let sections = self
             .ranked
             .iter()
-            .map(|ranked| ranked.result.category)
+            .map(|ranked| section_label(ranked.result.category, ranked.result.kind))
             .collect::<Vec<_>>();
-        let starts = section_starts(&categories);
+        let starts = section_starts(&sections);
         if starts.is_empty() {
             self.selected = None;
             return None;
@@ -466,6 +466,26 @@ impl Session {
                     ranked.result.id.clone(),
                 )
             });
+            // macOS lists each section together (all Documents, then all
+            // Folders, …), sections in the order of their best match. The
+            // top hit stays first: its section's best match is it.
+            let mut order: Vec<(u8, &'static str)> = Vec::new();
+            for ranked in &ranked {
+                let key = (
+                    list_region(ranked.result.category),
+                    section_label(ranked.result.category, ranked.result.kind),
+                );
+                if !order.contains(&key) {
+                    order.push(key);
+                }
+            }
+            ranked.sort_by_key(|ranked| {
+                let key = (
+                    list_region(ranked.result.category),
+                    section_label(ranked.result.category, ranked.result.kind),
+                );
+                order.iter().position(|candidate| *candidate == key)
+            });
         }
         let mut category_counts = BTreeMap::new();
         ranked.retain(|ranked| {
@@ -526,11 +546,11 @@ fn list_region(category: Category) -> u8 {
 }
 
 /// First index of each section: the top hit alone, then each run of one
-/// category.
-pub fn section_starts(categories: &[Category]) -> Vec<usize> {
+/// section (a category, or a file kind).
+pub fn section_starts<T: PartialEq>(sections: &[T]) -> Vec<usize> {
     let mut starts = Vec::new();
-    for (index, category) in categories.iter().enumerate() {
-        if index <= 1 || categories[index - 1] != *category {
+    for (index, section) in sections.iter().enumerate() {
+        if index <= 1 || sections[index - 1] != *section {
             starts.push(index);
         }
     }

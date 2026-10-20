@@ -52,6 +52,12 @@ impl NotesView {
                 // and the editor, each with its own part of the 52 pt toolbar
                 // (design-lab/apps.html).
                 let list_focused = self.focus.is_focused(window);
+                let note_list = self.render_note_list(list_focused, window, cx);
+                let list_title = self.list_window_title.borrow().clone();
+                if self.applied_window_title != list_title {
+                    window.set_window_title(&list_title);
+                    self.applied_window_title = list_title;
+                }
                 div()
                     .size_full()
                     .flex()
@@ -59,7 +65,7 @@ impl NotesView {
                     .when(self.folders_shown(), |element| {
                         element.child(self.render_sidebar(cx))
                     })
-                    .child(self.render_note_list(list_focused, window, cx))
+                    .child(note_list)
                     .child(div().w(px(1.0)).h_full().flex_none().bg(column_rule()))
                     .child(
                         div()
@@ -427,6 +433,14 @@ impl NotesView {
                     if !this.light_background_notes.insert(note.id) {
                         this.light_background_notes.remove(&note.id);
                     }
+                    let ids: Vec<u64> = this
+                        .light_background_notes
+                        .iter()
+                        .map(|id| id.get())
+                        .collect();
+                    cx.background_executor()
+                        .spawn(async move { crate::settings_store::save_light_notes(&ids) })
+                        .detach();
                     cx.notify();
                 }
             }))

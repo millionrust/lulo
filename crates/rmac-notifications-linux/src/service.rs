@@ -87,7 +87,7 @@ impl HistoryAuthority {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .policy(app_id)
-            .delivery(false);
+            .delivery_at(false, crate::origin::unix_ms_now() / 1000);
         if !self.focus_enforced {
             return base;
         }

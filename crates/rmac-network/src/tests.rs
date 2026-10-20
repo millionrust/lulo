@@ -551,3 +551,27 @@ fn macos_vpn_fixture_is_parsed_and_active_profiles_sort_first() {
     assert_eq!(profiles[0].service, "VPN:L2TP");
     assert_eq!(profiles[1].name, "Office");
 }
+
+#[test]
+fn auto_join_update_keeps_the_saved_password() {
+    use std::collections::HashMap;
+    use zbus::zvariant::{OwnedValue, Str};
+    let mut settings: HashMap<String, HashMap<String, OwnedValue>> = HashMap::from([(
+        "802-11-wireless-security".to_owned(),
+        HashMap::from([(
+            "key-mgmt".to_owned(),
+            OwnedValue::from(Str::from("wpa-psk".to_owned())),
+        )]),
+    )]);
+    let secrets = HashMap::from([(
+        "802-11-wireless-security".to_owned(),
+        HashMap::from([(
+            "psk".to_owned(),
+            OwnedValue::from(Str::from("correct-horse".to_owned())),
+        )]),
+    )]);
+    merge_secrets(&mut settings, secrets);
+    let security = &settings["802-11-wireless-security"];
+    assert!(security.contains_key("key-mgmt"));
+    assert!(security.contains_key("psk"));
+}

@@ -66,31 +66,37 @@ pub fn delay_until_next_clock_tick(epoch_millis: u128, show_seconds: bool) -> Du
     }
 }
 
-pub fn top_bar_clock_pattern(settings: &rmac_shell_settings::ClockSettings) -> &'static str {
-    use rmac_shell_settings::ClockFormat;
-
-    match (settings.show_date, settings.show_seconds, settings.format) {
-        (true, false, ClockFormat::TwentyFourHour) => "%a %-d %b %H:%M",
-        (true, true, ClockFormat::TwentyFourHour) => "%a %-d %b %H:%M:%S",
-        (false, false, ClockFormat::TwentyFourHour) => "%H:%M",
-        (false, true, ClockFormat::TwentyFourHour) => "%H:%M:%S",
-        (true, false, ClockFormat::Locale | ClockFormat::TwelveHour) => "%a %-d %b %-I:%M %p",
-        (true, true, ClockFormat::Locale | ClockFormat::TwelveHour) => "%a %-d %b %-I:%M:%S %p",
-        (false, false, ClockFormat::Locale | ClockFormat::TwelveHour) => "%-I:%M %p",
-        (false, true, ClockFormat::Locale | ClockFormat::TwelveHour) => "%-I:%M:%S %p",
+pub fn top_bar_clock_pattern(settings: &rmac_shell_settings::ClockSettings) -> String {
+    match top_bar_clock_parts(settings) {
+        (Some(date), time) => format!("{date} {time}"),
+        (None, time) => time.to_owned(),
     }
 }
 
 /// The clock split into its optional date and its time, so the menu bar can
-/// set the wider macOS gap between them.
+/// set the wider macOS gap between them. Menu Bar ▸ Clock Options… chooses
+/// the date, the day of the week, seconds and am/pm.
 pub fn top_bar_clock_parts(
     settings: &rmac_shell_settings::ClockSettings,
 ) -> (Option<&'static str>, &'static str) {
-    let pattern = top_bar_clock_pattern(settings);
-    match pattern.strip_prefix("%a %-d %b ") {
-        Some(time) => (Some("%a %-d %b"), time),
-        None => (None, pattern),
-    }
+    use rmac_shell_settings::ClockFormat;
+
+    let date = match (settings.show_date, settings.show_weekday) {
+        (true, true) => Some("%a %-d %b"),
+        (true, false) => Some("%-d %b"),
+        (false, true) => Some("%a"),
+        (false, false) => None,
+    };
+    let twenty_four = settings.format == ClockFormat::TwentyFourHour;
+    let time = match (twenty_four, settings.show_seconds, settings.show_am_pm) {
+        (true, false, _) => "%H:%M",
+        (true, true, _) => "%H:%M:%S",
+        (false, false, true) => "%-I:%M %p",
+        (false, true, true) => "%-I:%M:%S %p",
+        (false, false, false) => "%-I:%M",
+        (false, true, false) => "%-I:%M:%S",
+    };
+    (date, time)
 }
 
 pub fn top_bar_workspace_label(snapshot: &rmac_shell_status::Snapshot) -> Option<String> {
@@ -319,6 +325,7 @@ mod tests {
         assert_eq!(top_bar_clock_pattern(&settings), "%a %-d %b %-I:%M %p");
 
         settings.show_date = false;
+        settings.show_weekday = false;
         settings.show_seconds = true;
         settings.format = rmac_shell_settings::ClockFormat::TwentyFourHour;
         assert_eq!(
@@ -326,6 +333,25 @@ mod tests {
             Duration::from_millis(1)
         );
         assert_eq!(top_bar_clock_pattern(&settings), "%H:%M:%S");
+    }
+
+    #[test]
+    fn clock_options_choose_the_weekday_and_am_pm() {
+        let mut settings = rmac_shell_settings::ClockSettings {
+            format: rmac_shell_settings::ClockFormat::TwelveHour,
+            ..Default::default()
+        };
+        settings.show_weekday = false;
+        assert_eq!(
+            top_bar_clock_parts(&settings),
+            (Some("%-d %b"), "%-I:%M %p")
+        );
+        settings.show_date = false;
+        settings.show_weekday = true;
+        settings.show_am_pm = false;
+        assert_eq!(top_bar_clock_parts(&settings), (Some("%a"), "%-I:%M"));
+        settings.show_weekday = false;
+        assert_eq!(top_bar_clock_pattern(&settings), "%-I:%M");
     }
 
     #[test]
@@ -392,6 +418,8 @@ mod tests {
             (Some("%a %-d %b"), "%-I:%M %p")
         );
         settings.show_date = false;
+        assert_eq!(top_bar_clock_parts(&settings), (Some("%a"), "%-I:%M %p"));
+        settings.show_weekday = false;
         assert_eq!(top_bar_clock_parts(&settings), (None, "%-I:%M %p"));
     }
 

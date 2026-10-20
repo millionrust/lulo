@@ -158,6 +158,10 @@ pub const AREA_BELOW_BAR: f32 = 40.0;
 pub const AREA_ABOVE_DOCK: f32 = 104.0;
 pub const EXPOSE_TOP: f32 = 52.0;
 pub const EXPOSE_BOTTOM: f32 = 100.0;
+/// App Exposé's minimised-window row (S): 150 pt of windows and captions
+/// under a divider 16 pt below the open windows.
+pub const MINIMISED_ROW: f32 = 150.0;
+pub const MINIMISED_DIVIDER_GAP: f32 = 16.0;
 /// The hover ring: 5 pt, 1 pt outside the window.
 pub const HOVER_RING: f32 = 5.0;
 pub const HOVER_GAP: f32 = 1.0;
@@ -296,6 +300,22 @@ pub fn app_windows_area(width: f32, height: f32) -> Rect {
     )
 }
 
+/// App Exposé with minimised windows: the open windows' area, the divider's
+/// y, and the minimised row's area along the bottom.
+pub fn app_windows_areas_with_minimised(width: f32, height: f32) -> (Rect, f32, Rect) {
+    let full = app_windows_area(width, height);
+    let row_top = full.bottom() - MINIMISED_ROW;
+    let divider = row_top - MINIMISED_DIVIDER_GAP;
+    let open = Rect::new(
+        full.x,
+        full.y,
+        full.width,
+        (divider - MINIMISED_DIVIDER_GAP - full.y).max(1.0),
+    );
+    let row = Rect::new(full.x, row_top, full.width, MINIMISED_ROW);
+    (open, divider, row)
+}
+
 /// Spread `frames` over `area` without overlap, keeping their on-screen order.
 ///
 /// Windows are put in rows in top-to-bottom order (left to right inside a
@@ -412,6 +432,9 @@ pub struct SceneWindow {
     /// A window above it covers part of it, so a screen capture cannot show
     /// it; it is drawn as an icon card instead.
     pub occluded: bool,
+    /// Minimised (parked): App Exposé shows it in its own row under a
+    /// divider, and choosing it brings it back (MC-06).
+    pub minimised: bool,
 }
 
 /// The focused output and the windows Mission Control lays out on it,
@@ -560,9 +583,40 @@ pub fn scene(snapshot: &Snapshot, mode: Mode) -> Option<Scene> {
                 title: window.title.clone(),
                 frame: *frame,
                 occluded,
+                minimised: false,
             }
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let mut scene_windows = scene_windows;
+    if mode == Mode::AppWindows {
+        // The app's minimised windows, which sit on the parking workspace.
+        // Each starts at the bottom edge (the Dock) and flies up into the
+        // row; it has no picture on screen, so it is drawn as an icon card.
+        let mut minimised: Vec<&Window> = snapshot
+            .windows
+            .iter()
+            .filter(|window| window_is_parked(snapshot, window))
+            .filter(|window| is_application(window) && window.app_id == focused_app)
+            .collect();
+        minimised.sort_by_key(|window| window.id);
+        scene_windows.extend(minimised.into_iter().enumerate().map(|(index, window)| {
+            let size = window.layout.tile_size;
+            let (w, h) = if size.width > 0.0 && size.height > 0.0 {
+                (size.width as f32, size.height as f32)
+            } else {
+                (960.0, 600.0)
+            };
+            SceneWindow {
+                id: window.id,
+                app_id: window.app_id.clone(),
+                title: window.title.clone(),
+                // Ordered left to right; `layout` keeps that order.
+                frame: Rect::new(width / 2.0 - w / 2.0 + index as f32, height, w, h),
+                occluded: true,
+                minimised: true,
+            }
+        }));
+    }
 
     Some(Scene {
         output: output_id,
@@ -934,6 +988,36 @@ mod tests {
             },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn app_expose_lists_the_apps_minimised_windows_after_its_open_ones() {
+        let frame = Rect::new(100.0, 100.0, 600.0, 400.0);
+        let snapshot = snapshot(
+            vec![
+                window(1, "org.rmac.Terminal", 1, frame, 3),
+                // Minimised: parked on the parking workspace.
+                window(2, "org.rmac.Terminal", 2, frame, 2),
+                window(3, "org.rmac.Files", 2, frame, 1),
+            ],
+            Some(1),
+        );
+        let expose = scene(&snapshot, Mode::AppWindows).unwrap();
+        let ids = expose
+            .windows
+            .iter()
+            .map(|window| (window.id.0, window.minimised))
+            .collect::<Vec<_>>();
+        assert_eq!(ids, [(1, false), (2, true)]);
+        // No picture can be taken of a parked window: it draws as a card.
+        assert!(expose.windows[1].occluded);
+        // Mission Control itself never shows minimised windows.
+        let overview = scene(&snapshot, Mode::MissionControl).unwrap();
+        assert!(overview.windows.iter().all(|window| !window.minimised));
+
+        let (open, divider, row) = app_windows_areas_with_minimised(1470.0, 956.0);
+        assert!(open.bottom() < divider && divider < row.y);
+        assert_eq!(row.bottom(), app_windows_area(1470.0, 956.0).bottom());
     }
 
     #[test]

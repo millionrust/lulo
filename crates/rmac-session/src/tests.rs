@@ -838,7 +838,7 @@ fn every_window_uses_the_measured_radius_and_active_inactive_shadows() {
     ));
     // Unified-toolbar apps take the 27 pt toolbar-window radius; Text Editor
     // is a title-bar window like TextEdit and keeps the 16 pt default.
-    assert!(shell.contains("|SystemMonitor)$\"#\n    geometry-corner-radius 27"));
+    assert!(shell.contains("|SystemMonitor|Preview|Weather)$\"#\n    geometry-corner-radius 27"));
     assert!(!shell.contains("TextEditor)$\"#\n    geometry-corner-radius 27"));
     // Header-bar apps under the rmac GTK theme are toolbar windows as well.
     assert!(shell.contains(

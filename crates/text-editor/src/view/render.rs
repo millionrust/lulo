@@ -785,6 +785,7 @@ impl Render for EditorView {
                             .context_menu(rmac_writing_tools::text_menu(
                                 self.input.clone(),
                                 editable,
+                                &rmac_writing_tools::text_menu::TEXT_EDITOR,
                             ))
                             .font_family(font_family)
                             .text_size(px(size))
@@ -959,8 +960,8 @@ impl Render for EditorView {
 }
 
 impl EditorView {
-    /// Right-click in the rich-text body: the standard text commands, then
-    /// Writing Tools (the plain body's own field menu offers the same).
+    /// Right-click in the rich-text body: TextEdit's text menu, then Writing
+    /// Tools (the plain body's own field menu offers the same).
     fn open_rich_menu(
         &mut self,
         position: gpui::Point<gpui::Pixels>,
@@ -979,39 +980,17 @@ impl EditorView {
         let position = state.position();
         let editable = !self.editing_blocked() && self.rich.read(cx).is_editable();
         let selected = !self.rich.read(cx).selected_range().is_empty();
-        let item = |menu: rmac_ui::ContextMenu,
-                    label: &'static str,
-                    enabled: bool,
-                    action: Box<dyn gpui::Action>| {
-            if enabled {
-                menu.item(label, action)
-            } else {
-                menu.disabled_item(label, action)
-            }
-        };
-        let menu = rmac_ui::ContextMenu::new(position);
-        let menu = item(
-            menu,
-            "Cut",
-            editable && selected,
-            Box::new(rmac_ui::input_actions::Cut),
-        );
-        let menu = item(
-            menu,
-            "Copy",
+        let state_now = rmac_writing_tools::TextState {
             selected,
-            Box::new(rmac_ui::input_actions::Copy),
+            editable,
+            pasteable: editable && cx.read_from_clipboard().is_some(),
+        };
+        let menu = rmac_writing_tools::context_menu(
+            &rmac_writing_tools::text_menu::TEXT_EDITOR,
+            state_now,
+            position,
+            cx,
         );
-        let menu = item(
-            menu,
-            "Paste",
-            editable && cx.read_from_clipboard().is_some(),
-            Box::new(rmac_ui::input_actions::Paste),
-        );
-        let menu = menu
-            .separator()
-            .item("Select All", Box::new(rmac_ui::input_actions::SelectAll));
-        let menu = rmac_writing_tools::context_menu_rows(menu, position, editable, cx);
         Some(menu.render(state).into_any_element())
     }
 }

@@ -32,6 +32,13 @@ pub struct Item {
     pub(super) mime_types: Vec<String>,
 }
 
+impl Item {
+    /// What opening this item starts, when it can be opened.
+    pub fn launch_spec(&self) -> Option<&rmac_apps::LaunchSpec> {
+        self.launch.as_ref()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SpecialItemKind {
     Files,
@@ -377,6 +384,9 @@ pub struct FinderContextMenu {
     pub application_name: String,
     pub windows: Vec<WindowMenu>,
     pub new_window: Option<ContextAction>,
+    /// Find…, Go to Folder… and Connect to Server… (DOCK-05), each opening
+    /// a Files window that runs the command.
+    pub commands: Vec<ApplicationCommand>,
     pub show_all_windows: Option<ContextAction>,
     pub hide: Option<ContextAction>,
     pub hide_others: Option<ContextAction>,

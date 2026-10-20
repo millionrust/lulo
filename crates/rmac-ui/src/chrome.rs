@@ -1249,6 +1249,7 @@ mod tests {
         focused: bool,
     ) -> rmac_compositor::Window {
         rmac_compositor::Window {
+            always_on_top: false,
             id: WindowId(id),
             title: None,
             app_id: Some(app.into()),
@@ -1356,6 +1357,7 @@ mod tests {
         focus_timestamp: Option<rmac_compositor::Timestamp>,
     ) -> rmac_compositor::Window {
         rmac_compositor::Window {
+            always_on_top: false,
             id: WindowId(id),
             title: None,
             app_id: Some("org.rmac.Files".into()),

@@ -425,6 +425,7 @@ mod tests {
 
     fn window(id: u64, workspace: u64, floating: bool, at: Option<(f64, f64)>) -> Window {
         Window {
+            always_on_top: false,
             id: WindowId(id),
             title: None,
             app_id: Some("org.rmac.TextEditor".into()),

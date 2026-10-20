@@ -203,6 +203,7 @@ mod tests {
         ];
         let compositor = rmac_compositor::Snapshot {
             windows: vec![rmac_compositor::Window {
+                always_on_top: false,
                 id: rmac_compositor::WindowId(1),
                 title: None,
                 app_id: Some("weather".into()),

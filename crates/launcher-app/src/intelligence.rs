@@ -110,6 +110,8 @@ fn start_timer(seconds: u64) -> Result<(), String> {
             id,
             duration: seconds * 1000,
             now,
+            label: String::new(),
+            sound: Default::default(),
         }
         .apply(state);
     })

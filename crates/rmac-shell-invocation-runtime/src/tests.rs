@@ -26,6 +26,7 @@ fn output(id: &str) -> rmac_compositor::Output {
 
 fn window(id: u64, focused: bool) -> rmac_compositor::Window {
     rmac_compositor::Window {
+        always_on_top: false,
         id: rmac_compositor::WindowId(id),
         title: Some("private window title".into()),
         app_id: Some("private.app".into()),

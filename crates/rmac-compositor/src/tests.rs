@@ -16,6 +16,7 @@ fn workspace(id: u64, output: Option<&str>) -> Workspace {
 
 fn window(id: u64, workspace: Option<u64>) -> Window {
     Window {
+        always_on_top: false,
         id: WindowId(id),
         title: Some(format!("Window {id}")),
         app_id: Some("org.rmac.Test".into()),
@@ -140,6 +141,7 @@ fn actions_report_stable_kinds_and_capabilities() {
 
 fn app_window(id: u64, app_id: &str, workspace: WorkspaceId) -> Window {
     Window {
+        always_on_top: false,
         id: WindowId(id),
         title: None,
         app_id: Some(app_id.to_string()),

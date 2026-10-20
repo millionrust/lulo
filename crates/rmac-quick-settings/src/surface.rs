@@ -699,6 +699,7 @@ mod tests {
         rmac_compositor::Snapshot {
             outputs: vec![output(output_id, true, 1920.0, 1080.0, 1.5)],
             windows: vec![rmac_compositor::Window {
+                always_on_top: false,
                 id: window,
                 title: None,
                 app_id: None,

@@ -462,6 +462,7 @@ mod tests {
 
     fn window(id: u64, app_id: &str, frame: (f64, f64, f64, f64)) -> Window {
         Window {
+            always_on_top: false,
             id: WindowId(id),
             title: None,
             app_id: Some(app_id.into()),

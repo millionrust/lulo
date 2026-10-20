@@ -13,8 +13,25 @@ use std::time::{Duration, Instant};
 use wayland_client::globals::{registry_queue_init, GlobalListContents};
 use wayland_client::protocol::{wl_registry, wl_seat};
 use wayland_client::{Connection, Dispatch, QueueHandle};
-use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1;
-use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1;
+
+use self::vk::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1;
+use self::vk::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1;
+
+/// The virtual-keyboard protocol, generated from `protocols/*.xml`.
+mod vk {
+    #![allow(missing_docs, non_upper_case_globals, non_camel_case_types, clippy::all)]
+
+    use wayland_client::protocol::*;
+    use wayland_client::{self};
+
+    pub mod __interfaces {
+        use wayland_client::protocol::__interfaces::*;
+        wayland_scanner::generate_interfaces!("protocols/virtual-keyboard-unstable-v1.xml");
+    }
+    use self::__interfaces::*;
+
+    wayland_scanner::generate_client_code!("protocols/virtual-keyboard-unstable-v1.xml");
+}
 
 /// Evdev key codes.
 const KEY_V: u32 = 47;

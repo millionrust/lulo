@@ -24,4 +24,4 @@ libc.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-system.workspace = true
 wayland-client.workspace = true
-wayland-protocols-misc.workspace = true
+wayland-scanner.workspace = true

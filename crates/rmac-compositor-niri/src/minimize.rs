@@ -332,6 +332,7 @@ mod tests {
             active_window: None,
         };
         let window = |id: u64, workspace: u64| domain::Window {
+            always_on_top: false,
             id: domain::WindowId(id),
             title: None,
             app_id: Some("firefox".into()),

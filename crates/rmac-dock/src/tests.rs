@@ -30,6 +30,7 @@ fn window(
     seconds: u64,
 ) -> rmac_compositor::Window {
     rmac_compositor::Window {
+        always_on_top: false,
         id: rmac_compositor::WindowId(id),
         title: Some(format!("Window {id}")),
         app_id: Some(app_id.into()),

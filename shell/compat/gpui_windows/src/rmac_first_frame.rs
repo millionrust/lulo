@@ -48,24 +48,27 @@ fn set_cloak(hwnd: HWND, cloak: bool) -> bool {
 }
 
 impl FirstFrame {
-    /// Before a new window is first shown.
-    pub(crate) fn cloak(&self, hwnd: HWND) {
+    /// Before a new window is first shown. True when it is now cloaked.
+    pub(crate) fn cloak(&self, hwnd: HWND) -> bool {
         if std::env::var_os("RMAC_GPUI_NO_FIRST_FRAME_CLOAK").is_some() || !set_cloak(hwnd, true) {
-            return;
+            return false;
         }
         self.cloaked.set(true);
         // SAFETY: a timer on our own window; `handle_timer_msg` kills it.
         unsafe { SetTimer(Some(hwnd), UNCLOAK_TIMER_ID, UNCLOAK_AFTER_MS, None) };
+        true
     }
 
-    /// After a frame drew, or when the fallback timer fires.
-    pub(crate) fn reveal(&self, hwnd: HWND) {
+    /// After a frame drew, or when the fallback timer fires. True when the
+    /// window was cloaked until now (its Mac frame's shadow may show).
+    pub(crate) fn reveal(&self, hwnd: HWND) -> bool {
         if !self.cloaked.take() {
-            return;
+            return false;
         }
         set_cloak(hwnd, false);
         // SAFETY: our own window's timer; killing a fired one is harmless.
         unsafe { KillTimer(Some(hwnd), UNCLOAK_TIMER_ID) }.log_err();
         crate::rmac_trace::startup("first_frame_shown");
+        true
     }
 }

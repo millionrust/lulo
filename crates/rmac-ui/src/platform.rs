@@ -121,6 +121,20 @@ mod tests {
     }
 }
 
+/// The first code of the process that is Lulo's: the C runtime runs it
+/// with its other initializers, before `main`. With the start-up trace on,
+/// time before it is the Windows loader's (mapping the exe and its DLLs),
+/// time after it and before an app's first mark is the app's own.
+#[cfg(windows)]
+#[used]
+#[link_section = ".CRT$XCU"]
+static CRT_INIT_MARK: extern "C" fn() = crt_init_mark;
+
+#[cfg(windows)]
+extern "C" fn crt_init_mark() {
+    startup_mark("crt_init");
+}
+
 /// See [`crate::startup_mark`].
 #[cfg(windows)]
 pub(crate) fn startup_mark(phase: &str) {

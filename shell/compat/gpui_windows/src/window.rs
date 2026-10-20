@@ -600,8 +600,9 @@ impl WindowsWindow {
         )?;
         crate::rmac_trace::startup("window_created");
         if params.show {
-            if params.kind == WindowKind::Normal {
-                this.state.first_frame.cloak(hwnd);
+            if params.kind == WindowKind::Normal && this.state.first_frame.cloak(hwnd) {
+                this.state.mac_frame.hold_back(true);
+                crate::rmac_trace::startup("window_cloaked");
             }
             unsafe { SetWindowPlacement(hwnd, &placement)? };
             crate::rmac_trace::startup("window_shown");

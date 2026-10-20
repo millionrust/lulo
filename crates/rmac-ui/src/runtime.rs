@@ -255,7 +255,9 @@ fn initial_host_appearance_from(value: &str) -> Option<rmac_appearance::Snapshot
 /// from the desktop menu bar into the app's key window (see
 /// [`crate::register_menu_target`]).
 pub fn install_app_menu(app_id: &'static str, cx: &mut App) {
+    crate::startup_mark("install_app_menu");
     crate::app_menu::install(app_id, None, cx);
+    crate::startup_mark("app_menu_installed");
 }
 
 /// [`install_app_menu`] for an app whose windows share one process: later
@@ -267,7 +269,9 @@ pub fn install_app_instance(
     open_window: impl Fn(Vec<String>, &mut App) + 'static,
     cx: &mut App,
 ) {
+    crate::startup_mark("install_app_menu");
     crate::app_menu::install(app_id, Some(Box::new(open_window)), cx);
+    crate::startup_mark("app_menu_installed");
 }
 
 /// Apply the current shared theme and text scale before an on-demand shell

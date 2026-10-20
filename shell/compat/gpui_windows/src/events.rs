@@ -263,7 +263,7 @@ impl WindowsWindowInner {
 
     fn handle_timer_msg(&self, handle: HWND, wparam: WPARAM) -> Option<isize> {
         if wparam.0 == crate::rmac_first_frame::UNCLOAK_TIMER_ID {
-            self.state.first_frame.reveal(handle);
+            self.reveal_first_frame(handle);
             return Some(0);
         }
         if wparam.0 == crate::rmac_frame_loop::THROTTLE_RETRY_TIMER_ID {
@@ -282,6 +282,15 @@ impl WindowsWindowInner {
             self.handle_paint_msg(handle)
         } else {
             None
+        }
+    }
+
+    /// rmac: the window's first frame is on screen (or the fallback timer
+    /// fired): uncloak it and give it its shadow (`rmac_first_frame`).
+    fn reveal_first_frame(&self, handle: HWND) {
+        if self.state.first_frame.reveal(handle) {
+            self.state.mac_frame.hold_back(false);
+            self.update_mac_frame();
         }
     }
 
@@ -1488,7 +1497,7 @@ impl WindowsWindowInner {
         if drew {
             static FIRST_DRAW: std::sync::Once = std::sync::Once::new();
             FIRST_DRAW.call_once(|| crate::rmac_trace::startup("first_frame_drawn"));
-            self.state.first_frame.reveal(handle);
+            self.reveal_first_frame(handle);
         }
         let smooth_active =
             self.state.smooth_scroll.is_active() || self.state.pan_smoother.is_active();

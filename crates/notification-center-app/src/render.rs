@@ -267,6 +267,12 @@ impl Render for NotificationCenterView {
         }
         self.a11y_active_last_frame = a11y_active;
         self.scale_factor = window.scale_factor();
+        // NC-11: slide in from (and out to) the right edge; frames are
+        // asked for only while it moves.
+        let slide = self.slide_offset();
+        if slide.is_some() {
+            window.request_animation_frame();
+        }
         let clock = Clock::now();
         let groups = self.groups();
         let has_records = !groups.is_empty();
@@ -329,6 +335,7 @@ impl Render for NotificationCenterView {
             .aria_label("Notification Center")
             .size_full()
             .relative()
+            .when_some(slide, |root, offset| root.left(px(offset)))
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
                 this.dismiss_app_menu(window, cx);

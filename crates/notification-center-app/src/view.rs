@@ -35,7 +35,17 @@ pub(crate) struct NotificationCenterView {
     pub(crate) scale_factor: f32,
     /// The open "<App> Notifications" right-click menu and the app it is for.
     pub(crate) app_menu: Option<(rmac_ui::ContextMenuState, AppMenuTarget)>,
+    /// The panel slides in from the right edge from here (NC-11) …
+    pub(crate) opened: std::time::Instant,
+    /// … and out again from here.
+    pub(crate) closing: Option<std::time::Instant>,
+    /// A low-spec PC skips the slide (ADR 0027).
+    pub(crate) reduce_motion: bool,
 }
+
+/// macOS 26's Notification Centre slide (S: from screen recordings).
+const SLIDE_IN: std::time::Duration = std::time::Duration::from_millis(300);
+const SLIDE_OUT: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// The sending application a card's right-click menu acts on: every service
 /// application ID of its displayed stack, so muting or turning off covers
@@ -360,9 +370,35 @@ impl NotificationCenterView {
             .map(|application| application.policy)
     }
 
+    /// Slides the panel out to the right edge, as macOS does, then closes
+    /// its surface; at once when motion is reduced (a low-spec PC).
     pub(crate) fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         crate::clear_active_panel(self.token, cx);
-        window.remove_window();
+        if self.reduce_motion || self.closing.is_some() {
+            window.remove_window();
+            return;
+        }
+        self.closing = Some(std::time::Instant::now());
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(SLIDE_OUT).await;
+            let _ = this.update_in(cx, |_, window, _| window.remove_window());
+        })
+        .detach();
+    }
+
+    /// How far the panel sits right of its place, in points, while it
+    /// slides in or out; `None` once it rests.
+    pub(crate) fn slide_offset(&self) -> Option<f32> {
+        if self.reduce_motion {
+            return None;
+        }
+        if let Some(closing) = self.closing {
+            let t = (closing.elapsed().as_secs_f32() / SLIDE_OUT.as_secs_f32()).min(1.0);
+            return Some(crate::model::PANEL_WIDTH * t * t);
+        }
+        let t = self.opened.elapsed().as_secs_f32() / SLIDE_IN.as_secs_f32();
+        (t < 1.0).then(|| crate::model::PANEL_WIDTH * (1.0 - t).powi(3))
     }
 
     pub(crate) fn dismiss_and_restore_focus(

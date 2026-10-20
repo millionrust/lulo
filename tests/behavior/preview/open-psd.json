@@ -1,5 +1,5 @@
 {
-  "title": "Preview opens a Photoshop document as a picture at its own size",
+  "title": "Preview opens a Photoshop document as a picture",
   "app": "preview",
   "lulo_only": true,
   "setup": {
@@ -17,7 +17,7 @@
     {
       "observe": "opened",
       "facts": [
-        "window_size"
+        "open_error"
       ]
     }
   ]

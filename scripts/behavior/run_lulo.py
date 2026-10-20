@@ -954,6 +954,15 @@ class LuloRun:
             "background_intact": corner == (255, 255, 255, 255),
         }
 
+    def fact_open_error(self) -> dict[str, Any]:
+        """Whether Preview failed to open the document: a loaded document
+        shows the toolbar's Find field, an unreadable one does not."""
+        frame = self.active_frame()
+        loaded = frame is not None and any(
+            name(node) == "Find" for node in descendants(frame, limit=3000)
+        )
+        return {"shown": not loaded}
+
     def fact_image_halves(self) -> dict[str, Any]:
         """The colour on each side of the launched PNG (a red/blue fixture)."""
         filename = self.scenario.get("launch", {}).get("file")

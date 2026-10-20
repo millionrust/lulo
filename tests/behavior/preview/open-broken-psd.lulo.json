@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "preview/open-broken-psd",
+  "observations": {
+    "opened": {
+      "open_error": {
+        "shown": true
+      }
+    }
+  }
+}

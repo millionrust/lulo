@@ -54,7 +54,22 @@ pub struct IdlePolicy {
     /// Lock Screen ▸ Turn display off on power adapter when inactive.
     #[serde(default)]
     pub display_off_on_adapter_seconds: Option<u32>,
+    /// Lock Screen ▸ Require password after the display is turned off:
+    /// `Some(0)` is Immediately, `None` is Never.
+    #[serde(default = "default_require_password")]
+    pub require_password_after_seconds: Option<u32>,
+    /// Battery ▸ Options… ▸ Prevent automatic sleeping on power adapter
+    /// when the display is off.
+    #[serde(default)]
+    pub prevent_sleep_on_adapter: bool,
 }
+
+fn default_require_password() -> Option<u32> {
+    Some(0)
+}
+
+/// The Mac's longest "Require password" delay, 8 hours.
+pub const MAX_REQUIRE_PASSWORD_SECONDS: u32 = 8 * 60 * 60;
 
 impl Default for IdlePolicy {
     fn default() -> Self {
@@ -64,6 +79,8 @@ impl Default for IdlePolicy {
             suspend_after_seconds: None,
             display_off_on_battery_seconds: None,
             display_off_on_adapter_seconds: None,
+            require_password_after_seconds: Some(0),
+            prevent_sleep_on_adapter: false,
         }
     }
 }
@@ -84,6 +101,9 @@ impl IdlePolicy {
             .into_iter()
             .flatten()
             .any(|seconds| !(MIN_IDLE_SECONDS..=MAX_IDLE_SECONDS).contains(&seconds))
+            || self
+                .require_password_after_seconds
+                .is_some_and(|seconds| seconds > MAX_REQUIRE_PASSWORD_SECONDS)
         {
             return Err(Error {
                 operation: Operation::ValidateIdlePolicy,
@@ -188,14 +208,13 @@ pub fn request() -> Result<(), Error> {
     }
 }
 
-/// Run swayidle for the policy. When the display-off timeouts differ for
-/// battery and power adapter, a power-source change (a UPower event, not a
-/// poll) restarts swayidle with the other one.
+/// Run swayidle for the policy. When its timeouts differ on battery and on
+/// the power adapter, a power-source change (a UPower event, not a poll)
+/// restarts swayidle with the other ones.
 #[cfg(target_os = "linux")]
 pub fn supervise_idle(policy_path: &Path) -> Result<(), Error> {
     let policy = read_idle_policy(policy_path)?;
-    let follows_power =
-        policy.display_off_on_battery_seconds != policy.display_off_on_adapter_seconds;
+    let follows_power = idle_arguments(policy, true) != idle_arguments(policy, false);
     let (changes, power_events) = std::sync::mpsc::channel::<()>();
     if follows_power {
         std::thread::spawn(move || {
@@ -305,14 +324,27 @@ fn idle_arguments(policy: IdlePolicy, on_battery: bool) -> Vec<String> {
             DISPLAY_OFF_ACTION.to_owned(),
         ]);
     }
-    if let Some(timeout) = policy.lock_after_seconds {
+    // The Mac's "Require password after … display is turned off": lock the
+    // delay after the display goes off, or at "Lock screen when inactive"
+    // if that comes first.
+    let after_display_off = display_off
+        .zip(policy.require_password_after_seconds)
+        .map(|(off, delay)| off.saturating_add(delay));
+    let lock = match (policy.lock_after_seconds, after_display_off) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+    if let Some(timeout) = lock {
         arguments.extend([
             "timeout".to_owned(),
             timeout.to_string(),
             LOCK_ACTION.to_owned(),
         ]);
     }
-    if let Some(timeout) = policy.suspend_after_seconds {
+    let suspend = policy
+        .suspend_after_seconds
+        .filter(|_| on_battery || !policy.prevent_sleep_on_adapter);
+    if let Some(timeout) = suspend {
         arguments.extend([
             "timeout".to_owned(),
             timeout.to_string(),
@@ -1050,6 +1082,8 @@ mod tests {
                 suspend_after_seconds: None,
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             }
             .validate(),
             Ok(IdlePolicy {
@@ -1058,6 +1092,8 @@ mod tests {
                 suspend_after_seconds: None,
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             })
         );
         for policy in [
@@ -1067,6 +1103,8 @@ mod tests {
                 suspend_after_seconds: None,
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             },
             IdlePolicy {
                 version: 1,
@@ -1074,6 +1112,8 @@ mod tests {
                 suspend_after_seconds: None,
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             },
             IdlePolicy {
                 version: 1,
@@ -1081,6 +1121,8 @@ mod tests {
                 suspend_after_seconds: None,
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             },
             IdlePolicy {
                 version: 1,
@@ -1088,6 +1130,8 @@ mod tests {
                 suspend_after_seconds: Some(MIN_SUSPEND_SECONDS - 1),
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             },
         ] {
             assert_eq!(
@@ -1127,6 +1171,8 @@ mod tests {
                     suspend_after_seconds: Some(900),
                     display_off_on_battery_seconds: None,
                     display_off_on_adapter_seconds: None,
+                    require_password_after_seconds: Some(0),
+                    prevent_sleep_on_adapter: false,
                 },
                 false
             ),
@@ -1148,6 +1194,8 @@ mod tests {
             lock_after_seconds: None,
             display_off_on_battery_seconds: Some(120),
             display_off_on_adapter_seconds: Some(600),
+            require_password_after_seconds: Some(0),
+            prevent_sleep_on_adapter: false,
             ..IdlePolicy::default()
         };
         assert_eq!(
@@ -1158,6 +1206,78 @@ mod tests {
             idle_arguments(policy, false),
             ["-w", "timeout", "600", DISPLAY_OFF_ACTION]
         );
+    }
+
+    #[test]
+    fn require_password_locks_after_the_display_goes_off() {
+        let policy = IdlePolicy {
+            lock_after_seconds: Some(900),
+            display_off_on_battery_seconds: Some(120),
+            display_off_on_adapter_seconds: Some(600),
+            require_password_after_seconds: Some(60),
+            ..IdlePolicy::default()
+        };
+        assert_eq!(
+            idle_arguments(policy, true),
+            [
+                "-w",
+                "timeout",
+                "120",
+                DISPLAY_OFF_ACTION,
+                "timeout",
+                "180",
+                LOCK_ACTION
+            ]
+        );
+        // Lock screen when inactive still wins when it comes first.
+        let policy = IdlePolicy {
+            display_off_on_adapter_seconds: Some(1200),
+            ..policy
+        };
+        assert_eq!(
+            idle_arguments(policy, false),
+            [
+                "-w",
+                "timeout",
+                "1200",
+                DISPLAY_OFF_ACTION,
+                "timeout",
+                "900",
+                LOCK_ACTION
+            ]
+        );
+        let never = IdlePolicy {
+            lock_after_seconds: None,
+            require_password_after_seconds: None,
+            ..policy
+        };
+        assert_eq!(
+            idle_arguments(never, false),
+            ["-w", "timeout", "1200", DISPLAY_OFF_ACTION]
+        );
+    }
+
+    #[test]
+    fn sleep_can_be_prevented_on_the_power_adapter() {
+        let policy = IdlePolicy {
+            lock_after_seconds: None,
+            suspend_after_seconds: Some(1800),
+            prevent_sleep_on_adapter: true,
+            ..IdlePolicy::default()
+        };
+        assert_eq!(
+            idle_arguments(policy, true),
+            ["-w", "timeout", "1800", SUSPEND_ACTION]
+        );
+        assert_eq!(idle_arguments(policy, false), ["-w"]);
+    }
+
+    #[test]
+    fn policies_from_before_require_password_read_as_immediately() {
+        let policy: IdlePolicy =
+            serde_json::from_str(r#"{"version":1,"lock_after_seconds":300}"#).unwrap();
+        assert_eq!(policy.require_password_after_seconds, Some(0));
+        assert!(!policy.prevent_sleep_on_adapter);
     }
 
     #[test]

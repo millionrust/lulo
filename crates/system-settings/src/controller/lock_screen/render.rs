@@ -34,7 +34,53 @@ const DISPLAY_OFF_TIMEOUTS: [(Option<u32>, &str); 10] = [
     (Some(3 * 60 * 60), "For 3 hours"),
 ];
 
+/// The Mac's "Require password after … display is turned off" choices.
+const REQUIRE_PASSWORD_DELAYS: [(Option<u32>, &str); 8] = [
+    (Some(0), "Immediately"),
+    (Some(5), "After 5 seconds"),
+    (Some(60), "After 1 minute"),
+    (Some(5 * 60), "After 5 minutes"),
+    (Some(15 * 60), "After 15 minutes"),
+    (Some(60 * 60), "After 1 hour"),
+    (Some(8 * 60 * 60), "After 8 hours"),
+    (None, "Never"),
+];
+
 impl Settings {
+    fn require_password_row(
+        &self,
+        view: &Entity<Self>,
+        current: Option<u32>,
+        enabled: bool,
+    ) -> AnyElement {
+        let choices: Vec<PopupChoice> = REQUIRE_PASSWORD_DELAYS
+            .into_iter()
+            .map(|(delay, title)| {
+                let option_view = view.clone();
+                let selected = current == delay;
+                choice(title, selected, move |_, cx| {
+                    if !selected {
+                        option_view
+                            .update(cx, |settings, cx| settings.set_require_password(delay, cx));
+                    }
+                })
+            })
+            .collect();
+        let fallback = current
+            .map(u64::from)
+            .map(format_power_duration)
+            .unwrap_or_else(|| "Never".into());
+        let value = popup_value(&choices, &fallback);
+        popup_row(
+            "require-password",
+            "Require password after display is turned off",
+            None,
+            value,
+            choices,
+            enabled,
+        )
+    }
+
     fn display_off_row(
         &self,
         view: &Entity<Self>,
@@ -182,6 +228,13 @@ impl Settings {
                     policy.display_off_on_adapter_seconds,
                     enabled,
                 ));
+                if policy.options_supported {
+                    rows.push(self.require_password_row(
+                        &view,
+                        policy.require_password_after_seconds,
+                        enabled,
+                    ));
+                }
             }
             if !rows.is_empty() {
                 cards.push(card(rows));

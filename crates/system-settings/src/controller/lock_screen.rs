@@ -130,6 +130,53 @@ impl Settings {
         .detach();
     }
 
+    /// Lock Screen ▸ Require password after the display is turned off.
+    pub(super) fn set_require_password(&mut self, seconds: Option<u32>, cx: &mut Context<Self>) {
+        self.update_lock_policy(cx, move || {
+            rmac_shortcuts::lock_settings::set_require_password(seconds)
+        });
+    }
+
+    /// Battery ▸ Options… ▸ Prevent automatic sleeping on power adapter
+    /// when the display is off.
+    pub(super) fn set_prevent_sleep_on_adapter(&mut self, prevent: bool, cx: &mut Context<Self>) {
+        self.update_lock_policy(cx, move || {
+            rmac_shortcuts::lock_settings::set_prevent_sleep_on_adapter(prevent)
+        });
+    }
+
+    fn update_lock_policy(
+        &mut self,
+        cx: &mut Context<Self>,
+        mutation: impl FnOnce() -> std::result::Result<
+                rmac_shortcuts::lock_settings::Snapshot,
+                rmac_shortcuts::lock_settings::Error,
+            > + Send
+            + 'static,
+    ) {
+        if self.lock_policy_loading || self.lock_policy_busy {
+            return;
+        }
+        self.lock_policy_busy = true;
+        self.lock_policy_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(mutation).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_lock_policy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn set_battery_options_sheet(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.battery_options_sheet != open {
+            self.battery_options_sheet = open;
+            cx.notify();
+        }
+    }
+
     pub(super) fn request_lock_screen(&mut self, cx: &mut Context<Self>) {
         if self.lock_request_busy {
             return;

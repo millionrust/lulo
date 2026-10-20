@@ -20,6 +20,7 @@ use crate::{
     ToggleThreads, Undo,
 };
 
+mod mailboxes;
 mod menu;
 mod tools;
 mod windows;
@@ -76,6 +77,8 @@ pub struct MailView {
     /// Mailbox ▸ Erase Deleted Items… / Erase Junk Mail waiting for its
     /// confirmation.
     erase_confirm: Option<Erase>,
+    /// Mailbox ▸ New/Rename/Delete Mailbox… or a smart mailbox sheet.
+    mailbox_sheet: Option<mailboxes::MailboxSheet>,
     /// A result or failure to show in an alert (a failed save, say).
     notice: Option<SharedString>,
     /// The message viewer's scroll position, for Edit ▸ Find ▸ Jump to Top.
@@ -258,6 +261,7 @@ impl MailView {
             show_contact_photo: false,
             highlight_conversations: false,
             erase_confirm: None,
+            mailbox_sheet: None,
             notice: None,
             viewer_scroll,
             active: true,
@@ -275,6 +279,7 @@ impl MailView {
             shared_revision: std::cell::Cell::new(0),
         };
         view.ensure_body_loaded(cx);
+        view.load_smart_mailboxes(cx);
         view
     }
 
@@ -1688,9 +1693,11 @@ impl Render for MailView {
             .when_some(self.erase_confirm, |root, erase| {
                 root.child(self.erase_alert(erase, cx))
             })
+            .when_some(self.mailbox_sheet_view(cx), |root, sheet| root.child(sheet))
             .when_some(self.notice.clone(), |root, notice| {
                 root.child(self.notice_alert(notice, cx))
             });
+        let root = self.on_mailbox_actions(root, cx);
         self.on_menu_actions(root, cx).into_any_element()
     }
 }
@@ -1938,5 +1945,6 @@ fn mailbox_icon(mailbox: &Mailbox) -> &'static str {
             Some(SpecialUse::Archive) => "▥",
             None => "▱",
         },
+        Mailbox::Smart(_) => "⚙",
     }
 }

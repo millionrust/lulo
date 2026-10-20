@@ -9,6 +9,7 @@
 pub mod ics;
 pub mod mailto;
 pub mod settings;
+pub mod smart;
 
 use rmac_mail_mime::{sanitize_html, RichText};
 use rmac_mail_storage::SearchQuery;
@@ -57,6 +58,8 @@ pub enum Mailbox {
     Drafts,
     Sent,
     Real(RealMailbox),
+    /// A saved search (Mailbox ▸ New Smart Mailbox…, `crate::smart`).
+    Smart(smart::SmartMailbox),
 }
 
 impl Mailbox {
@@ -75,6 +78,7 @@ impl Mailbox {
                 Some(SpecialUse::Archive) => "Archive".to_owned(),
                 None => real.name.clone(),
             },
+            Self::Smart(smart) => smart.name.clone(),
         }
     }
 
@@ -83,6 +87,7 @@ impl Mailbox {
         match self {
             Self::AllInboxes | Self::Flagged | Self::Drafts | Self::Sent => "Favourites",
             Self::Real(real) => &real.account_label,
+            Self::Smart(_) => "Smart Mailboxes",
         }
     }
 
@@ -108,6 +113,7 @@ fn mailbox_key(mailbox: &Mailbox) -> (Option<Uuid>, i64) {
         Mailbox::Drafts => (None, -3),
         Mailbox::Sent => (None, -4),
         Mailbox::Real(real) => (Some(real.account), real.mailbox_id),
+        Mailbox::Smart(smart) => (None, -100 - i64::try_from(smart.id).unwrap_or(0)),
     }
 }
 
@@ -844,8 +850,13 @@ impl MailState {
                 }
             }
         }
+        // Smart mailboxes live on this computer, not in the sync snapshot.
+        let smart = self.smart_mailboxes();
         self.mailboxes = mailboxes;
         self.messages = messages;
+        if !smart.is_empty() {
+            self.set_smart_mailboxes(smart);
+        }
         if let Some(selected_id) = &self.selected {
             if !self
                 .messages
@@ -889,6 +900,7 @@ impl MailState {
             Mailbox::Flagged => message.flagged,
             Mailbox::Drafts => message.mailbox.special_use() == Some(SpecialUse::Drafts),
             Mailbox::Sent => message.mailbox.special_use() == Some(SpecialUse::Sent),
+            Mailbox::Smart(smart) => smart.matches(message, smart::now()),
             real => &message.mailbox == real,
         }
     }
@@ -1468,7 +1480,7 @@ impl MailState {
             Mailbox::AllInboxes => SpecialUse::Inbox,
             Mailbox::Drafts => SpecialUse::Drafts,
             Mailbox::Sent => SpecialUse::Sent,
-            Mailbox::Flagged | Mailbox::Real(_) => return None,
+            Mailbox::Flagged | Mailbox::Real(_) | Mailbox::Smart(_) => return None,
         };
         self.find_special(real.account, special)
             .filter(|target| target.special_use() != real.special_use)

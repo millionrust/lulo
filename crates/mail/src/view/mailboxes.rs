@@ -11,9 +11,9 @@
 use std::sync::Arc;
 
 use gpui::{
-    div, px, AnyElement, AppContext as _, Context, Entity, Focusable as _, InteractiveElement as _,
-    IntoElement, ParentElement as _, Role, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Window,
+    div, px, AnyElement, AppContext as _, Context, Entity, FocusHandle, Focusable as _,
+    InteractiveElement as _, IntoElement, ParentElement as _, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_editor::InputState;
 use rmac_mail::smart::{
@@ -130,6 +130,9 @@ pub(super) enum MailboxSheet {
     },
     Delete {
         target: Mailbox,
+        /// The alert takes the keyboard, so Return deletes and Escape
+        /// cancels, as in Mac Mail.
+        focus: FocusHandle,
     },
     Smart {
         id: u64,
@@ -255,12 +258,11 @@ impl MailView {
     }
 
     fn focus_and_select(input: &Entity<InputState>, window: &mut Window, cx: &mut Context<Self>) {
-        input.update(cx, |state, cx| state.focus(window, cx));
-        // Like the Mac, a name to edit starts selected.
-        window.on_next_frame(|window, cx| {
-            if let Ok(action) = cx.build_action("input::SelectAll", None) {
-                window.dispatch_action(action, cx);
-            }
+        // Like the Mac, a name to edit starts selected, so typing replaces it.
+        input.update(cx, |state, cx| {
+            state.focus(window, cx);
+            let end = state.value().len();
+            state.set_selected_range(0..end, cx);
         });
     }
 
@@ -306,9 +308,11 @@ impl MailView {
         self.open_sheet(MailboxSheet::Rename { name, target }, cx);
     }
 
-    fn delete_mailbox(&mut self, cx: &mut Context<Self>) {
+    fn delete_mailbox(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(target) = self.state.editable_mailbox().cloned() {
-            self.open_sheet(MailboxSheet::Delete { target }, cx);
+            let focus = cx.focus_handle();
+            window.focus(&focus, cx);
+            self.open_sheet(MailboxSheet::Delete { target, focus }, cx);
         }
     }
 
@@ -435,7 +439,7 @@ impl MailView {
                     _ => {}
                 }
             }
-            MailboxSheet::Delete { target } => match target {
+            MailboxSheet::Delete { target, .. } => match target {
                 Mailbox::Smart(smart) => {
                     self.state.remove_smart_mailbox(smart.id);
                     self.save_smart_mailboxes(cx);
@@ -699,7 +703,9 @@ impl MailView {
             .on_action(
                 cx.listener(|this, _: &RenameMailbox, window, cx| this.rename_mailbox(window, cx)),
             )
-            .on_action(cx.listener(|this, _: &DeleteMailbox, _, cx| this.delete_mailbox(cx)))
+            .on_action(
+                cx.listener(|this, _: &DeleteMailbox, window, cx| this.delete_mailbox(window, cx)),
+            )
             .on_action(
                 cx.listener(|this, _: &ExportMailbox, window, cx| this.export_mailbox(window, cx)),
             )
@@ -986,7 +992,7 @@ impl MailView {
                 ];
                 self.sheet_card("Rename Mailbox", 360.0, body, "OK", cx)
             }
-            MailboxSheet::Delete { target } => {
+            MailboxSheet::Delete { target, focus } => {
                 let (title, message) = match target {
                     Mailbox::Smart(smart) => (
                         format!(
@@ -1004,33 +1010,36 @@ impl MailView {
                     ),
                 };
                 // Delete is the default button, as in Mac Mail's alert.
-                rmac_ui::alert(
-                    title,
-                    message,
-                    vec![
-                        rmac_ui::dialog_button(
-                            "mail-delete-mailbox-cancel",
-                            "Cancel",
-                            DialogButtonKind::Normal,
-                        )
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.close_mailbox_sheet(window, cx)),
-                        )
-                        .into_any_element(),
-                        rmac_ui::dialog_button(
-                            "mail-delete-mailbox-confirm",
-                            "Delete",
-                            DialogButtonKind::Destructive,
-                        )
-                        .on_click(
-                            cx.listener(|this, _, window, cx| {
+                let alert =
+                    rmac_ui::alert(
+                        title,
+                        message,
+                        vec![
+                            rmac_ui::dialog_button(
+                                "mail-delete-mailbox-cancel",
+                                "Cancel",
+                                DialogButtonKind::Normal,
+                            )
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.close_mailbox_sheet(window, cx)
+                            }))
+                            .into_any_element(),
+                            rmac_ui::dialog_button(
+                                "mail-delete-mailbox-confirm",
+                                "Delete",
+                                DialogButtonKind::Destructive,
+                            )
+                            .on_click(cx.listener(|this, _, window, cx| {
                                 this.confirm_mailbox_sheet(window, cx)
-                            }),
-                        )
-                        .into_any_element(),
-                    ],
-                )
-                .into_any_element()
+                            }))
+                            .into_any_element(),
+                        ],
+                    );
+                div()
+                    .key_context("MailMailboxSheet")
+                    .track_focus(focus)
+                    .child(alert)
+                    .into_any_element()
             }
             MailboxSheet::Smart {
                 name,

@@ -243,6 +243,9 @@ PACKAGE_SPECS = (
         # with dlopen only while the talk key is held, and says so in
         # Settings when it is missing.
         recommends=(
+            # efibootmgr sets the next boot entry for Settings ▸ General ▸
+            # Startup Disk (through pkexec).
+            "efibootmgr",
             "gdm3",
             "keyd",
             "libonnxruntime1.23",

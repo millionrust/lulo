@@ -7,6 +7,7 @@ use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
 
+pub mod ask_to_join;
 #[cfg(any(test, feature = "test-support"))]
 pub mod contract;
 #[cfg(any(test, feature = "test-support"))]

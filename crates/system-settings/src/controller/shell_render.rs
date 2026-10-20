@@ -84,6 +84,7 @@ impl Render for Settings {
         let battery_health_sheet = self.render_battery_health_sheet(cx);
         let hot_corners_sheet = self.render_hot_corners_sheet(cx);
         let night_shift_sheet = self.render_night_shift_sheet(cx);
+        let startup_disk_alert = self.render_startup_disk_alert(cx);
         let internet_account_sheet = self.render_internet_account_sheet(cx);
         let internet_account_delete = self.render_internet_account_delete(cx);
         let users_overlay = self.render_users_overlay(cx);
@@ -534,6 +535,7 @@ impl Render for Settings {
             .when_some(battery_health_sheet, |root, sheet| root.child(sheet))
             .when_some(hot_corners_sheet, |root, sheet| root.child(sheet))
             .when_some(night_shift_sheet, |root, sheet| root.child(sheet))
+            .when_some(startup_disk_alert, |root, alert| root.child(alert))
             .when_some(internet_account_sheet, |root, sheet| root.child(sheet))
             .when_some(internet_account_delete, |root, alert| root.child(alert))
             .when_some(users_overlay, |root, sheet| root.child(sheet))

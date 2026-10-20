@@ -28,6 +28,7 @@ mod navigation_accessibility;
 mod navigation_persistence;
 mod navigation_state;
 mod network;
+mod startup_disk;
 mod notifications;
 mod power;
 mod printers;

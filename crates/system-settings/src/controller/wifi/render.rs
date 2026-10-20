@@ -316,6 +316,30 @@ impl Settings {
                     })
                     .into_any_element()]));
             }
+            // Ask to join networks: the menu bar posts the notice
+            // (Lulo OS).
+            if cfg!(target_os = "linux") {
+                let current = self.wifi_ask_to_join;
+                let choices = rmac_network::ask_to_join::AskToJoin::ALL
+                    .into_iter()
+                    .map(|value| {
+                        let ask_view = view.clone();
+                        choice(value.label(), value == current, move |_, cx| {
+                            ask_view.update(cx, |settings, cx| {
+                                settings.set_wifi_ask_to_join(value, cx)
+                            });
+                        })
+                    })
+                    .collect();
+                cards.push(card(vec![popup_row(
+                    "wifi-ask-to-join",
+                    "Ask to join networks",
+                    Some(current.description().into()),
+                    current.label().into(),
+                    choices,
+                    true,
+                )]));
+            }
             cards.push(footnote(if cfg!(windows) {
                 "New WPA Personal and SAE networks ask for their password. Enterprise networks open Windows' network list, which asks for their sign-in."
             } else {

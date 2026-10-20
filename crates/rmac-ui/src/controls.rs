@@ -117,7 +117,7 @@ impl RenderOnce for KeyboardAction {
         let activate = self.activate;
         self.element.when(self.enabled, |element| {
             element
-                .track_focus(&focus.tab_stop(true).tab_index(0))
+                .track_focus(&focus.tab_stop(mac::keyboard_navigation()).tab_index(0))
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
                     if matches!(event.keystroke.key.as_str(), "space" | "enter") && !event.is_held {
                         window.prevent_default();
@@ -333,6 +333,7 @@ impl RenderOnce for Button {
         };
         let mut button = painted(
             ComponentButton::new(self.id)
+                .tab_stop(mac::keyboard_navigation())
                 .with_size(self.size)
                 .disabled(self.disabled)
                 .loading(self.busy),
@@ -607,32 +608,37 @@ impl RenderOnce for PopUpButtonTrigger {
             .items_center()
             .when(highlighted, |el| el.bg(mac::control_fill_hover()))
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
-                    .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                        if !is_popover_activation_key(event.keystroke.key.as_str(), event.is_held) {
-                            return;
-                        }
-                        window.prevent_default();
-                        cx.stop_propagation();
-                        let closed = keyboard_state.update(cx, |state, _| {
-                            toggle_popover(state);
-                            !state.open
-                        });
-                        if closed {
-                            keyboard_focus.focus(window, cx);
-                        }
-                        cx.notify(view_id);
-                    })
-                    .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
-                        let closed = accessible_state.update(cx, |state, _| {
-                            toggle_popover(state);
-                            !state.open
-                        });
-                        if closed {
-                            accessible_focus.focus(window, cx);
-                        }
-                        cx.notify(view_id);
-                    })
+                el.track_focus(
+                    &focus_handle
+                        .clone()
+                        .tab_stop(mac::keyboard_navigation())
+                        .tab_index(0),
+                )
+                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    if !is_popover_activation_key(event.keystroke.key.as_str(), event.is_held) {
+                        return;
+                    }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    let closed = keyboard_state.update(cx, |state, _| {
+                        toggle_popover(state);
+                        !state.open
+                    });
+                    if closed {
+                        keyboard_focus.focus(window, cx);
+                    }
+                    cx.notify(view_id);
+                })
+                .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                    let closed = accessible_state.update(cx, |state, _| {
+                        toggle_popover(state);
+                        !state.open
+                    });
+                    if closed {
+                        accessible_focus.focus(window, cx);
+                    }
+                    cx.notify(view_id);
+                })
             })
             .when(disabled, |el| {
                 // `Popover`'s own wrapping div toggles open on any mouse-down
@@ -1187,7 +1193,12 @@ impl RenderOnce for Toggle {
             .when_some(accessible_name, |el, name| el.aria_label(name))
             .cursor_default()
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
+                el.track_focus(
+                    &focus_handle
+                        .clone()
+                        .tab_stop(mac::keyboard_navigation())
+                        .tab_index(0),
+                )
             })
             .when(disabled, |el| el.opacity(0.5))
             .when(mac::shows_focus_ring(is_focused, window), |el| {
@@ -1330,7 +1341,11 @@ impl RenderOnce for Checkbox {
             .when_some(self.label, |el, label| el.aria_label(label))
             .cursor_default()
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.tab_stop(true).tab_index(0))
+                el.track_focus(
+                    &focus_handle
+                        .tab_stop(mac::keyboard_navigation())
+                        .tab_index(0),
+                )
             })
             .when(disabled, |el| el.opacity(0.5))
             .when(mac::shows_focus_ring(is_focused, window), |el| {
@@ -1441,7 +1456,11 @@ impl RenderOnce for Radio {
             .when_some(self.label, |el, label| el.aria_label(label))
             .cursor_default()
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.tab_stop(true).tab_index(0))
+                el.track_focus(
+                    &focus_handle
+                        .tab_stop(mac::keyboard_navigation())
+                        .tab_index(0),
+                )
             })
             .when(disabled, |el| el.opacity(0.5))
             .when(mac::shows_focus_ring(is_focused, window), |el| {

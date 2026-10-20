@@ -471,7 +471,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("Package: rmac-session\n", control)
         self.assertIn("Architecture: arm64\n", control)
         self.assertIn(
-            "Recommends: gdm3, keyd, libonnxruntime1.23, pkexec, qt6-gtk-platformtheme, wlsunset\n",
+            "Recommends: efibootmgr, gdm3, keyd, libonnxruntime1.23, pkexec, qt6-gtk-platformtheme, wlsunset\n",
             control,
         )
         self.assertTrue(control.endswith("\n"))

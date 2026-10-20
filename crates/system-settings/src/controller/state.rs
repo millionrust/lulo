@@ -322,6 +322,7 @@ pub(super) struct Settings {
     pub(super) wifi_forget_confirmation: Option<WifiForgetPrompt>,
     pub(super) wifi_password_prompt: Option<WifiPasswordPrompt>,
     pub(super) wifi_other_prompt: Option<WifiOtherPrompt>,
+    pub(super) wifi_ask_to_join: rmac_network::ask_to_join::AskToJoin,
     pub(super) wifi_enterprise_prompt: Option<WifiEnterprisePrompt>,
     pub(super) wifi_cancellation: Option<rmac_network::WifiCancellation>,
     pub(super) wifi_on: bool,
@@ -424,6 +425,12 @@ pub(super) struct Settings {
     pub(super) battery_history_long: bool,
     pub(super) battery_health_sheet: bool,
     pub(super) hot_corners_sheet: bool,
+    // General ▸ Startup Disk
+    pub(super) startup_disks: Option<crate::startup_disk::StartupDisks>,
+    pub(super) startup_disk_selected: Option<u16>,
+    pub(super) startup_disk_busy: bool,
+    pub(super) startup_disk_confirming: bool,
+    pub(super) startup_disk_error: Option<SharedString>,
     // Displays ▸ Night Shift…
     pub(super) night_shift_sheet: bool,
     pub(super) night_shift_policy: rmac_shortcuts::night_shift::Policy,

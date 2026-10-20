@@ -55,6 +55,7 @@ impl Settings {
             SubPage::About => "About".into(),
             SubPage::SoftwareUpdate => "Software Update".into(),
             SubPage::Storage => "Storage".into(),
+            SubPage::StartupDisk => "Startup Disk".into(),
             SubPage::NotificationApp { app_id } => self
                 .application_identity(app_id)
                 .map(|identity| identity.name.clone())

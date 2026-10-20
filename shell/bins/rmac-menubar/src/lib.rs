@@ -277,6 +277,9 @@ mod bar {
         menus_live: bool,
         menu_generation: u64,
         low_battery: LowBatteryWatch,
+        /// Wi-Fi ▸ Ask to join networks: the "networks available" notice
+        /// was posted for the current unjoined stretch.
+        wifi_offer_shown: bool,
     }
 
     /// Files owns the menu bar on the desktop, including the interval before
@@ -406,6 +409,18 @@ mod bar {
                                         post_system_notice(summary, body, cx);
                                     }
                                 }
+                                // Wi-Fi ▸ Ask to join networks (Notify): one
+                                // notice per stretch with Wi-Fi on, nothing
+                                // joined and only unknown networks in range.
+                                let wifi = &this.update.snapshot.quick_settings.wifi;
+                                if wifi.current_ssid.is_some() || !wifi.enabled {
+                                    this.wifi_offer_shown = false;
+                                } else if !this.wifi_offer_shown
+                                    && rmac_network::ask_to_join::should_offer(wifi)
+                                {
+                                    this.wifi_offer_shown = true;
+                                    offer_wifi_networks(cx);
+                                }
                                 if visible {
                                     cx.notify();
                                 }
@@ -432,6 +447,7 @@ mod bar {
                 menus_live: false,
                 menu_generation: 0,
                 low_battery: LowBatteryWatch::default(),
+                wifi_offer_shown: false,
             };
             status.show_desktop_menus(cx);
             status
@@ -6399,6 +6415,27 @@ mod bar {
     }
 
     /// A transient notice through the session's notification server.
+    /// Post "Wi-Fi Networks Available" unless Ask to join networks is Off
+    /// (a small preference file, read off the UI thread).
+    fn offer_wifi_networks(cx: &mut App) {
+        cx.spawn(async move |cx| {
+            let setting = cx
+                .background_executor()
+                .spawn(async { rmac_network::ask_to_join::load() })
+                .await;
+            if setting == rmac_network::ask_to_join::AskToJoin::Notify {
+                cx.update(|cx| {
+                    post_system_notice(
+                        "Wi-Fi Networks Available".to_owned(),
+                        "Choose a network in the Wi-Fi menu to join it.".to_owned(),
+                        cx,
+                    )
+                });
+            }
+        })
+        .detach();
+    }
+
     fn post_system_notice(summary: String, body: String, cx: &mut App) {
         // Windows: no notification server of Lulo's own yet; the notice is
         // logged (ADR 0023, "Phase 3 revised", what is left).

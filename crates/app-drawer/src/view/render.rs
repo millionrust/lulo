@@ -110,6 +110,11 @@ impl Render for AppDrawer {
                     )
                 })
                 .collect::<Vec<_>>();
+            #[cfg(windows)]
+            {
+                self.virtual_grid(tiles)
+            }
+            #[cfg(not(windows))]
             div()
                 .flex()
                 .flex_wrap()
@@ -318,6 +323,11 @@ impl Render for AppDrawer {
                     .id("grid-scroll")
                     .flex_1()
                     .overflow_y_scroll()
+                    .map(|scroll| {
+                        #[cfg(windows)]
+                        let scroll = scroll.track_scroll(&self.grid_scroll);
+                        scroll
+                    })
                     .px_5()
                     .pb_5()
                     .children(recents)
@@ -335,5 +345,87 @@ impl Render for AppDrawer {
         }
         #[cfg(not(windows))]
         panel
+    }
+}
+
+/// WIN-OS-98: one grid row's height, tiles and the gap below them.
+#[cfg(windows)]
+const GRID_ROW_H: f32 = 104.0;
+
+#[cfg(windows)]
+impl AppDrawer {
+    /// The grid in rows of `cols` tiles, building only the rows in view
+    /// (and one either side): every tile's layout and paint ran on every
+    /// scrolled frame before, about 40 ms a frame on the owner's laptop.
+    /// Rows out of view keep their height as empty spacers, so the scroll
+    /// range and positions do not change. Rows above are counted as if the
+    /// recents block had no height, which only builds a few more.
+    fn virtual_grid(&self, tiles: Vec<impl IntoElement>) -> gpui::AnyElement {
+        let cols = self.cols.max(1);
+        let viewport = f32::from(self.grid_scroll.bounds().size.height);
+        let viewport = if viewport > 0.0 {
+            viewport
+        } else {
+            super::DRAWER_HEIGHT
+        };
+        let (first, last) = grid_rows_in_view(
+            -f32::from(self.grid_scroll.offset().y),
+            f32::from(self.grid_scroll.max_offset().y),
+            viewport,
+        );
+        let mut tiles = tiles.into_iter();
+        let mut rows = Vec::new();
+        let mut index = 0;
+        loop {
+            let row: Vec<_> = tiles.by_ref().take(cols).collect();
+            if row.is_empty() {
+                break;
+            }
+            let shown = (first..=last).contains(&index);
+            rows.push(
+                div()
+                    .h(px(GRID_ROW_H))
+                    .flex_none()
+                    .flex()
+                    .gap_2()
+                    .justify_center()
+                    .when(shown, |element| element.children(row))
+                    .into_any_element(),
+            );
+            index += 1;
+        }
+        div().v_flex().children(rows).into_any_element()
+    }
+}
+
+/// The grid rows to build for a scroll position `top` (px scrolled down).
+/// A wheel or glide past either end leaves the handle's offset beyond the
+/// range until the next layout clamps it; reading it unclamped built rows
+/// below the real view, so the bottom rows flashed empty on every delta
+/// past the end (owner report, WIN-OS-98).
+#[cfg(windows)]
+fn grid_rows_in_view(top: f32, max: f32, viewport: f32) -> (usize, usize) {
+    let top = top.min(max.max(0.0)).max(0.0);
+    let first = ((top / GRID_ROW_H).floor() as usize).saturating_sub(1);
+    let last = ((top + viewport) / GRID_ROW_H).ceil() as usize + 1;
+    (first, last)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rows_past_either_end_are_those_at_the_end() {
+        let max = 30.0 * GRID_ROW_H;
+        let at_bottom = grid_rows_in_view(max, max, 400.0);
+        assert_eq!(grid_rows_in_view(max + 500.0, max, 400.0), at_bottom);
+        assert_eq!(grid_rows_in_view(max * 3.0, max, 400.0), at_bottom);
+        assert!(at_bottom.0 <= 29 && at_bottom.1 >= 34);
+        let at_top = grid_rows_in_view(0.0, max, 400.0);
+        assert_eq!(grid_rows_in_view(-300.0, max, 400.0), at_top);
+        assert_eq!(at_top, (0, 5));
+        // Before the first layout there is no range yet: the top rows.
+        assert_eq!(grid_rows_in_view(200.0, 0.0, 400.0), at_top);
     }
 }

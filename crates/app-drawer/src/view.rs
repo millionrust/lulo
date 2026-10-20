@@ -80,6 +80,10 @@ pub(crate) struct AppDrawer {
     /// times the open from it).
     #[cfg(windows)]
     ready_traced: std::cell::Cell<bool>,
+    /// The grid's scroll position, so only the rows in view are built
+    /// (WIN-OS-98).
+    #[cfg(windows)]
+    grid_scroll: gpui::ScrollHandle,
     /// `Window::scale_factor()`, refreshed every `render()` (same pattern
     /// as `cols`) so `icon_element`'s `rmac_ui::svg_icon` calls rasterize
     /// for the surface's real physical pixels — niri reports 1.25 on the

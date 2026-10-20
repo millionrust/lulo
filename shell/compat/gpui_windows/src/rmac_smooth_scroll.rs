@@ -407,6 +407,139 @@ impl SmoothScroll {
     }
 }
 
+/// Direct Manipulation's touchpad pan, measured on the owner's ELAN
+/// touchpad (WIN-OS-96): it moves the content by whatever touchpad reports
+/// landed before each frame's `Update`, so while the fingers are down one
+/// frame steps 300 px and the next 2 px (21 near-zero frames in one session,
+/// one at almost every lift-off), and its inertia steps unevenly with the
+/// jitter of when each frame's `Update` ran. The frames themselves came
+/// every vblank. Each frame's pan is handed out at the pan's velocity over
+/// the last `PAN_FRAMES` frames, timed by the vblank, with the same slow
+/// correction as a wheel stream toward `PAN_BACKLOG_MS` of backlog, so the
+/// content covers exactly the distance Direct Manipulation reported,
+/// inertia included, in even steps.
+const PAN_FRAMES: usize = 4;
+const PAN_BACKLOG_MS: f32 = 12.0;
+/// What is left once the gesture ended drains with this time constant.
+const PAN_DRAIN_TAU_MS: f32 = 33.0;
+
+#[derive(Default)]
+pub(crate) struct PanSmoother {
+    backlog: Cell<Point<f32>>,
+    /// The last frames' (dt, pan) as Direct Manipulation reported them.
+    history: RefCell<VecDeque<(f32, Point<f32>)>>,
+    last_frame: Cell<Option<f64>>,
+    /// A sequence is running: its `Started` went out.
+    running: Cell<bool>,
+    /// Direct Manipulation ended the gesture: drain, then send `Ended`.
+    ended: Cell<bool>,
+    position: Cell<Point<Pixels>>,
+    modifiers: Cell<Modifiers>,
+}
+
+impl PanSmoother {
+    pub(crate) fn is_active(&self) -> bool {
+        self.running.get()
+    }
+
+    /// One frame: `pan` is the frame's Direct Manipulation scroll (its
+    /// `ScrollWheel` events, summed), `started`/`ended` whether one of them
+    /// had that phase. Pushes the events to dispatch onto `out`.
+    pub(crate) fn frame(
+        &self,
+        pan: Point<f32>,
+        started: bool,
+        ended: bool,
+        meta: Option<(Point<Pixels>, Modifiers)>,
+        out: &mut Vec<gpui::PlatformInput>,
+    ) {
+        if let Some((position, modifiers)) = meta {
+            self.position.set(position);
+            self.modifiers.set(modifiers);
+        }
+        if !self.running.get() && !started && is_zero(pan) && !ended {
+            return;
+        }
+        let mut now = frame_time_ms();
+        if self.last_frame.get().is_some_and(|last| now <= last) {
+            now = now_ms();
+        }
+        let (step, finished) = self.step_at(now, pan, started, ended);
+        let first = !self.running.replace(true);
+        let event = |delta: Point<f32>, touch_phase| {
+            gpui::PlatformInput::ScrollWheel(ScrollWheelEvent {
+                position: self.position.get(),
+                delta: ScrollDelta::Pixels(point(px(delta.x), px(delta.y))),
+                modifiers: self.modifiers.get(),
+                touch_phase,
+            })
+        };
+        if first {
+            out.push(event(step, TouchPhase::Started));
+        } else if !is_zero(step) {
+            out.push(event(step, TouchPhase::Moved));
+        }
+        if finished {
+            out.push(event(point(0.0, 0.0), TouchPhase::Ended));
+            self.running.set(false);
+        }
+    }
+
+    /// This frame's step, and whether the sequence is over.
+    fn step_at(&self, now: f64, pan: Point<f32>, started: bool, ended: bool) -> (Point<f32>, bool) {
+        if started {
+            // A new contact: Direct Manipulation stopped the old glide.
+            self.ended.set(false);
+        }
+        if ended {
+            self.ended.set(true);
+        }
+        let dt = self
+            .last_frame
+            .replace(Some(now))
+            .map_or(DEFAULT_FRAME_MS, |last| (now - last) as f32)
+            .clamp(1.0, MAX_FRAME_MS);
+        let backlog = add(self.backlog.get(), pan);
+        let step = if self.ended.get() {
+            let mut out = scale(backlog, 1.0 - (-dt / PAN_DRAIN_TAU_MS).exp());
+            if length(sub(backlog, out)) < MOMENTUM_STOP_PX {
+                out = backlog;
+            }
+            out
+        } else {
+            let mut history = self.history.borrow_mut();
+            history.push_back((dt, pan));
+            while history.len() > PAN_FRAMES {
+                history.pop_front();
+            }
+            let time: f32 = history.iter().map(|(dt, _)| dt).sum();
+            let moved = history
+                .iter()
+                .fold(point(0.0, 0.0), |sum, (_, pan)| add(sum, *pan));
+            let velocity = scale(moved, 1.0 / time.max(1.0));
+            let axis = |backlog: f32, velocity: f32| {
+                let out = velocity * dt
+                    + STREAM_CORRECTION * (backlog - velocity * (dt + PAN_BACKLOG_MS));
+                if backlog >= 0.0 {
+                    out.clamp(0.0, backlog)
+                } else {
+                    out.clamp(backlog, 0.0)
+                }
+            };
+            point(axis(backlog.x, velocity.x), axis(backlog.y, velocity.y))
+        };
+        let left = sub(backlog, step);
+        let finished = self.ended.get() && is_zero(left);
+        if finished {
+            self.history.borrow_mut().clear();
+            self.last_frame.set(None);
+            self.ended.set(false);
+        }
+        self.backlog.set(left);
+        (step, finished)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -513,6 +646,45 @@ mod tests {
         assert!(scroll.step_at(16.0).y > 0.0);
         assert_eq!(scroll.step_at(16.0), point(0.0, 0.0));
         assert!(scroll.step_at(32.0).y > 0.0);
+    }
+
+    #[test]
+    fn rmac_an_uneven_touchpad_pan_steps_evenly_and_keeps_its_distance() {
+        // The owner's flick (WIN-OS-96): Direct Manipulation's per-frame
+        // pan, with the near-zero frame at lift-off, then its inertia.
+        let pan = [
+            -8.11, -231.91, -169.69, -307.52, -2.15, -206.44, -161.19, -116.43, -115.67, -107.78,
+            -107.18, -90.67, -95.75, -85.9, -81.93, -73.08, -76.41, -69.61, -62.26, -68.84,
+        ];
+        let smoother = PanSmoother::default();
+        let mut steps = Vec::new();
+        let mut now = 0.0;
+        for (index, pan) in pan.iter().enumerate() {
+            let (step, finished) = smoother.step_at(now, point(0.0, *pan), index == 0, false);
+            assert!(!finished);
+            steps.push(step.y);
+            now += 16.667;
+        }
+        let (mut step, mut finished) = smoother.step_at(now, point(0.0, 0.0), false, true);
+        steps.push(step.y);
+        while !finished {
+            now += 16.667;
+            (step, finished) = smoother.step_at(now, point(0.0, 0.0), false, false);
+            steps.push(step.y);
+            assert!(steps.len() < 100);
+        }
+        let total: f32 = steps.iter().sum();
+        let sent: f32 = pan.iter().sum();
+        assert!((total - sent).abs() < 0.01, "{total} {sent}");
+        // No near-zero frame while it moves fast.
+        assert!(steps[4..20].iter().all(|step| *step < -50.0), "{steps:?}");
+        // From the lift-off on, no step more than 25 % off its neighbours'
+        // mean (Direct Manipulation's own: 99 %).
+        for window in steps[6..20].windows(3) {
+            let mean = (window[0] + window[2]) / 2.0;
+            assert!((window[1] - mean).abs() < 0.25 * mean.abs(), "{steps:?}");
+        }
+        assert!(steps.iter().all(|step| *step <= 0.0));
     }
 
     #[test]

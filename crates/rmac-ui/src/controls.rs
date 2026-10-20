@@ -177,6 +177,9 @@ pub struct Button {
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
     dropdown_menu: Option<MenuBuilder>,
+    /// A Tab stop even with Keyboard navigation off: a dialog's buttons,
+    /// where focus marks the default (Return) action.
+    always_tab_stop: bool,
     style: StyleRefinement,
 }
 
@@ -195,8 +198,16 @@ impl Button {
             tooltip: None,
             on_click: None,
             dropdown_menu: None,
+            always_tab_stop: false,
             style: StyleRefinement::default(),
         }
+    }
+
+    /// Keep this button a Tab stop whatever Keyboard navigation says (a
+    /// dialog's buttons, which take focus to mark the default action).
+    pub fn always_tab_stop(mut self) -> Self {
+        self.always_tab_stop = true;
+        self
     }
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
@@ -333,7 +344,7 @@ impl RenderOnce for Button {
         };
         let mut button = painted(
             ComponentButton::new(self.id)
-                .tab_stop(mac::keyboard_navigation())
+                .tab_stop(self.always_tab_stop || mac::keyboard_navigation())
                 .with_size(self.size)
                 .disabled(self.disabled)
                 .loading(self.busy),

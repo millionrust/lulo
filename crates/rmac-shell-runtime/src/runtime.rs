@@ -83,12 +83,14 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (settings_tx, settings_rx) = async_channel::bounded(2);
     let (focus_tx, focus_rx) = async_channel::bounded(4);
     let (notification_tx, notification_rx) = async_channel::bounded(4);
+    let (recording_tx, recording_rx) = async_channel::bounded(4);
 
     let compositor = watch_compositor(compositor_tx);
     let services = rmac_shell_status_linux::watch(service_tx);
     let settings = watch_settings(settings_tx);
     let focus = watch_focus(focus_tx);
     let notifications = watch_notifications(notification_tx);
+    let recording = crate::recording::watch(recording_tx);
     let consumer = consume(
         sender,
         compositor_rx,
@@ -96,10 +98,11 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         settings_rx,
         focus_rx,
         notification_rx,
+        recording_rx,
         rmac_hardware::subscribe(),
         SystemServiceReader,
     );
-    let (_, _, _, _, _, _) = futures_util::try_join!(
+    let (_, _, _, _, _, _, _) = futures_util::try_join!(
         compositor,
         async {
             services
@@ -109,6 +112,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         settings,
         focus,
         notifications,
+        recording,
         consumer,
     )?;
     Ok(())
@@ -129,6 +133,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (settings_tx, settings_rx) = async_channel::bounded(2);
     let (_focus_tx, focus_rx) = async_channel::bounded(1);
     let (_notification_tx, notification_rx) = async_channel::bounded(1);
+    let (_recording_tx, recording_rx) = async_channel::bounded(1);
 
     let compositor = watch_compositor(compositor_tx);
     let services = crate::windows::watch(service_tx);
@@ -140,6 +145,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         settings_rx,
         focus_rx,
         notification_rx,
+        recording_rx,
         rmac_hardware::subscribe(),
         crate::windows::WindowsServiceReader,
     );
@@ -156,6 +162,7 @@ async fn watch_scene(sender: Sender<Update>) -> Result<(), Error> {
     let (settings_tx, settings_rx) = async_channel::bounded(2);
     let (_focus_tx, focus_rx) = async_channel::bounded(1);
     let (_notification_tx, notification_rx) = async_channel::bounded(1);
+    let (_recording_tx, recording_rx) = async_channel::bounded(1);
     let services = async {
         let _ = service_tx
             .send(rmac_shell_status_linux::Event::Refresh(
@@ -174,6 +181,7 @@ async fn watch_scene(sender: Sender<Update>) -> Result<(), Error> {
         settings_rx,
         focus_rx,
         notification_rx,
+        recording_rx,
         hardware_rx,
         crate::scene::SceneServiceReader,
     );
@@ -308,6 +316,7 @@ async fn consume(
     settings: async_channel::Receiver<Result<rmac_shell_settings::ShellSettings, String>>,
     focus: async_channel::Receiver<Result<rmac_focus_runtime::Projection, String>>,
     notifications: async_channel::Receiver<Result<rmac_notifications::Indicator, String>>,
+    recording: async_channel::Receiver<Option<rmac_shell_status::ScreenRecordingIndicator>>,
     hardware: async_channel::Receiver<rmac_hardware::HardwareProfile>,
     reader: impl ServiceReader + Copy,
 ) -> Result<(), Error> {
@@ -330,6 +339,7 @@ async fn consume(
         let settings_event = futures_util::FutureExt::fuse(settings.recv());
         let focus_event = futures_util::FutureExt::fuse(focus.recv());
         let notification_event = futures_util::FutureExt::fuse(notifications.recv());
+        let recording_event = futures_util::FutureExt::fuse(recording.recv());
         // The hardware stream never ends while the process lives; were it
         // to close, it must not wake this loop again.
         let hardware_event = futures_util::FutureExt::fuse(async {
@@ -345,6 +355,7 @@ async fn consume(
             settings_event,
             focus_event,
             notification_event,
+            recording_event,
             hardware_event,
             closed
         );
@@ -379,6 +390,10 @@ async fn consume(
             event = notification_event => {
                 let event = event.map_err(|_| Error::new("receive Notification Center state", "watcher stopped"))?;
                 coordinator.apply_notifications(event);
+            },
+            event = recording_event => {
+                let event = event.map_err(|_| Error::new("receive screen recording state", "watcher stopped"))?;
+                coordinator.apply_screen_recording(event);
             },
             profile = hardware_event => {
                 coordinator.apply_hardware(&profile);

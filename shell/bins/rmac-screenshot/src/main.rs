@@ -237,6 +237,8 @@ mod linux_wayland {
 
     impl Service {
         fn new(_cx: &mut Context<Self>) -> Self {
+            // A crashed service may have left a recording marker behind.
+            record::clear_state();
             Self {
                 settings: Settings::load(),
                 clipboard: capture::clipboard_available(),

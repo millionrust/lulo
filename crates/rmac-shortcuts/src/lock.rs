@@ -1194,7 +1194,7 @@ mod tests {
             lock_after_seconds: None,
             display_off_on_battery_seconds: Some(120),
             display_off_on_adapter_seconds: Some(600),
-            require_password_after_seconds: Some(0),
+            require_password_after_seconds: None,
             prevent_sleep_on_adapter: false,
             ..IdlePolicy::default()
         };

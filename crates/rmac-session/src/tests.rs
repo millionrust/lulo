@@ -738,6 +738,10 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     assert!(shell.contains(
         "Ctrl+F2 repeat=false hotkey-overlay-title=\"Move Focus to the Menu Bar\" { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"menu-bar-focus\"; }"
     ));
+    // ⇧⌘Q (KB-01) opens the Log Out confirmation.
+    assert!(shell.contains(
+        "Mod+Shift+Q repeat=false hotkey-overlay-title=\"Log Out\" { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"log-out-dialog\"; }"
+    ));
     // ⌘M minimises the focused window of every app, not only rmac's own.
     assert!(shell.contains(
         "Mod+M repeat=false hotkey-overlay-title=\"Minimise\" { spawn \"/usr/libexec/rmac/rmac-mission-control\" \"minimize\"; }"

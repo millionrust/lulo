@@ -940,11 +940,12 @@ class LuloRun:
         if self.app != "preview" or not filename:
             raise StepFailed("image pixel fact needs a launched Preview image")
         width, height, rows = read_png_rgba((self.sandbox / filename).read_bytes())
+        # The fixture is plain white, so anything else was drawn on it.
         red = sum(
             1
             for row in rows
             for x in range(width)
-            if row[x * 4] > 200 and row[x * 4 + 1] < 90 and row[x * 4 + 2] < 90
+            if tuple(row[x * 4 : x * 4 + 3]) != (255, 255, 255)
         )
         corner = tuple(rows[0][0:4])
         return {

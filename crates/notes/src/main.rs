@@ -622,8 +622,11 @@ impl NotesView {
         // the UI thread.
         cx.spawn(async move |this, cx| {
             let prefs = blocking::unblock(settings_store::load).await;
+            let light = blocking::unblock(settings_store::load_light_notes).await;
             let _ = this.update(cx, |view, cx| {
                 prefs.apply(view);
+                view.light_background_notes
+                    .extend(light.into_iter().filter_map(NoteId::new));
                 cx.notify();
             });
         })

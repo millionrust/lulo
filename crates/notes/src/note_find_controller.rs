@@ -72,11 +72,7 @@ impl NotesView {
     }
 
     /// Replace All: one undoable edit over the whole body.
-    pub(super) fn replace_all_note_matches(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn replace_all_note_matches(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.note_replace_open || self.note_find_matches.is_empty() {
             return;
         }

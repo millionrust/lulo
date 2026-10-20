@@ -981,7 +981,10 @@ mod window_title_tests {
 
     #[test]
     fn window_title_names_folder_and_count() {
-        assert_eq!(list_window_title("All Notes", 3, true), "All Notes – 3 notes");
+        assert_eq!(
+            list_window_title("All Notes", 3, true),
+            "All Notes – 3 notes"
+        );
         assert_eq!(list_window_title("Work", 1, true), "Work – 1 note");
         assert_eq!(list_window_title("Work", 0, true), "Work – No notes");
         assert_eq!(list_window_title("Work", 9, false), "Work");

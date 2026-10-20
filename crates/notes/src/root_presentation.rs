@@ -433,6 +433,14 @@ impl NotesView {
                     if !this.light_background_notes.insert(note.id) {
                         this.light_background_notes.remove(&note.id);
                     }
+                    let ids: Vec<u64> = this
+                        .light_background_notes
+                        .iter()
+                        .map(|id| id.get())
+                        .collect();
+                    cx.background_executor()
+                        .spawn(async move { crate::settings_store::save_light_notes(&ids) })
+                        .detach();
                     cx.notify();
                 }
             }))

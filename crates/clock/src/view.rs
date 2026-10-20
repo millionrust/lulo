@@ -46,9 +46,14 @@ const LAND_SVG: &str = include_str!("../assets/world-land.svg");
 const FAST_TICK: Duration = Duration::from_millis(33);
 /// Running countdowns display whole seconds; repaint at that cadence.
 const SECOND_TICK: Duration = Duration::from_secs(1);
-/// The World Clock shows minute precision. A second hand would force a full
-/// software-rendered window repaint every second while otherwise idle.
-const SHOW_SECOND_HAND: bool = false;
+/// The World Clock's analogue faces carry a smooth second hand (CLOCK-10).
+/// It animates only while the window is being presented: each frame asks for
+/// the next one after [`HAND_FRAME`], and a hidden, minimised or occluded
+/// window gets no frame callback from the compositor, so the chain simply
+/// waits and costs nothing.
+const SHOW_SECOND_HAND: bool = true;
+/// About 30 frames a second for the sweeping second hand.
+const HAND_FRAME: Duration = Duration::from_millis(33);
 /// The World Clock's redraw period: a minute, as it shows minute precision.
 const WORLD_TICK_MS: u64 = 60_000;
 /// Shortens [`WORLD_TICK_MS`] so the Windows launch check can time many
@@ -56,6 +61,14 @@ const WORLD_TICK_MS: u64 = 60_000;
 /// (scripts/windows/launch_smoke.py `--world-tick-check`). Never set by
 /// Lulo itself.
 const WORLD_TICK_ENV: &str = "RMAC_CLOCK_WORLD_TICK_MS";
+
+/// Whether the second hand sweeps. The Windows redraw-count check sets
+/// [`WORLD_TICK_ENV`] to count the minute redraws alone, so the sweep is off
+/// there.
+fn second_hand_sweeps() -> bool {
+    static SWEEP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SWEEP.get_or_init(|| SHOW_SECOND_HAND && std::env::var_os(WORLD_TICK_ENV).is_none())
+}
 
 /// The World Clock's redraw period in milliseconds, read once.
 fn world_tick_ms() -> u64 {
@@ -105,11 +118,7 @@ fn ticker_delay(
     if tab == Tab::Stopwatch && stopwatch_running {
         Some(FAST_TICK)
     } else if tab == Tab::World {
-        let period = if SHOW_SECOND_HAND {
-            1_000
-        } else {
-            world_tick_ms()
-        };
+        let period = world_tick_ms();
         Some(Duration::from_millis(period - now % period))
     } else if tab == Tab::Timers && timers_running {
         Some(SECOND_TICK)
@@ -173,6 +182,8 @@ pub(crate) struct ClockView {
     state_mtime: Option<SystemTime>,
     _state_watcher: Option<notify::RecommendedWatcher>,
     ticker_wake: async_channel::Sender<()>,
+    /// A second-hand frame is already scheduled (CLOCK-10).
+    hand_chain: bool,
     zone: Zone,
     zones: HashMap<&'static str, Zone>,
     land: Option<Arc<Land>>,
@@ -240,6 +251,7 @@ impl ClockView {
             state_mtime: state_mtime(),
             _state_watcher: state_watcher,
             ticker_wake,
+            hand_chain: false,
             zone: tz::local_zone(),
             zones: HashMap::new(),
             land: Land::parse(LAND_SVG).map(Arc::new),
@@ -1062,6 +1074,11 @@ impl ClockView {
                         m::FACE_TOP + m::FACE_DIAMETER / 2.0,
                         m::FACE_DIAMETER,
                         wall,
+                        if second_hand_sweeps() {
+                            (now % 1000) as f32 / 1000.0
+                        } else {
+                            0.0
+                        },
                         sun.is_day(city.latitude, city.longitude),
                     ))
                     .children(lines.into_iter().enumerate().map(|(line, (text, color))| {
@@ -2135,6 +2152,7 @@ fn clock_face(
     center_y: f32,
     diameter: f32,
     time: WallTime,
+    second_fraction: f32,
     is_day: bool,
 ) -> impl IntoElement {
     let radius = diameter / 2.0;
@@ -2161,6 +2179,8 @@ fn clock_face(
             .child(hour.to_string())
     });
     let (hour, minute, second) = format::hand_angles(time);
+    // The second hand sweeps between whole seconds.
+    let second = second + second_fraction * 6.0;
     div()
         .absolute()
         .top_0()
@@ -2333,6 +2353,20 @@ impl Render for ClockView {
         let now = now_millis();
         if self.tab == Tab::World {
             self.ensure_map(width, window.scale_factor(), now, cx);
+            if second_hand_sweeps() && !self.hand_chain {
+                self.hand_chain = true;
+                let view = cx.entity().downgrade();
+                window.on_next_frame(move |window, cx| {
+                    let task = window.spawn(cx, async move |cx| {
+                        cx.background_executor().timer(HAND_FRAME).await;
+                        let _ = view.update(cx, |view, cx| {
+                            view.hand_chain = false;
+                            cx.notify();
+                        });
+                    });
+                    task.detach();
+                });
+            }
         }
         let content = match self.tab {
             Tab::World => self.render_world(width, now, cx).into_any_element(),

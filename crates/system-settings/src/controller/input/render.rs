@@ -168,6 +168,31 @@ impl Settings {
                 format!("{level}%").into(),
             )]));
         }
+        // Keyboard navigation (a Lulo OS appearance preference every rmac
+        // app follows): Tab stops at every control, not only text fields
+        // and lists.
+        let navigation_view = view.clone();
+        let navigation_on = self
+            .theme
+            .as_ref()
+            .is_some_and(|theme| theme.preferences.keyboard_navigation);
+        let navigation_row = row_base()
+            .items_start()
+            .child(text_block(
+                "Keyboard navigation".into(),
+                Some("Use keyboard navigation to move focus between controls. Press the Tab key to move focus forward and Shift Tab to move focus backward.".into()),
+            ))
+            .child(
+                Toggle::new("keyboard-navigation")
+                    .checked(navigation_on)
+                    .disabled(self.theme.is_none() || self.theme_busy)
+                    .on_click(move |on, _, cx| {
+                        navigation_view.update(cx, |settings, cx| {
+                            settings.apply_theme_change(ThemeChange::KeyboardNavigation(*on), cx)
+                        });
+                    }),
+            )
+            .into_any_element();
         let shortcuts_view = view.clone();
         let rows = only(
             vec![
@@ -180,6 +205,7 @@ impl Settings {
                     writable,
                     InputChange::KeyboardNumlock,
                 ),
+                navigation_row,
                 button_row(vec![push_button(
                     "keyboard-shortcuts",
                     "Keyboard Shortcuts…",
@@ -191,7 +217,7 @@ impl Settings {
             ],
             // System-wide shortcuts are bound by Lulo OS's shortcut broker
             // (portal or niri); Windows has neither.
-            &[supported.keyboard_numlock, cfg!(not(windows))],
+            &[supported.keyboard_numlock, true, cfg!(not(windows))],
         );
         if !rows.is_empty() {
             cards.push(card(rows));

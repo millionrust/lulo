@@ -69,7 +69,7 @@ esac
     -p rmac-focus-linux --bin rmac-focus-service \
     -p rmac-clipboard-linux --bin rmac-clipboard-service \
     -p rmac-file-chooser --bin rmac-file-chooser \
-    -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker \
+    -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker --bin rmac-night-shift \
     -p rmac-lock-provider-linux --features rmac-lock-provider-linux/provider --bin rmac-lock-provider \
     -p rmac-keyboard --bin rmac-mac-keyboard \
     -p rmac-setup-assistant --bin rmac-setup-assistant \
@@ -105,6 +105,7 @@ install -m 0755 "${target_dir}/release/rmac-shortcut-dispatch" "${libexec_dir}/r
 install -m 0755 "${target_dir}/release/rmac-locker" "${libexec_dir}/rmac-locker"
 install -m 0755 "${target_dir}/release/rmac-lock-coordinator" "${libexec_dir}/rmac-lock-coordinator"
 install -m 0755 "${target_dir}/release/rmac-idle-locker" "${libexec_dir}/rmac-idle-locker"
+install -m 0755 "${target_dir}/release/rmac-night-shift" "${libexec_dir}/rmac-night-shift"
 install -m 0755 "${target_dir}/release/rmac-lock-provider" "${libexec_dir}/rmac-lock-provider"
 install -m 0755 "${target_dir}/release/rmac-mac-keyboard" "${libexec_dir}/rmac-mac-keyboard"
 install -m 0755 "${target_dir}/release/rmac-setup-assistant" "${libexec_dir}/rmac-setup-assistant"

@@ -1637,3 +1637,85 @@ pub(super) fn property_bytes(
         .and_then(|value| value.try_clone().ok())
         .and_then(|value| Vec::<u8>::try_from(value).ok())
 }
+
+/// Join a network that does not broadcast its name (Wi-Fi ▸ Other…). Open
+/// and Wi-Fi Personal only; the profile is saved as hidden, so it rejoins
+/// later like any known network.
+#[cfg(target_os = "linux")]
+pub(super) fn linux_join_hidden_wifi(
+    network: &WifiNetworkId,
+    password: Option<WifiPassword>,
+    cancellation: &WifiCancellation,
+) -> Result<WifiSnapshot, Error> {
+    use zbus::zvariant::OwnedObjectPath;
+
+    let operation = "join the Wi-Fi network";
+    if !matches!(
+        network.security,
+        WifiSecurity::Open | WifiSecurity::Personal(_)
+    ) {
+        return Err(Error::new(
+            operation,
+            "choose None or WPA2/WPA3 Personal security",
+        ));
+    }
+    if network.security.needs_password() != password.is_some() {
+        return Err(Error::new(
+            operation,
+            "the password does not match the security",
+        ));
+    }
+    if cancellation.is_cancelled() {
+        return Err(Error::cancelled(operation));
+    }
+    let profile_uuid = uuid::Uuid::new_v4().to_string();
+    let template = secret_agent::hidden_connection_template(network, &profile_uuid)
+        .map_err(|error| Error::new(operation, error.to_string()))?;
+    // A personal network's password reaches NetworkManager through the same
+    // one-shot secret agent the visible-network path uses.
+    let agent = match password {
+        Some(password) => Some(
+            secret_agent::RegisteredSecretAgent::register_personal(
+                network.clone(),
+                profile_uuid.clone(),
+                password,
+            )
+            .map_err(|error| Error::new("register Wi-Fi secret agent", error.to_string()))?,
+        ),
+        None => None,
+    };
+    let owned;
+    let connection = match &agent {
+        Some(agent) => agent.connection(),
+        None => {
+            owned = system_connection("connect to NetworkManager")?;
+            &owned
+        }
+    };
+    let manager = manager_proxy(connection)?;
+    let enabled = manager
+        .get_property::<bool>("WirelessEnabled")
+        .map_err(|error| Error::new("read Wi-Fi power", error.to_string()))?;
+    if !enabled {
+        return Err(Error::new(operation, "Wi-Fi is turned off"));
+    }
+    let device = wifi_device_path(connection)?
+        .ok_or_else(|| Error::new(operation, "no Wi-Fi adapter found"))?;
+    let no_access_point =
+        OwnedObjectPath::try_from("/").map_err(|error| Error::new(operation, error.to_string()))?;
+    let (profile_path, active_path) = manager
+        .call::<_, _, (OwnedObjectPath, OwnedObjectPath)>(
+            "AddAndActivateConnection",
+            &(template, device.clone(), no_access_point),
+        )
+        .map_err(|error| Error::new(operation, error.to_string()))?;
+    wait_for_new_wifi_activation(
+        connection,
+        &profile_path,
+        &profile_uuid,
+        &active_path,
+        &device,
+        network,
+        Some(cancellation),
+    )
+}

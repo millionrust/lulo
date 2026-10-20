@@ -7,6 +7,7 @@ use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
 
+pub mod ask_to_join;
 #[cfg(any(test, feature = "test-support"))]
 pub mod contract;
 #[cfg(any(test, feature = "test-support"))]
@@ -99,6 +100,27 @@ pub fn connect_with_password(
     cancellation: &WifiCancellation,
 ) -> Result<WifiSnapshot, Error> {
     SystemWifiService.connect_with_password(network, password, cancellation)
+}
+
+/// Join a network that does not broadcast its name (Wi-Fi ▸ Other…): open
+/// (`password` None) or Wi-Fi Personal. Lulo OS only.
+pub fn join_hidden(
+    network: &WifiNetworkId,
+    password: Option<WifiPassword>,
+    cancellation: &WifiCancellation,
+) -> Result<WifiSnapshot, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        linux_join_hidden_wifi(network, password, cancellation)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (network, password, cancellation);
+        Err(Error::new(
+            "join the Wi-Fi network",
+            "joining a hidden network is not available here",
+        ))
+    }
 }
 
 pub fn connect_enterprise(

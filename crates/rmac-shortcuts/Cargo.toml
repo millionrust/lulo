@@ -57,3 +57,7 @@ path = "src/bin/lock-coordinator.rs"
 [[bin]]
 name = "rmac-idle-locker"
 path = "src/bin/idle-locker.rs"
+
+[[bin]]
+name = "rmac-night-shift"
+path = "src/bin/night-shift.rs"

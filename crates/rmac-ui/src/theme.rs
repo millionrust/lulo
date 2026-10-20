@@ -324,6 +324,8 @@ pub struct ThemeTokens {
     /// default; `rmac_ui::runtime` overwrites it with the live preference
     /// once it has read the theme store.
     pub text_highlight: rmac_theme::TextHighlightPreference,
+    /// Keyboard ▸ Keyboard navigation, passed through like `text_highlight`.
+    pub keyboard_navigation: bool,
 }
 
 impl ThemeTokens {
@@ -509,6 +511,7 @@ impl ThemeTokens {
             },
             text_scale: appearance.text_scale,
             text_highlight: rmac_theme::TextHighlightPreference::default(),
+            keyboard_navigation: false,
         }
     }
 

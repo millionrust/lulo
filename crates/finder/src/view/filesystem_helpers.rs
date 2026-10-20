@@ -385,6 +385,27 @@ pub(super) fn column_vertical_target<'a>(
     entries.get(index)
 }
 
+/// Get Info's "Where": the folder as a breadcrumb from the volume, the way
+/// Finder shows "Macintosh HD ▸ Users ▸ jake", not a raw path.
+pub(super) fn where_breadcrumb(path: &Path) -> String {
+    use std::path::Component;
+    let mut parts: Vec<String> = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::RootDir if parts.is_empty() => {
+                parts.push(crate::places::root_volume_name().to_owned())
+            }
+            Component::RootDir | Component::CurDir => {}
+            Component::Prefix(prefix) => {
+                parts.push(prefix.as_os_str().to_string_lossy().into_owned())
+            }
+            Component::ParentDir => parts.push("..".to_owned()),
+            Component::Normal(name) => parts.push(name.to_string_lossy().into_owned()),
+        }
+    }
+    parts.join(" ▸ ")
+}
+
 pub(super) fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
     let md = std::fs::metadata(&e.path).ok();
     let mut v: Vec<(&'static str, String)> = vec![("Kind", e.kind.to_string())];
@@ -392,7 +413,7 @@ pub(super) fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
         v.push(("Size", format!("{} ({} bytes)", e.size, e.size_bytes)));
     }
     if let Some(parent) = e.path.parent() {
-        v.push(("Where", parent.display().to_string()));
+        v.push(("Where", where_breadcrumb(parent)));
     }
     if let Some(md) = &md {
         if let Ok(created) = md.created() {
@@ -604,5 +625,22 @@ mod helper_tests {
         );
 
         std::fs::remove_dir_all(&root).ok();
+    }
+}
+
+#[cfg(test)]
+mod where_tests {
+    use super::where_breadcrumb;
+    use std::path::Path;
+
+    #[cfg(unix)]
+    #[test]
+    fn where_is_a_breadcrumb_from_the_volume() {
+        let root = crate::places::root_volume_name();
+        assert_eq!(
+            where_breadcrumb(Path::new("/home/jake/Documents")),
+            format!("{root} ▸ home ▸ jake ▸ Documents")
+        );
+        assert_eq!(where_breadcrumb(Path::new("/")), root);
     }
 }

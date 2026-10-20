@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, App, AppContext as _, Context, Entity,
+    div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, App, AppContext as _, Context, Entity, Focusable as _,
     FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement as _,
     Render, Role, ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _,
     UniformListScrollHandle, Window,

@@ -1,9 +1,1 @@
-{
-  "format": 1,
-  "scenario": "mail/settings-rules",
-  "observations": {
-    "empty": {"settings_controls": {}},
-    "sheet": {"settings_controls": {}},
-    "listed": {"settings_controls": {}}
-  }
-}
+{"format": 1, "scenario": "mail/settings-rules", "observations": {}}

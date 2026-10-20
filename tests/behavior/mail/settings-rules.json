@@ -6,10 +6,10 @@
   "steps": [
     {"key": "cmd-,", "settle": 1.0},
     {"select": "Rules", "settle": 0.6},
-    {"observe": "empty", "facts": ["settings_controls"]},
+    {"observe": "empty", "facts": ["pane_text"]},
     {"select": "Add Rule…", "settle": 0.6},
-    {"observe": "sheet", "facts": ["settings_controls"]},
+    {"observe": "sheet", "facts": ["pane_text"]},
     {"select": "OK", "settle": 0.6},
-    {"observe": "listed", "facts": ["settings_controls"]}
+    {"observe": "listed", "facts": ["pane_text"]}
   ]
 }

@@ -505,7 +505,10 @@ impl ProcessTableDelegate {
             "Processes",
             // The table is virtualised and shows every process (MON-11); the
             // AT-SPI projection stays bounded to its first rows.
-            &self.rows[..self.rows.len().min(accessibility::MAX_ACCESSIBLE_PROCESS_ROWS)],
+            &self.rows[..self
+                .rows
+                .len()
+                .min(accessibility::MAX_ACCESSIBLE_PROCESS_ROWS)],
             &columns,
             self.selected_pid,
             self.sort_key.into(),

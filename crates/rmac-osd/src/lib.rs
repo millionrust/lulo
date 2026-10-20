@@ -272,9 +272,11 @@ mod tests {
         assert_eq!(muted.accessible_label(), "Built-in Speakers muted");
         assert!(Presentation::new(Kind::Display, "Display", 42, true).is_err());
         assert!(Presentation::new(Kind::Display, "Display", 101, false).is_err());
-        let keyboard =
-            Presentation::new(Kind::Keyboard, "Keyboard Brightness", 50, false).unwrap();
-        assert_eq!(keyboard.accessible_label(), "Keyboard brightness 50 percent");
+        let keyboard = Presentation::new(Kind::Keyboard, "Keyboard Brightness", 50, false).unwrap();
+        assert_eq!(
+            keyboard.accessible_label(),
+            "Keyboard brightness 50 percent"
+        );
         assert!(Presentation::new(Kind::Keyboard, "Keyboard Brightness", 50, true).is_err());
         assert!(Presentation::new(Kind::Output, " bad", 42, false).is_err());
         assert!(Presentation::new(Kind::Output, "x".repeat(129), 42, false).is_err());

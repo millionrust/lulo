@@ -4,7 +4,9 @@
 //! as it arrives.
 
 use gpui::{App, Context, InteractiveElement as _};
-use rmac_mail::{Mailbox, SpecialUse};
+use rmac_mail::Mailbox;
+#[cfg(any(target_os = "linux", windows))]
+use rmac_mail::SpecialUse;
 
 use super::MailView;
 use crate::{people, AddSenderToContacts, ApplyRules, FilterVip, ToggleSenderVip};

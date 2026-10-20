@@ -784,6 +784,7 @@ fn deleting_a_folder_deletes_it_on_the_server() {
         204,
         b"",
     );
+    h.fake.on(Method::Get, INBOX_CURSOR_1, 200, EMPTY_DELTA);
     h.fake.clear_log();
     h.sync().unwrap();
     let writes = h.fake.writes();

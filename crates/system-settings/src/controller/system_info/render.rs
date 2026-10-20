@@ -8,9 +8,17 @@ enum GeneralRow {
     About,
     SoftwareUpdate,
     Storage,
+    /// Startup Disk, after Sharing as on the Mac (UEFI computers only).
+    StartupDisk,
     /// A pane macOS files under General: its name, icon and whether its
     /// tile takes the accent colour.
     Pane(&'static str, &'static str, bool),
+}
+
+/// Whether the computer started through UEFI, read once.
+fn startup_disk_available() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| cfg!(target_os = "linux") && crate::startup_disk::available())
 }
 
 /// The General rows this platform can open (Software Update and some of
@@ -24,12 +32,14 @@ fn general_rows() -> Vec<GeneralRow> {
         GeneralRow::Pane("Language & Region", "icons/languages.svg", true),
         GeneralRow::Pane("Login Items", "icons/app-window.svg", false),
         GeneralRow::Pane("Sharing", "icons/globe.svg", false),
+        GeneralRow::StartupDisk,
     ]
     .into_iter()
     .filter(|row| match row {
         GeneralRow::SoftwareUpdate => crate::navigation::platform_supports("Software Update"),
         GeneralRow::Pane(name, _, _) => crate::navigation::platform_supports(name),
         GeneralRow::About | GeneralRow::Storage => true,
+        GeneralRow::StartupDisk => startup_disk_available(),
     })
     .collect()
 }
@@ -68,6 +78,15 @@ impl Settings {
                     GENERAL_DESTINATIONS[2].into(),
                     None,
                     SubPage::Storage,
+                    selected,
+                )),
+                GeneralRow::StartupDisk => panes.push(nav_row(
+                    view.clone(),
+                    "icons/hard-drive.svg",
+                    rmac_ui::mac::system_gray(),
+                    "Startup Disk".into(),
+                    None,
+                    SubPage::StartupDisk,
                     selected,
                 )),
                 GeneralRow::Pane(name, icon, tint) => panes.push(pane_nav_row(
@@ -118,6 +137,7 @@ impl Settings {
                         Some(GeneralRow::About) => this.push(SubPage::About, cx),
                         Some(GeneralRow::SoftwareUpdate) => this.push(SubPage::SoftwareUpdate, cx),
                         Some(GeneralRow::Storage) => this.push(SubPage::Storage, cx),
+                        Some(GeneralRow::StartupDisk) => this.push(SubPage::StartupDisk, cx),
                         Some(GeneralRow::Pane(name, _, _)) => {
                             this.select_category(name, window, cx)
                         }

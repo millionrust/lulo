@@ -161,4 +161,27 @@ impl Settings {
         })
         .detach();
     }
+
+    /// macOS makes the computer discoverable while Bluetooth Settings is
+    /// open. Settings turns discoverability on when the pane appears and
+    /// off when it leaves, only if it turned it on; BlueZ's own discoverable
+    /// timeout ends it if Settings quits on the pane.
+    pub(in crate::controller) fn sync_bluetooth_discoverable_on_navigation(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) {
+        if cfg!(windows) {
+            return;
+        }
+        let visible = self.nav.is_empty() && self.current().name.as_ref() == "Bluetooth";
+        if visible && !self.bt_discoverable_for_pane && self.bluetooth_on && !self.bt_discoverable {
+            self.bt_discoverable_for_pane = true;
+            self.set_bluetooth_discoverable(true, cx);
+        } else if !visible && self.bt_discoverable_for_pane {
+            self.bt_discoverable_for_pane = false;
+            if self.bt_discoverable {
+                self.set_bluetooth_discoverable(false, cx);
+            }
+        }
+    }
 }

@@ -4,6 +4,9 @@
 
 use super::*;
 
+/// The text-size picker's choices, Larger Text first.
+const DISPLAY_SCALES: [f64; 5] = [2.0, 1.75, 1.5, 1.25, 1.0];
+
 fn fact_row(title: &'static str, value: SharedString) -> AnyElement {
     row_base()
         .child(text_block(title.into(), None))
@@ -90,17 +93,48 @@ impl Settings {
                         None,
                     ));
                 } else if (0.5..=4.0).contains(&logical.scale) {
-                    let choices: Vec<PopupChoice> = [1.0, 1.25, 1.5, 1.75, 2.0]
+                    // The Mac's text-size picker: Larger Text … More Space,
+                    // each choice a scale, read out as the resulting
+                    // logical resolution ("1470 × 956").
+                    let mode = output.current_mode();
+                    let tiles = DISPLAY_SCALES
                         .into_iter()
-                        .map(|scale| {
+                        .enumerate()
+                        .map(|(index, scale)| {
                             let selected = (logical.scale - scale).abs() < 0.001;
+                            let logical_size = mode.map(|mode| {
+                                format!(
+                                    "{} × {}",
+                                    (f64::from(mode.width) / scale).round() as u32,
+                                    (f64::from(mode.height) / scale).round() as u32
+                                )
+                            });
+                            let caption = match index {
+                                0 => "Larger Text",
+                                last if last == DISPLAY_SCALES.len() - 1 => "More Space",
+                                _ => "",
+                            };
+                            let accessible: SharedString = logical_size
+                                .clone()
+                                .unwrap_or_else(|| format!("{}%", (scale * 100.0) as u32))
+                                .into();
                             let expected_output = output.clone();
                             let scale_view = view.clone();
-                            choice(
-                                format!("{}%", (scale * 100.0) as u32),
-                                selected,
-                                move |_, cx| {
-                                    if !selected {
+                            div()
+                                .id(SharedString::from(format!(
+                                    "display-scale-{}-{index}",
+                                    output.id
+                                )))
+                                .role(gpui::Role::RadioButton)
+                                .aria_label(accessible)
+                                .aria_selected(selected)
+                                .aria_disabled(!configurable)
+                                .flex_1()
+                                .v_flex()
+                                .items_center()
+                                .gap(px(6.0))
+                                .when(configurable && !selected, |tile| {
+                                    tile.cursor_pointer().on_click(move |_, _, cx| {
                                         let change = DisplayChange::Scale {
                                             output: expected_output.clone(),
                                             scale,
@@ -108,20 +142,44 @@ impl Settings {
                                         scale_view.update(cx, |settings, cx| {
                                             settings.apply_display_change(change, cx)
                                         });
-                                    }
-                                },
-                            )
-                        })
-                        .collect();
-                    let current = format!("{}%", (logical.scale * 100.0).round() as u32);
-                    controls.push(popup_row(
-                        SharedString::from(format!("display-scale-{}", output.id)),
-                        "Scale",
-                        None,
-                        current.into(),
-                        choices,
-                        configurable,
-                    ));
+                                    })
+                                })
+                                .child(
+                                    div()
+                                        .w(px(56.0))
+                                        .h(px(40.0))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded(px(style::TAB_RADIUS))
+                                        .border_2()
+                                        .border_color(if selected {
+                                            style::control_accent()
+                                        } else {
+                                            sep()
+                                        })
+                                        .bg(card_bg())
+                                        .text_color(label())
+                                        // Larger scales read as larger text.
+                                        .text_size(rmac_ui::text_px((7.0 * scale) as f32 + 2.0))
+                                        .child("Aa"),
+                                )
+                                .child(
+                                    div()
+                                        .h(px(14.0))
+                                        .text_size(rmac_ui::text_px(11.0))
+                                        .text_color(label())
+                                        .child(caption),
+                                )
+                        });
+                    controls.push(
+                        div()
+                            .flex()
+                            .gap(px(8.0))
+                            .p(px(style::ROW_PADDING))
+                            .children(tiles)
+                            .into_any_element(),
+                    );
                 }
 
                 if logical.transform.is_configurable() {

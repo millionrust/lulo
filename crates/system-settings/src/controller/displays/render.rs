@@ -91,7 +91,7 @@ impl Settings {
             .find(|output| output.primary && output.logical.is_some())
             .cloned();
 
-        self.append_display_outputs(view, main_output, &mut cards);
+        self.append_display_outputs(view.clone(), main_output, &mut cards);
 
         if let Some(graphics) = &self.sysinfo.graphics {
             cards.push(card(vec![row_base()
@@ -103,6 +103,19 @@ impl Settings {
                         .child(graphics.clone()),
                 )
                 .into_any_element()]));
+        }
+        // Night Shift… (Lulo OS: wlsunset through rmac-night-shift.service),
+        // beside Refresh at the foot of the pane as on the Mac.
+        if cfg!(target_os = "linux") {
+            let night_view = view.clone();
+            cards.push(footer_buttons(vec![push_button(
+                "display-night-shift",
+                "Night Shift…",
+            )
+            .on_click(move |_, _, cx| {
+                night_view.update(cx, |settings, cx| settings.open_night_shift(cx));
+            })
+            .into_any_element()]));
         }
         cards.push(footer);
         if self.display.can_configure {

@@ -187,6 +187,7 @@ fi
       --bin rmac-locker \
       --bin rmac-lock-coordinator \
       --bin rmac-idle-locker \
+      --bin rmac-night-shift \
     -p rmac-lock-provider-linux --features provider \
       --bin rmac-lock-provider \
     -p rmac-sound --bin rmac-sound \

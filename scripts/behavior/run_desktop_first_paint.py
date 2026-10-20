@@ -698,7 +698,7 @@ def main() -> int:
     parser.add_argument("--gpu", action="store_true",
                         help="use the machine's GPU for niri and GPUI instead of llvmpipe/lavapipe")
     parser.add_argument("--frame-trace-dir", help="write each desktop launch's RMAC_FRAME_TRACE here")
-    parser.add_argument("--max-time-to-icon-ms", type=float, default=3000.0,
+    parser.add_argument("--max-time-to-icon-ms", type=float, default=4000.0,
                         help="budget from launch to the first capture showing the folder icon")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)

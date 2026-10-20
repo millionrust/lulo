@@ -370,7 +370,11 @@ impl Settings {
         let measure_storage = matches!(sub, SubPage::Storage);
         // The Mac checks for updates each time Software Update opens.
         let check_updates = matches!(sub, SubPage::SoftwareUpdate);
+        let read_startup_disks = matches!(sub, SubPage::StartupDisk);
         self.nav.push(sub);
+        if read_startup_disks {
+            self.load_startup_disks(cx);
+        }
         self.forward.clear();
         if measure_storage {
             self.measure_storage_categories(false, cx);

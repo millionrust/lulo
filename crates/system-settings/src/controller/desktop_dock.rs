@@ -55,16 +55,18 @@ impl Settings {
             // DOCK-01: Size, a plain draggable slider with the live value as
             // a tooltip, like the Displays pane's Brightness. 32-128 logical
             // px matches the separator's own drag-to-resize range.
-            value_slider_row(
+            value_slider_row_named(
                 "Size",
+                Some("Dock Size"),
                 "dock-size",
                 &self.dock_size_slider,
                 format!("{}", dock.tile_size.round() as i32).into(),
             ),
             // DOCK-07: Magnification, Off at the slider's minimum then
             // continuous, like the Mac's "Off · Small … Large".
-            value_slider_row(
+            value_slider_row_named(
                 "Magnification",
+                Some("Dock Magnification Size"),
                 "dock-magnification",
                 &self.dock_magnification_slider,
                 if dock.magnification {
@@ -77,6 +79,7 @@ impl Settings {
                 view.clone(),
                 "dock-placement",
                 "Position on screen",
+                Some("Dock position on screen"),
                 &DOCK_PLACEMENT_OPTIONS,
                 match dock.placement {
                     rmac_shell_settings::DockPlacement::Left => Some(0),
@@ -89,6 +92,7 @@ impl Settings {
                 view.clone(),
                 "dock-minimize-effect",
                 "Minimise windows using",
+                Some("Minimised window animation"),
                 &DOCK_MINIMIZE_EFFECT_OPTIONS,
                 match dock.minimize_effect {
                     rmac_shell_settings::DockMinimizeEffect::Genie => Some(0),
@@ -113,10 +117,10 @@ impl Settings {
                 })
                 .collect::<Vec<_>>();
             let double_click_value = popup_value(&double_click_choices, double_click.title());
-            dock_rows.push(popup_row(
+            dock_rows.push(popup_row_named(
                 "double-click-title-bar",
                 "Double-click a window's title bar to",
-                None,
+                "Window title bar double-click action",
                 double_click_value,
                 double_click_choices,
                 enabled,
@@ -169,6 +173,7 @@ impl Settings {
                 view.clone(),
                 "dock-repeated-click",
                 "Click a focused app again",
+                None,
                 &DOCK_REPEATED_CLICK_OPTIONS,
                 match dock.repeated_click {
                     rmac_shell_settings::RepeatedClickBehavior::CycleWindows => Some(0),

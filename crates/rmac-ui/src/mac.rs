@@ -481,6 +481,12 @@ pub fn focus_ring() -> Hsla {
 /// this every clicked row and button wore the keyboard ring (most visibly
 /// round Settings' selected sidebar row on Windows). GPUI redraws the
 /// window when the input switches between pointer and keyboard.
+/// Whether Tab stops at buttons, switches and pop-ups (Keyboard ▸ Keyboard
+/// navigation on). Text fields and lists are always Tab stops.
+pub fn keyboard_navigation() -> bool {
+    crate::theme::current().keyboard_navigation
+}
+
 pub fn shows_focus_ring(is_focused: bool, window: &gpui::Window) -> bool {
     is_focused && window.last_input_was_keyboard()
 }

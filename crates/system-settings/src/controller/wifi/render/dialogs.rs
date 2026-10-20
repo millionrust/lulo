@@ -255,4 +255,154 @@ impl Settings {
                 .into_any_element(),
         )
     }
+
+    /// Wi-Fi ▸ Other…: Network Name, Security (None or WPA2/WPA3 Personal),
+    /// Password, Cancel and Join, as on macOS 26.
+    pub(in crate::controller) fn render_wifi_other_dialog(
+        &self,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let prompt = self.wifi_other_prompt.as_ref()?;
+        let busy = self.wifi_busy;
+        let view = cx.entity();
+        let field = |label_text: &'static str, child: AnyElement| {
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(
+                    div()
+                        .w(px(96.0))
+                        .flex_none()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(label())
+                        .child(label_text),
+                )
+                .child(div().flex_1().child(child))
+        };
+        let secure_view = view.clone();
+        let open_view = view.clone();
+        let security = form_popup(
+            "wifi-other-security",
+            if prompt.secure {
+                "WPA2/WPA3 Personal".into()
+            } else {
+                "None".into()
+            },
+            vec![
+                choice("None", !prompt.secure, move |_, cx| {
+                    open_view.update(cx, |settings, cx| settings.set_wifi_other_secure(false, cx));
+                }),
+                choice("WPA2/WPA3 Personal", prompt.secure, move |_, cx| {
+                    secure_view.update(cx, |settings, cx| settings.set_wifi_other_secure(true, cx));
+                }),
+            ],
+            !busy,
+        )
+        .accessible_name("Security");
+        let content = div()
+            .w(px(420.0))
+            .v_flex()
+            .gap_3()
+            .p_5()
+            .rounded(px(rmac_ui::mac::radius_card()))
+            .border_1()
+            .border_color(rmac_ui::mac::separator())
+            .shadow_xl()
+            .bg(rmac_ui::mac::raised())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child("Find and join a Wi-Fi network."),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child(
+                                "Enter the name and security type of the network you want to join.",
+                            ),
+                    ),
+            )
+            .child(field(
+                "Network Name",
+                TextField::new(&prompt.name)
+                    .disabled(busy)
+                    .w_full()
+                    .into_any_element(),
+            ))
+            .child(field("Security", security.into_any_element()))
+            .when(prompt.secure, |dialog| {
+                dialog.child(field(
+                    "Password",
+                    TextField::new(&prompt.password)
+                        .disabled(busy)
+                        .w_full()
+                        .into_any_element(),
+                ))
+            })
+            .when_some(prompt.validation_error.clone(), |dialog, error| {
+                dialog.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(rmac_ui::mac::danger())
+                        .child(error),
+                )
+            })
+            .when(busy, |dialog| {
+                dialog.child(Progress::indeterminate().label("Joining…"))
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "wifi-other-cancel",
+                            if busy { "Stop" } else { "Cancel" },
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_wifi_other(cx))),
+                    )
+                    .when(!busy, |buttons| {
+                        buttons.child(
+                            rmac_ui::dialog_button(
+                                "wifi-other-join",
+                                "Join",
+                                rmac_ui::DialogButtonKind::Primary,
+                            )
+                            .on_click(
+                                cx.listener(|this, _, window, cx| {
+                                    this.submit_wifi_other(window, cx)
+                                }),
+                            ),
+                        )
+                    }),
+            );
+        Some(
+            rmac_ui::dialog("wifi-other-dialog", content)
+                .restore_focus_to(self.content_focus.clone())
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            cx.stop_propagation();
+                            this.cancel_wifi_other(cx);
+                        }
+                        "enter" if !this.wifi_busy => {
+                            cx.stop_propagation();
+                            this.submit_wifi_other(window, cx);
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
+    }
 }

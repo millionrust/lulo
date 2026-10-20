@@ -130,6 +130,7 @@ SESSION_BINARIES = (
     "rmac-lock-provider",
     "rmac-lock-coordinator",
     "rmac-idle-locker",
+    "rmac-night-shift",
     "rmac-mac-keyboard",
     "rmac-setup-assistant",
     "rmac-calendar-agent",
@@ -242,11 +243,17 @@ PACKAGE_SPECS = (
         # with dlopen only while the talk key is held, and says so in
         # Settings when it is missing.
         recommends=(
+            # efibootmgr sets the next boot entry for Settings ▸ General ▸
+            # Startup Disk (through pkexec).
+            "efibootmgr",
             "gdm3",
             "keyd",
             "libonnxruntime1.23",
             "pkexec",
             "qt6-gtk-platformtheme",
+            # wlsunset runs Settings ▸ Displays ▸ Night Shift through
+            # rmac-night-shift.service; without it Settings says so.
+            "wlsunset",
         ),
         summary="niri-based rmac Wayland desktop session",
         description=(

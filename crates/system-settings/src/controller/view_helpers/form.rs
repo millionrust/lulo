@@ -572,6 +572,23 @@ pub(in crate::controller) fn value_slider_row(
     state: &Entity<SliderState>,
     value: SharedString,
 ) -> AnyElement {
+    value_slider_row_named(title, None, id, state, value)
+}
+
+/// [`value_slider_row`] whose slider assistive technology reads by the
+/// Mac's own name (Desktop & Dock's "Size" is "Dock Size" to VoiceOver).
+pub(in crate::controller) fn value_slider_row_named(
+    title: impl Into<SharedString>,
+    accessible_name: Option<&'static str>,
+    id: impl Into<ElementId>,
+    state: &Entity<SliderState>,
+    value: SharedString,
+) -> AnyElement {
+    let slider = Slider::new(state).w_full();
+    let slider = match accessible_name {
+        Some(name) => slider.accessible_name(name),
+        None => slider,
+    };
     row_base()
         .child(text_block(title.into(), None))
         .child(
@@ -580,7 +597,7 @@ pub(in crate::controller) fn value_slider_row(
                 .w(px(style::SLIDER_WIDTH))
                 .flex_none()
                 .tooltip(move |window, cx| rmac_ui::tooltip_view(value.clone(), window, cx))
-                .child(Slider::new(state).w_full()),
+                .child(slider),
         )
         .into_any_element()
 }

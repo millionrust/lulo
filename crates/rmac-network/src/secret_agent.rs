@@ -341,6 +341,35 @@ pub(super) fn personal_connection_template(
     ]))
 }
 
+/// A profile for a network that does not broadcast its name (Wi-Fi ▸
+/// Other…): the personal or open template with `hidden` set, so
+/// NetworkManager probes for the SSID instead of waiting to see it.
+pub(super) fn hidden_connection_template(
+    network: &WifiNetworkId,
+    profile_uuid: &str,
+) -> Result<SettingsMap, zbus::zvariant::Error> {
+    let mut template = match network.security {
+        WifiSecurity::Open => {
+            let ssid = OwnedValue::try_from(Value::new(network.ssid.clone()))?;
+            HashMap::from([
+                (
+                    "connection".to_string(),
+                    connection_setting(network, profile_uuid),
+                ),
+                (
+                    "802-11-wireless".to_string(),
+                    HashMap::from([("ssid".to_string(), ssid)]),
+                ),
+            ])
+        }
+        _ => personal_connection_template(network, profile_uuid)?,
+    };
+    if let Some(wireless) = template.get_mut("802-11-wireless") {
+        wireless.insert("hidden".to_string(), OwnedValue::from(true));
+    }
+    Ok(template)
+}
+
 pub(super) fn enterprise_connection_template(
     network: &WifiNetworkId,
     profile_uuid: &str,
@@ -425,6 +454,24 @@ mod tests {
     fn network(name: &[u8]) -> WifiNetworkId {
         WifiNetworkId::from_bytes(name.to_vec(), WifiSecurity::Personal(WifiPersonalMode::Psk))
             .unwrap()
+    }
+
+    #[test]
+    fn hidden_templates_probe_for_the_name() {
+        let uuid = "71e4f01d-2aad-424a-b567-cea230284d54";
+        let personal = hidden_connection_template(&network(b"Attic"), uuid).unwrap();
+        assert_eq!(
+            personal["802-11-wireless"].get("hidden"),
+            Some(&OwnedValue::from(true))
+        );
+        assert!(personal.contains_key(SECURITY_SETTING));
+        let open = WifiNetworkId::from_bytes(b"Cafe".to_vec(), WifiSecurity::Open).unwrap();
+        let open = hidden_connection_template(&open, uuid).unwrap();
+        assert_eq!(
+            open["802-11-wireless"].get("hidden"),
+            Some(&OwnedValue::from(true))
+        );
+        assert!(!open.contains_key(SECURITY_SETTING));
     }
 
     #[test]

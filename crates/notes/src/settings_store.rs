@@ -114,6 +114,42 @@ pub(crate) fn save(prefs: NotesPrefs) {
     }
 }
 
+fn light_notes_path() -> Option<PathBuf> {
+    path().map(|path| path.with_file_name("notes-light-background.conf"))
+}
+
+fn parse_light_notes(contents: &str) -> Vec<u64> {
+    contents
+        .lines()
+        .filter_map(|line| line.trim().parse::<u64>().ok())
+        .filter(|id| *id != 0)
+        .collect()
+}
+
+/// Notes whose per-note "Show Note with Light Background" choice persists
+/// across launches. Blocking: call on a background thread.
+pub(crate) fn load_light_notes() -> Vec<u64> {
+    light_notes_path()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|contents| parse_light_notes(&contents))
+        .unwrap_or_default()
+}
+
+/// Blocking: call on a background thread.
+pub(crate) fn save_light_notes(ids: &[u64]) {
+    let Some(path) = light_notes_path() else {
+        return;
+    };
+    let body: String = ids.iter().map(|id| format!("{id}\n")).collect();
+    let result = path
+        .parent()
+        .map_or(Ok(()), rmac_storage::create_dir_all_private)
+        .and_then(|()| rmac_storage::atomic_write_private(&path, body.as_bytes()));
+    if let Err(error) = result {
+        eprintln!("rmac-notes: could not save note backgrounds: {error}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,5 +166,10 @@ mod tests {
         assert_eq!(parse(&serialize(prefs)), prefs);
         assert_eq!(parse("zoom=99\n").zoom, 12);
         assert_eq!(parse(""), NotesPrefs::default());
+    }
+
+    #[test]
+    fn light_notes_parse_ignores_junk() {
+        assert_eq!(parse_light_notes("3\n\nx\n0\n 7 \n"), vec![3, 7]);
     }
 }

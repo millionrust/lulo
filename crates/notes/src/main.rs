@@ -17,6 +17,7 @@ mod glyphs;
 mod input_support;
 mod library_actions;
 mod markdown_presentation;
+mod maths_results;
 mod note_context_menu;
 mod note_find_controller;
 mod note_format_controller;
@@ -269,6 +270,9 @@ struct NotesView {
     /// The window is too narrow for the folder list (`narrow_window`), as
     /// of the last frame.
     window_narrow: bool,
+    /// The Mac's window title, "<folder> – N notes", written by the list render.
+    list_window_title: std::cell::RefCell<SharedString>,
+    applied_window_title: SharedString,
     /// The user showed the folder list although the window is narrow.
     folders_shown_while_narrow: bool,
     show_note_count: bool,
@@ -360,6 +364,7 @@ struct NotesView {
     copied_style: Option<CopiedStyle>,
     /// Format ▸ Maths Results / the toolbar's maths-results button.
     maths_results_mode: MathsResultsMode,
+    maths_prev_len: usize,
     /// View ▸ Show Highlights: whether Format ▸ Font ▸ Highlight spans draw
     /// their yellow background. The `==marker==` stays in the body either
     /// way; this only hides the visual effect.
@@ -459,6 +464,8 @@ impl NotesView {
             light_background_notes: BTreeSet::new(),
             folders_visible: true,
             window_narrow: false,
+            list_window_title: std::cell::RefCell::new("Notes".into()),
+            applied_window_title: "Notes".into(),
             folders_shown_while_narrow: false,
             show_note_count: true,
             group_notes_by_date: true,
@@ -529,6 +536,7 @@ impl NotesView {
             smart_tags: false,
             copied_style: None,
             maths_results_mode: MathsResultsMode::default(),
+            maths_prev_len: 0,
             show_highlights: true,
             light_background_default: false,
             keyring: NotesKeyring::new(),
@@ -614,8 +622,11 @@ impl NotesView {
         // the UI thread.
         cx.spawn(async move |this, cx| {
             let prefs = blocking::unblock(settings_store::load).await;
+            let light = blocking::unblock(settings_store::load_light_notes).await;
             let _ = this.update(cx, |view, cx| {
                 prefs.apply(view);
+                view.light_background_notes
+                    .extend(light.into_iter().filter_map(NoteId::new));
                 cx.notify();
             });
         })

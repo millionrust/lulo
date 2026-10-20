@@ -377,6 +377,9 @@ struct SwitcherView {
     was_active: bool,
     closing: bool,
     pending_quit: bool,
+    /// ↑ or ↓ chose App Exposé for the selected app: open it once the
+    /// commit has focused that app (MC-07).
+    expose_after_commit: bool,
     display_id: Option<gpui::DisplayId>,
     /// Counts opens of this (kept) surface; timers of an earlier open
     /// do nothing.
@@ -444,6 +447,7 @@ impl SwitcherView {
             was_active: false,
             closing: false,
             pending_quit: false,
+            expose_after_commit: false,
             display_id: window.display(cx).map(|display| display.id()),
             generation: 0,
             plan,
@@ -604,6 +608,11 @@ impl SwitcherView {
             "escape" => self.close(window, cx),
             "." if modifiers.platform => self.close(window, cx),
             "enter" => self.commit(window, cx),
+            // macOS: ↑ or ↓ on the selected app opens its App Exposé.
+            "up" | "down" => {
+                self.expose_after_commit = true;
+                self.commit(window, cx);
+            }
             "q" if modifiers.platform => self.quit_selected(window, cx),
             "h" if modifiers.platform => self.hide_selected(cx),
             _ => {}
@@ -749,6 +758,9 @@ impl SwitcherView {
         }
         let optimistic = self.optimistic.take();
         self.close(window, cx);
+        if std::mem::take(&mut self.expose_after_commit) {
+            open_app_expose(optimistic.as_ref().map(|plan| plan.done.clone()), cx);
+        }
         let needs_activation = model::commit_needs_activation(
             optimistic
                 .as_ref()
@@ -1240,6 +1252,33 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
         | Command::HideSelected => {}
     }
 }
+
+/// App Exposé shows the focused application's windows, so wait for the
+/// switch to land (the optimistic focus, then a short settle) before asking
+/// Mission Control for it.
+#[cfg(not(windows))]
+fn open_app_expose(after: Option<async_channel::Receiver<()>>, cx: &mut Context<SwitcherView>) {
+    cx.spawn(async move |_, cx: &mut AsyncApp| {
+        if let Some(done) = after {
+            let _ = done.recv().await;
+        }
+        cx.background_executor()
+            .timer(Duration::from_millis(150))
+            .await;
+        let _ = cx
+            .background_executor()
+            .spawn(async {
+                std::process::Command::new("/usr/libexec/rmac/rmac-mission-control")
+                    .arg("app-windows")
+                    .status()
+            })
+            .await;
+    })
+    .detach();
+}
+
+#[cfg(windows)]
+fn open_app_expose(_after: Option<async_channel::Receiver<()>>, _cx: &mut Context<SwitcherView>) {}
 
 /// ⌥⌘⎋ and the logo menu's Force Quit…: bring the open window forward,
 /// or open it on the app that was frontmost.

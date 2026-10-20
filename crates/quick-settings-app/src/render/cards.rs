@@ -16,6 +16,7 @@ const BLUETOOTH: Glyph = ("cc/bluetooth.svg", 11.0, 17.5);
 const MOON: Glyph = ("cc/moon.svg", 17.0, 17.0);
 const SCREENSHOT: Glyph = ("cc/screenshot.svg", 22.0, 20.0);
 const LOW_POWER: Glyph = ("cc/low-power.svg", 24.0, 12.0);
+const MIRRORING: Glyph = ("cc/display.svg", 18.0, 15.5);
 
 /// The 36 pt icon circle sits 14 in from the pill's rounded end.
 const BADGE: f32 = 36.0;
@@ -86,6 +87,7 @@ impl QuickSettingsView {
         let badge_focus = match pill.module {
             Module::Wifi => self.wifi_toggle_focus.clone(),
             Module::Bluetooth => self.bluetooth_toggle_focus.clone(),
+            Module::ScreenMirroring => self.mirroring_toggle_focus.clone(),
             _ => self.focus_toggle_focus.clone(),
         };
         let badge = div()
@@ -267,6 +269,29 @@ impl QuickSettingsView {
                 module: Module::Focus,
             },
             move |this, cx| this.execute(Command::SetFocusEnabled(next), cx),
+            cx,
+        )
+    }
+
+    /// Screen Mirroring (CC-06): its circle opens GNOME Network Displays,
+    /// its label Settings ▸ Displays.
+    pub(super) fn pill_mirroring(&self, x: f32, y: f32, cx: &Context<Self>) -> AnyElement {
+        self.pill(
+            x,
+            y,
+            Pill {
+                id: "screen-mirroring",
+                glyph: MIRRORING,
+                on: false,
+                on_glyph: glyph_on(),
+                enabled: true,
+                title: "Screen Mirroring",
+                subtitle: None,
+                pane: "displays",
+                detail: None,
+                module: Module::ScreenMirroring,
+            },
+            |this, cx| this.open_screen_mirroring(cx),
             cx,
         )
     }

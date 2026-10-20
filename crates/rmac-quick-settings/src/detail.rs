@@ -724,6 +724,8 @@ pub enum Module {
     LowPower,
     Screenshot,
     Focus,
+    /// Screen Mirroring (CC-06), when a Miracast sender is installed.
+    ScreenMirroring,
     Display,
     Sound,
 }

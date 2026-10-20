@@ -105,6 +105,9 @@ pub(crate) struct QuickSettingsView {
     pub(crate) wifi_toggle_focus: FocusHandle,
     pub(crate) bluetooth_toggle_focus: FocusHandle,
     pub(crate) focus_toggle_focus: FocusHandle,
+    pub(crate) mirroring_toggle_focus: FocusHandle,
+    /// GNOME Network Displays is installed (CC-06).
+    pub(crate) mirroring: bool,
     /// Real Tab stops for the Display and Sound module titles, which open
     /// their detail views.
     pub(crate) display_title_focus: FocusHandle,
@@ -168,6 +171,18 @@ pub(crate) fn hardware_now() -> rmac_hardware::Adaptations {
     }
 }
 
+/// The Miracast sender Screen Mirroring opens (CC-06). Only a free one:
+/// GNOME Network Displays, from the distribution's own archive.
+const MIRRORING_SENDER: &str = "/usr/bin/gnome-network-displays";
+
+/// Whether Screen Mirroring has a sender to open. One `stat`, read when
+/// Control Centre opens; the fixed shell scenes never show it.
+pub(crate) fn mirroring_available() -> bool {
+    cfg!(target_os = "linux")
+        && !rmac_shell_runtime::scene::active()
+        && std::path::Path::new(MIRRORING_SENDER).exists()
+}
+
 /// How many of the Wi-Fi and Bluetooth pills this PC has no radio for.
 pub(crate) fn hidden_pills(hardware: &rmac_hardware::Adaptations) -> usize {
     usize::from(!hardware.wifi) + usize::from(!hardware.bluetooth)
@@ -208,6 +223,7 @@ pub(crate) fn initial_surface_height(display: bool, hidden_pills: usize) -> f32 
         display,
         banners: 0,
         hidden_pills,
+        mirroring: mirroring_available(),
     }
     .surface_height() as f32
 }
@@ -246,6 +262,7 @@ impl QuickSettingsView {
         let wifi_toggle_focus = cx.focus_handle();
         let bluetooth_toggle_focus = cx.focus_handle();
         let focus_toggle_focus = cx.focus_handle();
+        let mirroring_toggle_focus = cx.focus_handle();
         let display_title_focus = cx.focus_handle();
         let sound_title_focus = cx.focus_handle();
         focus.focus(window, cx);
@@ -353,6 +370,8 @@ impl QuickSettingsView {
             wifi_toggle_focus,
             bluetooth_toggle_focus,
             focus_toggle_focus,
+            mirroring_toggle_focus,
+            mirroring: mirroring_available(),
             display_title_focus,
             sound_title_focus,
             dark_mode_override: None,
@@ -566,6 +585,9 @@ impl QuickSettingsView {
             order.push(Module::LowPower);
         }
         order.extend([Module::Screenshot, Module::Focus]);
+        if self.mirroring {
+            order.push(Module::ScreenMirroring);
+        }
         if self.brightness.is_some() {
             order.push(Module::Display);
         }
@@ -581,6 +603,7 @@ impl QuickSettingsView {
         match module {
             Module::LowPower => self.toggle_low_power(cx),
             Module::Screenshot => self.screenshot(window, cx),
+            Module::ScreenMirroring => self.open_screen_mirroring(cx),
             Module::Focus => {
                 let focus = self.state.view().focus;
                 if focus.available && !focus.busy {
@@ -821,7 +844,21 @@ impl QuickSettingsView {
             display: self.brightness.is_some(),
             banners: self.banners().len(),
             hidden_pills: hidden_pills(&self.hardware),
+            mirroring: self.mirroring,
         }
+    }
+
+    /// Screen Mirroring's circle: GNOME Network Displays finds Miracast
+    /// receivers and mirrors to one (CC-06). Control Centre stays open, as
+    /// the Mac's does while it lists displays.
+    pub(crate) fn open_screen_mirroring(&mut self, _cx: &mut Context<Self>) {
+        blocking::unblock(|| match ProcessCommand::new(MIRRORING_SENDER).spawn() {
+            Ok(mut child) => {
+                let _ = child.wait();
+            }
+            Err(error) => eprintln!("Control Centre could not start Screen Mirroring: {error}"),
+        })
+        .detach();
     }
 
     fn apply_update(&mut self, update: rmac_shell_runtime::Update, cx: &mut Context<Self>) {
@@ -1285,6 +1322,7 @@ mod tests {
                     display,
                     banners: 0,
                     hidden_pills,
+                    mirroring: false,
                 };
                 assert_eq!(
                     initial_surface_height(display, hidden_pills),

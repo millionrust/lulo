@@ -282,6 +282,10 @@ impl Render for QuickSettingsView {
             children.push(self.screenshot_circle(column, top, cx));
             let (x, y) = place(index + 1);
             children.push(self.pill_focus(x, y, &view.focus, cx));
+            if self.mirroring {
+                let (x, y) = place(index + 2);
+                children.push(self.pill_mirroring(x, y, cx));
+            }
             if let Some(level) = self.brightness {
                 children.push(self.display_module(row_top(modules.display_row()), level, cx));
             }

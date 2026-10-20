@@ -44,6 +44,9 @@ pub struct Modules {
     /// Of the Wi-Fi and Bluetooth pills, how many this PC has no radio for
     /// (ADR 0027): 0 shows both, 2 neither.
     pub hidden_pills: usize,
+    /// A Miracast sender (GNOME Network Displays) is installed, so the
+    /// Screen Mirroring pill is shown (CC-06).
+    pub mirroring: bool,
 }
 
 /// A half-width slot of the upper grid: the left or right two columns of a
@@ -56,14 +59,15 @@ pub struct Slot {
 
 impl Modules {
     /// The half-width modules in reading order: the radio pills shown, the
-    /// Low Power and Screenshot circles (one slot), the Focus pill.
+    /// Low Power and Screenshot circles (one slot), the Focus pill, and
+    /// Screen Mirroring when a sender is installed.
     pub const fn half_modules(self) -> usize {
         let hidden = if self.hidden_pills > 2 {
             2
         } else {
             self.hidden_pills
         };
-        4 - hidden
+        4 - hidden + if self.mirroring { 1 } else { 0 }
     }
 
     /// Where the `index`th half-width module goes. Beside Now Playing only
@@ -150,6 +154,7 @@ pub const MIN_SURFACE_HEIGHT: f64 = Modules {
     display: false,
     banners: 0,
     hidden_pills: 0,
+    mirroring: false,
 }
 .surface_height();
 
@@ -159,6 +164,7 @@ pub const MAX_SURFACE_HEIGHT: f64 = Modules {
     display: true,
     banners: MAX_BANNERS,
     hidden_pills: 0,
+    mirroring: true,
 }
 .surface_height();
 
@@ -224,6 +230,7 @@ mod tests {
             display: true,
             banners: 0,
             hidden_pills: 0,
+            mirroring: false,
         };
         assert_eq!(full.rows(), 5);
         assert_eq!(full.content_height(), 5.0 * 64.0 + 4.0 * 12.0);
@@ -275,6 +282,7 @@ mod tests {
         // One radio: the circles move up beside Now Playing, Focus below.
         let one = Modules {
             hidden_pills: 1,
+            mirroring: false,
             ..both
         };
         assert_eq!(one.half_modules(), 3);
@@ -290,6 +298,7 @@ mod tests {
         // Playing, one row shorter.
         let none = Modules {
             hidden_pills: 2,
+            mirroring: false,
             display: true,
             ..both
         };
@@ -300,6 +309,7 @@ mod tests {
             both.surface_height()
                 - Modules {
                     hidden_pills: 2,
+                    mirroring: false,
                     ..both
                 }
                 .surface_height(),
@@ -353,5 +363,31 @@ mod tests {
             None,
             &[PowerProfile::PowerSaver]
         )));
+    }
+
+    #[test]
+    fn screen_mirroring_takes_the_next_half_slot() {
+        let without = Modules {
+            now_playing: true,
+            display: true,
+            banners: 0,
+            hidden_pills: 0,
+            mirroring: false,
+        };
+        let with = Modules {
+            mirroring: true,
+            ..without
+        };
+        assert_eq!(with.half_modules(), without.half_modules() + 1);
+        // Screen Mirroring follows Focus, starting a new row.
+        assert_eq!(
+            with.slot(4),
+            Slot {
+                row: 3,
+                right: false
+            }
+        );
+        assert_eq!(with.rows(), without.rows() + 1);
+        assert!(MAX_SURFACE_HEIGHT >= with.surface_height());
     }
 }

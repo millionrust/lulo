@@ -1,0 +1,27 @@
+[package]
+name = "rmac-emoji-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# Emoji & Symbols (⌃⌘Space): the picker panel and the paste that puts the
+# chosen emoji into the focused text field. Linux only; Windows has Win+. .
+[[bin]]
+name = "rmac-emoji"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+gpui-component-assets.workspace = true
+rmac-ui.workspace = true
+rmac-emoji.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+futures-lite.workspace = true
+libc.workspace = true
+rmac-compositor.workspace = true
+rmac-compositor-system.workspace = true
+wayland-client.workspace = true
+wayland-protocols-misc.workspace = true

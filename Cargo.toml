@@ -169,6 +169,7 @@ rmac-shell-status = { version = "=0.9.0-beta.2", path = "crates/rmac-shell-statu
 rmac-shell-status-linux = { version = "=0.9.0-beta.2", path = "crates/rmac-shell-status-linux" }
 rmac-shell-runtime = { version = "=0.9.0-beta.2", path = "crates/rmac-shell-runtime" }
 rmac-sound = { version = "=0.9.0-beta.2", path = "crates/rmac-sound" }
+rmac-emoji = { version = "=0.9.0-beta.2", path = "crates/rmac-emoji" }
 rmac-win-toast = { version = "=0.9.0-beta.2", path = "crates/rmac-win-toast" }
 rmac-shortcuts = { version = "=0.9.0-beta.2", path = "crates/rmac-shortcuts" }
 rmac-sharing = { version = "=0.9.0-beta.2", path = "crates/rmac-sharing" }
@@ -226,6 +227,7 @@ uuid = { version = "1", features = ["v4"] }
 walkdir = "2"
 wayland-client = "=0.31.14"
 wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }
+wayland-protocols-misc = { version = "=0.3.12", features = ["client"] }
 # Windows-only Win32 bindings (ADR 0023), at the version GPUI's Windows
 # backend already builds; each crate names the features it uses.
 windows = "0.61"

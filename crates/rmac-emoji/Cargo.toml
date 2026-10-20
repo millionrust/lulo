@@ -1,0 +1,10 @@
+[package]
+name = "rmac-emoji"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# The data is generated from Unicode's emoji-test.txt and CLDR's English
+# annotations (Unicode License v3, https://www.unicode.org/license.txt).

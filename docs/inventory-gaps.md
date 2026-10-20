@@ -15,7 +15,7 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_67 gaps across 8 apps; 262 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_68 gaps across 8 apps; 262 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
 
 ## Finder
 
@@ -53,8 +53,9 @@ _67 gaps across 8 apps; 262 Mac-only items were allowlisted (see `tests/inventor
 | PRV-MENU-002 | missing menu item | Import from Camera… | File ▸ Import from Camera… |  |  | missing from Lulo's menu bar |
 | PRV-MENU-003 | missing menu item | Import from Scanner… | File ▸ Import from Scanner… |  |  | missing from Lulo's menu bar |
 | PRV-MENU-004 | Lulo-only (not on the Mac) | Browse Saved Versions… | File ▸ Revert To ▸ Browse Saved Versions… |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-005 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
-| PRV-MENU-006 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-005 | Lulo-only (not on the Mac) | Adjust Color… | Tools ▸ Adjust Color… |  | ⌥⌘C | present in Lulo but not found on the Mac |
+| PRV-MENU-006 | Lulo-only (not on the Mac) | Left of Screen | Window ▸ Full-Screen Tile ▸ Left of Screen |  |  | present in Lulo but not found on the Mac |
+| PRV-MENU-007 | Lulo-only (not on the Mac) | Right of Screen | Window ▸ Full-Screen Tile ▸ Right of Screen |  |  | present in Lulo but not found on the Mac |
 
 ## System Monitor
 

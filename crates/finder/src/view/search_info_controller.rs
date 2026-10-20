@@ -127,7 +127,8 @@ impl FinderView {
         if q.is_empty() {
             return;
         }
-        let cwd = self.cwd.clone();
+        let cwd = search_scope::search_root(self.search_this_mac, &self.home, &self.cwd);
+        let kind = self.search_kind.unwrap_or(search_scope::SearchKind::Any);
         let title: SharedString = format!("Search: {}", sanitize_dialog_name(&q)).into();
         let include_hidden = self.show_hidden;
         let name_only = self.search_name_only;
@@ -149,6 +150,9 @@ impl FinderView {
                     let entries = paths
                         .into_iter()
                         .filter_map(|path| entry_for(&path))
+                        .filter(|entry| {
+                            kind.matches(&entry.path, entry.is_dir, entry.application.is_some())
+                        })
                         .collect::<Vec<_>>();
                     let count = entries.len();
                     return Ok((
@@ -158,13 +162,19 @@ impl FinderView {
                 }
                 let mut report = rmac_search::ranked(&cwd, &q, options)?;
                 let reported_matches = report.matches.len();
-                let entries = std::mem::take(&mut report.matches)
+                let found = std::mem::take(&mut report.matches)
                     .into_iter()
                     .filter_map(|search_match| search_entry_for(&cwd, search_match))
                     .collect::<Vec<_>>();
                 report.skipped_errors = report
                     .skipped_errors
-                    .saturating_add(reported_matches.saturating_sub(entries.len()));
+                    .saturating_add(reported_matches.saturating_sub(found.len()));
+                let entries = found
+                    .into_iter()
+                    .filter(|entry| {
+                        kind.matches(&entry.path, entry.is_dir, entry.application.is_some())
+                    })
+                    .collect::<Vec<_>>();
                 let summary = ranked_search_summary(&report, entries.len());
                 Ok::<_, rmac_search::Error>((entries, summary))
             })

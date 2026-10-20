@@ -126,6 +126,17 @@ impl FinderView {
                 // without waiting for this folder to be listed again.
                 #[cfg(any(target_os = "linux", all(test, unix)))]
                 rmac_search::tag_index::record(&path, (!remove_tag).then_some(tag));
+                // The Tags column, gallery inspector and sort see it now.
+                let label = (!remove_tag).then(|| SharedString::from(tag));
+                for entry in self
+                    .entries
+                    .iter_mut()
+                    .chain(self.root_entries.iter_mut())
+                    .chain(self.child_entries.values_mut().flatten())
+                    .filter(|entry| entry.path == path)
+                {
+                    entry.tag = label.clone();
+                }
             }
         }
         if failures.is_empty() {

@@ -7,6 +7,7 @@
 
 mod accessibility;
 mod archive_controller;
+mod batch_rename;
 mod bounded_cache;
 mod cached_views;
 mod chrome_presentation;
@@ -41,6 +42,7 @@ mod presentation_support;
 mod preview_options;
 mod print_controller;
 mod progress_window;
+mod quick_actions;
 mod quick_look_controller;
 mod recovery_controller;
 mod redo_controller;
@@ -48,6 +50,7 @@ mod rename_controller;
 mod responsive_layout;
 mod search_helpers;
 mod search_info_controller;
+mod search_scope;
 mod selection_controller;
 mod settings;
 mod settings_window;
@@ -128,6 +131,7 @@ actions!(
         NewFolderWithSelection,
         RenameItem,
         RenameNextItem,
+        RenameItems,
         Duplicate,
         DuplicateExactly,
         Eject,
@@ -142,6 +146,7 @@ actions!(
         TagGray,
         ShareItems,
         QuickActions,
+        RotateLeft,
         UseGroups,
         ImportFromIphone,
         MoveToTrash,
@@ -495,6 +500,8 @@ struct FinderView {
     column_selection: Option<Entry>,
     /// A list-header divider drag in progress (FILES-09).
     column_resize: Option<list_columns::ColumnResize>,
+    /// The open "Rename N Items…" sheet (FILES-26).
+    batch_rename: Option<batch_rename::BatchRenameSheet>,
     sort_key: SortKey,
     sort_asc: bool,
     query: gpui::Entity<InputState>,
@@ -593,6 +600,14 @@ struct FinderView {
     /// The toolbar search circle has been opened into a field.
     search_open: bool,
     search_name_only: bool,
+    /// The search scope bar's choice: "This Mac" (the home folder tree)
+    /// rather than the open folder (FILES-37).
+    search_this_mac: bool,
+    /// File ▸ Find or Find by Name opened the search: its scope bar shows
+    /// before anything is typed.
+    search_find_mode: bool,
+    /// The "Kind is …" criterion row, when shown.
+    search_kind: Option<search_scope::SearchKind>,
     /// View ▸ Show Path Bar (⌥⌘P); off by default, as on the Mac.
     show_path_bar: bool,
     show_status_bar: bool,

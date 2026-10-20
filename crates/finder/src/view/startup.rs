@@ -45,6 +45,8 @@ impl FinderView {
                 InputEvent::PressEnter { .. } => this.recursive_search(cx),
                 InputEvent::Change if this.query.read(cx).value().is_empty() => {
                     this.search_open = false;
+                    this.search_find_mode = false;
+                    this.search_kind = None;
                     // Clearing a recursive-search query leaves the search
                     // result set, so reload the current folder as Finder does.
                     if this.showing_recursive_search() {
@@ -206,6 +208,7 @@ impl FinderView {
             col_stack: vec![cwd],
             column_selection: None,
             column_resize: None,
+            batch_rename: None,
             sort_key: SortKey::Name,
             sort_asc: true,
             query,
@@ -292,6 +295,9 @@ impl FinderView {
             search_cancel: None,
             search_open: false,
             search_name_only: false,
+            search_this_mac: true,
+            search_find_mode: false,
+            search_kind: None,
             show_path_bar: false,
             show_status_bar: true,
             show_tab_bar: false,

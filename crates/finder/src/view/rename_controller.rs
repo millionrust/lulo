@@ -5,6 +5,11 @@ impl FinderView {
     /// Finder does. The global menu cannot grey the item out per selection,
     /// so an unusable request says why instead of doing nothing.
     pub(super) fn rename_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // File ▸ Rename N Items… for a multi-selection, as Finder relabels it.
+        if self.selection_count() > 1 && !self.trash_view && !self.applications_view {
+            self.open_batch_rename(window, cx);
+            return;
+        }
         if let Some(reason) = rename_unavailable_reason(
             self.selection_count(),
             self.trash_view,

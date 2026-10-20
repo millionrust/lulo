@@ -81,6 +81,7 @@ impl Render for FinderView {
         });
         let open_with_dialog = self.render_open_with(cx);
         let go_to_sheet = self.render_go_to_folder(cx);
+        let batch_rename_sheet = self.render_batch_rename(cx);
         let connect_sheet = self.render_connect_to_server(cx);
         let archive_sheet = self.render_archive_job(cx);
         let archive_alert = self.render_archive_alert(cx);
@@ -194,6 +195,14 @@ impl Render for FinderView {
                     }
                     return;
                 }
+                if this.batch_rename.is_some() {
+                    // Typing goes to the sheet's fields; Escape cancels it.
+                    if event.keystroke.key.as_str() == "escape" {
+                        cx.stop_propagation();
+                        this.close_batch_rename(window, cx);
+                    }
+                    return;
+                }
                 if this.go_to.is_some() {
                     // Typing goes to the path field; these keys drive the sheet.
                     match event.keystroke.key.as_str() {
@@ -301,6 +310,8 @@ impl Render for FinderView {
                     cx.stop_propagation();
                     let recursive_search_active = this.showing_recursive_search();
                     this.search_open = false;
+                    this.search_find_mode = false;
+                    this.search_kind = None;
                     if recursive_search_active {
                         // Clear the result mode before changing the input so
                         // the Change subscription does not reload twice.
@@ -550,6 +561,7 @@ impl Render for FinderView {
                         el.child(self.render_tabs(cx))
                     })
                     .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
+                    .children(self.render_search_scope_bar(cx))
                     .child(
                         div()
                             .flex_1()
@@ -560,6 +572,7 @@ impl Render for FinderView {
                     ),
             )
             .when_some(go_to_sheet, |el, sheet| el.child(sheet))
+            .when_some(batch_rename_sheet, |el, sheet| el.child(sheet))
             .when_some(connect_sheet, |el, sheet| el.child(sheet))
             .when_some(menu_at, |el, state| {
                 let menu = match menu_purpose {
@@ -586,6 +599,7 @@ impl Render for FinderView {
                         undo_label,
                         self.selected_tag_checks(),
                         self.file_words,
+                        self.selection_quick_actions(),
                     ),
                     MenuPurpose::Sort => Self::build_sort_menu(state.position(), sort_key),
                     MenuPurpose::OpenWith(always_default) => Self::build_open_with_menu(
@@ -642,6 +656,12 @@ impl FinderView {
         let compress_label = archive_controller::compress_menu_label(&selection);
         rmac_ui::set_menu_label("finder::CopyItems", &labels.copy, cx);
         rmac_ui::set_menu_label("finder::CopyAsPathname", &labels.copy_as_pathname, cx);
+        let rename_label = if selection.len() > 1 {
+            format!("Rename {} Items…", selection.len())
+        } else {
+            "Rename".to_owned()
+        };
+        rmac_ui::set_menu_label("finder::RenameItem", &rename_label, cx);
         let quick_look_label = match selection.as_slice() {
             [path] => {
                 let name = path

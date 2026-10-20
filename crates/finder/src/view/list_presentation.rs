@@ -803,6 +803,9 @@ impl FinderView {
             .on_action(
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &RenameItems, window, cx| this.open_batch_rename(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
             // Duplicate already copies exactly: it keeps each item's
             // permissions and never resolves links (`file_ops.rs`), and a
@@ -843,9 +846,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ShareItems, _, cx| {
                 this.menu_unavailable("Sharing is not available", cx)
             }))
-            .on_action(cx.listener(|this, _: &QuickActions, _, cx| {
-                this.menu_unavailable("No Quick Actions are available", cx)
-            }))
+            .on_action(cx.listener(|this, _: &RotateLeft, _, cx| this.rotate_selection_left(cx)))
             .on_action(cx.listener(|this, _: &UseGroups, _, cx| {
                 this.change_options(
                     |options| {
@@ -878,9 +879,9 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoDesktop, _, cx| this.go_desktop(cx)))
             .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
             .on_action(cx.listener(|this, _: &GoRecents, _, cx| this.recents_click(cx)))
-            .on_action(cx.listener(|this, _: &Find, window, cx| this.open_search(window, cx)))
+            .on_action(cx.listener(|this, _: &Find, window, cx| this.open_find(false, window, cx)))
             .on_action(
-                cx.listener(|this, _: &FindByName, window, cx| this.open_name_search(window, cx)),
+                cx.listener(|this, _: &FindByName, window, cx| this.open_find(true, window, cx)),
             )
             .on_action(cx.listener(|this, _: &CopyAsPathname, _, cx| this.copy_as_pathname(cx)))
             .on_action(cx.listener(|this, _: &CopyAsLink, _, cx| this.copy_as_link(cx)))

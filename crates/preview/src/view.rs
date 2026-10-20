@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::{
-    canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, App,
+    div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, App,
     AppContext as _, ClickEvent, ClipboardItem, Context, Entity, ExternalPaths, FocusHandle,
     Focusable as _, FontWeight, Image, ImageFormat, InteractiveElement as _, IntoElement,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _,
@@ -3221,22 +3221,22 @@ impl PreviewView {
         let Some(slot) = self.slots.get_mut(self.selected) else {
             return;
         };
-        let Some(loaded) = slot.loaded_mut() else {
-            return;
-        };
-        let Content::Image(image) = &mut loaded.content else {
-            return;
-        };
         // Markup lives in the frame of the pixels as they are now: draw it
         // into them before they are cropped, flipped or resized.
         let drawn = if slot.markup.items.is_empty() {
             None
         } else {
-            let drawn = Arc::new(render::bake_markup(&image.pixels, &slot.markup.items));
+            let drawn = slot.baked_pixels();
             slot.markup.items.clear();
             slot.markup.dirty = false;
             slot.markup.revision += 1;
-            Some(drawn)
+            drawn
+        };
+        let Some(loaded) = slot.loaded_mut() else {
+            return;
+        };
+        let Content::Image(image) = &mut loaded.content else {
+            return;
         };
         let previous = drawn.unwrap_or_else(|| image.pixels.clone());
         let edited = edit(&previous);

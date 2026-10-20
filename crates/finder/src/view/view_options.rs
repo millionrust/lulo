@@ -70,6 +70,11 @@ pub(super) struct FolderOptions {
     /// Date Modified, Date Created, Date Last Opened, Date Added, Size, Kind,
     /// Version, Comments, Tags, in that order.
     pub(super) columns: [bool; 9],
+    /// The optional columns left to right (indices into `columns`); see
+    /// `list_columns::column_order`, which repairs a damaged order.
+    pub(super) column_order: Vec<u8>,
+    /// Each optional column's width in points, in `columns` order.
+    pub(super) column_widths: [f32; 9],
     pub(super) relative_dates: bool,
     pub(super) calculate_sizes: bool,
 }
@@ -92,6 +97,8 @@ impl Default for FolderOptions {
             picture_path: None,
             list_large_icons: false,
             columns: [true, false, false, false, true, true, false, false, false],
+            column_order: super::list_columns::default_column_order(),
+            column_widths: super::list_columns::default_column_widths(),
             relative_dates: true,
             calculate_sizes: false,
         }
@@ -105,6 +112,11 @@ impl FolderOptions {
             && (0.0..=100.0).contains(&self.grid_spacing)
             && (10..=20).contains(&self.text_size)
             && (10..=20).contains(&self.list_text_size)
+            && self.column_order.len() <= 4 * super::list_columns::COLUMN_COUNT
+            && self
+                .column_widths
+                .iter()
+                .all(|width| super::list_columns::width_is_valid(*width))
             && self
                 .picture_path
                 .as_ref()
@@ -593,6 +605,8 @@ impl FinderView {
                             SortKey::Size => "Size",
                             SortKey::Tags => "Tags",
                             SortKey::Created => "Date Created",
+                            SortKey::Version => "Version",
+                            SortKey::Comments => "Comments",
                         }
                         .into(),
                         |o| {
@@ -604,7 +618,9 @@ impl FinderView {
                                 SortKey::Date => SortKey::Size,
                                 SortKey::Size => SortKey::Tags,
                                 SortKey::Tags => SortKey::Created,
-                                SortKey::Created => SortKey::Name,
+                                SortKey::Created
+                                | SortKey::Version
+                                | SortKey::Comments => SortKey::Name,
                             }
                         },
                         cx,

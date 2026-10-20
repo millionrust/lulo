@@ -205,6 +205,7 @@ impl FinderView {
             customise_toolbar_window: None,
             col_stack: vec![cwd],
             column_selection: None,
+            column_resize: None,
             sort_key: SortKey::Name,
             sort_asc: true,
             query,

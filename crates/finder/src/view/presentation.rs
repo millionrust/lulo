@@ -608,6 +608,10 @@ impl Render for FinderView {
                             .is_some_and(|path| path.as_os_str().is_empty()),
                     ),
                     MenuPurpose::TitlePath => self.build_title_path_menu(state.position()),
+                    MenuPurpose::ListColumns => Self::build_list_columns_menu(
+                        state.position(),
+                        &self.current_options(),
+                    ),
                 };
                 el.child(menu.render(&state))
             })

@@ -18,6 +18,7 @@ mod content_presentation;
 mod customise_toolbar;
 mod dialog_presentation;
 mod filesystem_helpers;
+mod file_metadata;
 mod finder_behaviour;
 mod finder_style;
 mod gallery_presentation;
@@ -25,6 +26,7 @@ mod go_to_folder_controller;
 mod inspector_window;
 mod item_operations;
 mod lifecycle_controller;
+mod list_columns;
 mod list_presentation;
 mod list_tree;
 mod mount_controller;
@@ -320,6 +322,8 @@ struct Entry {
     last_opened_time: SystemTime,
     /// The single Finder-style colour tag on this item, if any (FILES-05).
     tag: Option<SharedString>,
+    /// Get Info ▸ Comments, shown in the list view's Comments column.
+    comment: Option<SharedString>,
     search_detail: Option<SharedString>,
     /// Installed applications are a Finder destination, not ordinary launcher
     /// files. Keep the trusted catalog launch contract with the projected row
@@ -374,6 +378,9 @@ enum SortKey {
     Added,
     Created,
     Tags,
+    /// Only applications carry a version; every file sorts equal.
+    Version,
+    Comments,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -387,6 +394,8 @@ enum MenuPurpose {
     OpenWith(bool),
     /// Go ▸ Recent Folders.
     RecentFolders,
+    /// Right-click the list-view header: the column chooser.
+    ListColumns,
 }
 
 /// One browser tab — its own directory and navigation history.
@@ -483,6 +492,8 @@ struct FinderView {
     /// index into `entries` is not sufficient. Keep the selected entry itself
     /// as the authority for commands and context menus in that view.
     column_selection: Option<Entry>,
+    /// A list-header divider drag in progress (FILES-09).
+    column_resize: Option<list_columns::ColumnResize>,
     sort_key: SortKey,
     sort_asc: bool,
     query: gpui::Entity<InputState>,

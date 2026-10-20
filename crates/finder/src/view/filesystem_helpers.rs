@@ -135,6 +135,7 @@ pub(super) fn entry_for(path: &Path) -> Option<Entry> {
         created_time,
         last_opened_time,
         tag,
+        comment: super::file_metadata::read_file_comment(path),
         search_detail: None,
         application: None,
     })
@@ -165,6 +166,7 @@ pub(super) fn entry_for_application(application: rmac_apps::Application) -> Entr
         created_time: SystemTime::UNIX_EPOCH,
         last_opened_time: SystemTime::UNIX_EPOCH,
         tag: None,
+        comment: None,
         search_detail: application.generic_name.map(Into::into),
         application: Some(ApplicationEntry {
             launch: application.launch,
@@ -339,6 +341,15 @@ fn sort_entries_with(v: &mut [Entry], key: SortKey, asc: bool, folders_on_top: b
             SortKey::Added | SortKey::Created => a.created_time.cmp(&b.created_time),
             // Untagged items always sort after every tagged one.
             SortKey::Tags => match (&a.tag, &b.tag) {
+                (Some(left), Some(right)) => left.to_lowercase().cmp(&right.to_lowercase()),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            },
+            // Only applications have a version; files fall back to name order.
+            SortKey::Version => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            // Items without a comment sort after every commented one.
+            SortKey::Comments => match (&a.comment, &b.comment) {
                 (Some(left), Some(right)) => left.to_lowercase().cmp(&right.to_lowercase()),
                 (Some(_), None) => std::cmp::Ordering::Less,
                 (None, Some(_)) => std::cmp::Ordering::Greater,

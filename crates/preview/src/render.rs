@@ -992,4 +992,34 @@ mod password_tests {
         forget_password(one);
         assert!(password_for(one).is_none());
     }
+
+    #[test]
+    fn markup_is_drawn_into_the_pixels_and_the_rest_is_left_alone() {
+        use crate::layout::UnitRect;
+        use crate::markup::{Annotation, Tool};
+        // BGRA white 100 x 100.
+        let white = RgbaImage::from_pixel(100, 100, image::Rgba([255, 255, 255, 255]));
+        let mut rectangle = Annotation::new(
+            0,
+            Tool::Rectangle,
+            UnitRect {
+                x0: 0.2,
+                y0: 0.2,
+                x1: 0.8,
+                y1: 0.8,
+            },
+            0xff0000,
+            4.0,
+        );
+        rectangle.fill = None;
+        let drawn = bake_markup(&white, &[rectangle]);
+        // The outline is red (BGRA: blue and green low, red high) ...
+        let edge = drawn.get_pixel(50, 20).0;
+        assert!(edge[2] > 200 && edge[0] < 60 && edge[1] < 60, "{edge:?}");
+        // ... the inside and the corner are untouched.
+        assert_eq!(drawn.get_pixel(50, 50).0, [255, 255, 255, 255]);
+        assert_eq!(drawn.get_pixel(1, 1).0, [255, 255, 255, 255]);
+        // Nothing to draw returns the picture as it was.
+        assert_eq!(bake_markup(&white, &[]), white);
+    }
 }

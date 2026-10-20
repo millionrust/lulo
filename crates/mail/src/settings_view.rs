@@ -233,8 +233,11 @@ impl SettingsView {
                 // `Button::selected` is purely a visual highlight with no
                 // accessibility signal of its own, so without this wrapper
                 // AT-SPI never reported which Settings pane was showing.
+                // Never shrunk below its button: a squeezed tab's extents
+                // would no longer cover the button drawn for it.
                 div()
                     .id(("mail-settings-tab", index))
+                    .flex_none()
                     .role(Role::Tab)
                     .aria_label(pane.label())
                     .aria_selected(selected)

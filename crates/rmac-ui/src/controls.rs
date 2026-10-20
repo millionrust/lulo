@@ -117,7 +117,7 @@ impl RenderOnce for KeyboardAction {
         let activate = self.activate;
         self.element.when(self.enabled, |element| {
             element
-                .track_focus(&focus.tab_stop(true).tab_index(0))
+                .track_focus(&focus.tab_stop(mac::keyboard_navigation()).tab_index(0))
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
                     if matches!(event.keystroke.key.as_str(), "space" | "enter") && !event.is_held {
                         window.prevent_default();
@@ -177,6 +177,9 @@ pub struct Button {
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
     dropdown_menu: Option<MenuBuilder>,
+    /// A Tab stop even with Keyboard navigation off: a dialog's buttons,
+    /// where focus marks the default (Return) action.
+    always_tab_stop: bool,
     style: StyleRefinement,
 }
 
@@ -195,8 +198,16 @@ impl Button {
             tooltip: None,
             on_click: None,
             dropdown_menu: None,
+            always_tab_stop: false,
             style: StyleRefinement::default(),
         }
+    }
+
+    /// Keep this button a Tab stop whatever Keyboard navigation says (a
+    /// dialog's buttons, which take focus to mark the default action).
+    pub fn always_tab_stop(mut self) -> Self {
+        self.always_tab_stop = true;
+        self
     }
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
@@ -333,6 +344,7 @@ impl RenderOnce for Button {
         };
         let mut button = painted(
             ComponentButton::new(self.id)
+                .tab_stop(self.always_tab_stop || mac::keyboard_navigation())
                 .with_size(self.size)
                 .disabled(self.disabled)
                 .loading(self.busy),
@@ -373,6 +385,7 @@ impl RenderOnce for Button {
 pub struct PopUpButton {
     id: ElementId,
     label: SharedString,
+    accessible_name: Option<SharedString>,
     disabled: bool,
     selected: bool,
     form: bool,
@@ -386,6 +399,7 @@ impl PopUpButton {
         Self {
             id: id.into(),
             label: label.into(),
+            accessible_name: None,
             disabled: false,
             selected: false,
             form: false,
@@ -419,6 +433,14 @@ impl PopUpButton {
 
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
+        self
+    }
+
+    /// The name assistive technology reads, when it differs from the
+    /// visible value (the Mac's "Dock position on screen" for a pop-up
+    /// showing "Bottom"). The value stays its `value`.
+    pub fn accessible_name(mut self, name: impl Into<SharedString>) -> Self {
+        self.accessible_name = Some(name.into());
         self
     }
 
@@ -488,6 +510,7 @@ struct PopUpButtonTrigger {
     focus_handle: gpui::FocusHandle,
     popover_state: Entity<PopUpButtonPopoverState>,
     value: SharedString,
+    accessible_name: Option<SharedString>,
     menu_button_icon: Option<(&'static str, f32)>,
     circle: f32,
     disabled: bool,
@@ -585,7 +608,7 @@ impl RenderOnce for PopUpButtonTrigger {
                 Role::ComboBox
             })
             .aria_expanded(open)
-            .aria_label(self.value.clone())
+            .aria_label(self.accessible_name.unwrap_or_else(|| self.value.clone()))
             .when(!menu_button_icon, |el| el.aria_value(self.value))
             .aria_disabled(disabled)
             .cursor_default()
@@ -596,32 +619,37 @@ impl RenderOnce for PopUpButtonTrigger {
             .items_center()
             .when(highlighted, |el| el.bg(mac::control_fill_hover()))
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
-                    .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                        if !is_popover_activation_key(event.keystroke.key.as_str(), event.is_held) {
-                            return;
-                        }
-                        window.prevent_default();
-                        cx.stop_propagation();
-                        let closed = keyboard_state.update(cx, |state, _| {
-                            toggle_popover(state);
-                            !state.open
-                        });
-                        if closed {
-                            keyboard_focus.focus(window, cx);
-                        }
-                        cx.notify(view_id);
-                    })
-                    .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
-                        let closed = accessible_state.update(cx, |state, _| {
-                            toggle_popover(state);
-                            !state.open
-                        });
-                        if closed {
-                            accessible_focus.focus(window, cx);
-                        }
-                        cx.notify(view_id);
-                    })
+                el.track_focus(
+                    &focus_handle
+                        .clone()
+                        .tab_stop(mac::keyboard_navigation())
+                        .tab_index(0),
+                )
+                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    if !is_popover_activation_key(event.keystroke.key.as_str(), event.is_held) {
+                        return;
+                    }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    let closed = keyboard_state.update(cx, |state, _| {
+                        toggle_popover(state);
+                        !state.open
+                    });
+                    if closed {
+                        keyboard_focus.focus(window, cx);
+                    }
+                    cx.notify(view_id);
+                })
+                .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                    let closed = accessible_state.update(cx, |state, _| {
+                        toggle_popover(state);
+                        !state.open
+                    });
+                    if closed {
+                        accessible_focus.focus(window, cx);
+                    }
+                    cx.notify(view_id);
+                })
             })
             .when(disabled, |el| {
                 // `Popover`'s own wrapping div toggles open on any mouse-down
@@ -669,6 +697,7 @@ impl RenderOnce for PopUpButton {
                 focus_handle: trigger_focus.clone(),
                 popover_state: popover_state.clone(),
                 value: self.label,
+                accessible_name: self.accessible_name,
                 menu_button_icon: self.menu_button_icon,
                 circle: metrics.popup_chevron,
                 disabled,
@@ -1175,7 +1204,12 @@ impl RenderOnce for Toggle {
             .when_some(accessible_name, |el, name| el.aria_label(name))
             .cursor_default()
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
+                el.track_focus(
+                    &focus_handle
+                        .clone()
+                        .tab_stop(mac::keyboard_navigation())
+                        .tab_index(0),
+                )
             })
             .when(disabled, |el| el.opacity(0.5))
             .when(mac::shows_focus_ring(is_focused, window), |el| {
@@ -1318,7 +1352,11 @@ impl RenderOnce for Checkbox {
             .when_some(self.label, |el, label| el.aria_label(label))
             .cursor_default()
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.tab_stop(true).tab_index(0))
+                el.track_focus(
+                    &focus_handle
+                        .tab_stop(mac::keyboard_navigation())
+                        .tab_index(0),
+                )
             })
             .when(disabled, |el| el.opacity(0.5))
             .when(mac::shows_focus_ring(is_focused, window), |el| {
@@ -1429,7 +1467,11 @@ impl RenderOnce for Radio {
             .when_some(self.label, |el, label| el.aria_label(label))
             .cursor_default()
             .when(!disabled, |el| {
-                el.track_focus(&focus_handle.tab_stop(true).tab_index(0))
+                el.track_focus(
+                    &focus_handle
+                        .tab_stop(mac::keyboard_navigation())
+                        .tab_index(0),
+                )
             })
             .when(disabled, |el| el.opacity(0.5))
             .when(mac::shows_focus_ring(is_focused, window), |el| {
@@ -1652,6 +1694,10 @@ impl RenderOnce for Slider {
             SliderAxis::Vertical => ComponentSlider::new(&self.state).vertical(),
         }
         .disabled(self.disabled);
+        let slider = match &self.accessible_name {
+            Some(name) => slider.accessible_name(name.clone()),
+            None => slider,
+        };
         // A finger slides the thumb straight away instead of scrolling the
         // page (ADR 0028).
         match self.accessible_name {

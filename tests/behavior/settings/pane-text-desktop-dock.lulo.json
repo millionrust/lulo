@@ -15,10 +15,12 @@
         ],
         "controls": [
           "Automatically hide and show the Dock",
-          "Magnification",
-          "Size",
+          "Dock Magnification Size",
+          "Dock Size",
           "Show indicators for open applications",
-          "Position on screen"
+          "Dock position on screen",
+          "Minimised window animation",
+          "Window title bar double-click action"
         ]
       }
     }

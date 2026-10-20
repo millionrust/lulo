@@ -642,7 +642,7 @@ fn traffic_light(
     .items_center()
     .justify_center()
     .when_some(focus, |el, (handle, _)| {
-        el.track_focus(&handle.tab_stop(true).tab_index(0))
+        el.track_focus(&handle.tab_stop(mac::keyboard_navigation()).tab_index(0))
     })
     .child(circle)
 }

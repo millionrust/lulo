@@ -70,6 +70,7 @@ impl Settings {
     ) {
         let visible = self.wifi_pane_visible();
         if wifi_pane_scan_should_start_on_navigation(visible, self.wifi_pane_was_visible) {
+            self.load_wifi_ask_to_join(cx);
             self.request_wifi_pane_scan(cx);
             self.wifi_pane_scan_task = Some(Self::spawn_wifi_pane_scan_loop(cx));
         } else if wifi_pane_scan_should_stop_on_navigation(visible, self.wifi_pane_was_visible) {
@@ -79,6 +80,7 @@ impl Settings {
             self.wifi_pane_scan_task = None;
         }
         self.wifi_pane_was_visible = visible;
+        self.sync_bluetooth_discoverable_on_navigation(cx);
     }
 
     /// Ask NetworkManager to scan and re-read the Wi-Fi snapshot, unless a
@@ -155,5 +157,48 @@ impl Settings {
                 break;
             }
         })
+    }
+
+    /// Read the Ask to join networks preference off the UI thread.
+    pub(in crate::controller) fn load_wifi_ask_to_join(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let value = cx
+                .background_executor()
+                .spawn(async { rmac_network::ask_to_join::load() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.wifi_ask_to_join != value {
+                    this.wifi_ask_to_join = value;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub(in crate::controller) fn set_wifi_ask_to_join(
+        &mut self,
+        value: rmac_network::ask_to_join::AskToJoin,
+        cx: &mut Context<Self>,
+    ) {
+        if self.wifi_ask_to_join == value {
+            return;
+        }
+        self.wifi_ask_to_join = value;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_network::ask_to_join::save(value) })
+                .await;
+            if let Err(error) = result {
+                let _ = this.update(cx, |this: &mut Settings, cx| {
+                    this.wifi_error =
+                        Some(format!("Could not save Ask to join networks: {error}").into());
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 }

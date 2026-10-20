@@ -9,6 +9,7 @@ pub(super) enum ThemeChange {
     TextHighlight(rmac_theme::TextHighlightPreference),
     ScrollBarVisibility(rmac_theme::ScrollBarVisibility),
     ScrollBarClick(rmac_theme::ScrollBarClickAction),
+    KeyboardNavigation(bool),
 }
 
 #[derive(Clone, Copy)]
@@ -128,6 +129,7 @@ fn apply_theme_change_to_preferences(
         ThemeChange::TextHighlight(value) => preferences.text_highlight = value,
         ThemeChange::ScrollBarVisibility(value) => preferences.scroll_bar_visibility = value,
         ThemeChange::ScrollBarClick(value) => preferences.scroll_bar_click = value,
+        ThemeChange::KeyboardNavigation(value) => preferences.keyboard_navigation = value,
     }
 }
 

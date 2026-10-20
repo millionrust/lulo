@@ -210,7 +210,10 @@ jobs:
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           status=0
           for scene in "" -spotlight -control-centre -apps -notification-centre; do
-            python scripts/compare_shell_scenes.py "scenes/linux$scene.png" "scenes/windows$scene.png" \
+            # Apps (now 842 x 576 with 60 pt icons, as the Mac's) shows each
+            # OS's own app icons at full size: allow 4 % changed pixels.
+            slack=""; [ "$scene" = "-apps" ] && slack="--max-changed 0.04"
+            python scripts/compare_shell_scenes.py "scenes/linux$scene.png" "scenes/windows$scene.png" $slack \
               --diff "scenes/diff$scene.png" --report "scenes/report$scene.json" || status=1
           done
           window() {

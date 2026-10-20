@@ -150,6 +150,7 @@ impl Settings {
             SubPage::About => self.about_body(cx),
             SubPage::SoftwareUpdate => self.software_update_body(cx),
             SubPage::Storage => self.storage_body(cx),
+            SubPage::StartupDisk => self.startup_disk_body(cx),
             SubPage::NotificationApp { app_id } => self.notification_app_body(app_id, cx),
             SubPage::FocusMode { mode_id } => self.focus_mode_body(mode_id, cx),
             SubPage::FocusSchedule { schedule_id } => self.focus_schedule_body(schedule_id, cx),

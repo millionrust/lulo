@@ -21,6 +21,7 @@ mod service_updates;
 mod settings_search;
 mod shell_settings;
 mod sound;
+mod startup_disk;
 mod storage_categories;
 mod system_environment;
 

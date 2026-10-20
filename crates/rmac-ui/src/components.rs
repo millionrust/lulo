@@ -125,6 +125,7 @@ pub fn dialog_button(
     };
     Button::new(id, label)
         .role(role)
+        .always_tab_stop()
         .h(px(rmac_design::Metrics::default().alert_button_height))
         .rounded_full()
 }

@@ -1,0 +1,14 @@
+[Unit]
+Description=rmac Night Shift
+Documentation=https://github.com/rmac/rmac
+BindsTo=graphical-session.target
+After=graphical-session.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/libexec/rmac/rmac-night-shift --policy %h/.config/rmac/night-shift.json
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes

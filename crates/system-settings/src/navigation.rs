@@ -19,6 +19,8 @@ pub(super) enum SubPage {
     About,
     SoftwareUpdate,
     Storage,
+    /// General ▸ Startup Disk (UEFI boot entries, Lulo OS).
+    StartupDisk,
     NotificationApp {
         app_id: String,
     },

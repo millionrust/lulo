@@ -116,6 +116,22 @@ pub(super) fn popup_row(
         .into_any_element()
 }
 
+/// [`popup_row`] whose pop-up assistive technology reads by the Mac's own
+/// name, while the row keeps its visible title.
+pub(super) fn popup_row_named(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    accessible_name: &'static str,
+    current: SharedString,
+    choices: Vec<PopupChoice>,
+    enabled: bool,
+) -> AnyElement {
+    row_base()
+        .child(text_block(title.into(), None))
+        .child(form_popup(id, current, choices, enabled).accessible_name(accessible_name))
+        .into_any_element()
+}
+
 /// The label of the selected choice, or `fallback` when none is selected.
 pub(super) fn popup_value(choices: &[PopupChoice], fallback: &str) -> SharedString {
     choices

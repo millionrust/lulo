@@ -39,6 +39,7 @@ mod shell_settings;
 mod software_updates;
 mod sound;
 mod spotlight;
+mod startup_disk;
 mod state;
 mod storage;
 mod system_info;
@@ -71,7 +72,7 @@ use crate::appearance::{
 use crate::connectivity::{
     wifi_join_action, BluetoothForgetPrompt, BluetoothPairingDisplay, BluetoothPairingState,
     NetworkEditorState, VpnEditorState, WifiEnterprisePrompt, WifiForgetPrompt, WifiJoinAction,
-    WifiPasswordPrompt,
+    WifiOtherPrompt, WifiPasswordPrompt,
 };
 use crate::displays::{
     compositor_event_affects_displays, relative_display_position, DisplayChange,

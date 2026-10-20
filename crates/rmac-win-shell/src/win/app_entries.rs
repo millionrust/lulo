@@ -47,6 +47,33 @@ fn is_lulo(id: &str) -> bool {
     rmac_apps::windows_apps::app_for_exe(id).is_some()
 }
 
+/// Entries Windows' Start menu hides or nobody launches: uninstallers,
+/// readmes, licences, manuals and help or website shortcuts.
+pub fn is_junk(app: &App) -> bool {
+    let name = app.name.to_lowercase();
+    let parsing = app.parsing.to_lowercase();
+    const WORDS: [&str; 9] = [
+        "uninstall",
+        "readme",
+        "read me",
+        "release notes",
+        "license",
+        "documentation",
+        "user manual",
+        "user guide",
+        "what's new",
+    ];
+    WORDS.iter().any(|word| name.contains(word))
+        || name.starts_with("help")
+        || name.ends_with(" help")
+        || name.ends_with(" website")
+        || name.ends_with(" manual")
+        || [".chm", ".url", ".htm", ".html", ".txt", ".pdf", ".rtf"]
+            .iter()
+            .any(|extension| parsing.ends_with(extension))
+        || parsing.contains("unins")
+}
+
 /// A desktop entry's string value: no line breaks.
 fn value(text: &str) -> String {
     text.replace(['\r', '\n'], " ").trim().to_owned()
@@ -81,7 +108,7 @@ pub fn chosen(apps: &[App]) -> BTreeMap<String, App> {
         let Some(id) = window_app_id(app) else {
             continue;
         };
-        if is_lulo(&id) || app.name.to_lowercase().contains("uninstall") {
+        if is_lulo(&id) || is_junk(app) {
             continue;
         }
         let file = format!("{id}.desktop");
@@ -119,7 +146,7 @@ fn icon_path(icons: &Path, file: &str) -> PathBuf {
 
 /// The edge Windows apps' icons are kept at: the Dock's tile at up to
 /// 150 % scale.
-const ICON_PIXELS: u32 = 96;
+const ICON_PIXELS: u32 = 128;
 
 /// Keep the icons of `apps` that get entries and have none yet in `icons`
 /// (in the Apps folder helper process).
@@ -127,11 +154,28 @@ pub fn save_icons(icons: &Path, apps: &[App]) {
     if std::fs::create_dir_all(icons).is_err() {
         return;
     }
+    let mut links: Option<Vec<PathBuf>> = None;
     for (file, app) in chosen(apps) {
         let path = icon_path(icons, &file);
-        if !path.is_file() {
-            let source = format!("shell:AppsFolder\\{}", app.parsing);
-            let _ = super::icons::save_png(&source, ICON_PIXELS, &path);
+        if path.is_file() {
+            continue;
+        }
+        let source = format!("shell:AppsFolder\\{}", app.parsing);
+        if super::icons::save_real_png(&source, ICON_PIXELS, &path) {
+            continue;
+        }
+        // No real art through the Apps folder (Control Panel items, system
+        // shortcuts): the Start menu shortcut of the same name carries the
+        // icon (its IconLocation, or its target's).
+        let links = links.get_or_insert_with(super::catalog::start_menu_links);
+        let wanted = app.name.to_lowercase();
+        for link in links.iter().filter(|link| {
+            link.file_stem()
+                .is_some_and(|stem| stem.to_string_lossy().to_lowercase() == wanted)
+        }) {
+            if super::icons::save_real_png(&link.to_string_lossy(), ICON_PIXELS, &path) {
+                break;
+            }
         }
     }
 }
@@ -178,21 +222,27 @@ pub fn refresh() {
         return;
     };
     // Beside the entries, not among them: the catalogue watches that folder.
-    // `-2`: icons fitted into the icon grid (WIN-OS-71).
+    // `-3`: 128 px icons fitted into the icon grid (WIN-OS-71), placeholders left out.
     let icons = applications.parent().map_or_else(
-        || applications.join("..").join("lulo-windows-icons-2"),
-        |data| data.join("lulo-windows-icons-2"),
+        || applications.join("..").join("lulo-windows-icons-3"),
+        |data| data.join("lulo-windows-icons-3"),
     );
     if let Some(data) = applications.parent() {
         let _ = std::fs::remove_dir_all(data.join("lulo-windows-icons"));
+        let _ = std::fs::remove_dir_all(data.join("lulo-windows-icons-2"));
     }
     let Some(apps) = super::catalog::apps_folder_apps(&icons) else {
         super::trace(|| "windows apps: the Apps folder could not be read".into());
         return;
     };
     let chosen = chosen(&apps);
+    // An app with no real icon (only a placeholder) is left out, as Apps
+    // never shows a generic tile. If no icon was read at all (the shell
+    // was not ready), keep everything so the list is not emptied.
+    let any_icon = chosen.keys().any(|file| icon_path(&icons, file).is_file());
     let entries: BTreeMap<String, String> = chosen
         .iter()
+        .filter(|(file, _)| !any_icon || icon_path(&icons, file).is_file())
         .map(|(file, app)| {
             let icon = icon_path(&icons, file);
             (
@@ -295,6 +345,8 @@ mod tests {
         let entries = entries(&[
             app("Files", "C:\\Lulo\\rmac-files.exe"),
             app("Uninstall Thing", "C:\\Thing\\unins000.exe"),
+            app("Thing Readme", "C:\\Thing\\thing.exe"),
+            app("Thing Help", "C:\\Thing\\help.exe"),
             app("Paint", "Microsoft.Paint_8wekyb3d8bbwe!App"),
         ]);
         assert_eq!(

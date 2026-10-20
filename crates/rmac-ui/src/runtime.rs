@@ -801,6 +801,7 @@ fn load_tokens_with_host(host: rmac_appearance::Snapshot) -> Result<theme::Theme
     // value, so it is applied here rather than threaded through
     // `ResolvedAppearance`.
     tokens.text_highlight = resolved.preferences.text_highlight;
+    tokens.keyboard_navigation = resolved.preferences.keyboard_navigation;
     Ok(tokens)
 }
 

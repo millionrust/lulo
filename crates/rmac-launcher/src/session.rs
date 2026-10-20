@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use crate::engine::{match_quality, normalize, score};
 use crate::{
-    Action, ActivationMode, ApplicationGroup, Cancellation, Category, Learning, MoveSelection,
-    Privacy, ProviderDescriptor, ProviderError, RankedResult, Request, ResultId, SearchResult,
-    CONFIDENT_MATCH, DEFAULT_CATEGORY_LIMIT, DEFAULT_LIMIT, INTELLIGENCE_PROVIDER,
+    section_label, Action, ActivationMode, ApplicationGroup, Cancellation, Category, Learning,
+    MoveSelection, Privacy, ProviderDescriptor, ProviderError, RankedResult, Request, ResultId,
+    SearchResult, CONFIDENT_MATCH, DEFAULT_CATEGORY_LIMIT, DEFAULT_LIMIT, INTELLIGENCE_PROVIDER,
 };
 
 #[derive(Clone, Debug)]

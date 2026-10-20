@@ -1001,15 +1001,15 @@ mod tests {
             ],
             Some(1),
         );
-        let scene = scene(&snapshot, Mode::AppWindows).unwrap();
-        let ids = scene
+        let expose = scene(&snapshot, Mode::AppWindows).unwrap();
+        let ids = expose
             .windows
             .iter()
             .map(|window| (window.id.0, window.minimised))
             .collect::<Vec<_>>();
         assert_eq!(ids, [(1, false), (2, true)]);
         // No picture can be taken of a parked window: it draws as a card.
-        assert!(scene.windows[1].occluded);
+        assert!(expose.windows[1].occluded);
         // Mission Control itself never shows minimised windows.
         let overview = scene(&snapshot, Mode::MissionControl).unwrap();
         assert!(overview.windows.iter().all(|window| !window.minimised));

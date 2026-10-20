@@ -76,6 +76,7 @@ impl NotesView {
         // Selecting an ordinary folder/All Notes/Trash always drops any
         // Smart Folder filter layered on top of it.
         self.smart_folder_filter = None;
+        self.tag_selection = None;
         let previous = self.session.selected_note_id();
         self.session.select_folder(folder);
         if self.session.selected_note_id() != previous || self.latest_local_generation.is_none() {
@@ -118,24 +119,11 @@ impl NotesView {
         {
             return false;
         }
-        let tag = self
-            .smart_folder_filter
-            .and_then(|id| {
-                self.session
-                    .smart_folders()
-                    .into_iter()
-                    .find(|folder| folder.id == id)
-            })
-            .map(|folder| folder.tag.to_lowercase());
         let ids: Vec<NoteId> = self
             .session
             .visible_notes()
             .into_iter()
-            .filter(|note| {
-                tag.as_deref().is_none_or(|tag| {
-                    note.lock.is_none() && note.tags.iter().any(|t| t.to_lowercase() == tag)
-                })
-            })
+            .filter(|note| self.note_listed(note))
             .map(|note| note.id)
             .collect();
         if ids.is_empty() {
@@ -205,6 +193,36 @@ impl NotesView {
             }),
             cx,
         );
+    }
+
+    /// File ▸ New Quick Note: a new note for the Quick Note window, made
+    /// without moving the main window's selection.
+    pub(super) fn create_quick_note(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        self.quick_note_id = None;
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let action = LibraryAction::CreateNote(NewNote {
+            created_unix_ms: now_unix_ms(),
+            title: String::new(),
+            body: String::new(),
+            tags: Vec::new(),
+            folder_id: None,
+        });
+        match ActionRequest::new(request_id, action) {
+            Ok(request) => {
+                if self.send(WorkerCommand::Apply(request), cx) {
+                    self.quick_note_request = Some((request_id, self.session.selected_note_id()));
+                }
+            }
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+            }
+        }
     }
 
     pub(super) fn create_folder(&mut self, cx: &mut Context<Self>) {
@@ -1059,7 +1077,11 @@ impl NotesView {
         rmac_ui::set_menu_enabled("notes::CreateSmartFolder", ready, cx);
         rmac_ui::set_menu_enabled(
             "notes::CreateSmartFolderFromSelection",
-            ready && !self.tags.read(cx).selected_range().is_empty(),
+            ready
+                && (matches!(
+                    self.tag_selection,
+                    Some(tag_browser::TagSelection::Tags(_))
+                ) || !self.tags.read(cx).selected_range().is_empty()),
             cx,
         );
         rmac_ui::set_menu_enabled(
@@ -1498,13 +1520,27 @@ impl NotesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let tags = self.tags.read(cx);
-        let selection = tags.selected_range();
-        let value = tags.value();
-        let Some(selected) = value.get(selection).filter(|text| !text.is_empty()) else {
-            return;
+        // The Tags browser's chosen tag, or else the text selected in the
+        // Tags field.
+        let browser_tag = match &self.tag_selection {
+            Some(tag_browser::TagSelection::Tags(chosen)) => self
+                .library_tags()
+                .into_iter()
+                .find(|tag| chosen.contains(&tag.to_lowercase())),
+            _ => None,
         };
-        let prefill = selected.trim().trim_start_matches('#').to_string();
+        let prefill = match browser_tag {
+            Some(tag) => tag,
+            None => {
+                let tags = self.tags.read(cx);
+                let selection = tags.selected_range();
+                let value = tags.value();
+                let Some(selected) = value.get(selection).filter(|text| !text.is_empty()) else {
+                    return;
+                };
+                selected.trim().trim_start_matches('#').to_string()
+            }
+        };
         self.smart_folder_name_input.update(cx, |input, cx| {
             input.set_value(prefill.clone(), window, cx);
         });

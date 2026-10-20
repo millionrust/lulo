@@ -252,6 +252,7 @@ impl NotesView {
                 cx.listener(|this, _: &ToggleCheckSpellingWhileTyping, _, cx| {
                     this.text_assist.check_spelling_while_typing =
                         !this.text_assist.check_spelling_while_typing;
+                    this.schedule_spell_check(cx);
                     rmac_ui::set_menu_checked(
                         "notes::ToggleCheckSpellingWhileTyping",
                         this.text_assist.check_spelling_while_typing,

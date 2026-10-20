@@ -210,6 +210,8 @@ impl NotesView {
                 rmac_editor::rich::RichTextEvent::Changed => {
                     this.schedule_current_edit(cx);
                     this.update_maths_results(window, cx);
+                    this.schedule_spell_check(cx);
+                    this.apply_smart_link(cx);
                     if this.body_format_editable() {
                         rmac_ui::text_assist::on_text_changed(
                             field,

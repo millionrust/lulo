@@ -1,0 +1,26 @@
+{
+  "title": "Notes: a #tag typed in the body appears in the sidebar's Tags browser and filters the note list",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "Tagged"},
+    {"key": "tab"},
+    {"type": "Plan #work today"},
+    {"wait": 1.5},
+    {"select": "#work", "settle": 0.7},
+    {"observe": "filtered", "facts": ["windows"]},
+    {"select": "#work", "settle": 0.7},
+    {"observe": "unfiltered", "facts": ["windows"]}
+  ],
+  "omit": [
+    "filtered.windows.count",
+    "filtered.windows.titles",
+    "filtered.windows.fullscreen",
+    "unfiltered.windows.count",
+    "unfiltered.windows.titles",
+    "unfiltered.windows.fullscreen"
+  ]
+}

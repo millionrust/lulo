@@ -99,6 +99,8 @@ struct Frame {
     selection: Vec<Bounds<Pixels>>,
     caret: Option<Bounds<Pixels>>,
     marked: Vec<Bounds<Pixels>>,
+    /// Misspelled words' dotted underlines.
+    misspelled: Vec<Bounds<Pixels>>,
     bounds: Bounds<Pixels>,
 }
 
@@ -137,6 +139,9 @@ pub struct RichTextEditor {
     checkbox_fill: Hsla,
     quote_bar_color: Hsla,
     show_highlights: bool,
+    /// Check Spelling While Typing: misspelled ranges, valid for the
+    /// document revision they were found in.
+    misspelled: (u64, Vec<Range<usize>>),
 
     /// Shared with the overlay scroll bar.
     scroll: rmac_ui::ScrollPosition,
@@ -205,6 +210,7 @@ impl RichTextEditor {
             checkbox_fill: rmac_ui::mac::system_orange(),
             quote_bar_color: rmac_ui::mac::separator(),
             show_highlights: true,
+            misspelled: (0, Vec::new()),
             scroll: rmac_ui::ScrollPosition::default(),
             params: None,
             layouts: HashMap::new(),
@@ -451,6 +457,27 @@ impl RichTextEditor {
 
     pub fn is_focused(&self, window: &Window) -> bool {
         self.focus.is_focused(window)
+    }
+
+    /// The document's revision: it changes with every edit.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Edit ▸ Spelling and Grammar ▸ Check Spelling While Typing: mark
+    /// these ranges of the document as it was at `revision` with a dotted
+    /// red underline. Any later edit drops them until the owner checks
+    /// again.
+    pub fn set_misspelled(
+        &mut self,
+        revision: u64,
+        ranges: Vec<Range<usize>>,
+        cx: &mut Context<Self>,
+    ) {
+        if revision == self.revision && self.misspelled != (revision, ranges.clone()) {
+            self.misspelled = (revision, ranges);
+            cx.notify();
+        }
     }
 
     /// The insertion point's rectangle in the window, as last drawn.
@@ -771,6 +798,24 @@ impl RichTextEditor {
             return;
         }
         self.change_char_style(cx, move |style| style.link = target.clone());
+    }
+
+    /// Link `range` to `target` (or unlink it) without moving the
+    /// selection: Edit ▸ Substitutions ▸ Smart Links.
+    pub fn set_link_in(
+        &mut self,
+        range: Range<usize>,
+        target: Option<std::sync::Arc<str>>,
+        cx: &mut Context<Self>,
+    ) {
+        let range = self.document.clamp_range(range);
+        if !self.editable || range.is_empty() {
+            return;
+        }
+        self.begin_edit(EditKind::Other);
+        self.document
+            .update_char_style(range, |style| style.link = target.clone());
+        self.finish_edit(cx);
     }
 
     /// The link at the selection's start, for Edit ▸ Link…'s field.
@@ -1193,12 +1238,33 @@ impl RichTextEditor {
                 ));
             }
         }
+        let mut misspelled = Vec::new();
+        if self.misspelled.0 == self.revision {
+            for placed_paragraph in &placed {
+                let paragraph_range = self.document.paragraph_range(placed_paragraph.index);
+                for range in &self.misspelled.1 {
+                    if range.end <= paragraph_range.start || range.start >= paragraph_range.end {
+                        continue;
+                    }
+                    let local = range.start.max(paragraph_range.start) - paragraph_range.start
+                        ..range.end.min(paragraph_range.end) - paragraph_range.start;
+                    let origin = placed_paragraph.origin;
+                    for (x1, _, x2, y2) in placed_paragraph.layout.selection_rects(local, false) {
+                        misspelled.push(Bounds::from_corners(
+                            point(origin.x + x1, origin.y + y2 - px(3.0)),
+                            point(origin.x + x2, origin.y + y2 - px(1.0)),
+                        ));
+                    }
+                }
+            }
+        }
         self.placed = placed.clone();
         Frame {
             placed,
             selection,
             caret,
             marked,
+            misspelled,
             bounds,
         }
     }
@@ -2492,6 +2558,22 @@ impl gpui::Element for RichTextElement {
             }
             for quad in &frame.marked {
                 window.paint_quad(gpui::fill(*quad, caret_color));
+            }
+            // The Mac's misspelling mark: a row of round red dots.
+            let dot = px(2.0);
+            for underline in &frame.misspelled {
+                let mut x = underline.left();
+                while x + dot <= underline.right() {
+                    window.paint_quad(gpui::quad(
+                        Bounds::new(point(x, underline.top()), size(dot, dot)),
+                        dot / 2.0,
+                        rmac_ui::mac::system_red(),
+                        px(0.0),
+                        gpui::transparent_black(),
+                        gpui::BorderStyle::default(),
+                    ));
+                    x += dot * 2.0;
+                }
             }
             if let Some(caret) = frame.caret {
                 window.paint_quad(gpui::fill(caret, caret_color));

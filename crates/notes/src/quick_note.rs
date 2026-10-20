@@ -1,24 +1,20 @@
-//! Quick Note (NOT-025): a small floating note window, independent of
-//! the Mac's hot-corner/Control-Centre entry point (Lulo has neither a
-//! hot-corner service nor a Control Centre Notes applet yet), reachable
-//! here from File ▸ New Quick Note. Notes ▸ Settings… offers the Mac's
-//! two matching controls (NOT-SETTINGS-001/003): "Always resume to last
-//! Quick Note" and the hot-corner/shortcut-specific variant of the same
-//! choice — both session-only, like every other Notes setting today
-//! (NOTES-13).
+//! Quick Note (NOT-025): a small floating note window, reachable from File
+//! ▸ New Quick Note (Lulo has no hot corner or Control Centre Notes applet
+//! to open it from). Notes ▸ Settings… offers the Mac's two matching
+//! controls (NOT-SETTINGS-001/003): "Always resume to last Quick Note" and
+//! its hot-corner variant.
 //!
-//! Known limitation (see `note_window.rs` for the identical root cause):
-//! Quick Note shares the single `NotesSession` selection with the main
-//! window and any Open Note in New Window, so opening or resuming a
-//! Quick Note changes what the main window shows too, rather than living
-//! in a fully independent note session.
+//! The window has its own note pane (`note_pane::NotePane`, NOTES-25): a
+//! new Quick Note is created without moving the main window's selection,
+//! and resuming shows the last Quick Note only here.
 
 use gpui::{
-    div, AppContext as _, Context, Entity, FocusHandle, FontWeight, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, Styled as _, Window,
+    div, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, Styled as _, Window,
 };
 use rmac_ui::{Root, StyledExt as _};
 
+use crate::note_pane::NotePane;
 use crate::NotesView;
 
 const WIDTH: f32 = 360.0;
@@ -39,7 +35,18 @@ pub(crate) fn show(main: Entity<NotesView>, cx: &mut gpui::App) {
             .always_resume_quick_note
             .then_some(notes.quick_note_id)
             .flatten()
+            .filter(|id| {
+                notes.session.snapshot().is_some_and(|snapshot| {
+                    snapshot
+                        .notes
+                        .iter()
+                        .any(|note| note.id == *id && !note.deleted)
+                })
+            })
     };
+    if resume_id.is_none() {
+        main.update(cx, |notes, cx| notes.create_quick_note(cx));
+    }
     // Not `window_options_for_app`: Quick Note would then inherit whatever
     // size the main Notes window last saved under the same app_id (the
     // UIA-06/UIA-09 window-geometry-key bug).
@@ -47,18 +54,7 @@ pub(crate) fn show(main: Entity<NotesView>, cx: &mut gpui::App) {
     match cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         window.set_window_title("Quick Note");
-        main.update(cx, |notes, cx| {
-            let resumed = if let Some(id) = resume_id {
-                notes.select_note(id, window, cx);
-                notes.selected_note_id() == Some(id)
-            } else {
-                false
-            };
-            if !resumed {
-                notes.create_note(cx);
-            }
-        });
-        let view = cx.new(|cx| QuickNoteWindowView::new(main.clone(), window, cx));
+        let view = cx.new(|cx| QuickNoteWindowView::new(main.clone(), resume_id, window, cx));
         cx.new(|cx| Root::new(view, window, cx))
     }) {
         Ok(handle) => {
@@ -73,43 +69,46 @@ pub(crate) fn show(main: Entity<NotesView>, cx: &mut gpui::App) {
 }
 
 struct QuickNoteWindowView {
-    focus: FocusHandle,
     main: Entity<NotesView>,
+    pane: Entity<NotePane>,
 }
 
 impl QuickNoteWindowView {
-    fn new(main: Entity<NotesView>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(
+        main: Entity<NotesView>,
+        note: Option<rmac_notes_store::NoteId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         // `track_key_window` only: `observe_window_state` would also
         // persist this window's geometry under `app_id::NOTES`, the same
-        // key the main window uses, letting this window's own size
-        // overwrite the main window's restored one on close (the
-        // UIA-06/UIA-09 bug).
+        // key the main window uses (the UIA-06/UIA-09 bug).
         rmac_ui::track_key_window(window, cx);
-        cx.observe(&main, |_, _, cx| cx.notify()).detach();
-        let focus = cx.focus_handle();
-        window.focus(&focus, cx);
-        Self { focus, main }
+        let pane = cx.new(|cx| NotePane::new(main.clone(), note, window, cx));
+        // A new Quick Note: show it once the library has created it.
+        cx.observe_in(&main, window, |this, main, window, cx| {
+            let created = main.read(cx).quick_note_id;
+            this.pane.update(cx, |pane, cx| {
+                if pane.note().is_none() {
+                    if let Some(note) = created {
+                        pane.show_note(note, window, cx);
+                    }
+                }
+            });
+        })
+        .detach();
+        cx.observe(&pane, |_, _, cx| cx.notify()).detach();
+        Self { main, pane }
     }
 }
 
 impl Render for QuickNoteWindowView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // While this window is the one the person is using, remember
-        // whatever note it ends up showing (freshly created or resumed)
-        // as "the last Quick Note" for a future resume — scoped to this
-        // window's own active state so switching notes in the *main*
-        // window never overwrites it.
-        if window.is_window_active() {
-            self.main.update(cx, |notes, _| {
-                let current = notes.selected_note_id();
-                if current.is_some() {
-                    notes.quick_note_id = current;
-                }
-            });
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The note this window shows is "the last Quick Note" to resume.
+        if let Some(note) = self.pane.read(cx).note() {
+            self.main.update(cx, |notes, _| notes.quick_note_id = Some(note));
         }
-        let editor = self.main.update(cx, |notes, cx| notes.render_editor(cx));
         div()
-            .track_focus(&self.focus)
             .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
                 window.remove_window();
             }))
@@ -125,16 +124,6 @@ impl Render for QuickNoteWindowView {
                     .font_weight(FontWeight::BOLD)
                     .child("Quick Note"),
             ))
-            .child(div().flex_1().min_h(gpui::px(0.0)).child(editor))
+            .child(div().flex_1().min_h(gpui::px(0.0)).child(self.pane.clone()))
     }
-}
-
-#[cfg(test)]
-mod tests {
-    // `show`/`QuickNoteWindowView` need a live `gpui::App`/window, like
-    // `settings_window`'s equivalent, and are exercised through the
-    // nested behavior runner. See `audio_recorder`/`note_window` for the
-    // pure logic this crate's other new modules do unit-test.
-    #[test]
-    fn module_compiles() {}
 }

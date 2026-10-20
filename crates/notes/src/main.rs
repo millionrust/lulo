@@ -23,6 +23,7 @@ mod note_context_menu;
 mod note_find_controller;
 mod note_format_controller;
 mod note_navigation;
+mod note_pane;
 mod note_window;
 mod notes_style;
 mod presentation;
@@ -39,6 +40,7 @@ mod session_lock_watch;
 mod settings_store;
 mod settings_window;
 mod startup_controller;
+mod tag_browser;
 mod status_presentation;
 mod toolbar;
 mod transfer_controller;
@@ -382,6 +384,8 @@ struct NotesView {
     /// Edit ▸ Spelling and Grammar / Substitutions for the note body.
     text_assist: rmac_ui::text_assist::TextAssistSettings,
     spell_checker: Arc<rmac_spelling::HunspellChecker>,
+    /// The pending Check Spelling While Typing pass over the body.
+    spell_task: Option<gpui::Task<()>>,
     /// Edit ▸ Substitutions ▸ Smart Lists and Smart Tags: checked,
     /// persisted for this session, with no live effect wired yet (see
     /// docs/parity.md NOTES-15).
@@ -420,6 +424,8 @@ struct NotesView {
     /// The selected Smart Folder (stored with the library), if any; narrows
     /// the note list by its tag on top of the ordinary folder selection.
     smart_folder_filter: Option<SmartFolderId>,
+    /// The sidebar Tags browser's selection (NOTES-11).
+    tag_selection: Option<tag_browser::TagSelection>,
     /// `Some(prefill)` while the "name this Smart Folder" dialog is open.
     smart_folder_dialog: Option<String>,
     smart_folder_name_input: Entity<InputState>,
@@ -447,7 +453,12 @@ struct NotesView {
     /// Window ▸ Open Note in New Window (NOT-MENU-064): a second window
     /// mirroring the shared editor fields (`title`/`body`), reused if
     /// already open.
-    note_window: Option<WindowHandle<rmac_ui::Root>>,
+    note_windows: Vec<(NoteId, WindowHandle<rmac_ui::Root>)>,
+    /// A Quick Note being created: its request, and the main window's
+    /// selection to keep.
+    quick_note_request: Option<(u64, Option<NoteId>)>,
+    /// The newest edit generation the library has taken, for note panes.
+    last_accepted_generation: Option<EditGeneration>,
     /// Quick Note (NOT-025): the small floating note window, and the two
     /// settings that govern it. Session-only, like every other Notes ▸
     /// Settings… control (NOTES-13) — not yet persisted across relaunch.
@@ -567,8 +578,9 @@ impl NotesView {
             last_editor_note: None,
             text_assist: rmac_ui::text_assist::TextAssistSettings::default(),
             spell_checker: rmac_spelling::shared(),
+            spell_task: None,
             smart_lists: true,
-            smart_tags: false,
+            smart_tags: true,
             copied_style: None,
             maths_results_mode: MathsResultsMode::default(),
             maths_prev_len: 0,
@@ -585,6 +597,7 @@ impl NotesView {
             last_activity: std::time::Instant::now(),
             idle_lock_timer: None,
             smart_folder_filter: None,
+            tag_selection: None,
             smart_folder_dialog: None,
             smart_folder_name_input: inputs.smart_folder_name,
             hidden_toolbar_items: BTreeSet::new(),
@@ -595,7 +608,9 @@ impl NotesView {
             attachment_rename: None,
             attachment_rename_input: inputs.attachment_rename,
             recording: None,
-            note_window: None,
+            note_windows: Vec::new(),
+            quick_note_request: None,
+            last_accepted_generation: None,
             quick_note_window: None,
             quick_note_id: None,
             always_resume_quick_note: false,

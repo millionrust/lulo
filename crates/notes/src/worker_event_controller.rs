@@ -222,6 +222,26 @@ impl NotesView {
         };
         self.session.apply(event);
         after_session_apply(self);
+        if let Some(accepted) = accepted_generation {
+            self.last_accepted_generation = Some(
+                self.last_accepted_generation
+                    .map_or(accepted, |latest| latest.max(accepted)),
+            );
+        }
+        // A Quick Note was created: the Quick Note window shows it, and the
+        // main window keeps the note it showed.
+        if let Some((request_id, previous)) = self.quick_note_request {
+            if accepted_request_id == Some(request_id) {
+                self.quick_note_request = None;
+                self.quick_note_id = self.session.selected_note_id();
+                if let Some(previous) = previous {
+                    self.session.select_note(previous);
+                }
+                self.sync_editor(window, cx);
+            } else if rejected_request_id == Some(request_id) {
+                self.quick_note_request = None;
+            }
+        }
         if lock_finished {
             self.finish_lock_request(window, cx);
         }

@@ -249,6 +249,35 @@ impl NotesView {
         let selected = self.session.selected_note();
         let deleted = selected.is_some_and(|note| note.deleted);
         let pinned = selected.is_some_and(|note| note.pinned);
+        let locked = selected.is_some_and(|note| note.lock.is_some());
+        let current_folder = selected.and_then(|note| note.folder_id);
+        // The ⋯ menu's Move to and Recent Notes submenus.
+        let folders: Vec<(FolderId, String)> = self
+            .session
+            .folders()
+            .into_iter()
+            .map(|folder| (folder.id, folder.name.clone()))
+            .collect();
+        let recent: Vec<String> = self
+            .recent_notes
+            .iter()
+            .filter_map(|id| {
+                self.session
+                    .snapshot()?
+                    .notes
+                    .iter()
+                    .find(|note| note.id == *id && !note.deleted)
+                    .map(|note| {
+                        if note.lock.is_some() {
+                            "Locked Note".to_owned()
+                        } else {
+                            display_title(&note.title).to_string()
+                        }
+                    })
+            })
+            .take(10)
+            .collect();
+        let large_attachments = self.attachment_view_large;
         let has_note = selected.is_some();
         let note_save_pending = self.latest_local_generation.is_some();
         let attachment_busy = self.attachment_chooser_open || self.attachment_action_pending();
@@ -455,32 +484,97 @@ impl NotesView {
                 )
         });
 
-        // The ⋯ menu's items, also in the » menu when the ⋯ capsule has no
-        // room.
+        // The ⋯ menu's items, as the Mac's (toolbar_More): pin and lock,
+        // then Find in Note, Move to, Recent Notes, Maths Results and
+        // Attachment View, then Delete Note. Also in the » menu when the ⋯
+        // capsule has no room.
         macro_rules! more_items {
-            ($menu:expr) => {{
+            ($menu:expr, $window:expr, $cx:expr) => {{
                 let menu = $menu;
-                let menu = if deleted {
+                if deleted {
                     menu.menu("Recover Note", Box::new(TrashOrRestore))
                         .menu("Delete Permanently…", Box::new(DeleteNotePermanently))
                 } else {
+                    let folders = folders.clone();
+                    let recent = recent.clone();
                     menu.menu(
                         if pinned { "Unpin Note" } else { "Pin Note" },
                         Box::new(TogglePin),
                     )
-                    .menu("Move Note…", Box::new(MoveSelectedNote))
-                    .menu("Delete", Box::new(TrashOrRestore))
+                    .menu(
+                        if locked { "Remove Lock" } else { "Lock Note" },
+                        Box::new(ToggleLockNote),
+                    )
                     .separator()
-                    .menu("Add Photo…", Box::new(AddPhoto))
-                };
-                menu.separator().menu(
-                    if preview_visible {
-                        "Edit Note"
-                    } else {
-                        "Show Markdown Preview"
-                    },
-                    Box::new(ToggleMarkdownPreview),
-                )
+                    .menu("Find in Note", Box::new(FindInNote))
+                    .submenu("Move to", $window, $cx, move |menu, _, _| {
+                        let mut menu = menu.menu_with_check(
+                            "All Notes",
+                            current_folder.is_none(),
+                            Box::new(MoveNoteToFolderAction { folder_id: None }),
+                        );
+                        for (id, name) in &folders {
+                            menu = menu.menu_with_check(
+                                name.clone(),
+                                current_folder == Some(*id),
+                                Box::new(MoveNoteToFolderAction {
+                                    folder_id: Some(*id),
+                                }),
+                            );
+                        }
+                        menu
+                    })
+                    .submenu("Recent Notes", $window, $cx, move |menu, _, _| {
+                        let actions: [Box<dyn gpui::Action>; 10] = [
+                            Box::new(OpenRecentNote0),
+                            Box::new(OpenRecentNote1),
+                            Box::new(OpenRecentNote2),
+                            Box::new(OpenRecentNote3),
+                            Box::new(OpenRecentNote4),
+                            Box::new(OpenRecentNote5),
+                            Box::new(OpenRecentNote6),
+                            Box::new(OpenRecentNote7),
+                            Box::new(OpenRecentNote8),
+                            Box::new(OpenRecentNote9),
+                        ];
+                        let mut menu = menu;
+                        for (title, action) in recent.iter().zip(actions) {
+                            menu = menu.menu(title.clone(), action);
+                        }
+                        menu.separator()
+                            .menu("Clear Menu", Box::new(ClearRecentNotes))
+                    })
+                    .submenu("Maths Results", $window, $cx, move |menu, _, _| {
+                        menu.menu_with_check(
+                            "Off",
+                            maths_results_mode == MathsResultsMode::Off,
+                            Box::new(MathsResultsOff),
+                        )
+                        .menu_with_check(
+                            "Suggest Results",
+                            maths_results_mode == MathsResultsMode::SuggestResults,
+                            Box::new(MathsResultsSuggest),
+                        )
+                        .menu_with_check(
+                            "Insert Results",
+                            maths_results_mode == MathsResultsMode::InsertResults,
+                            Box::new(MathsResultsInsert),
+                        )
+                    })
+                    .submenu("Attachment View", $window, $cx, move |menu, _, _| {
+                        menu.menu_with_check(
+                            "Set All to Small",
+                            !large_attachments,
+                            Box::new(SetAllAttachmentsSmall),
+                        )
+                        .menu_with_check(
+                            "Set All to Large",
+                            large_attachments,
+                            Box::new(SetAllAttachmentsLarge),
+                        )
+                    })
+                    .menu("Delete Note", Box::new(TrashOrRestore))
+                }
             }};
         }
         let more = (!fit.more_in_overflow).then(|| {
@@ -513,7 +607,11 @@ impl NotesView {
                         .rounded(px(CAPSULE_HEIGHT / 2.0))
                         .text_color(toolbar_glyph())
                         .disabled(!ready || !has_note)
-                        .dropdown_menu(move |menu, _, _| more_items!(menu)),
+                        .dropdown_menu({
+                            let folders = folders.clone();
+                            let recent = recent.clone();
+                            move |menu, window, cx| more_items!(menu, window, cx)
+                        }),
                 )
         });
         // » at the far end: what the narrow toolbar has no room for, as rows.
@@ -534,7 +632,7 @@ impl NotesView {
                 .border_1()
                 .border_color(capsule_edge())
                 .disabled(!ready)
-                .dropdown_menu(move |menu, _, _| {
+                .dropdown_menu(move |menu, window, cx| {
                     let mut menu = menu;
                     let mut rows = false;
                     let editing = has_note && !deleted && !preview_visible;
@@ -571,7 +669,7 @@ impl NotesView {
                         if rows {
                             menu = menu.separator();
                         }
-                        menu = more_items!(menu);
+                        menu = more_items!(menu, window, cx);
                         rows = true;
                     }
                     if search_over {

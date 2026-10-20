@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "scenario": "notes/folder-context-menu",
+  "platform": "Lulo local contract",
+  "observations": {
+    "menu": {
+      "menu": {
+        "present": true,
+        "items": ["New Folder", "Rename Folder…", "Delete Folder…", "-", "Sort Notes By"]
+      }
+    },
+    "closed": {"menu": {"present": false}}
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "notes/tag-browser",
+  "observations": {
+    "filtered": {"windows": {"front": "#work – 1 note"}},
+    "unfiltered": {"windows": {"front": "All Notes – 1 note"}}
+  }
+}

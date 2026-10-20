@@ -31,14 +31,20 @@ pub fn is_svg(bytes: &[u8]) -> bool {
         && text.contains("<svg")
 }
 
-fn options() -> usvg::Options<'static> {
-    // Fonts are loaded once; scanning the system fonts is the slow part.
+/// `fonts` is whether the document has text: scanning the system fonts is
+/// the slow part, done once and only when something needs it.
+fn options(fonts: bool) -> usvg::Options<'static> {
     static FONTS: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
-    let fonts = FONTS.get_or_init(|| {
-        let mut database = usvg::fontdb::Database::new();
-        database.load_system_fonts();
-        Arc::new(database)
-    });
+    static NONE: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
+    let fonts = if fonts {
+        FONTS.get_or_init(|| {
+            let mut database = usvg::fontdb::Database::new();
+            database.load_system_fonts();
+            Arc::new(database)
+        })
+    } else {
+        NONE.get_or_init(|| Arc::new(usvg::fontdb::Database::new()))
+    };
     usvg::Options {
         resources_dir: None,
         // A document must not read other files or the network.
@@ -70,7 +76,9 @@ pub fn decode(bytes: &[u8]) -> Result<(RgbaImage, (u32, u32)), String> {
     if bytes.len() > MAX_BYTES {
         return Err("the SVG is too large".to_owned());
     }
-    let tree = usvg::Tree::from_data(bytes, &options()).map_err(|error| error.to_string())?;
+    let has_text = bytes.windows(5).any(|window| window == b"<text");
+    let tree =
+        usvg::Tree::from_data(bytes, &options(has_text)).map_err(|error| error.to_string())?;
     let (width, height) = (tree.size().width(), tree.size().height());
     if !width.is_finite()
         || !height.is_finite()
@@ -98,7 +106,8 @@ pub fn decode(bytes: &[u8]) -> Result<(RgbaImage, (u32, u32)), String> {
 /// Renders drawing `svg` (an `<svg>` document of exactly `width` x `height`
 /// user units) onto a transparent bitmap of that size.
 pub fn render_overlay(svg: &str, width: u32, height: u32) -> Result<RgbaImage, String> {
-    let tree = usvg::Tree::from_str(svg, &options()).map_err(|error| error.to_string())?;
+    let tree = usvg::Tree::from_str(svg, &options(svg.contains("<text")))
+        .map_err(|error| error.to_string())?;
     let mut pixmap = tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| "the image is too large to draw on".to_owned())?;
     resvg::render(

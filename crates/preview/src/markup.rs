@@ -51,7 +51,15 @@ pub struct Annotation {
     /// object it came from, so a Save can replace or delete exactly that
     /// object. `None` for one made in this session.
     pub origin: Option<(u32, u16)>,
+    /// Interior colour of a closed shape (Rectangle, Oval, Polygon, Star,
+    /// Speech Bubble), `None` for an unfilled outline.
+    pub fill: Option<u32>,
+    /// Point size of a Text box.
+    pub font_size: f32,
 }
+
+/// Default size of a Text box's type.
+pub const DEFAULT_FONT_SIZE: f32 = 16.0;
 
 impl Annotation {
     pub fn new(page: usize, tool: Tool, rect: UnitRect, color: u32, width: f32) -> Self {
@@ -64,6 +72,8 @@ impl Annotation {
             text: String::new(),
             path: Vec::new(),
             origin: None,
+            fill: None,
+            font_size: DEFAULT_FONT_SIZE,
         }
     }
 
@@ -88,6 +98,18 @@ impl Annotation {
         self.rect.x1 = point.0.clamp(self.rect.x0 + 0.005, 1.0);
         self.rect.y1 = point.1.clamp(self.rect.y0 + 0.005, 1.0);
     }
+}
+
+/// The vertices of a regular `sides`-gon inscribed in the annotation
+/// rectangle (fractions of it), point up, for a new Polygon.
+pub fn regular_polygon(sides: usize) -> Vec<(f32, f32)> {
+    (0..sides.max(3))
+        .map(|index| {
+            let angle = -std::f32::consts::FRAC_PI_2
+                + index as f32 * std::f32::consts::TAU / sides.max(3) as f32;
+            (0.5 + 0.5 * angle.cos(), 0.5 + 0.5 * angle.sin())
+        })
+        .collect()
 }
 
 pub fn normal(rect: UnitRect) -> UnitRect {
@@ -259,131 +281,66 @@ fn appearance(annotation: &Annotation, size: (f32, f32)) -> Vec<u8> {
     let r = annotation.rect;
     let w = ((r.x1 - r.x0) * size.0).max(1.0);
     let h = ((r.y1 - r.y0) * size.1).max(1.0);
-    let c = rgb(annotation.color);
-    let f = |index: usize| c[index].as_float().unwrap_or(0.0);
-    let mut s = format!(
-        "q {} {} {} RG {} w ",
-        f(0),
-        f(1),
-        f(2),
-        annotation.width.max(0.5)
-    );
-    match annotation.tool {
-        Tool::Rectangle => s.push_str(&format!("1 1 {} {} re S ", w - 2.0, h - 2.0)),
-        Tool::Oval => {
-            for step in 0..=32 {
-                let angle = step as f32 * std::f32::consts::TAU / 32.0;
-                let x = w * (1.0 + angle.cos()) / 2.0;
-                let y = h * (1.0 + angle.sin()) / 2.0;
-                s.push_str(&format!("{x} {y} {} ", if step == 0 { "m" } else { "l" }));
-            }
-            s.push_str("S ");
-        }
-        Tool::Line | Tool::Arrow => {
-            let start = annotation.path.first().copied().unwrap_or((0.0, 0.0));
-            let end = annotation.path.get(1).copied().unwrap_or((1.0, 1.0));
-            let (x0, y0) = (start.0 * w, (1.0 - start.1) * h);
-            let (x1, y1) = (end.0 * w, (1.0 - end.1) * h);
-            s.push_str(&format!("{x0} {y0} m {x1} {y1} l S "));
-            if annotation.tool == Tool::Arrow {
-                let (dx, dy) = (x1 - x0, y1 - y0);
-                let length = dx.hypot(dy).max(1.0);
-                let (ux, uy) = (dx / length, dy / length);
-                s.push_str(&format!(
-                    "{} {} m {x1} {y1} l {} {} l S ",
-                    x1 - 12.0 * ux - 5.0 * uy,
-                    y1 - 12.0 * uy + 5.0 * ux,
-                    x1 - 12.0 * ux + 5.0 * uy,
-                    y1 - 12.0 * uy - 5.0 * ux
-                ));
-            }
-        }
-        Tool::Sketch | Tool::Signature => {
-            if let Some(&(x, y)) = annotation.path.first() {
-                s.push_str(&format!("{} {} m ", x * w, (1.0 - y) * h));
-                for &(x, y) in annotation.path.iter().skip(1) {
-                    s.push_str(&format!("{} {} l ", x * w, (1.0 - y) * h));
-                }
-                s.push_str("S ");
-            }
-        }
-        Tool::Polygon => {
-            if annotation.path.len() >= 2 {
-                for (index, &(x, y)) in annotation.path.iter().enumerate() {
-                    let (px, py) = (x * w, (1.0 - y) * h);
-                    s.push_str(&format!(
-                        "{px} {py} {} ",
-                        if index == 0 { "m" } else { "l" }
-                    ));
-                }
-                // Close the outline back to the first vertex.
-                if let Some(&(x, y)) = annotation.path.first() {
-                    s.push_str(&format!("{} {} l ", x * w, (1.0 - y) * h));
-                }
-                s.push_str("S ");
-            }
-        }
-        Tool::Star => {
-            // 10 vertices alternating the outer and inner radius of a
-            // standard 5-point star (inner = outer * 0.382), starting at
-            // the top and going clockwise, closed back to the first point.
-            let (cx, cy) = (w / 2.0, h / 2.0);
-            let outer = w.min(h) / 2.0;
-            let inner = outer * 0.382;
-            for step in 0..=10 {
-                let index = step % 10;
-                let radius = if index % 2 == 0 { outer } else { inner };
-                let angle = std::f32::consts::FRAC_PI_2 - index as f32 * std::f32::consts::PI / 5.0;
-                let x = cx + radius * angle.cos();
-                let y = cy + radius * angle.sin();
-                s.push_str(&format!("{x} {y} {} ", if step == 0 { "m" } else { "l" }));
-            }
-            s.push_str("S ");
-        }
-        Tool::SpeechBubble => {
-            s.push_str(&format!("1 1 {} {} re S ", w - 2.0, h - 2.0));
-            // A small tail near the bottom-left, kept inside the box's own
-            // 0‥w/0‥h bounds so the Form XObject's BBox does not clip it.
-            s.push_str(&format!(
-                "{} {} m {} {} l {} {} l S ",
-                w * 0.25,
-                h * 0.15,
-                w * 0.08,
-                h * 0.02,
-                w * 0.35,
-                h * 0.15,
-            ));
-        }
-        Tool::Mask => {
-            // Filled, not stroked: a Mask actually covers the content
-            // underneath instead of just outlining it.
-            s.push_str(&format!("{} {} {} rg 0 0 {w} {h} re f ", f(0), f(1), f(2)));
-        }
-        Tool::Note => {
-            // A small fixed-size sticky-note icon at the top-left corner,
-            // regardless of how big `rect` is, plus a folded-corner mark.
-            let icon = 20.0_f32.min(w).min(h);
-            s.push_str(&format!(
-                "{} {} {} rg 0 0 {icon} {icon} re f ",
-                f(0),
-                f(1),
-                f(2)
-            ));
-            s.push_str(&format!(
-                "{} {icon} m {icon} {icon} l {icon} {} l S ",
-                icon * 0.9,
-                icon * 0.9,
-            ));
-        }
-        Tool::Text => s.push_str(&format!(
-            "BT /F1 16 Tf {} {} {} rg 2 {} Td ({}) Tj ET ",
-            f(0),
-            f(1),
-            f(2),
-            (h - 18.0).max(1.0),
+    let colour = |value: u32| -> (f32, f32, f32) {
+        let c = rgb(value);
+        let f = |index: usize| c[index].as_float().unwrap_or(0.0);
+        (f(0), f(1), f(2))
+    };
+    if annotation.tool == Tool::Text {
+        let (red, green, blue) = colour(annotation.color);
+        let font = annotation.font_size.max(4.0);
+        return format!(
+            "q BT /F1 {font} Tf {red} {green} {blue} rg 2 {} Td ({}) Tj ET Q",
+            (h - font - 2.0).max(1.0),
             escape_pdf_text(&annotation.text)
-        )),
-        Tool::Highlight | Tool::Underline | Tool::StrikeThrough | Tool::Select => {}
+        )
+        .into_bytes();
+    }
+    // Strokes are drawn inside the annotation's box so its edge does not
+    // clip them; Mask, Note and the markers fill the whole box.
+    let pad = match annotation.tool {
+        Tool::Mask | Tool::Note | Tool::Highlight | Tool::Underline | Tool::StrikeThrough => 0.0,
+        _ => (annotation.width.max(0.5) / 2.0 + 0.5)
+            .min(w / 2.0)
+            .min(h / 2.0),
+    };
+    let mut inner = annotation.clone();
+    inner.rect = UnitRect {
+        x0: r.x0 + pad / size.0,
+        y0: r.y0 + pad / size.1,
+        x1: r.x1 - pad / size.0,
+        y1: r.y1 - pad / size.1,
+    };
+    let mut s = String::from("q 1 j 1 J ");
+    for outline in crate::shapes::outlines(&inner, size, 1.0, false) {
+        // Page space (y down) to the appearance's own box (y up).
+        let place = |p: (f32, f32)| (p.0 - r.x0 * size.0, r.y1 * size.1 - p.1);
+        if let Some((value, _)) = outline.fill {
+            let (red, green, blue) = colour(value);
+            s.push_str(&format!("{red} {green} {blue} rg "));
+        }
+        if let Some((value, width)) = outline.stroke {
+            let (red, green, blue) = colour(value);
+            s.push_str(&format!("{red} {green} {blue} RG {width} w "));
+        }
+        for (index, point) in outline.points.iter().enumerate() {
+            let (x, y) = place(*point);
+            s.push_str(&format!("{x} {y} {} ", if index == 0 { "m" } else { "l" }));
+        }
+        s.push_str(
+            match (
+                outline.fill.is_some(),
+                outline.stroke.is_some(),
+                outline.closed,
+            ) {
+                (true, true, true) => "b ",
+                (true, true, false) => "B ",
+                (true, false, _) => "f ",
+                (false, true, true) => "s ",
+                (false, true, false) => "S ",
+                (false, false, _) => "n ",
+            },
+        );
     }
     s.push('Q');
     s.into_bytes()
@@ -732,7 +689,17 @@ pub fn write_pdf_with_author(
                     dictionary! { "Font" => dictionary! { "F1" => font } },
                 );
                 annotation.set("Contents", pdf_text(&item.text));
-                annotation.set("DA", "/F1 16 Tf 0 0 0 rg");
+                let c = rgb(item.color);
+                annotation.set(
+                    "DA",
+                    Object::string_literal(format!(
+                        "/F1 {} Tf {} {} {} rg",
+                        item.font_size.max(4.0),
+                        c[0].as_float().unwrap_or(0.0),
+                        c[1].as_float().unwrap_or(0.0),
+                        c[2].as_float().unwrap_or(0.0)
+                    )),
+                );
             }
             let ap = doc.add_object(stream);
             annotation.set("AP", dictionary! { "N" => ap });
@@ -980,15 +947,14 @@ fn parse_annotation(
         .ok()
         .and_then(|name| name.as_name().ok())
         .and_then(Tool::from_name);
-    let interior = dict.get(b"IC").is_ok();
     let tool = match (lulo, subtype) {
         (Some(tool), _) => tool,
         (None, b"Highlight") => Tool::Highlight,
         (None, b"Underline") => Tool::Underline,
         (None, b"StrikeOut") => Tool::StrikeThrough,
         (None, b"FreeText") => Tool::Text,
-        (None, b"Square") if !interior => Tool::Rectangle,
-        (None, b"Circle") if !interior => Tool::Oval,
+        (None, b"Square") => Tool::Rectangle,
+        (None, b"Circle") => Tool::Oval,
         (None, b"Line") => {
             let arrow = dict
                 .get(b"LE")
@@ -1007,7 +973,7 @@ fn parse_annotation(
             }
         }
         (None, b"Ink") => Tool::Sketch,
-        (None, b"Polygon") if !interior => Tool::Polygon,
+        (None, b"Polygon") => Tool::Polygon,
         (None, b"Text") => Tool::Note,
         _ => return None,
     };
@@ -1065,14 +1031,31 @@ fn parse_annotation(
         })
         .unwrap_or(1.0);
     let mut item = Annotation::new(page, tool, bounds, color, width);
+    item.fill = dict
+        .get(b"IC")
+        .ok()
+        .and_then(|interior| floats(interior, doc))
+        .filter(|channels| channels.len() == 3)
+        .map(|channels| {
+            channels.iter().fold(0u32, |packed, channel| {
+                (packed << 8) | (channel.clamp(0.0, 1.0) * 255.0).round() as u32
+            })
+        });
+    if tool == Tool::Text {
+        // "/F1 18 Tf 0 0 0 rg": the number before Tf is the size.
+        let default_appearance = dict.get(b"DA").ok().and_then(pdf_string);
+        if let Some(size) = default_appearance.as_deref().and_then(|da| {
+            let tokens: Vec<&str> = da.split_whitespace().collect();
+            let at = tokens.iter().position(|token| *token == "Tf")?;
+            tokens.get(at.checked_sub(1)?)?.parse::<f32>().ok()
+        }) {
+            item.font_size = size.clamp(4.0, 400.0);
+        }
+    }
     item.text = dict
         .get(b"Contents")
         .ok()
-        .and_then(|contents| match contents {
-            // Older Lulo files stored the text as a name.
-            Object::Name(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
-            other => decode_outline_title(other),
-        })
+        .and_then(pdf_string)
         .unwrap_or_default();
     let spread = (
         (bounds.x1 - bounds.x0).max(1e-4),
@@ -1207,6 +1190,14 @@ fn resolve_outline_page(
         }
     }
     None
+}
+
+/// A PDF text string, or (as older Lulo files stored it) a name.
+fn pdf_string(object: &Object) -> Option<String> {
+    match object {
+        Object::Name(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+        other => decode_outline_title(other),
+    }
 }
 
 fn decode_outline_title(object: &Object) -> Option<String> {
@@ -1789,11 +1780,13 @@ mod tests {
             .set("Annots", vec![square.into(), filled.into(), link.into()]);
         doc.save(&source).unwrap();
         let (existing, copy) = prepare_editable(&source, 9003);
-        // Only the plain square is editable; the filled one and the link
-        // stay baked into the page.
-        assert_eq!(existing.len(), 1);
+        // Both squares are editable (one is filled); the link stays baked
+        // into the page.
+        assert_eq!(existing.len(), 2);
         assert_eq!(existing[0].tool, Tool::Rectangle);
         assert_eq!(existing[0].color, 0xff0000);
+        assert_eq!(existing[0].fill, None);
+        assert_eq!(existing[1].fill, Some(0x00ff00));
         assert!((existing[0].rect.x0 - 0.1).abs() < 1e-3);
         assert!((existing[0].rect.y0 - 0.2).abs() < 1e-3);
         let kept = Document::load(copy.unwrap().path())
@@ -1801,7 +1794,7 @@ mod tests {
             .get_page_annotations(page)
             .unwrap()
             .len();
-        assert_eq!(kept, 2);
+        assert_eq!(kept, 1);
         std::fs::remove_dir_all(base).unwrap();
     }
 

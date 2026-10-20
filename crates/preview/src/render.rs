@@ -426,6 +426,41 @@ pub fn write_image(pixels: &RgbaImage, kind: ImageKind, path: &Path) -> Result<(
     writer.flush().map_err(|error| error.to_string())
 }
 
+/// Draws `items` (markup on a picture: page 0, unrotated frame) onto
+/// `pixels` (BGRA) and returns the result; `pixels` themselves when there is
+/// nothing to draw or the drawing cannot be made.
+pub fn bake_markup(pixels: &RgbaImage, items: &[crate::markup::Annotation]) -> RgbaImage {
+    let (width, height) = pixels.dimensions();
+    let drawn: Vec<_> = items.iter().filter(|item| item.page == 0).collect();
+    if drawn.is_empty() || width == 0 || height == 0 {
+        return pixels.clone();
+    }
+    let unit = crate::shapes::image_unit((width as f32, height as f32));
+    let svg = crate::shapes::svg_document(drawn, (width, height), unit);
+    let Ok(overlay) = crate::vector::render_overlay(&svg, width, height) else {
+        return pixels.clone();
+    };
+    let mut out = pixels.clone();
+    for (destination, source) in out.pixels_mut().zip(overlay.pixels()) {
+        let alpha = u32::from(source[3]);
+        if alpha == 0 {
+            continue;
+        }
+        // `destination` is BGRA; the overlay is straight-alpha RGBA.
+        let mix = |below: u8, above: u8| -> u8 {
+            ((u32::from(above) * alpha + u32::from(below) * (255 - alpha) + 127) / 255) as u8
+        };
+        let coverage = alpha + u32::from(destination[3]) * (255 - alpha) / 255;
+        destination.0 = [
+            mix(destination[0], source[2]),
+            mix(destination[1], source[1]),
+            mix(destination[2], source[0]),
+            coverage.min(255) as u8,
+        ];
+    }
+    out
+}
+
 /// A same-directory temp path for `destination` that can never collide
 /// with a *different* document's own temp file, including one that only
 /// differs from `destination` in its real extension: `Path::with_extension`

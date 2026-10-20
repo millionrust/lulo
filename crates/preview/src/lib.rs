@@ -16,6 +16,7 @@ pub mod redact;
 pub mod render;
 pub mod selection;
 pub mod settings_store;
+pub mod shapes;
 pub mod vector;
 pub mod versions;
 #[cfg(windows)]

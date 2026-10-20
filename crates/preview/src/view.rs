@@ -515,7 +515,9 @@ impl Slot {
     fn edited(&self) -> bool {
         match self.kind() {
             Some(Kind::Pdf) => self.markup.dirty,
-            Some(Kind::Image(_)) => self.image_edits.dirty || self.rotation != self.saved_rotation,
+            Some(Kind::Image(_)) => {
+                self.image_edits.dirty || self.rotation != self.saved_rotation || self.markup.dirty
+            }
             None => false,
         }
     }
@@ -530,7 +532,25 @@ impl Slot {
         let Content::Image(image) = &self.loaded()?.content else {
             return None;
         };
-        Some((kind, Arc::new(render::rotate(&image.pixels, self.rotation))))
+        let drawn = self.baked_pixels()?;
+        let _ = image;
+        Some((kind, Arc::new(render::rotate(&drawn, self.rotation))))
+    }
+
+    /// The image's pixels with the markup drawn on them (PREV-03B), in the
+    /// unrotated frame the markup lives in; the pixels themselves when there
+    /// is none.
+    fn baked_pixels(&self) -> Option<Arc<image::RgbaImage>> {
+        let Content::Image(image) = &self.loaded()?.content else {
+            return None;
+        };
+        if self.markup.items.is_empty() {
+            return Some(image.pixels.clone());
+        }
+        Some(Arc::new(render::bake_markup(
+            &image.pixels,
+            &self.markup.items,
+        )))
     }
 
     fn content_kind(&self) -> ContentKind {
@@ -669,6 +689,10 @@ pub(crate) struct PreviewView {
     markup_tool: Tool,
     markup_color: u32,
     markup_width: f32,
+    /// Interior colour for new closed shapes (`None` leaves them open).
+    markup_fill: Option<u32>,
+    /// Point size for new text boxes.
+    markup_font_size: f32,
     markup_selected: Option<usize>,
     markup_drag: Option<MarkupDrag>,
     markup_text_input: Entity<InputState>,
@@ -955,7 +979,17 @@ impl PreviewView {
     }
 
     fn choose_annotation(&mut self, tool: Tool, cx: &mut Context<Self>) {
-        if self.slots.len() != 1 || self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+        // A picture takes the drawn shapes and text; marking up text itself
+        // is for PDFs.
+        let usable = match self.slot().and_then(Slot::kind) {
+            Some(Kind::Pdf) => true,
+            Some(Kind::Image(_)) => !matches!(
+                tool,
+                Tool::Highlight | Tool::Underline | Tool::StrikeThrough
+            ),
+            None => false,
+        };
+        if self.slots.len() != 1 || !usable {
             return;
         }
         self.choose_markup_tool(tool, cx);
@@ -991,6 +1025,91 @@ impl PreviewView {
             }
         }
         cx.notify();
+    }
+
+    /// The colours the Colour and Fill buttons step through (macOS's own
+    /// system colours).
+    fn step_markup_colour(&mut self, cx: &mut Context<Self>) {
+        let next = metrics::MARKUP_COLOURS
+            .iter()
+            .position(|colour| *colour == self.markup_color)
+            .map_or(0, |index| (index + 1) % metrics::MARKUP_COLOURS.len());
+        self.set_markup_color(metrics::MARKUP_COLOURS[next], cx);
+    }
+
+    /// Fill: none, then each system colour in turn; applies to the selected
+    /// shape too.
+    fn step_markup_fill(&mut self, cx: &mut Context<Self>) {
+        self.markup_fill = match self.markup_fill {
+            None => Some(metrics::MARKUP_COLOURS[0]),
+            Some(current) => metrics::MARKUP_COLOURS
+                .iter()
+                .position(|colour| *colour == current)
+                .and_then(|index| metrics::MARKUP_COLOURS.get(index + 1).copied()),
+        };
+        let fill = self.markup_fill;
+        if let Some(index) = self.markup_selected {
+            if let Some(slot) = self.slot_mut() {
+                if slot
+                    .markup
+                    .items
+                    .get(index)
+                    .is_some_and(|item| item.tool != Tool::Select)
+                {
+                    slot.markup.checkpoint();
+                    if let Some(item) = slot.markup.items.get_mut(index) {
+                        if matches!(
+                            item.tool,
+                            Tool::Rectangle
+                                | Tool::Oval
+                                | Tool::Polygon
+                                | Tool::Star
+                                | Tool::SpeechBubble
+                        ) {
+                            item.fill = fill;
+                        }
+                    }
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Type size for text boxes: steps through [`metrics::MARKUP_FONT_SIZES`].
+    fn step_markup_font_size(&mut self, cx: &mut Context<Self>) {
+        let next = metrics::MARKUP_FONT_SIZES
+            .iter()
+            .position(|size| *size >= self.markup_font_size + 0.5)
+            .map_or(metrics::MARKUP_FONT_SIZES[0], |index| {
+                metrics::MARKUP_FONT_SIZES[index]
+            });
+        self.markup_font_size = next;
+        if let Some(index) = self.markup_selected {
+            if let Some(slot) = self.slot_mut() {
+                if slot
+                    .markup
+                    .items
+                    .get(index)
+                    .is_some_and(|item| item.tool == Tool::Text)
+                {
+                    slot.markup.checkpoint();
+                    if let Some(item) = slot.markup.items.get_mut(index) {
+                        item.font_size = next;
+                    }
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// The shape button cycles Polygon, Star, Speech Bubble and Mask.
+    fn step_markup_shape(&mut self, cx: &mut Context<Self>) {
+        const SHAPES: [Tool; 4] = [Tool::Polygon, Tool::Star, Tool::SpeechBubble, Tool::Mask];
+        let next = SHAPES
+            .iter()
+            .position(|tool| *tool == self.markup_tool)
+            .map_or(SHAPES[0], |index| SHAPES[(index + 1) % SHAPES.len()]);
+        self.choose_markup_tool(next, cx);
     }
 
     fn step_markup_width(&mut self, cx: &mut Context<Self>) {
@@ -1046,6 +1165,23 @@ impl PreviewView {
         cx.notify();
     }
 
+    /// The page (always 0 for a picture) and the point on it, in the
+    /// unrotated frame markup is stored in, under a window-space position.
+    fn markup_point(&self, position: gpui::Point<gpui::Pixels>) -> Option<(usize, (f32, f32))> {
+        let slot = self.slot()?;
+        if matches!(slot.kind(), Some(Kind::Image(_))) {
+            return self.screen_to_image_point(position).map(|point| (0, point));
+        }
+        let (page, point) = self.screen_to_page_point(position)?;
+        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
+            x0: point.0,
+            y0: point.1,
+            x1: point.0,
+            y1: point.1,
+        });
+        Some((page, (raw.x0, raw.y0)))
+    }
+
     fn markup_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -1061,19 +1197,12 @@ impl PreviewView {
         ) {
             return false;
         }
-        let Some((page, point)) = self.screen_to_page_point(event.position) else {
+        let Some((page, point)) = self.markup_point(event.position) else {
             return false;
         };
         let Some(slot) = self.slot() else {
             return false;
         };
-        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
-            x0: point.0,
-            y0: point.1,
-            x1: point.0,
-            y1: point.1,
-        });
-        let point = (raw.x0, raw.y0);
         window.focus(&self.page_focus, cx);
         if self.markup_tool == Tool::Select {
             let hit = slot
@@ -1085,7 +1214,7 @@ impl PreviewView {
                 .find(|(_, item)| item.page == page && item.contains(point))
                 .map(|(i, item)| (i, item.rect));
             if let Some((index, rect)) = hit {
-                let text = (slot.markup.items[index].tool == Tool::Text)
+                let text = matches!(slot.markup.items[index].tool, Tool::Text | Tool::Note)
                     .then(|| slot.markup.items[index].text.clone());
                 let near_corner =
                     (rect.x1 - point.0).abs() < 0.02 && (rect.y1 - point.1).abs() < 0.02;
@@ -1117,6 +1246,8 @@ impl PreviewView {
         let tool = self.markup_tool;
         let color = self.markup_color;
         let width = self.markup_width;
+        let fill = self.markup_fill;
+        let font_size = self.markup_font_size;
         let saved_signature = (tool == Tool::Signature && !self.signature_capture)
             .then(|| self.signatures.get(self.signature_active).cloned())
             .flatten();
@@ -1130,6 +1261,16 @@ impl PreviewView {
         if let Some(slot) = self.slot_mut() {
             slot.markup.checkpoint();
             let mut item = Annotation::new(page, tool, rect, color, width);
+            item.font_size = font_size;
+            if matches!(
+                tool,
+                Tool::Rectangle | Tool::Oval | Tool::Polygon | Tool::Star | Tool::SpeechBubble
+            ) {
+                item.fill = fill;
+            }
+            if tool == Tool::Polygon {
+                item.path = markup::regular_polygon(6);
+            }
             if matches!(
                 tool,
                 Tool::Sketch | Tool::Signature | Tool::Line | Tool::Arrow
@@ -1154,10 +1295,21 @@ impl PreviewView {
                 };
                 item.text = "Text".into();
             }
+            if tool == Tool::Note {
+                // A note is a small icon placed with a click; its text is
+                // edited in the toolbar's field.
+                item.rect = layout::UnitRect {
+                    x0: point.0,
+                    y0: point.1,
+                    x1: (point.0 + 0.04).min(1.0),
+                    y1: (point.1 + 0.04).min(1.0),
+                };
+                item.text = "Note".into();
+            }
             slot.markup.items.push(item);
         }
         self.markup_selected = Some(index);
-        self.markup_drag = (tool != Tool::Text
+        self.markup_drag = (!matches!(tool, Tool::Text | Tool::Note)
             && (tool != Tool::Signature || self.signature_capture))
             .then_some(MarkupDrag {
                 page,
@@ -1167,13 +1319,16 @@ impl PreviewView {
                 mode: DragMode::Create,
                 started: true,
             });
-        if tool == Tool::Text {
+        if matches!(tool, Tool::Text | Tool::Note) {
+            let initial = if tool == Tool::Note { "Note" } else { "Text" };
             self.markup_text_input.update(cx, |input, cx| {
-                input.set_value("Text", window, cx);
+                input.set_value(initial, window, cx);
             });
             cx.spawn_in(window, async move |this, cx| {
                 let _ = this.update_in(cx, |this, window, cx| {
-                    if this.markup_tool == Tool::Text && this.markup_selected.is_some() {
+                    if matches!(this.markup_tool, Tool::Text | Tool::Note)
+                        && this.markup_selected.is_some()
+                    {
                         this.markup_text_input
                             .update(cx, |input, cx| input.focus(window, cx));
                     }
@@ -1189,20 +1344,12 @@ impl PreviewView {
         let Some(mut drag) = self.markup_drag else {
             return;
         };
-        let Some((page, point)) = self.screen_to_page_point(event.position) else {
+        let Some((page, point)) = self.markup_point(event.position) else {
             return;
         };
         if page != drag.page {
             return;
         }
-        let Some(slot) = self.slot() else { return };
-        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
-            x0: point.0,
-            y0: point.1,
-            x1: point.0,
-            y1: point.1,
-        });
-        let point = (raw.x0, raw.y0);
         if !drag.started {
             if let Some(slot) = self.slot_mut() {
                 slot.markup.checkpoint();
@@ -1369,6 +1516,7 @@ impl PreviewView {
                 let source = slot.path.clone();
                 let id = slot.id;
                 let revision = slot.image_edits.revision;
+                let markup_revision = slot.markup.revision;
                 let rotation = slot.rotation;
                 let needs_version = !slot.version_recorded;
                 self.markup_save_busy = true;
@@ -1400,6 +1548,9 @@ impl PreviewView {
                                 Ok(()) => {
                                     if slot.image_edits.revision == revision {
                                         slot.image_edits.dirty = false;
+                                    }
+                                    if slot.markup.revision == markup_revision {
+                                        slot.markup.dirty = false;
                                     }
                                     if slot.rotation == rotation {
                                         slot.saved_rotation = rotation;
@@ -2203,7 +2354,7 @@ impl PreviewView {
                             .slot_mut()
                             .and_then(|slot| slot.markup.items.get_mut(index))
                         {
-                            if item.tool == Tool::Text {
+                            if matches!(item.tool, Tool::Text | Tool::Note) {
                                 item.text = value;
                                 cx.notify();
                             }
@@ -2257,6 +2408,8 @@ impl PreviewView {
             markup_tool: Tool::Select,
             markup_color: palette().find,
             markup_width: 2.0,
+            markup_fill: None,
+            markup_font_size: markup::DEFAULT_FONT_SIZE,
             markup_selected: None,
             markup_drag: None,
             markup_text_input,
@@ -3013,8 +3166,19 @@ impl PreviewView {
         let Content::Image(image) = &mut loaded.content else {
             return;
         };
-        let previous = image.pixels.clone();
-        let edited = edit(&image.pixels);
+        // Markup lives in the frame of the pixels as they are now: draw it
+        // into them before they are cropped, flipped or resized.
+        let drawn = if slot.markup.items.is_empty() {
+            None
+        } else {
+            let drawn = Arc::new(render::bake_markup(&image.pixels, &slot.markup.items));
+            slot.markup.items.clear();
+            slot.markup.dirty = false;
+            slot.markup.revision += 1;
+            Some(drawn)
+        };
+        let previous = drawn.unwrap_or_else(|| image.pixels.clone());
+        let edited = edit(&previous);
         image.size = edited.dimensions();
         image.thumbnail = render::image_thumbnail(&edited);
         image.pixels = Arc::new(edited);
@@ -5607,6 +5771,11 @@ impl PreviewView {
                 "markup-line" => "Line",
                 "markup-arrow" => "Arrow",
                 "markup-text" => "Text",
+                "markup-shapes" => "Shapes",
+                "markup-note" => "Note",
+                "markup-colour" => "Colour",
+                "markup-fill" => "Fill",
+                "markup-font-size" => "Text size",
                 "markup-color-yellow" => "Yellow",
                 "markup-color-blue" => "Blue",
                 _ => label,
@@ -5650,6 +5819,7 @@ impl PreviewView {
             .flex()
             .items_center()
             .gap(px(5.0))
+            .overflow_x_scroll()
             .bg(rgb(palette.window))
             .border_b_1()
             .border_color(rgb(palette.divider))
@@ -5728,10 +5898,38 @@ impl PreviewView {
                 control("markup-width", "Line width", false)
                     .on_click(cx.listener(|this, _, _, cx| this.step_markup_width(cx))),
             )
+            .child(
+                control(
+                    "markup-shapes",
+                    "Shapes",
+                    matches!(
+                        self.markup_tool,
+                        Tool::Polygon | Tool::Star | Tool::SpeechBubble | Tool::Mask
+                    ),
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.step_markup_shape(cx))),
+            )
+            .child(
+                control("markup-note", "Note", self.markup_tool == Tool::Note).on_click(
+                    cx.listener(|this, _, _, cx| this.choose_markup_tool(Tool::Note, cx)),
+                ),
+            )
+            .child(
+                control("markup-colour", "Colour", false)
+                    .on_click(cx.listener(|this, _, _, cx| this.step_markup_colour(cx))),
+            )
+            .child(
+                control("markup-fill", "Fill", self.markup_fill.is_some())
+                    .on_click(cx.listener(|this, _, _, cx| this.step_markup_fill(cx))),
+            )
+            .child(
+                control("markup-font-size", "Aa", false)
+                    .on_click(cx.listener(|this, _, _, cx| this.step_markup_font_size(cx))),
+            )
             .when(
                 self.markup_selected
                     .and_then(|i| self.slot()?.markup.items.get(i))
-                    .is_some_and(|a| a.tool == Tool::Text),
+                    .is_some_and(|a| matches!(a.tool, Tool::Text | Tool::Note)),
                 |row| {
                     row.child(
                         div()
@@ -6197,6 +6395,38 @@ impl PreviewView {
                                         .h(px(shown.1)),
                                 )
                             })
+                            .when(!slot.markup.items.is_empty(), |content| {
+                                let canvas = match &loaded.content {
+                                    Content::Image(image) => {
+                                        let (w, h) = image.pixels.dimensions();
+                                        (w as f32, h as f32)
+                                    }
+                                    Content::Pdf(_) => (1.0, 1.0),
+                                };
+                                let annotations: Vec<_> =
+                                    slot.markup.items.iter().cloned().enumerate().collect();
+                                content.child(
+                                    div()
+                                        .absolute()
+                                        .left(px(origin.0))
+                                        .top(px(origin.1))
+                                        .w(px(shown.0))
+                                        .h(px(shown.1))
+                                        .children(markup_elements(
+                                            shown.0,
+                                            shown.1,
+                                            PageMarkupRender {
+                                                annotations,
+                                                rotation: slot.rotation,
+                                                selected: self.markup_selected,
+                                                drawing: self.markup_drag.map(|drag| drag.index),
+                                                selection_color: palette.selection,
+                                                canvas,
+                                                unit: rmac_preview::shapes::image_unit(canvas),
+                                            },
+                                        )),
+                                )
+                            })
                             .when_some(slot.selection, |content, selection| {
                                 // `selection` is unrotated (the frame Crop
                                 // crops in); rotate it back to the
@@ -6259,6 +6489,8 @@ impl PreviewView {
                                     selected: self.markup_selected,
                                     drawing: self.markup_drag.map(|drag| drag.index),
                                     selection_color: palette.selection,
+                                    canvas: slot.rotation.inverse().apply(sizes[page]),
+                                    unit: 1.0,
                                 },
                             )
                         });
@@ -6338,21 +6570,26 @@ impl PreviewView {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                            this.selection_mouse_down(event, window, cx);
+                            if !this.markup_mouse_down(event, window, cx) {
+                                this.selection_mouse_down(event, window, cx);
+                            }
                         }),
                     )
                     .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                        this.markup_mouse_move(event, cx);
                         this.selection_mouse_move(event, cx);
                     }))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.markup_mouse_up(cx);
                             this.selection_mouse_up(cx);
                         }),
                     )
                     .on_mouse_up_out(
                         MouseButton::Left,
                         cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.markup_mouse_up(cx);
                             this.selection_mouse_up(cx);
                         }),
                     )
@@ -7340,6 +7577,11 @@ struct PageMarkupRender {
     selected: Option<usize>,
     drawing: Option<usize>,
     selection_color: u32,
+    /// The canvas the annotations are placed on, unrotated, in its own
+    /// units (PDF points, or image pixels), and how many of those units
+    /// one markup "point" of line width or type size is.
+    canvas: (f32, f32),
+    unit: f32,
 }
 
 fn render_page(
@@ -7348,14 +7590,6 @@ fn render_page(
     highlights: Vec<(layout::UnitRect, u32)>,
     markup: PageMarkupRender,
 ) -> AnyElement {
-    let PageMarkupRender {
-        annotations,
-        rotation,
-        selected,
-        drawing,
-        selection_color,
-    } = markup;
-    let draw_items = annotations.clone();
     div()
         .absolute()
         .left(px(rect.x))
@@ -7375,29 +7609,57 @@ fn render_page(
                 .rounded(px(2.0))
                 .bg(rgba(color))
         }))
-        .children(annotations.into_iter().filter_map(move |(index, item)| {
+        .children(markup_elements(rect.width, rect.height, markup))
+        .into_any_element()
+}
+
+/// The markup drawn over a page or an image `width` x `height` on screen:
+/// text boxes and markers as elements, every other shape as paths from
+/// [`rmac_preview::shapes`] (the same outlines a saved PDF or a baked image
+/// uses), and a handle on the selected item.
+fn markup_elements(width: f32, height: f32, markup: PageMarkupRender) -> Vec<AnyElement> {
+    let PageMarkupRender {
+        annotations,
+        rotation,
+        selected,
+        drawing,
+        selection_color,
+        canvas,
+        unit,
+    } = markup;
+    if annotations.is_empty() {
+        return Vec::new();
+    }
+    // Screen pixels per canvas unit, and per markup point.
+    let shown_canvas = rotation.apply(canvas);
+    let per_unit = width / shown_canvas.0.max(1.0);
+    let per_point = per_unit * unit;
+    let draw_items = annotations.clone();
+    let mut elements: Vec<AnyElement> = annotations
+        .into_iter()
+        .filter_map(move |(index, item)| {
             let r = rotation.apply_unit_rect(item.rect);
             match item.tool {
                 Tool::Highlight => Some(
                     div()
                         .absolute()
-                        .left(px(r.x0 * rect.width))
-                        .top(px(r.y0 * rect.height))
-                        .w(px((r.x1 - r.x0) * rect.width))
-                        .h(px((r.y1 - r.y0) * rect.height))
+                        .left(px(r.x0 * width))
+                        .top(px(r.y0 * height))
+                        .w(px((r.x1 - r.x0) * width))
+                        .h(px((r.y1 - r.y0) * height))
                         .bg(rgba((item.color << 8) | 0x66))
                         .into_any_element(),
                 ),
                 Tool::Underline | Tool::StrikeThrough => Some(
                     div()
                         .absolute()
-                        .left(px(r.x0 * rect.width))
+                        .left(px(r.x0 * width))
                         .top(px(if item.tool == Tool::Underline {
-                            r.y1 * rect.height - 2.0
+                            r.y1 * height - 2.0
                         } else {
-                            (r.y0 + r.y1) * rect.height / 2.0
+                            (r.y0 + r.y1) * height / 2.0
                         }))
-                        .w(px((r.x1 - r.x0) * rect.width))
+                        .w(px((r.x1 - r.x0) * width))
                         .h(px(2.0))
                         .bg(rgb(item.color))
                         .into_any_element(),
@@ -7405,164 +7667,108 @@ fn render_page(
                 Tool::Text => Some(
                     div()
                         .absolute()
-                        .left(px(r.x0 * rect.width))
-                        .top(px(r.y0 * rect.height))
-                        .text_size(px(16.0))
+                        .left(px(r.x0 * width))
+                        .top(px(r.y0 * height))
+                        .text_size(px((item.font_size * per_point).max(4.0)))
                         .text_color(rgb(item.color))
                         .child(item.text)
-                        .into_any_element(),
-                ),
-                Tool::Rectangle | Tool::Oval => Some(
-                    div()
-                        .absolute()
-                        .left(px(r.x0 * rect.width))
-                        .top(px(r.y0 * rect.height))
-                        .w(px((r.x1 - r.x0) * rect.width))
-                        .h(px((r.y1 - r.y0) * rect.height))
-                        .border(px(item.width.max(1.0)))
-                        .border_color(rgb(item.color))
-                        .when(item.tool == Tool::Oval, |shape| shape.rounded_full())
-                        .when(selected == Some(index), |shape| {
-                            shape.child(
-                                div()
-                                    .absolute()
-                                    .right(px(-5.0))
-                                    .bottom(px(-5.0))
-                                    .size(px(10.0))
-                                    .rounded_full()
-                                    .bg(rgb(selection_color)),
-                            )
-                        })
                         .into_any_element(),
                 ),
                 _ => (selected == Some(index)).then(|| {
                     div()
                         .absolute()
-                        .left(px(r.x1 * rect.width - 5.0))
-                        .top(px(r.y1 * rect.height - 5.0))
+                        .left(px(r.x1 * width - 5.0))
+                        .top(px(r.y1 * height - 5.0))
                         .size(px(10.0))
                         .rounded_full()
                         .bg(rgb(selection_color))
                         .into_any_element()
                 }),
             }
-        }))
-        .child(
-            canvas(
-                |_, _, _| (),
-                move |bounds, (), window, _| {
-                    let origin = bounds.origin;
-                    let width = f32::from(bounds.size.width);
-                    let height = f32::from(bounds.size.height);
-                    let at = |p: (f32, f32)| {
-                        point(origin.x + px(p.0 * width), origin.y + px(p.1 * height))
-                    };
-                    for (index, item) in &draw_items {
-                        if matches!(
-                            item.tool,
-                            Tool::Highlight
-                                | Tool::Underline
-                                | Tool::StrikeThrough
-                                | Tool::Select
-                                | Tool::Text
-                        ) {
-                            continue;
-                        }
-                        let r = rotation.apply_unit_rect(item.rect);
-                        let mut path = PathBuilder::stroke(px(item.width.max(1.0)));
-                        match item.tool {
-                            Tool::Rectangle | Tool::Oval => continue,
-                            Tool::Line | Tool::Arrow => {
-                                let point_on_page = |normalized: (f32, f32)| {
-                                    let raw = if drawing == Some(*index) {
-                                        normalized
-                                    } else {
-                                        (
-                                            item.rect.x0
-                                                + normalized.0 * (item.rect.x1 - item.rect.x0),
-                                            item.rect.y0
-                                                + normalized.1 * (item.rect.y1 - item.rect.y0),
-                                        )
-                                    };
-                                    let p = rotation.apply_unit_rect(layout::UnitRect {
-                                        x0: raw.0,
-                                        y0: raw.1,
-                                        x1: raw.0,
-                                        y1: raw.1,
-                                    });
-                                    (p.x0, p.y0)
-                                };
-                                let start = item
-                                    .path
-                                    .first()
-                                    .copied()
-                                    .map(point_on_page)
-                                    .unwrap_or((r.x0, r.y0));
-                                let end = item
-                                    .path
-                                    .get(1)
-                                    .copied()
-                                    .map(point_on_page)
-                                    .unwrap_or((r.x1, r.y1));
-                                path.move_to(at(start));
-                                path.line_to(at(end));
-                                if item.tool == Tool::Arrow {
-                                    let dx = (end.0 - start.0) * width;
-                                    let dy = (end.1 - start.1) * height;
-                                    let length = dx.hypot(dy).max(1.0);
-                                    let ux = dx / length;
-                                    let uy = dy / length;
-                                    let tip = at(end);
-                                    path.move_to(tip);
-                                    path.line_to(point(
-                                        tip.x - px(12.0 * ux - 5.0 * uy),
-                                        tip.y - px(12.0 * uy + 5.0 * ux),
-                                    ));
-                                    path.move_to(tip);
-                                    path.line_to(point(
-                                        tip.x - px(12.0 * ux + 5.0 * uy),
-                                        tip.y - px(12.0 * uy - 5.0 * ux),
-                                    ));
-                                }
-                            }
-                            Tool::Sketch | Tool::Signature => {
-                                for (n, &(x, y)) in item.path.iter().enumerate() {
-                                    let raw = if drawing == Some(*index) {
-                                        (x, y)
-                                    } else {
-                                        (
-                                            item.rect.x0 + x * (item.rect.x1 - item.rect.x0),
-                                            item.rect.y0 + y * (item.rect.y1 - item.rect.y0),
-                                        )
-                                    };
-                                    let p = rotation.apply_unit_rect(layout::UnitRect {
-                                        x0: raw.0,
-                                        y0: raw.1,
-                                        x1: raw.0,
-                                        y1: raw.1,
-                                    });
-                                    if n == 0 {
-                                        path.move_to(at((p.x0, p.y0)));
-                                    } else {
-                                        path.line_to(at((p.x0, p.y0)));
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
+        })
+        .collect();
+    elements.push(canvas_element(
+        width, height, draw_items, rotation, drawing, canvas, unit, per_unit,
+    ));
+    elements
+}
+
+#[allow(clippy::too_many_arguments)]
+fn canvas_element(
+    width: f32,
+    height: f32,
+    items: Vec<(usize, Annotation)>,
+    rotation: Rotation,
+    drawing: Option<usize>,
+    canvas_size: (f32, f32),
+    unit: f32,
+    per_unit: f32,
+) -> AnyElement {
+    gpui::canvas(
+        |_, _, _| (),
+        move |bounds, (), window, _| {
+            let origin = bounds.origin;
+            // A point on the unrotated canvas, to the screen.
+            let at = |p: (f32, f32)| {
+                let moved = rotation.apply_unit_rect(layout::UnitRect {
+                    x0: p.0 / canvas_size.0,
+                    y0: p.1 / canvas_size.1,
+                    x1: p.0 / canvas_size.0,
+                    y1: p.1 / canvas_size.1,
+                });
+                point(
+                    origin.x + px(moved.x0 * width),
+                    origin.y + px(moved.y0 * height),
+                )
+            };
+            for (index, item) in &items {
+                if matches!(
+                    item.tool,
+                    Tool::Highlight
+                        | Tool::Underline
+                        | Tool::StrikeThrough
+                        | Tool::Select
+                        | Tool::Text
+                ) {
+                    continue;
+                }
+                let absolute = drawing == Some(*index)
+                    && matches!(
+                        item.tool,
+                        Tool::Line | Tool::Arrow | Tool::Sketch | Tool::Signature
+                    );
+                for outline in rmac_preview::shapes::outlines(item, canvas_size, unit, absolute) {
+                    let points: Vec<_> = outline.points.iter().map(|&p| at(p)).collect();
+                    if points.len() < 2 {
+                        continue;
+                    }
+                    if let Some((colour, alpha)) = outline.fill {
+                        let mut path = PathBuilder::fill();
+                        path.add_polygon(&points, true);
                         if let Ok(path) = path.build() {
-                            window.paint_path(path, rgb(item.color));
+                            window.paint_path(
+                                path,
+                                rgba((colour << 8) | (alpha.clamp(0.0, 1.0) * 255.0) as u32),
+                            );
                         }
                     }
-                },
-            )
-            .absolute()
-            .left_0()
-            .top_0()
-            .w(px(rect.width))
-            .h(px(rect.height)),
-        )
-        .into_any_element()
+                    if let Some((colour, line)) = outline.stroke {
+                        let mut path = PathBuilder::stroke(px((line * per_unit).max(1.0)));
+                        path.add_polygon(&points, outline.closed);
+                        if let Ok(path) = path.build() {
+                            window.paint_path(path, rgb(colour));
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .absolute()
+    .left_0()
+    .top_0()
+    .w(px(width))
+    .h(px(height))
+    .into_any_element()
 }
 
 impl Render for PreviewView {
@@ -7783,10 +7989,10 @@ impl Render for PreviewView {
                     cx,
                 );
             }
+            let picture = self
+                .slot()
+                .is_some_and(|slot| matches!(slot.kind(), Some(Kind::Image(_))));
             for action in [
-                "preview::AnnotateHighlight",
-                "preview::AnnotateUnderline",
-                "preview::AnnotateStrikeThrough",
                 "preview::AnnotateRectangle",
                 "preview::AnnotateSignature",
                 "preview::AnnotateArrow",
@@ -7798,6 +8004,13 @@ impl Render for PreviewView {
                 "preview::AnnotateSpeechBubble",
                 "preview::AnnotateMask",
                 "preview::AnnotateNote",
+            ] {
+                rmac_ui::set_menu_enabled(action, pdf || picture, cx);
+            }
+            for action in [
+                "preview::AnnotateHighlight",
+                "preview::AnnotateUnderline",
+                "preview::AnnotateStrikeThrough",
                 "preview::ShowTableOfContents",
                 "preview::ShowHighlightsAndNotes",
                 "preview::ContinuousScroll",
@@ -8081,7 +8294,7 @@ impl Render for PreviewView {
                 this.choose_annotation(Tool::Rectangle, cx);
             }))
             .on_action(cx.listener(|this, _: &AnnotateSignature, _, cx| {
-                if this.slot().and_then(Slot::kind) == Some(Kind::Pdf) {
+                if this.slot().is_some_and(|slot| slot.loaded().is_some()) {
                     this.choose_signature(cx);
                     this.markup_shown = true;
                 }

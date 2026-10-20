@@ -83,9 +83,31 @@ pub fn hand_angles(time: WallTime) -> (f32, f32, f32) {
     (hours * 30.0, minutes * 6.0, seconds * 6.0)
 }
 
+/// The second hand's angle while it sweeps (CLOCK-10): the whole seconds'
+/// angle plus the part of the way to the next one that `now_millis` is.
+pub fn swept_second_angle(time: WallTime, now_millis: u64) -> f32 {
+    let (_, _, whole) = hand_angles(time);
+    whole + (now_millis % 1000) as f32 / 1000.0 * 6.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_second_hand_sweeps_between_whole_seconds() {
+        let time = WallTime {
+            days: 0,
+            hour: 3,
+            minute: 15,
+            second: 15,
+        };
+        assert_eq!(swept_second_angle(time, 1_000_000), 90.0);
+        assert!((swept_second_angle(time, 1_000_500) - 93.0).abs() < 1e-4);
+        // Just before the next second it is nearly there, never past it.
+        let almost = swept_second_angle(time, 1_000_999);
+        assert!(almost > 95.9 && almost < 96.0);
+    }
 
     #[test]
     fn wall_time_and_weekday() {

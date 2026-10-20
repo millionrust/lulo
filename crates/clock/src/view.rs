@@ -1104,11 +1104,7 @@ impl ClockView {
                         m::FACE_TOP + m::FACE_DIAMETER / 2.0,
                         m::FACE_DIAMETER,
                         wall,
-                        if second_hand_sweeps() {
-                            (now % 1000) as f32 / 1000.0
-                        } else {
-                            0.0
-                        },
+                        second_hand_sweeps().then_some(now),
                         sun.is_day(city.latitude, city.longitude),
                     ))
                     .children(lines.into_iter().enumerate().map(|(line, (text, color))| {
@@ -2238,7 +2234,7 @@ fn clock_face(
     center_y: f32,
     diameter: f32,
     time: WallTime,
-    second_fraction: f32,
+    sweep_at: Option<u64>,
     is_day: bool,
 ) -> impl IntoElement {
     let radius = diameter / 2.0;
@@ -2265,8 +2261,8 @@ fn clock_face(
             .child(hour.to_string())
     });
     let (hour, minute, second) = format::hand_angles(time);
-    // The second hand sweeps between whole seconds.
-    let second = second + second_fraction * 6.0;
+    // The second hand sweeps between whole seconds while it is animated.
+    let second = sweep_at.map_or(second, |now| format::swept_second_angle(time, now));
     div()
         .absolute()
         .top_0()

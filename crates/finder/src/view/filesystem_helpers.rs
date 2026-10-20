@@ -393,7 +393,7 @@ pub(super) fn where_breadcrumb(path: &Path) -> String {
     for component in path.components() {
         match component {
             Component::RootDir if parts.is_empty() => {
-                parts.push(crate::places::root_volume_name().to_owned())
+                parts.push(rmac_finder::places::root_volume_name().to_owned())
             }
             Component::RootDir | Component::CurDir => {}
             Component::Prefix(prefix) => {
@@ -628,15 +628,14 @@ mod helper_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod where_tests {
     use super::where_breadcrumb;
     use std::path::Path;
 
-    #[cfg(unix)]
     #[test]
     fn where_is_a_breadcrumb_from_the_volume() {
-        let root = crate::places::root_volume_name();
+        let root = rmac_finder::places::root_volume_name();
         assert_eq!(
             where_breadcrumb(Path::new("/home/jake/Documents")),
             format!("{root} ▸ home ▸ jake ▸ Documents")

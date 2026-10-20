@@ -44,9 +44,11 @@ pub struct Modules {
     /// Of the Wi-Fi and Bluetooth pills, how many this PC has no radio for
     /// (ADR 0027): 0 shows both, 2 neither.
     pub hidden_pills: usize,
-    /// A Miracast sender (GNOME Network Displays) is installed, so the
-    /// Screen Mirroring pill is shown (CC-06).
-    pub mirroring: bool,
+    /// The round controls shown, two to a half-width slot in macOS 26's
+    /// order (CC-06/CC-07): Low Power when power-profiles-daemon offers it,
+    /// Screen Mirroring when a Miracast sender is installed, Dark Mode and
+    /// Screenshot.
+    pub circles: usize,
 }
 
 /// A half-width slot of the upper grid: the left or right two columns of a
@@ -59,15 +61,23 @@ pub struct Slot {
 
 impl Modules {
     /// The half-width modules in reading order: the radio pills shown, the
-    /// Low Power and Screenshot circles (one slot), the Focus pill, and
-    /// Screen Mirroring when a sender is installed.
+    /// round controls two to a slot, then the Focus pill.
     pub const fn half_modules(self) -> usize {
         let hidden = if self.hidden_pills > 2 {
             2
         } else {
             self.hidden_pills
         };
-        4 - hidden + if self.mirroring { 1 } else { 0 }
+        3 - hidden + self.circle_slots()
+    }
+
+    /// Half-width slots the round controls fill, two to a slot.
+    pub const fn circle_slots(self) -> usize {
+        if self.circles == 0 {
+            1
+        } else {
+            self.circles.div_ceil(2)
+        }
     }
 
     /// Where the `index`th half-width module goes. Beside Now Playing only
@@ -154,7 +164,7 @@ pub const MIN_SURFACE_HEIGHT: f64 = Modules {
     display: false,
     banners: 0,
     hidden_pills: 0,
-    mirroring: false,
+    circles: 2,
 }
 .surface_height();
 
@@ -164,7 +174,7 @@ pub const MAX_SURFACE_HEIGHT: f64 = Modules {
     display: true,
     banners: MAX_BANNERS,
     hidden_pills: 0,
-    mirroring: true,
+    circles: 4,
 }
 .surface_height();
 
@@ -230,7 +240,7 @@ mod tests {
             display: true,
             banners: 0,
             hidden_pills: 0,
-            mirroring: false,
+            circles: 2,
         };
         assert_eq!(full.rows(), 5);
         assert_eq!(full.content_height(), 5.0 * 64.0 + 4.0 * 12.0);
@@ -282,7 +292,7 @@ mod tests {
         // One radio: the circles move up beside Now Playing, Focus below.
         let one = Modules {
             hidden_pills: 1,
-            mirroring: false,
+            circles: 2,
             ..both
         };
         assert_eq!(one.half_modules(), 3);
@@ -298,7 +308,7 @@ mod tests {
         // Playing, one row shorter.
         let none = Modules {
             hidden_pills: 2,
-            mirroring: false,
+            circles: 2,
             display: true,
             ..both
         };
@@ -309,7 +319,7 @@ mod tests {
             both.surface_height()
                 - Modules {
                     hidden_pills: 2,
-                    mirroring: false,
+                    circles: 2,
                     ..both
                 }
                 .surface_height(),
@@ -366,20 +376,20 @@ mod tests {
     }
 
     #[test]
-    fn screen_mirroring_takes_the_next_half_slot() {
+    fn more_round_controls_take_another_slot() {
         let without = Modules {
             now_playing: true,
             display: true,
             banners: 0,
             hidden_pills: 0,
-            mirroring: false,
+            circles: 2,
         };
         let with = Modules {
-            mirroring: true,
+            circles: 3,
             ..without
         };
         assert_eq!(with.half_modules(), without.half_modules() + 1);
-        // Screen Mirroring follows Focus, starting a new row.
+        // Three circles take two slots; Focus moves to the next row.
         assert_eq!(
             with.slot(4),
             Slot {

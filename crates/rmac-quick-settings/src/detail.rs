@@ -726,6 +726,8 @@ pub enum Module {
     Focus,
     /// Screen Mirroring (CC-06), when a Miracast sender is installed.
     ScreenMirroring,
+    /// The appearance circle (CC-07): Light or Dark.
+    DarkMode,
     Display,
     Sound,
 }

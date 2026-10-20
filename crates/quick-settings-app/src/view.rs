@@ -105,7 +105,6 @@ pub(crate) struct QuickSettingsView {
     pub(crate) wifi_toggle_focus: FocusHandle,
     pub(crate) bluetooth_toggle_focus: FocusHandle,
     pub(crate) focus_toggle_focus: FocusHandle,
-    pub(crate) mirroring_toggle_focus: FocusHandle,
     /// GNOME Network Displays is installed (CC-06).
     pub(crate) mirroring: bool,
     /// Real Tab stops for the Display and Sound module titles, which open
@@ -223,7 +222,10 @@ pub(crate) fn initial_surface_height(display: bool, hidden_pills: usize) -> f32 
         display,
         banners: 0,
         hidden_pills,
-        mirroring: mirroring_available(),
+        // Dark Mode and Screenshot always, Low Power on a battery PC (a
+        // guess until power-profiles-daemon answers), Screen Mirroring when
+        // its sender is installed.
+        circles: 2 + usize::from(hardware_now().battery) + usize::from(mirroring_available()),
     }
     .surface_height() as f32
 }
@@ -262,7 +264,6 @@ impl QuickSettingsView {
         let wifi_toggle_focus = cx.focus_handle();
         let bluetooth_toggle_focus = cx.focus_handle();
         let focus_toggle_focus = cx.focus_handle();
-        let mirroring_toggle_focus = cx.focus_handle();
         let display_title_focus = cx.focus_handle();
         let sound_title_focus = cx.focus_handle();
         focus.focus(window, cx);
@@ -370,7 +371,6 @@ impl QuickSettingsView {
             wifi_toggle_focus,
             bluetooth_toggle_focus,
             focus_toggle_focus,
-            mirroring_toggle_focus,
             mirroring: mirroring_available(),
             display_title_focus,
             sound_title_focus,
@@ -579,15 +579,8 @@ impl QuickSettingsView {
         if self.hardware.bluetooth {
             order.push(Module::Bluetooth);
         }
-        if rmac_quick_settings::layout::low_power_available(&view.power.value)
-            && view.power.available
-        {
-            order.push(Module::LowPower);
-        }
-        order.extend([Module::Screenshot, Module::Focus]);
-        if self.mirroring {
-            order.push(Module::ScreenMirroring);
-        }
+        order.extend(self.circle_modules());
+        order.push(Module::Focus);
         if self.brightness.is_some() {
             order.push(Module::Display);
         }
@@ -604,6 +597,7 @@ impl QuickSettingsView {
             Module::LowPower => self.toggle_low_power(cx),
             Module::Screenshot => self.screenshot(window, cx),
             Module::ScreenMirroring => self.open_screen_mirroring(cx),
+            Module::DarkMode => self.toggle_dark_mode(cx),
             Module::Focus => {
                 let focus = self.state.view().focus;
                 if focus.available && !focus.busy {
@@ -844,8 +838,25 @@ impl QuickSettingsView {
             display: self.brightness.is_some(),
             banners: self.banners().len(),
             hidden_pills: hidden_pills(&self.hardware),
-            mirroring: self.mirroring,
+            circles: self.circle_modules().len(),
         }
+    }
+
+    /// The round controls, in macOS 26's order: Low Power (Lulo's stand-in
+    /// for Stage Manager's place), Screen Mirroring, Dark Mode, Screenshot.
+    pub(crate) fn circle_modules(&self) -> Vec<Module> {
+        let view = self.state.view();
+        let mut circles = Vec::new();
+        if rmac_quick_settings::layout::low_power_available(&view.power.value)
+            && view.power.available
+        {
+            circles.push(Module::LowPower);
+        }
+        if self.mirroring {
+            circles.push(Module::ScreenMirroring);
+        }
+        circles.extend([Module::DarkMode, Module::Screenshot]);
+        circles
     }
 
     /// Screen Mirroring's circle: GNOME Network Displays finds Miracast
@@ -1322,7 +1333,7 @@ mod tests {
                     display,
                     banners: 0,
                     hidden_pills,
-                    mirroring: false,
+                    circles: 2,
                 };
                 assert_eq!(
                     initial_surface_height(display, hidden_pills),

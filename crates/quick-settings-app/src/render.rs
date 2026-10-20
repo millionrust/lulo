@@ -274,18 +274,14 @@ impl Render for QuickSettingsView {
                 children.push(self.pill_bluetooth(x, y, &view.bluetooth, cx));
                 index += 1;
             }
-            let (mut column, top) = place(index);
-            if layout::low_power_available(&view.power.value) && view.power.available {
-                children.push(self.low_power_circle(column, top, &view.power, cx));
-                column += PITCH;
+            // The round controls, two to a half slot (CC-06/CC-07).
+            for (position, module) in self.circle_modules().into_iter().enumerate() {
+                let (column, top) = place(index + position / 2);
+                let column = column + if position % 2 == 1 { PITCH } else { 0.0 };
+                children.push(self.round_control(module, column, top, cx));
             }
-            children.push(self.screenshot_circle(column, top, cx));
-            let (x, y) = place(index + 1);
+            let (x, y) = place(index + modules.circle_slots());
             children.push(self.pill_focus(x, y, &view.focus, cx));
-            if self.mirroring {
-                let (x, y) = place(index + 2);
-                children.push(self.pill_mirroring(x, y, cx));
-            }
             if let Some(level) = self.brightness {
                 children.push(self.display_module(row_top(modules.display_row()), level, cx));
             }
@@ -388,8 +384,8 @@ fn tile_rect(
         Detail::Display => (PADDING, top(modules.display_row()), GRID_WIDTH, CELL),
         Detail::Sound => (PADDING, top(modules.sound_row()), GRID_WIDTH, CELL),
         Detail::Focus => {
-            // The Focus pill follows the radios and the circles' slot.
-            let slot = modules.slot(radios + 1);
+            // The Focus pill follows the radios and the circles' slots.
+            let slot = modules.slot(radios + modules.circle_slots());
             let left = PADDING + if slot.right { PITCH * 2.0 } else { 0.0 };
             (left, top(slot.row), PILL_WIDTH, CELL)
         }

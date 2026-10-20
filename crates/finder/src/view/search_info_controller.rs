@@ -79,7 +79,9 @@ impl FinderView {
             let info_owner = owner.clone();
             let opened = cx.open_window(options, move |window, cx| {
                 rmac_ui::prepare_surface_window(window, cx);
-                let view = cx.new(|cx| InfoWindow::new(entry, thumbnail, info_owner, window, cx));
+                let view = cx.new(|cx| {
+                    super::info_window::InfoWindow::new(entry, thumbnail, info_owner, window, cx)
+                });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);
                 cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
@@ -127,7 +129,8 @@ impl FinderView {
         if q.is_empty() {
             return;
         }
-        let cwd = self.cwd.clone();
+        let cwd = search_scope::search_root(self.search_this_mac, &self.home, &self.cwd);
+        let kind = self.search_kind.unwrap_or(search_scope::SearchKind::Any);
         let title: SharedString = format!("Search: {}", sanitize_dialog_name(&q)).into();
         let include_hidden = self.show_hidden;
         let name_only = self.search_name_only;
@@ -149,6 +152,9 @@ impl FinderView {
                     let entries = paths
                         .into_iter()
                         .filter_map(|path| entry_for(&path))
+                        .filter(|entry| {
+                            kind.matches(&entry.path, entry.is_dir, entry.application.is_some())
+                        })
                         .collect::<Vec<_>>();
                     let count = entries.len();
                     return Ok((
@@ -158,13 +164,19 @@ impl FinderView {
                 }
                 let mut report = rmac_search::ranked(&cwd, &q, options)?;
                 let reported_matches = report.matches.len();
-                let entries = std::mem::take(&mut report.matches)
+                let found = std::mem::take(&mut report.matches)
                     .into_iter()
                     .filter_map(|search_match| search_entry_for(&cwd, search_match))
                     .collect::<Vec<_>>();
                 report.skipped_errors = report
                     .skipped_errors
-                    .saturating_add(reported_matches.saturating_sub(entries.len()));
+                    .saturating_add(reported_matches.saturating_sub(found.len()));
+                let entries = found
+                    .into_iter()
+                    .filter(|entry| {
+                        kind.matches(&entry.path, entry.is_dir, entry.application.is_some())
+                    })
+                    .collect::<Vec<_>>();
                 let summary = ranked_search_summary(&report, entries.len());
                 Ok::<_, rmac_search::Error>((entries, summary))
             })
@@ -310,14 +322,6 @@ pub(super) struct FolderSize {
     pub(super) incomplete: bool,
 }
 
-pub(super) fn info_details(entry: &Entry) -> Vec<(&'static str, String)> {
-    let mut details = file_info(entry);
-    if entry.is_dir {
-        details.insert(1, ("Size", "Calculating…".to_owned()));
-    }
-    details
-}
-
 /// Count one folder without following links or leaving its filesystem.
 /// Cancellation also stops a scan when its Info window closes or renames.
 pub(super) fn scan_folder_size(
@@ -428,19 +432,6 @@ pub(super) fn info_rows(
         .collect::<Vec<_>>()
 }
 
-/// A disclosure heading such as "General:".
-pub(super) fn info_section(title: &'static str) -> Div {
-    div()
-        .h(px(INFO_SECTION_HEADER))
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        .text_size(rmac_ui::text_px(INFO_SECTION_TEXT))
-        .text_color(label())
-        .child(icon("icons/chevron-down.svg", 10.0, secondary_text()))
-        .child(title)
-}
-
 /// One ruled section of an Info panel.
 pub(super) fn info_block() -> Div {
     div()
@@ -449,28 +440,6 @@ pub(super) fn info_block() -> Div {
         .pb(px(8.0))
         .border_t_1()
         .border_color(header_divider())
-}
-
-/// The General section: kind, size, location and dates.
-pub(super) fn info_general(details: &[(&'static str, String)]) -> Div {
-    info_block()
-        .child(info_section("General:"))
-        .children(info_rows(
-            details,
-            &["Kind", "Size", "Where", "Created", "Modified"],
-            INFO_LABEL_RIGHT - INFO_SECTION_INSET,
-        ))
-}
-
-/// The Sharing & Permissions section.
-pub(super) fn info_permissions(details: &[(&'static str, String)]) -> Div {
-    info_block()
-        .child(info_section("Sharing & Permissions:"))
-        .children(info_rows(
-            details,
-            &["Owner", "Group", "Permissions"],
-            INFO_PERMISSIONS_LABEL,
-        ))
 }
 
 /// An item's thumbnail when one exists, otherwise its folder or document
@@ -595,208 +564,6 @@ pub(super) fn info_body() -> Stateful<Div> {
         .v_flex()
 }
 
-struct InfoWindow {
-    entry: Entry,
-    details: Vec<(&'static str, String)>,
-    folder_scan_cancel: Option<Arc<AtomicBool>>,
-    thumbnail: Option<PathBuf>,
-    name_input: Option<gpui::Entity<InputState>>,
-    owner: gpui::WeakEntity<FinderView>,
-    focus: FocusHandle,
-}
-
-impl InfoWindow {
-    fn new(
-        entry: Entry,
-        thumbnail: Option<PathBuf>,
-        owner: gpui::WeakEntity<FinderView>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let title = format!("{} Info", entry.name);
-        window.set_window_title(&title);
-        let name_input = entry.application.is_none().then(|| {
-            let input =
-                cx.new(|cx| InputState::new(window, cx).default_value(entry.name.to_string()));
-            cx.subscribe_in(
-                &input,
-                window,
-                |this, input, event: &InputEvent, window, cx| {
-                    if let InputEvent::PressEnter { .. } = event {
-                        this.commit_name(input.clone(), window, cx);
-                    }
-                },
-            )
-            .detach();
-            input
-        });
-        let focus = cx.focus_handle();
-        let mut info = Self {
-            details: info_details(&entry),
-            entry,
-            folder_scan_cancel: None,
-            thumbnail,
-            name_input,
-            owner,
-            focus,
-        };
-        info.start_folder_scan(cx);
-        info
-    }
-
-    fn start_folder_scan(&mut self, cx: &mut Context<Self>) {
-        if let Some(cancel) = self.folder_scan_cancel.take() {
-            cancel.store(true, Ordering::Release);
-        }
-        if !self.entry.is_dir {
-            return;
-        }
-        let path = self.entry.path.clone();
-        let scanned_path = path.clone();
-        let cancel = Arc::new(AtomicBool::new(false));
-        let pending = cancel.clone();
-        self.folder_scan_cancel = Some(cancel.clone());
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let scanned =
-                cx.background_executor()
-                    .spawn(async move {
-                        scan_folder_size(&scanned_path, &cancel, MAX_FOLDER_INFO_ENTRIES)
-                    })
-                    .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.entry.path != path || pending.load(Ordering::Acquire) {
-                    return;
-                }
-                let Some((_, value)) = this.details.iter_mut().find(|(key, _)| *key == "Size")
-                else {
-                    return;
-                };
-                *value = scanned
-                    .map(format_folder_size)
-                    .unwrap_or_else(|| "Unavailable".to_owned());
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn commit_name(
-        &mut self,
-        input: gpui::Entity<InputState>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let path = self.entry.path.clone();
-        let new_name = input.read(cx).value().to_string();
-        let renamed = self
-            .owner
-            .update(cx, |owner, cx| owner.rename_path_to(&path, &new_name, cx));
-        match renamed {
-            Ok(Some((destination, completion))) => {
-                let window_handle = window.window_handle();
-                cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-                    if completion.recv().await != Ok(true) {
-                        return;
-                    }
-                    let _ = cx.update_window(window_handle, |_, window, cx| {
-                        let _ = this.update(cx, |this: &mut InfoWindow, cx| {
-                            if let Some(entry) = entry_for(&destination) {
-                                this.entry = entry;
-                                this.details = file_info(&this.entry);
-                                this.start_folder_scan(cx);
-                                let name = this.entry.name.clone();
-                                window.set_window_title(&format!("{name} Info"));
-                                input.update(cx, |state, cx| state.set_value(name, window, cx));
-                                cx.notify();
-                            }
-                        });
-                    });
-                })
-                .detach();
-            }
-            Err(_) => window.remove_window(),
-            Ok(None) => {}
-        }
-    }
-
-    /// Finder's information panel, hosted in its own resizable app window.
-    fn render_info(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let e = &self.entry;
-        let details = &self.details;
-        let title = format!("{} Info", e.name);
-        let header = info_header(
-            info_artwork(e, self.thumbnail.as_ref()),
-            e.name.clone(),
-            (!e.is_dir).then(|| e.size.clone()),
-            format!("Modified: {}", e.modified),
-        );
-
-        // Finder's Name & Extension field: edit and press Return to rename.
-        let name_field = self.name_input.as_ref().map(|input| {
-            info_block()
-                .id("info-name")
-                .role(Role::Group)
-                .aria_label("Name & Extension")
-                .child(info_section("Name & Extension:"))
-                .child(TextField::new(input).small())
-        });
-
-        let preview = self.thumbnail.as_ref().map(|thumbnail| {
-            info_block().child(info_section("Preview:")).child(
-                div()
-                    .h(px(INFO_PREVIEW_HEIGHT))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        img(thumbnail.clone())
-                            .max_w(gpui::relative(1.0))
-                            .max_h(px(INFO_PREVIEW_HEIGHT))
-                            .rounded(px(rmac_ui::mac::radius_control())),
-                    ),
-            )
-        });
-
-        let card = info_card(&title, &self.focus)
-            .child(info_title_strip(&title))
-            .child(
-                info_body()
-                    .child(header)
-                    .child(info_general(details))
-                    .children(name_field)
-                    .children(preview)
-                    .child(info_permissions(details)),
-            );
-
-        card.on_key_down(cx.listener(|_, event: &KeyDownEvent, window, cx| {
-            if event.keystroke.key.as_str() == "escape" {
-                cx.stop_propagation();
-                window.remove_window();
-            }
-        }))
-    }
-}
-
-impl Drop for InfoWindow {
-    fn drop(&mut self) {
-        if let Some(cancel) = &self.folder_scan_cancel {
-            cancel.store(true, Ordering::Release);
-        }
-    }
-}
-
-impl gpui::Focusable for InfoWindow {
-    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
-        self.focus.clone()
-    }
-}
-
-impl Render for InfoWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_info(cx)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -867,7 +634,7 @@ mod tests {
 
         let entry = entry_for(&root).unwrap();
         assert_eq!(
-            info_details(&entry)
+            super::super::info_window::info_details(&entry)
                 .iter()
                 .find(|(key, _)| *key == "Size")
                 .map(|(_, value)| value.as_str()),

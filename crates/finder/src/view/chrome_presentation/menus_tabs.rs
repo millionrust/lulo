@@ -128,6 +128,7 @@ impl FinderView {
         undo_label: Option<String>,
         tag_checks: [rmac_ui::MenuCheck; 7],
         file_words: rmac_locale::FileVocabulary,
+        quick_actions: bool,
     ) -> rmac_ui::ContextMenu {
         let has_selection = compress_label.is_some();
         let colors = rmac_ui::theme::current().colors;
@@ -246,6 +247,8 @@ impl FinderView {
             // batch rename instead), so a many-item menu omits it.
             if item_menu_offers_rename(selection_count) {
                 m = m.command_item("Rename", RENAME_KEY, Box::new(RenameItem));
+            } else if selection_count > 1 {
+                m = m.item(batch_rename_label(selection_count), Box::new(RenameItems));
             }
             if let Some(label) = compress_label {
                 m = m.item(label, Box::new(Compress));
@@ -299,8 +302,17 @@ impl FinderView {
                         },
                     ),
                 )
-                .separator()
-                .item("Quick Actions", Box::new(QuickActions));
+                .separator();
+            // Quick Actions lists what applies to the selection (Rotate Left
+            // for images); with nothing that applies, the row is greyed.
+            m = if quick_actions {
+                m.submenu(
+                    "Quick Actions",
+                    rmac_ui::ContextMenu::new(pos).item("Rotate Left", Box::new(RotateLeft)),
+                )
+            } else {
+                m.disabled_item("Quick Actions", Box::new(QuickActions))
+            };
         } else {
             m = m.command_item(
                 "New Folder",
@@ -509,6 +521,11 @@ impl FinderView {
     }
 }
 
+/// The batch rename's menu label for a multi-selection.
+pub(in crate::view) fn batch_rename_label(count: usize) -> String {
+    format!("Rename {count} Items…")
+}
+
 /// Finder's item menu lists Rename only for a single item; a
 /// multi-selection gets a batch rename there instead.
 fn item_menu_offers_rename(selection_count: usize) -> bool {
@@ -524,5 +541,6 @@ mod rename_menu_tests {
         assert!(item_menu_offers_rename(1));
         assert!(!item_menu_offers_rename(2));
         assert!(!item_menu_offers_rename(9));
+        assert_eq!(super::batch_rename_label(3), "Rename 3 Items…");
     }
 }

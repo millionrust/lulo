@@ -87,6 +87,17 @@ impl fmt::Display for CatalogError {
 impl std::error::Error for CatalogError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DefaultApplicationError;
+
+impl fmt::Display for DefaultApplicationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("the default application could not be changed")
+    }
+}
+
+impl std::error::Error for DefaultApplicationError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OpenWithError {
     /// The XDG default changed successfully before application startup failed.
     pub default_changed: bool,

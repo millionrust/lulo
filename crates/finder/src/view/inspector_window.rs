@@ -8,10 +8,12 @@
 //! Summary Info opens as its own fixed window: item counts, the total size
 //! counted recursively off the UI thread, and the modified-date range.
 
+use super::info_window::{
+    info_details, info_disclosure, info_general, info_permissions, InfoSection,
+};
 use super::search_info_controller::{
-    format_folder_size, info_artwork, info_block, info_body, info_card, info_details, info_general,
-    info_header, info_permissions, info_rows, info_section, info_title_strip, scan_folder_size,
-    FolderSize, MAX_FOLDER_INFO_ENTRIES,
+    format_folder_size, info_artwork, info_body, info_card, info_header, info_rows,
+    info_title_strip, scan_folder_size, FolderSize, MAX_FOLDER_INFO_ENTRIES,
 };
 use super::*;
 
@@ -388,15 +390,13 @@ impl InspectorWindow {
                         .map(|(_, value)| value.clone())
                         .unwrap_or_default(),
                 ))
-                .child(
-                    info_block()
-                        .child(info_section("General:"))
-                        .children(info_rows(
-                            details,
-                            &["Contains", "Size", "Where", "Modified"],
-                            INFO_LABEL_RIGHT - INFO_SECTION_INSET,
-                        )),
-                ),
+                .child(info_disclosure(InfoSection::General, || {
+                    info_rows(
+                        details,
+                        &["Contains", "Size", "Where", "Modified"],
+                        INFO_LABEL_RIGHT - INFO_SECTION_INSET,
+                    )
+                })),
         };
         info_card(&title, &self.focus)
             .child(info_title_strip(&title))

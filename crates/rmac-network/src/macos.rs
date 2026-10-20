@@ -44,6 +44,7 @@ impl WifiService for SystemWifiService {
             .map(|network| WifiSavedNetwork {
                 id: network.id.clone(),
                 ssid: network.ssid.clone(),
+                auto_join: None,
             })
             .collect();
         Ok(WifiSnapshot {

@@ -332,6 +332,59 @@ impl Settings {
                     supported.mouse_middle_emulation,
                 ],
             )));
+            // The Mac's Double-click speed and Scrolling speed sliders:
+            // niri's mouse scroll-factor on Lulo OS; Windows' wheel lines
+            // and double-click time.
+            let input = &self.input.settings;
+            let mut speeds = Vec::new();
+            if supported.double_click_time {
+                if let Some(ms) = input.double_click_ms {
+                    speeds.push(stepped_slider_row(
+                        "mouse-double-click",
+                        "Double-click speed",
+                        DOUBLE_CLICK_SPEEDS.len(),
+                        Some(nearest_numeric(&DOUBLE_CLICK_SPEEDS, f64::from(ms))),
+                        "Slow",
+                        "Fast",
+                        writable,
+                        input_pick(&view, &DOUBLE_CLICK_SPEEDS),
+                    ));
+                }
+            }
+            if supported.mouse_scroll_factor {
+                speeds.push(stepped_slider_row(
+                    "mouse-scroll-speed",
+                    "Scrolling speed",
+                    MOUSE_SCROLL_FACTORS.len(),
+                    Some(nearest_numeric(
+                        &MOUSE_SCROLL_FACTORS,
+                        input.mouse_scroll_factor,
+                    )),
+                    "Slow",
+                    "Fast",
+                    writable,
+                    input_pick(&view, &MOUSE_SCROLL_FACTORS),
+                ));
+            } else if supported.wheel_scroll_lines {
+                if let Some(lines) = input
+                    .wheel_scroll_lines
+                    .filter(|lines| *lines != rmac_input::WHEEL_SCROLL_PAGE)
+                {
+                    speeds.push(stepped_slider_row(
+                        "mouse-scroll-speed",
+                        "Scrolling speed",
+                        WHEEL_SCROLL_LINES.len(),
+                        Some(nearest_numeric(&WHEEL_SCROLL_LINES, f64::from(lines))),
+                        "Slow",
+                        "Fast",
+                        writable,
+                        input_pick(&view, &WHEEL_SCROLL_LINES),
+                    ));
+                }
+            }
+            if !speeds.is_empty() {
+                cards.push(card(speeds));
+            }
         }
         if self.hardware.has_pointing_stick
             && (supported.trackpoint || self.hardware.pointing_stick_uses_mouse)

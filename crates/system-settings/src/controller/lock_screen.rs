@@ -103,6 +103,33 @@ impl Settings {
         .detach();
     }
 
+    /// Lock Screen ▸ Turn display off on battery / on power adapter when
+    /// inactive.
+    pub(super) fn set_display_off(
+        &mut self,
+        on_battery: bool,
+        seconds: Option<u32>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.lock_policy_loading || self.lock_policy_busy {
+            return;
+        }
+        self.lock_policy_busy = true;
+        self.lock_policy_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                rmac_shortcuts::lock_settings::set_display_off(on_battery, seconds)
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_lock_policy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn request_lock_screen(&mut self, cx: &mut Context<Self>) {
         if self.lock_request_busy {
             return;

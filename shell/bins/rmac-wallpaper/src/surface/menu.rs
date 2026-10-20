@@ -255,7 +255,9 @@ pub(crate) fn submenu_rows(
             ("Snap to Grid", Arrangement::SnapToGrid, 0),
             ("Name", Arrangement::Name, 1),
             ("Kind", Arrangement::Kind, 1),
+            ("Date Added", Arrangement::DateAdded, 1),
             ("Date Modified", Arrangement::DateModified, 1),
+            ("Date Created", Arrangement::DateCreated, 1),
             ("Size", Arrangement::Size, 1),
         ]
         .into_iter()

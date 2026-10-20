@@ -107,6 +107,11 @@ pub(crate) struct QuickSettingsView {
     pub(crate) focus_toggle_focus: FocusHandle,
     /// GNOME Network Displays is installed (CC-06).
     pub(crate) mirroring: bool,
+    /// Round controls Edit Controls took out (CC-03), from shell settings.
+    pub(crate) hidden_controls: Vec<String>,
+    /// Edit Controls is open: each control shows − to remove it, and the
+    /// removed ones wait under the grid with + (CC-03).
+    pub(crate) editing: bool,
     /// Real Tab stops for the Display and Sound module titles, which open
     /// their detail views.
     pub(crate) display_title_focus: FocusHandle,
@@ -222,6 +227,7 @@ pub(crate) fn initial_surface_height(display: bool, hidden_pills: usize) -> f32 
         display,
         banners: 0,
         hidden_pills,
+        edit_rows: 1,
         // Dark Mode and Screenshot always, Low Power on a battery PC (a
         // guess until power-profiles-daemon answers), Screen Mirroring when
         // its sender is installed.
@@ -372,6 +378,8 @@ impl QuickSettingsView {
             bluetooth_toggle_focus,
             focus_toggle_focus,
             mirroring: mirroring_available(),
+            hidden_controls: Vec::new(),
+            editing: false,
             display_title_focus,
             sound_title_focus,
             dark_mode_override: None,
@@ -838,13 +846,95 @@ impl QuickSettingsView {
             display: self.brightness.is_some(),
             banners: self.banners().len(),
             hidden_pills: hidden_pills(&self.hardware),
+            // The Edit Controls pill, and while editing a row of the
+            // controls taken out.
+            edit_rows: 1 + usize::from(self.editing && !self.removed_circles().is_empty()),
             circles: self.circle_modules().len(),
         }
     }
 
-    /// The round controls, in macOS 26's order: Low Power (Lulo's stand-in
-    /// for Stage Manager's place), Screen Mirroring, Dark Mode, Screenshot.
+    /// The round controls shown, in macOS 26's order, less those Edit
+    /// Controls took out.
     pub(crate) fn circle_modules(&self) -> Vec<Module> {
+        self.available_circles()
+            .into_iter()
+            .filter(|module| {
+                module
+                    .control_name()
+                    .is_none_or(|name| !self.hidden_controls.iter().any(|hidden| hidden == name))
+            })
+            .collect()
+    }
+
+    /// Round controls Edit Controls took out that this PC could show.
+    pub(crate) fn removed_circles(&self) -> Vec<Module> {
+        let shown = self.circle_modules();
+        self.available_circles()
+            .into_iter()
+            .filter(|module| !shown.contains(module))
+            .collect()
+    }
+
+    /// Edit Controls (CC-03): open or close editing.
+    pub(crate) fn toggle_editing(&mut self, cx: &mut Context<Self>) {
+        self.editing = !self.editing;
+        cx.notify();
+    }
+
+    /// Remove (`shown == false`) or add back a round control, saved in
+    /// shell settings off the UI thread.
+    pub(crate) fn set_control_shown(
+        &mut self,
+        module: Module,
+        shown: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(name) = module.control_name() else {
+            return;
+        };
+        self.hidden_controls.retain(|hidden| hidden != name);
+        if !shown {
+            self.hidden_controls.push(name.to_owned());
+        }
+        let hidden = self.hidden_controls.clone();
+        cx.notify();
+        blocking::unblock(move || {
+            let result =
+                rmac_shell_settings::ShellSettingsStore::from_environment().and_then(|store| {
+                    let mut settings = store.load()?.settings;
+                    settings.control_centre.hidden_controls = hidden;
+                    store.save(&settings)
+                });
+            if let Err(error) = result {
+                eprintln!("Control Centre could not save Edit Controls: {error}");
+            }
+        })
+        .detach();
+    }
+
+    /// Read which controls Edit Controls took out, off the UI thread.
+    pub(crate) fn load_hidden_controls(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let hidden = blocking::unblock(|| {
+                rmac_shell_settings::ShellSettingsStore::from_environment()
+                    .and_then(|store| store.load())
+                    .map(|snapshot| snapshot.settings.control_centre.hidden_controls)
+                    .unwrap_or_default()
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.hidden_controls != hidden {
+                    this.hidden_controls = hidden;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Every round control this PC can show, in macOS 26's order: Low Power
+    /// (in Stage Manager's place), Screen Mirroring, Dark Mode, Screenshot.
+    fn available_circles(&self) -> Vec<Module> {
         let view = self.state.view();
         let mut circles = Vec::new();
         if rmac_quick_settings::layout::low_power_available(&view.power.value)
@@ -1333,6 +1423,7 @@ mod tests {
                     display,
                     banners: 0,
                     hidden_pills,
+                    edit_rows: 1,
                     circles: 2,
                 };
                 assert_eq!(

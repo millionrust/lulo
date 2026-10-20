@@ -29,6 +29,9 @@ pub const SURFACE_RADIUS: f64 = PILL_RADIUS + PADDING;
 pub const SURFACE_WIDTH: f64 = GRID_WIDTH + PADDING * 2.0;
 /// One error banner above the grid; banners past the limit are not shown.
 pub const BANNER_HEIGHT: f64 = 40.0;
+/// The Edit Controls pill under Sound (S: macOS 26's capsule, 26 tall).
+pub const EDIT_PILL_HEIGHT: f64 = 26.0;
+pub const EDIT_PILL_WIDTH: f64 = 112.0;
 pub const MAX_BANNERS: usize = 3;
 
 /// Which optional modules the panel shows right now.
@@ -44,6 +47,9 @@ pub struct Modules {
     /// Of the Wi-Fi and Bluetooth pills, how many this PC has no radio for
     /// (ADR 0027): 0 shows both, 2 neither.
     pub hidden_pills: usize,
+    /// The Edit Controls area under Sound (CC-03): 0 none, 1 the pill, 2
+    /// the pill and, while editing, the controls taken out.
+    pub edit_rows: usize,
     /// The round controls shown, two to a half-width slot in macOS 26's
     /// order (CC-06/CC-07): Low Power when power-profiles-daemon offers it,
     /// Screen Mirroring when a Miracast sender is installed, Dark Mode and
@@ -122,7 +128,7 @@ impl Modules {
         self.upper_rows()
     }
 
-    /// The Sound row, the last.
+    /// The Sound row.
     pub const fn sound_row(self) -> usize {
         self.upper_rows() + if self.display { 1 } else { 0 }
     }
@@ -131,6 +137,23 @@ impl Modules {
     /// Playing, one or two more below it), Display when present, and Sound.
     pub const fn rows(self) -> usize {
         self.sound_row() + 1
+    }
+
+    /// Height of the Edit Controls area under Sound (CC-03): the pill, then
+    /// while editing a row of the controls taken out.
+    pub const fn edit_height(self) -> f64 {
+        let pill = if self.edit_rows >= 1 {
+            GAP + EDIT_PILL_HEIGHT
+        } else {
+            0.0
+        };
+        let removed = if self.edit_rows >= 2 { GAP + CELL } else { 0.0 };
+        pill + removed
+    }
+
+    /// Top of the Edit Controls pill inside the content box.
+    pub const fn edit_top(self) -> f64 {
+        self.row_top(self.sound_row()) + CELL + GAP
     }
 
     pub const fn banners_shown(self) -> usize {
@@ -149,7 +172,10 @@ impl Modules {
     /// Height of the banners and module rows, without the surface padding.
     pub const fn content_height(self) -> f64 {
         let rows = self.rows() as f64;
-        self.banners_shown() as f64 * (BANNER_HEIGHT + GAP) + rows * CELL + (rows - 1.0) * GAP
+        self.banners_shown() as f64 * (BANNER_HEIGHT + GAP)
+            + rows * CELL
+            + (rows - 1.0) * GAP
+            + self.edit_height()
     }
 
     /// Logical height of the layer surface that fits the modules exactly.
@@ -164,6 +190,7 @@ pub const MIN_SURFACE_HEIGHT: f64 = Modules {
     display: false,
     banners: 0,
     hidden_pills: 0,
+    edit_rows: 0,
     circles: 2,
 }
 .surface_height();
@@ -174,6 +201,7 @@ pub const MAX_SURFACE_HEIGHT: f64 = Modules {
     display: true,
     banners: MAX_BANNERS,
     hidden_pills: 0,
+    edit_rows: 2,
     circles: 4,
 }
 .surface_height();
@@ -240,6 +268,7 @@ mod tests {
             display: true,
             banners: 0,
             hidden_pills: 0,
+            edit_rows: 0,
             circles: 2,
         };
         assert_eq!(full.rows(), 5);
@@ -292,6 +321,7 @@ mod tests {
         // One radio: the circles move up beside Now Playing, Focus below.
         let one = Modules {
             hidden_pills: 1,
+            edit_rows: 0,
             circles: 2,
             ..both
         };
@@ -308,6 +338,7 @@ mod tests {
         // Playing, one row shorter.
         let none = Modules {
             hidden_pills: 2,
+            edit_rows: 0,
             circles: 2,
             display: true,
             ..both
@@ -319,6 +350,7 @@ mod tests {
             both.surface_height()
                 - Modules {
                     hidden_pills: 2,
+                    edit_rows: 0,
                     circles: 2,
                     ..both
                 }
@@ -382,6 +414,7 @@ mod tests {
             display: true,
             banners: 0,
             hidden_pills: 0,
+            edit_rows: 0,
             circles: 2,
         };
         let with = Modules {

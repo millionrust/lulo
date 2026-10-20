@@ -274,11 +274,15 @@ impl Render for QuickSettingsView {
                 children.push(self.pill_bluetooth(x, y, &view.bluetooth, cx));
                 index += 1;
             }
-            // The round controls, two to a half slot (CC-06/CC-07).
+            // The round controls, two to a half slot (CC-06/CC-07); while
+            // editing each shows − to take it out (CC-03).
             for (position, module) in self.circle_modules().into_iter().enumerate() {
                 let (column, top) = place(index + position / 2);
                 let column = column + if position % 2 == 1 { PITCH } else { 0.0 };
                 children.push(self.round_control(module, column, top, cx));
+                if self.editing {
+                    children.push(edit_badge(module, false, column, top, cx));
+                }
             }
             let (x, y) = place(index + modules.circle_slots());
             children.push(self.pill_focus(x, y, &view.focus, cx));
@@ -286,6 +290,18 @@ impl Render for QuickSettingsView {
                 children.push(self.display_module(row_top(modules.display_row()), level, cx));
             }
             children.push(self.sound_module(row_top(modules.sound_row()), &view.sound, cx));
+            // Edit Controls (CC-03): the pill, and while editing the
+            // controls taken out, each with + to add it back.
+            let edit_top = modules.edit_top() as f32;
+            children.push(edit_controls_pill(self.editing, edit_top, cx));
+            if self.editing {
+                let top = edit_top + layout::EDIT_PILL_HEIGHT as f32 + layout::GAP as f32;
+                for (position, module) in self.removed_circles().into_iter().enumerate() {
+                    let column = position as f32 * PITCH;
+                    children.push(self.round_control(module, column, top, cx));
+                    children.push(edit_badge(module, true, column, top, cx));
+                }
+            }
         }
         let content_height = if !grid_visible {
             (banner_block - PADDING).max(0.0)
@@ -390,6 +406,76 @@ fn tile_rect(
             (left, top(slot.row), PILL_WIDTH, CELL)
         }
     }
+}
+
+/// The Edit Controls pill under Sound, "Done" while editing (CC-03).
+fn edit_controls_pill(editing: bool, top: f32, cx: &Context<QuickSettingsView>) -> AnyElement {
+    let label = if editing { "Done" } else { "Edit Controls" };
+    let width = layout::EDIT_PILL_WIDTH as f32;
+    let height = layout::EDIT_PILL_HEIGHT as f32;
+    module((GRID_WIDTH - width) / 2.0, top, width, height, height / 2.0)
+        .child(
+            div()
+                .id("control-centre-edit-controls")
+                .role(Role::Button)
+                .aria_label(label)
+                .absolute()
+                .inset_0()
+                .rounded_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(rmac_ui::text_px(12.0))
+                .text_color(ink())
+                .on_click(cx.listener(|this, _: &gpui::ClickEvent, _, cx| this.toggle_editing(cx)))
+                .child(label),
+        )
+        .into_any_element()
+}
+
+/// The − (remove) or + (add back) badge on a round control while editing.
+fn edit_badge(
+    module: rmac_quick_settings::detail::Module,
+    add: bool,
+    x: f32,
+    y: f32,
+    cx: &Context<QuickSettingsView>,
+) -> AnyElement {
+    const BADGE: f32 = 20.0;
+    let label = format!(
+        "{} {}",
+        if add { "Add" } else { "Remove" },
+        module.control_label()
+    );
+    div()
+        .id(SharedString::from(format!(
+            "control-centre-edit-{}-{}",
+            if add { "add" } else { "remove" },
+            module.control_name().unwrap_or("control")
+        )))
+        .role(Role::Button)
+        .aria_label(label)
+        .absolute()
+        .left(px(x - 4.0))
+        .top(px(y - 4.0))
+        .size(px(BADGE))
+        .rounded_full()
+        .bg(mac::control_fill())
+        .border_1()
+        .border_color(module_rim())
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(rmac_ui::text_px(14.0))
+        .font_weight(mac::SEMIBOLD)
+        .text_color(ink())
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
+            cx.stop_propagation();
+            this.set_control_shown(module, add, cx);
+        }))
+        .child(if add { "+" } else { "\u{2212}" })
+        .into_any_element()
 }
 
 /// Track geometry inside a slider module: (left, width), measured.

@@ -733,6 +733,29 @@ pub enum Module {
 }
 
 impl Module {
+    /// The name Edit Controls stores a removable round control under
+    /// (CC-03); `None` for the fixed modules.
+    pub fn control_name(self) -> Option<&'static str> {
+        Some(match self {
+            Self::LowPower => "low-power",
+            Self::ScreenMirroring => "screen-mirroring",
+            Self::DarkMode => "dark-mode",
+            Self::Screenshot => "screenshot",
+            _ => return None,
+        })
+    }
+
+    /// The label Edit Controls shows for a removable control.
+    pub fn control_label(self) -> &'static str {
+        match self {
+            Self::LowPower => "Low Power Mode",
+            Self::ScreenMirroring => "Screen Mirroring",
+            Self::DarkMode => "Dark Mode",
+            Self::Screenshot => "Screenshot",
+            _ => "",
+        }
+    }
+
     /// The detail view Return opens, for the modules that have one.
     pub fn detail(self) -> Option<Detail> {
         match self {

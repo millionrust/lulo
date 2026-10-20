@@ -343,8 +343,11 @@ fn open_popover(
     let build = |window: &mut gpui::Window, cx: &mut App| {
         window.set_window_title("Quick Settings");
         rmac_ui::prepare_surface_window(window, cx);
-        let view =
-            cx.new(|cx| QuickSettingsView::new(token, previous_window, brightness, window, cx));
+        let view = cx.new(|cx| {
+            let mut view = QuickSettingsView::new(token, previous_window, brightness, window, cx);
+            view.load_hidden_controls(cx);
+            view
+        });
         popover = Some(view.downgrade());
         cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     };

@@ -24,12 +24,18 @@ in a nested niri, and this branch's `top-bar`, `dock` and `mission-control
 6. a bigger Dock (Desktop & Dock ▸ Size) moves a window that now sits under
    it back above it;
 7. Calculator, a Lulo app, opens where it put itself (the placer leaves
-   Lulo's own windows alone), when --bin-dir has rmac-calculator.
+   Lulo's own windows alone), when --bin-dir has rmac-calculator;
+8. the menu bar names a third-party app by its desktop entry's Name, found
+   by desktop ID and by `StartupWMClass`;
+9. ⌘W (niri reads Mod as Alt when nested) closes the frontmost third-party
+   window, and ⌘Q closes every window of a third-party app, through the
+   menu bar, without keyd;
+10. Zoom toggles: once fills the visible frame, again puts the window back.
 
 Isolation is run_lulo.py's: private dbus-run-session, HOME and
 XDG_RUNTIME_DIR, `wayland-0`/`wayland-1` held, nothing sent to the live
-session. No input is injected; windows are moved over the nested niri's own
-IPC socket.
+session. Windows are moved over the nested niri's own IPC socket; the ⌘Q/⌘W keys
+go only to this run's headless Sway, whose one window is niri (wlinput.py).
 """
 
 from __future__ import annotations
@@ -50,6 +56,7 @@ REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
 import run_lulo  # noqa: E402
+import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
 MENU_BAR = 29.0
@@ -74,6 +81,25 @@ def gtk4_window(app_id: str, title: str, maximize_after: float | None) -> int:
         if maximize_after is not None:
             # Exactly what the title bar's green (maximise) button does.
             GLib.timeout_add(int(maximize_after * 1000), lambda: window.maximize() and False)
+
+    app = Gtk.Application(application_id=app_id)
+    app.connect("activate", activate)
+    return app.run([])
+
+
+def gtk4_pair(app_id: str) -> int:
+    """Two ordinary windows of one app, for ⌘Q."""
+    import gi
+
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import Gtk
+
+    def activate(app):
+        for index in (1, 2):
+            window = Gtk.ApplicationWindow(application=app, title=f"Pair {index}")
+            window.set_default_size(500, 300)
+            window.set_child(Gtk.Label(label=f"Pair {index}"))
+            window.present()
 
     app = Gtk.Application(application_id=app_id)
     app.connect("activate", activate)
@@ -192,7 +218,9 @@ class Run:
         shell = (REPO / "packaging/rmac-session/shell.kdl").read_text(encoding="utf-8")
         config = self.out / "niri.kdl"
         config.write_text(shell.replace("/usr/libexec/rmac/rmac-mission-control", str(bins / "mission-control"))
+                          .replace("/usr/libexec/rmac/rmac-shortcut-dispatch", str(bins / "rmac-shortcut-dispatch"))
                           .replace("/usr/libexec/rmac/rmac-dock", str(bins / "dock")))
+        self.sway_display = sway_display
         validate = subprocess.run([self.args.niri, "validate", "-c", str(config)], env=self.env,
                                   capture_output=True, text=True)
         self.check("niri validate accepts shell.kdl", validate.returncode == 0,
@@ -210,6 +238,15 @@ class Run:
         self.env.update({"WAYLAND_DISPLAY": display, "NIRI_SOCKET": str(socket),
                          "RMAC_BEHAVIOR_NESTED": "1"})
         self.env.pop("DISPLAY", None)
+        # Desktop entries for the third-party apps: one by desktop ID, one
+        # claiming foot's windows through StartupWMClass.
+        applications = Path(self.env["XDG_DATA_HOME"]) / "applications"
+        applications.mkdir(parents=True, exist_ok=True)
+        (applications / "org.example.ForeignBig.desktop").write_text(
+            "[Desktop Entry]\nType=Application\nName=Foreign Big App\nExec=true\n")
+        (applications / "foreign-terminal.desktop").write_text(
+            "[Desktop Entry]\nType=Application\nName=Foreign Terminal\nExec=foot\n"
+            "StartupWMClass=org.example.ForeignFoot\n")
         gpu = {"VK_ICD_FILENAMES": LAVAPIPE}
         for name in ("top-bar", "dock"):
             if (bins / name).exists():
@@ -232,6 +269,12 @@ class Run:
         me = [sys.executable, str(Path(__file__).resolve())]
         gtk_env = {"GDK_BACKEND": "wayland", "GSK_RENDERER": "cairo"}
 
+        self.keys = wlinput.Wayland({**self.env, "WAYLAND_DISPLAY": self.sway_display,
+                                     "RMAC_BEHAVIOR_NESTED": "1"})
+
+        # The visible frame as the Dock changes below.
+        current_area = area
+
         # 1. GTK 4 at 4000 × 4000.
         gtk = self.spawn([*me, "--gtk4", "org.example.ForeignBig"], "gtk4", gtk_env)
         window = self.wait_for(lambda: self.window("org.example.ForeignBig"))
@@ -240,6 +283,8 @@ class Run:
         last = self.window("org.example.ForeignBig")
         self.check("a 4000 × 4000 GTK 4 window ends inside the visible frame", placed,
                    f"frame {self.frame(last) if last else None} visible {area}")
+        self.check("the menu bar names it by its desktop entry",
+                   self.wait_for(lambda: self.logged("top-bar", "org.example.ForeignBig is named Foreign Big App"), 10))
         gtk.terminate()
         gtk.wait(10)
 
@@ -254,6 +299,10 @@ class Run:
             self.check("a 4000 × 4000 foot window ends inside the visible frame", placed,
                        f"frame {self.frame(last) if last else None}")
             first = window["id"] if window else None
+            if first is not None:
+                self.action("focus-window", "--id", str(first))
+            self.check("the menu bar names foot's window by StartupWMClass",
+                       self.wait_for(lambda: self.logged("top-bar", "org.example.ForeignFoot is named Foreign Terminal"), 10))
         else:
             print("SKIP foot is not installed", flush=True)
             foot, first = None, None
@@ -329,15 +378,65 @@ class Run:
             self.check("the window sits just above the Dock", self.inside(before_dock, area), f"frame {before_dock}")
             self.set_dock_tile_size(128.0)
             big = self.visible(BIG_DOCK)
+            current_area = big
 
             def above_big_dock():
                 current = self.window_by_id(first)
                 return current if current and self.inside(self.frame(current), big) else None
             self.check("a bigger Dock moves the window above it", self.wait_for(above_big_dock, 15),
                        f"frame {self.frame(self.window_by_id(first))} visible {big}")
-        if foot is not None:
-            foot.terminate()
-            foot.wait(10)
+        # 9a. ⌘W closes the frontmost third-party window.
+        if foot is not None and first is not None:
+            self.action("focus-window", "--id", str(first))
+            time.sleep(1.0)
+            self.keys.key("alt-w")
+            self.check("⌘W closes a third-party window without keyd",
+                       self.wait_for(lambda: self.window_by_id(first) is None, 10))
+            self.check("closing its only window ends foot", self.wait_for(lambda: foot.poll() is not None, 10))
+            if foot.poll() is None:
+                foot.terminate()
+                foot.wait(10)
+
+        # 10 and 9b. Zoom toggles; ⌘Q closes every window of the app.
+        pair = self.spawn([*me, "--gtk4-pair", "org.example.ForeignPair"], "pair", gtk_env)
+        windows = self.wait_for(lambda: [w for w in self.niri("windows") or []
+                                         if w.get("app_id") == "org.example.ForeignPair"
+                                         and len([v for v in self.niri("windows") or []
+                                                  if v.get("app_id") == "org.example.ForeignPair"]) == 2], 20)
+        self.check("two windows of one third-party app mapped", windows)
+        if windows:
+            target = windows[0]["id"]
+            time.sleep(1.5)
+            self.action("focus-window", "--id", str(target))
+            time.sleep(0.5)
+            before = self.frame(self.window_by_id(target))
+            mission_control = str(Path(self.args.bin_dir) / "mission-control")
+            subprocess.run([mission_control, "zoom"], env=self.env, capture_output=True, timeout=10, check=False)
+
+            def filled():
+                current = self.window_by_id(target)
+                frame = self.frame(current) if current else None
+                return frame if frame and all(abs(a - b) <= SLACK for a, b in zip(frame, current_area)) else None
+            self.check("Zoom fills the visible frame", self.wait_for(filled, 10),
+                       f"frame {self.frame(self.window_by_id(target))} visible {current_area}")
+            subprocess.run([mission_control, "zoom"], env=self.env, capture_output=True, timeout=10, check=False)
+
+            def restored():
+                current = self.window_by_id(target)
+                frame = self.frame(current) if current else None
+                return frame if frame and all(abs(a - b) <= SLACK for a, b in zip(frame, before)) else None
+            self.check("Zoom again puts the window back", self.wait_for(restored, 10),
+                       f"frame {self.frame(self.window_by_id(target))} before {before}")
+            self.action("focus-window", "--id", str(target))
+            time.sleep(0.5)
+            self.keys.key("alt-q")
+            self.check("⌘Q closes every window of a third-party app without keyd",
+                       self.wait_for(lambda: not [w for w in self.niri("windows") or []
+                                                  if w.get("app_id") == "org.example.ForeignPair"], 10))
+            self.check("the app exits once its windows are closed", self.wait_for(lambda: pair.poll() is not None, 10))
+        if pair.poll() is None:
+            pair.terminate()
+            pair.wait(10)
 
         # 7. A Lulo app is left where it put itself.
         calculator = Path(self.args.bin_dir) / "rmac-calculator"
@@ -354,6 +453,10 @@ class Run:
             process.terminate()
             process.wait(10)
         return self.finish()
+
+    def logged(self, name: str, text: str) -> bool:
+        path = self.out / f"{name}.log"
+        return path.exists() and text in path.read_text(errors="replace")
 
     def set_dock_tile_size(self, size: float) -> None:
         """Desktop & Dock ▸ Size, through the shell settings document the
@@ -374,6 +477,10 @@ class Run:
         temporary.replace(path)
 
     def finish(self) -> int:
+        try:
+            self.keys.close()
+        except Exception:  # noqa: BLE001
+            pass
         for process in reversed(self.children):
             if process.poll() is None:
                 process.terminate()
@@ -425,12 +532,15 @@ def main() -> int:
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--gtk4", help=argparse.SUPPRESS)
     parser.add_argument("--gtk3", help=argparse.SUPPRESS)
+    parser.add_argument("--gtk4-pair", help=argparse.SUPPRESS)
     parser.add_argument("--maximize-after", type=float, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.gtk4:
         return gtk4_window(args.gtk4, args.gtk4.rsplit(".", 1)[-1], args.maximize_after)
     if args.gtk3:
         return gtk3_window(args.gtk3)
+    if args.gtk4_pair:
+        return gtk4_pair(args.gtk4_pair)
     if not args.bin_dir:
         parser.error("--bin-dir is required")
     if args.inner:

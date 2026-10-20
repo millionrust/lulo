@@ -344,6 +344,22 @@ impl Render for NotePane {
                 .role(Role::TextInput)
                 .aria_label("Title")
                 .accessible_text_input(&self.title, cx)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    let modifiers = event.keystroke.modifiers;
+                    if event.keystroke.key != "tab"
+                        || modifiers.shift
+                        || modifiers.control
+                        || modifiers.alt
+                        || modifiers.platform
+                        || !this.title.read(cx).focus_handle(cx).is_focused(window)
+                    {
+                        return;
+                    }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    let focus = gpui::Focusable::focus_handle(this.body.read(cx), cx);
+                    window.focus(&focus, cx);
+                }))
                 .flex_none()
                 .px(px(EDITOR_INSET))
                 .pt(px(TITLE_TOP))

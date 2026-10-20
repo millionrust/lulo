@@ -321,6 +321,23 @@ impl NotesView {
                     .role(Role::TextInput)
                     .aria_label("Title")
                     .accessible_text_input(&self.title, cx)
+                    // Tab in the title goes on into the body, as the Mac's
+                    // single text view does.
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        let modifiers = event.keystroke.modifiers;
+                        if event.keystroke.key != "tab"
+                            || modifiers.shift
+                            || modifiers.control
+                            || modifiers.alt
+                            || modifiers.platform
+                            || !this.title.read(cx).focus_handle(cx).is_focused(window)
+                        {
+                            return;
+                        }
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        this.focus_body(window, cx);
+                    }))
                     .on_a11y_action(
                         AccessibleAction::SetValue,
                         self.assistive_title_listener(cx),

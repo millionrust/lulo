@@ -1,0 +1,302 @@
+Description: Window ▸ Always on Top: keep a floating window above the others
+ niri stacks floating windows by when they were last raised and cannot pin
+ one. This adds the IPC action `set-window-always-on-top --id N --on true`
+ (`niri msg action set-window-always-on-top`, no key bind) and
+ `Window.is_always_on_top` on the IPC window, which the event stream
+ re-sends when it changes. In the floating layout, pinned windows keep the
+ front of the stack in pinning order: opening or activating any other
+ window raises it only as far as the first window that is not pinned. A
+ tiled window is made floating first. Lulo OS's menu bar uses it for
+ Calculator's Window ▸ Always on Top (CALC-08).
+ .
+ See docs/decisions/0029-niri-always-on-top.md in the rmac repository.
+Author: Jacob Samas <samasjacob@icloud.com>
+Forwarded: no
+Last-Update: 2026-10-20
+---
+--- a/niri-config/src/binds.rs
++++ b/niri-config/src/binds.rs
+@@ -334,6 +334,8 @@
+     ToggleWindowFloating,
+     #[knuffel(skip)]
+     ToggleWindowFloatingById(u64),
++    #[knuffel(skip)]
++    SetWindowAlwaysOnTop(Option<u64>, bool),
+     MoveWindowToFloating,
+     #[knuffel(skip)]
+     MoveWindowToFloatingById(u64),
+@@ -665,6 +667,7 @@
+             niri_ipc::Action::ToggleWindowFloating { id: Some(id) } => {
+                 Self::ToggleWindowFloatingById(id)
+             }
++            niri_ipc::Action::SetWindowAlwaysOnTop { id, on } => Self::SetWindowAlwaysOnTop(id, on),
+             niri_ipc::Action::MoveWindowToFloating { id: None } => Self::MoveWindowToFloating,
+             niri_ipc::Action::MoveWindowToFloating { id: Some(id) } => {
+                 Self::MoveWindowToFloatingById(id)
+--- a/niri-ipc/src/lib.rs
++++ b/niri-ipc/src/lib.rs
+@@ -815,6 +815,19 @@
+         #[cfg_attr(feature = "clap", arg(long))]
+         id: Option<u64>,
+     },
++    /// Keep a floating window above every other window (Lulo OS "Always on Top").
++    ///
++    /// A tiled window is moved to the floating layout first.
++    SetWindowAlwaysOnTop {
++        /// Id of the window.
++        ///
++        /// If `None`, uses the focused window.
++        #[cfg_attr(feature = "clap", arg(long))]
++        id: Option<u64>,
++        /// Whether the window stays on top.
++        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
++        on: bool,
++    },
+     /// Move the focused window to the floating layout.
+     MoveWindowToFloating {
+         /// Id of the window to move.
+@@ -1324,6 +1337,9 @@
+     pub is_floating: bool,
+     /// Whether this window requests your attention.
+     pub is_urgent: bool,
++    /// Whether this floating window stays above the other windows (Lulo OS).
++    #[serde(default)]
++    pub is_always_on_top: bool,
+     /// Position- and size-related properties of the window.
+     pub layout: WindowLayout,
+     /// Timestamp when the window was most recently focused.
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -2211,6 +2211,22 @@
+                     self.niri.queue_redraw_all();
+                 }
+             }
++            Action::SetWindowAlwaysOnTop(id, on) => {
++                let window = id.and_then(|id| {
++                    self.niri
++                        .layout
++                        .windows()
++                        .find(|(_, m)| m.id().get() == id)
++                        .map(|(_, m)| m.window.clone())
++                });
++                if id.is_none() || window.is_some() {
++                    self.niri
++                        .layout
++                        .set_window_always_on_top(window.as_ref(), on);
++                    // FIXME: granular
++                    self.niri.queue_redraw_all();
++                }
++            }
+             Action::MoveWindowToFloating => {
+                 self.niri.layout.set_window_floating(None, true);
+                 // FIXME: granular
+--- a/src/ipc/server.rs
++++ b/src/ipc/server.rs
+@@ -526,6 +526,7 @@
+         is_focused: mapped.is_focused(),
+         is_floating: mapped.is_floating(),
+         is_urgent: mapped.is_urgent(),
++        is_always_on_top: mapped.is_always_on_top(),
+         layout,
+         focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
+     })
+@@ -718,8 +719,9 @@
+             };
+ 
+             let workspace_id = ws_id.map(|id| id.get());
+-            let mut changed =
+-                ipc_win.workspace_id != workspace_id || ipc_win.is_floating != mapped.is_floating();
++            let mut changed = ipc_win.workspace_id != workspace_id
++                || ipc_win.is_floating != mapped.is_floating()
++                || ipc_win.is_always_on_top != mapped.is_always_on_top();
+ 
+             changed |= with_toplevel_role(mapped.toplevel(), |role| {
+                 ipc_win.title != role.title || ipc_win.app_id != role.app_id
+--- a/src/layout/floating.rs
++++ b/src/layout/floating.rs
+@@ -433,6 +433,9 @@
+ 
+         win.request_size_once(size, true);
+ 
++        // Lulo OS: windows set to stay on top keep the front of the stack.
++        let on_top = win.is_always_on_top();
++
+         if activate || self.tiles.is_empty() {
+             self.active_window_id = Some(win.id().clone());
+         }
+@@ -445,6 +448,10 @@
+             }
+         }
+ 
++        if !on_top {
++            idx = idx.max(self.pinned_count());
++        }
++
+         let pos = self.stored_or_default_tile_pos(&tile).unwrap_or_else(|| {
+             center_preferring_top_left_in_area(self.working_area, tile.tile_size())
+         });
+@@ -575,13 +582,55 @@
+             return false;
+         };
+ 
+-        self.raise_window(idx, 0);
++        // A window that stays on top rises to the very front; any other only
++        // as far as the first window that does not.
++        let to = if self.tiles[idx].window().is_always_on_top() {
++            0
++        } else {
++            self.pinned_count().min(idx)
++        };
++        self.raise_window(idx, to);
+         self.active_window_id = Some(id.clone());
+-        self.bring_up_descendants_of(0);
++        self.bring_up_descendants_of(to);
+ 
+         true
+     }
+ 
++    /// How many windows at the front of the stack stay on top (Lulo OS).
++    fn pinned_count(&self) -> usize {
++        self.tiles
++            .iter()
++            .take_while(|tile| tile.window().is_always_on_top())
++            .count()
++    }
++
++    /// Lulo OS "Always on Top": pin a window to the front of the stack, or
++    /// release it to just below the windows that stay pinned.
++    pub fn set_window_always_on_top(&mut self, id: Option<&W::Id>, on: bool) {
++        let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
++            return;
++        };
++        let Some(idx) = self.idx_of(&id) else {
++            return;
++        };
++        if self.tiles[idx].window().is_always_on_top() == on {
++            return;
++        }
++        self.tiles[idx].window_mut().set_always_on_top(on);
++        let to = if on {
++            self.raise_window(idx, 0);
++            0
++        } else {
++            let tile = self.tiles.remove(idx);
++            let data = self.data.remove(idx);
++            let at = self.pinned_count();
++            self.tiles.insert(at, tile);
++            self.data.insert(at, data);
++            at
++        };
++        self.bring_up_descendants_of(to);
++    }
++
+     fn raise_window(&mut self, from_idx: usize, to_idx: usize) {
+         assert!(to_idx <= from_idx);
+ 
+--- a/src/layout/mod.rs
++++ b/src/layout/mod.rs
+@@ -241,6 +241,11 @@
+     fn set_activated(&mut self, active: bool);
+     fn set_active_in_column(&mut self, active: bool);
+     fn set_floating(&mut self, floating: bool);
++    /// Whether the window stays above the other floating windows (Lulo OS).
++    fn is_always_on_top(&self) -> bool {
++        false
++    }
++    fn set_always_on_top(&mut self, _on: bool) {}
+     fn set_bounds(&self, bounds: Size<i32, Logical>);
+     fn is_ignoring_opacity_window_rule(&self) -> bool;
+ 
+@@ -3192,6 +3197,19 @@
+         workspace.toggle_window_floating(window);
+     }
+ 
++    /// Lulo OS "Always on Top": keep a window above every other window.
++    pub fn set_window_always_on_top(&mut self, window: Option<&W::Id>, on: bool) {
++        let workspace = if let Some(window) = window {
++            self.workspaces_mut().find(|ws| ws.has_window(window))
++        } else {
++            self.active_workspace_mut()
++        };
++        let Some(workspace) = workspace else {
++            return;
++        };
++        workspace.set_window_always_on_top(window, on);
++    }
++
+     pub fn set_window_floating(&mut self, window: Option<&W::Id>, floating: bool) {
+         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+             if window.is_none() || window == Some(move_.tile.window().id()) {
+--- a/src/layout/workspace.rs
++++ b/src/layout/workspace.rs
+@@ -1445,6 +1445,24 @@
+         tile.animate_move_from(render_pos - new_render_pos);
+     }
+ 
++    /// Lulo OS "Always on Top". Only floating windows stack, so a tiled
++    /// window is moved to the floating layout first.
++    pub fn set_window_always_on_top(&mut self, id: Option<&W::Id>, on: bool) {
++        let target = id
++            .cloned()
++            .or_else(|| self.active_window().map(|win| win.id().clone()));
++        let Some(target) = target else {
++            return;
++        };
++        if !self.floating.has_window(&target) {
++            if !on {
++                return;
++            }
++            self.set_window_floating(Some(&target), true);
++        }
++        self.floating.set_window_always_on_top(Some(&target), on);
++    }
++
+     pub fn set_window_floating(&mut self, id: Option<&W::Id>, floating: bool) {
+         if id.map_or(self.floating_is_active.get(), |id| {
+             self.floating.has_window(id)
+--- a/src/window/mapped.rs
++++ b/src/window/mapped.rs
+@@ -97,6 +97,9 @@
+     /// Whether this window is floating.
+     is_floating: bool,
+ 
++    /// Whether this floating window stays above the others (Lulo OS).
++    is_always_on_top: bool,
++
+     /// Whether this window is a target of a window cast.
+     is_window_cast_target: bool,
+ 
+@@ -289,6 +292,7 @@
+             is_focused: false,
+             is_active_in_column: true,
+             is_floating: false,
++            is_always_on_top: false,
+             is_window_cast_target: false,
+             ignore_opacity_window_rule: false,
+             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
+@@ -379,6 +383,10 @@
+         self.is_floating
+     }
+ 
++    pub fn is_always_on_top(&self) -> bool {
++        self.is_always_on_top
++    }
++
+     pub fn is_window_cast_target(&self) -> bool {
+         self.is_window_cast_target
+     }
+@@ -1001,6 +1009,14 @@
+         self.need_to_recompute_rules |= changed;
+     }
+ 
++    fn is_always_on_top(&self) -> bool {
++        self.is_always_on_top
++    }
++
++    fn set_always_on_top(&mut self, on: bool) {
++        self.is_always_on_top = on;
++    }
++
+     fn set_bounds(&self, bounds: Size<i32, Logical>) {
+         self.toplevel().with_pending_state(|state| {
+             state.bounds = Some(bounds);

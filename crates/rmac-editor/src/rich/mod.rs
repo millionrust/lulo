@@ -3,6 +3,7 @@
 
 pub mod clipboard;
 mod editor;
+pub mod fonts;
 pub mod html;
 mod layout;
 pub mod markdown;

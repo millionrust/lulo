@@ -453,6 +453,17 @@ impl RichTextEditor {
         self.focus.is_focused(window)
     }
 
+    /// The insertion point's rectangle in the window, as last drawn.
+    pub fn caret_bounds(&self) -> Option<Bounds<Pixels>> {
+        let (index, local) = self.document.locate(self.head());
+        let placed = self.placed.iter().find(|placed| placed.index == index)?;
+        let (x, top, height) = placed.layout.caret(local);
+        Some(Bounds::new(
+            point(placed.origin.x + x, placed.origin.y + top),
+            size(px(1.0), height),
+        ))
+    }
+
     /// Replace the whole document as one undoable edit and select
     /// `selection` (a checklist's Move Ticked to Bottom, Delete Ticked).
     pub fn replace_document(
@@ -1673,7 +1684,7 @@ impl RichTextEditor {
 
     /// Whether Tab / ⇧Tab change list levels here: the caret at a list
     /// item's start, or a selection across list items.
-    fn at_list_item_start(&self) -> bool {
+    pub fn at_list_item_start(&self) -> bool {
         let (index, local) = self.document.locate(self.selection.start);
         let in_list = self.document.paragraph(index).style().list.is_some();
         if self.selection.is_empty() {
@@ -1732,6 +1743,11 @@ impl RichTextEditor {
     }
 
     fn paste(&mut self, _: &input::Paste, _: &mut Window, cx: &mut Context<Self>) {
+        self.paste_from_clipboard(cx);
+    }
+
+    /// Edit ▸ Paste: the clipboard, keeping a rich copy's styles.
+    pub fn paste_from_clipboard(&mut self, cx: &mut Context<Self>) {
         if !self.editable {
             return;
         }

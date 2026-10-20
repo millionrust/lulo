@@ -5,7 +5,9 @@ pub(super) struct NotesInputs {
     pub(super) folder_name_input: Entity<InputState>,
     pub(super) title: Entity<InputState>,
     pub(super) tags: Entity<InputState>,
-    pub(super) body: Entity<InputState>,
+    pub(super) body: Entity<rmac_editor::rich::RichTextEditor>,
+    pub(super) link: Entity<InputState>,
+    pub(super) font_size: Entity<InputState>,
     pub(super) note_find: Entity<InputState>,
     pub(super) note_replace: Entity<InputState>,
     pub(super) lock_password: Entity<InputState>,
@@ -41,13 +43,12 @@ impl NotesView {
                 title.replace("", window, cx);
             });
         }
-        let body_empty = self.body.read(cx).value().is_empty();
+        let body_empty = self.body.read(cx).document().is_empty();
         self.body.update(cx, |body, cx| {
-            body.set_selected_range(0..0, cx);
             if !body_empty || !tail.is_empty() {
-                body.insert(format!("{tail}\n"), window, cx);
+                body.replace_range(0..0, &format!("{tail}\n"), cx);
             }
-            body.set_selected_range(0..0, cx);
+            body.select_range(0..0, cx);
             body.focus(window, cx);
         });
         self.schedule_current_edit(cx);
@@ -138,6 +139,8 @@ impl NotesView {
                 KeyBinding::new("cmd-{", AlignLeft, Some("Notes")),
                 KeyBinding::new("cmd-|", AlignCentre, Some("Notes")),
                 KeyBinding::new("cmd-}", AlignRight, Some("Notes")),
+                KeyBinding::new("cmd-t", ShowFonts, Some("Notes")),
+                KeyBinding::new("shift-cmd-c", ShowColours, Some("Notes")),
                 KeyBinding::new("ctrl-cmd-i", ToggleShowHighlights, Some("Notes")),
                 KeyBinding::new("shift-cmd-a", AttachFile, Some("Notes")),
                 // ⌘W closes the window through the same review as the red
@@ -154,7 +157,9 @@ impl NotesView {
         let folder_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Folder Name"));
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
         let tags = cx.new(|cx| InputState::new(window, cx).placeholder("Add Tags"));
-        let body = rmac_editor::multiline("Note", window, cx);
+        let body = note_format_controller::new_body_editor(window, cx);
+        let link = cx.new(|cx| InputState::new(window, cx).placeholder("https://"));
+        let font_size = cx.new(|cx| InputState::new(window, cx).placeholder("Size"));
         let note_find = cx.new(|cx| InputState::new(window, cx).placeholder("Find in Note"));
         let note_replace = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
         let lock_password = cx.new(|cx| {
@@ -201,10 +206,10 @@ impl NotesView {
         cx.subscribe_in(
             &body,
             window,
-            |this, field, event: &InputEvent, window, cx| {
-                if matches!(event, InputEvent::Change) {
+            |this, field, event: &rmac_editor::rich::RichTextEvent, window, cx| match event {
+                rmac_editor::rich::RichTextEvent::Changed => {
                     this.schedule_current_edit(cx);
-                    this.insert_maths_result(window, cx);
+                    this.update_maths_results(window, cx);
                     if this.body_format_editable() {
                         rmac_ui::text_assist::on_text_changed(
                             field,
@@ -215,9 +220,25 @@ impl NotesView {
                             cx,
                         );
                     }
+                    cx.notify();
+                }
+                rmac_editor::rich::RichTextEvent::CheckboxToggled => {
+                    this.apply_auto_sort_ticked_items(window, cx);
                 }
             },
         )
+        .detach();
+        cx.subscribe_in(&link, window, |this, _, event: &InputEvent, window, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                this.confirm_link(window, cx);
+            }
+        })
+        .detach();
+        cx.subscribe(&font_size, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                this.apply_font_size_field(cx);
+            }
+        })
         .detach();
         cx.subscribe(&tags, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
@@ -254,6 +275,8 @@ impl NotesView {
             title,
             tags,
             body,
+            link,
+            font_size,
             note_find,
             note_replace,
             lock_password,

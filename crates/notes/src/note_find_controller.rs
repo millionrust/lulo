@@ -21,6 +21,7 @@ fn note_find_offsets(hay: &str, needle: &str) -> Vec<usize> {
 }
 
 /// `hay` with every case-insensitive match of `needle` replaced.
+#[cfg(test)]
 fn replace_all_matches(hay: &str, needle: &str, replacement: &str) -> String {
     let mut out = String::with_capacity(hay.len());
     let mut last = 0;
@@ -62,10 +63,10 @@ impl NotesView {
         };
         let query_len = self.note_find_input.read(cx).value().len();
         let replacement = self.note_replace_input.read(cx).value().to_string();
-        self.body.update(cx, |state, cx| {
-            state.set_selected_range(offset..offset + query_len, cx);
-            state.replace(replacement, window, cx);
+        self.body.update(cx, |editor, cx| {
+            editor.replace_range(offset..offset + query_len, &replacement, cx);
         });
+        let _ = window;
         self.schedule_current_edit(cx);
         self.recompute_note_find_matches(cx);
         cx.notify();
@@ -78,26 +79,23 @@ impl NotesView {
         }
         let query = self.note_find_input.read(cx).value().to_string();
         let replacement = self.note_replace_input.read(cx).value().to_string();
-        let body = self.body.read(cx).value().to_string();
-        let updated = replace_all_matches(&body, &query, &replacement);
-        self.body.update(cx, |state, cx| {
-            state.set_selected_range(0..body.len(), cx);
-            state.replace(updated, window, cx);
-        });
+        let body = self.body_text(cx);
+        let ranges: Vec<std::ops::Range<usize>> = note_find_offsets(&body, &query)
+            .into_iter()
+            .map(|offset| offset..offset + query.len())
+            .collect();
+        // One undoable edit; each match keeps its own style.
+        self.body
+            .update(cx, |editor, cx| editor.replace_ranges(&ranges, &replacement, cx));
+        let _ = window;
         self.schedule_current_edit(cx);
         self.recompute_note_find_matches(cx);
         cx.notify();
     }
 
     pub(super) fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let selection = self.body.read(cx).selected_range();
-        let text = self
-            .body
-            .read(cx)
-            .value()
-            .get(selection)
-            .unwrap_or_default()
-            .to_string();
+        let selection = self.body_selection(cx);
+        let text = self.body.read(cx).document().slice(selection);
         if text.is_empty() {
             return;
         }
@@ -111,7 +109,11 @@ impl NotesView {
     }
 
     pub(super) fn jump_to_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.body.update(cx, |state, cx| state.focus(window, cx));
+        self.body.update(cx, |editor, cx| {
+            let selection = editor.selected_range();
+            editor.select_range(selection, cx);
+            editor.focus(window, cx);
+        });
     }
 
     pub(super) fn toggle_note_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -134,13 +136,13 @@ impl NotesView {
         self.note_find_open = false;
         self.note_replace_open = false;
         self.note_find_matches.clear();
-        self.body.update(cx, |state, cx| state.focus(window, cx));
+        self.focus_body(window, cx);
         cx.notify();
     }
 
     pub(super) fn recompute_note_find_matches(&mut self, cx: &mut Context<Self>) {
         let query = self.note_find_input.read(cx).value().to_string();
-        let body = self.body.read(cx).value().to_string();
+        let body = self.body_text(cx);
         self.note_find_matches = note_find_offsets(&body, &query);
         if self.note_find_current >= self.note_find_matches.len() {
             self.note_find_current = 0;
@@ -152,9 +154,9 @@ impl NotesView {
             return;
         };
         let needle_len = self.note_find_input.read(cx).value().len();
-        self.body.update(cx, |state, cx| {
-            state.set_selected_range(offset..offset + needle_len, cx);
-            state.focus(window, cx);
+        self.body.update(cx, |editor, cx| {
+            editor.select_range(offset..offset + needle_len, cx);
+            editor.focus(window, cx);
         });
     }
 

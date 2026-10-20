@@ -200,29 +200,78 @@ impl NotesView {
             self.is_interactive_ready() && !note.deleted && !self.markdown_preview_visible;
         let light_background = self.note_has_light_background();
         let body_size = BODY_SIZE + f32::from(self.note_zoom);
-        let body_line = BODY_LINE + f32::from(self.note_zoom);
         let title_size = TITLE_SIZE + f32::from(self.note_zoom);
         let title_line = TITLE_LINE + f32::from(self.note_zoom);
         let attachments = self.render_attachments(note, cx);
         let body = if self.markdown_preview_visible {
             self.render_markdown_preview(cx)
         } else {
+            let text_color = note_editor_text(light_background);
+            let paper = note_editor_fill(light_background);
+            let zoom = body_size / BODY_SIZE;
+            let show_highlights = self.show_highlights;
+            let smart_lists = self.smart_lists;
+            self.body.update(cx, |editor, cx| {
+                editor.set_editable(editable, cx);
+                editor.set_zoom(zoom, cx);
+                editor.set_appearance(text_color, mac::text_selection(), mac::text_caret(), cx);
+                editor.set_paper_color(paper, cx);
+                editor.set_link_color(notes_accent(), cx);
+                editor.set_decoration_colors(checkbox_ring(), notes_accent(), checkbox_ring(), cx);
+                editor.set_show_highlights(show_highlights, cx);
+                editor.set_smart_lists(smart_lists);
+            });
+            let editor = self.body.read(cx);
+            let selection = editor.selected_range();
+            let head = editor.cursor();
+            let anchor = if head == selection.start {
+                selection.end
+            } else {
+                selection.start
+            };
+            let document = editor.document().clone();
+            let focus = gpui::Focusable::focus_handle(editor, cx);
+            let rich = self.body.clone();
             div()
                 .id("notes-body")
                 .role(Role::MultilineTextInput)
                 .aria_label("Body")
-                .accessible_text_input(&self.body, cx)
-                // The multiline input binds Tab to indentation. Let Tab
-                // reach the Tags field that follows it in the editor.
+                .accessible_text(
+                    move || document.text(),
+                    (anchor, head),
+                    focus,
+                    move |range, _window, cx| {
+                        rich.update(cx, |editor, cx| editor.select_range(range, cx));
+                    },
+                )
+                // Tab at a list item's start nests it, as in Notes; anywhere
+                // else it moves on to the Tags field after the body. Return
+                // or Tab takes a result Suggest Results offers.
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     let modifiers = event.keystroke.modifiers;
-                    if event.keystroke.key != "tab"
-                        || modifiers.shift
+                    if modifiers.shift
                         || modifiers.control
                         || modifiers.alt
                         || modifiers.platform
-                        || !this.body.read(cx).focus_handle(cx).is_focused(window)
+                        || !this.body_focused(window, cx)
                     {
+                        return;
+                    }
+                    let key = event.keystroke.key.as_str();
+                    if matches!(key, "enter" | "tab") && this.maths_suggestion.is_some() {
+                        if this.accept_maths_suggestion(cx) {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        }
+                        return;
+                    }
+                    if key == "escape" && this.maths_suggestion.take().is_some() {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        cx.notify();
+                        return;
+                    }
+                    if key != "tab" || this.body.read(cx).at_list_item_start() {
                         return;
                     }
                     window.prevent_default();
@@ -234,28 +283,16 @@ impl NotesView {
                     AccessibleAction::ReplaceSelectedText,
                     self.assistive_body_listener(cx),
                 )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                        this.open_body_menu(event.position, window, cx)
+                    }),
+                )
                 .flex_1()
                 .min_h(px(0.0))
-                .px(px(EDITOR_INSET))
                 .pb_4()
-                .text_size(rmac_ui::text_px(body_size))
-                .line_height(px(body_line))
-                .text_color(note_editor_text(light_background))
-                .child(
-                    TextField::new(&self.body)
-                        .h_full()
-                        .appearance(false)
-                        .disabled(!editable)
-                        .context_menu(rmac_writing_tools::text_menu(
-                            self.body.clone(),
-                            editable,
-                            &rmac_writing_tools::text_menu::NOTES,
-                        ))
-                        .text_size(rmac_ui::text_px(body_size))
-                        .line_height(px(body_line))
-                        .px_0()
-                        .py_0(),
-                )
+                .child(self.body.clone())
                 .into_any_element()
         };
         // macOS 26 Notes: the edit date centred 8 below the toolbar, then the

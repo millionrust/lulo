@@ -13,6 +13,7 @@ mod edit_recovery_controller;
 mod edit_text_assist_controller;
 mod editor_presentation;
 mod file_choosers;
+mod format_panels;
 mod glyphs;
 mod input_support;
 mod library_actions;
@@ -57,6 +58,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, StyledImage as _, Window, WindowHandle,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
+use rmac_editor::rich::{Alignment, ListKind, ParagraphRole, WritingDirection};
 use rmac_editor::InputState;
 use rmac_notes_runtime::{
     ActionRequest, ActionResult, BundleImportAcceptRequest, BundleImportReviewRequest,
@@ -85,9 +87,7 @@ use input_support::{
     display_title, now_unix_ms, parse_tags, safe_export_stem, take_counter, unique_folder_name,
 };
 use markdown_presentation::render_markdown_document;
-use note_format_controller::{
-    ChecklistBulkAction, CopiedStyle, ListMarker, ParagraphStyle, TextTransform,
-};
+use note_format_controller::{ChecklistBulkAction, TextTransform};
 use notes_style::*;
 use presentation::{
     attachment_match_row, centered_state, date_label, date_section, folder_row,
@@ -224,7 +224,20 @@ actions!(
         RemoveStyle,
         AlignLeft,
         AlignCentre,
+        AlignJustify,
         AlignRight,
+        WritingDirectionParagraphLabel,
+        ParagraphDirectionDefault,
+        ParagraphDirectionLeftToRight,
+        ParagraphDirectionRightToLeft,
+        WritingDirectionSelectionLabel,
+        SelectionDirectionDefault,
+        SelectionDirectionLeftToRight,
+        SelectionDirectionRightToLeft,
+        ShowFonts,
+        ShowColours,
+        ConfirmLink,
+        CancelLink,
         MathsResultsOff,
         MathsResultsSuggest,
         MathsResultsInsert,
@@ -289,7 +302,21 @@ struct NotesView {
     folder_name_input: Entity<InputState>,
     title: Entity<InputState>,
     tags: Entity<InputState>,
-    body: Entity<InputState>,
+    /// The note body: styled text (NOTES-01), stored as Notes Markdown.
+    body: Entity<rmac_editor::rich::RichTextEditor>,
+    /// The body's right-click text menu.
+    body_menu: Option<rmac_ui::ContextMenuState>,
+    /// Edit ▸ Add Link…: the address field while its sheet is open.
+    link_dialog_open: bool,
+    link_input: Entity<InputState>,
+    /// Format ▸ Font ▸ Show Fonts / Show Colours panels.
+    fonts_open: bool,
+    font_families: Option<Vec<SharedString>>,
+    font_size_input: Entity<InputState>,
+    colours_open: bool,
+    /// Format ▸ Maths Results ▸ Suggest Results: the result offered after
+    /// an `=`, inserted by Return or Tab.
+    maths_suggestion: Option<maths_results::Suggestion>,
     /// Edit ▸ Writing Tools and its panel (ADR 0024 feature 2).
     writing_tools: Entity<rmac_writing_tools::WritingTools>,
     focus: FocusHandle,
@@ -361,7 +388,7 @@ struct NotesView {
     smart_lists: bool,
     smart_tags: bool,
     /// Format ▸ Font ▸ Copy Style/Paste Style.
-    copied_style: Option<CopiedStyle>,
+    copied_style: Option<rmac_editor::rich::CharStyle>,
     /// Format ▸ Maths Results / the toolbar's maths-results button.
     maths_results_mode: MathsResultsMode,
     maths_prev_len: usize,
@@ -482,6 +509,14 @@ impl NotesView {
             title: inputs.title,
             tags: inputs.tags,
             body: inputs.body,
+            body_menu: None,
+            link_dialog_open: false,
+            link_input: inputs.link,
+            fonts_open: false,
+            font_families: None,
+            font_size_input: inputs.font_size,
+            colours_open: false,
+            maths_suggestion: None,
             writing_tools: cx.new(rmac_writing_tools::WritingTools::new),
             focus: inputs.focus,
             note_list_scroll: gpui::ScrollHandle::new(),
@@ -532,7 +567,7 @@ impl NotesView {
             last_editor_note: None,
             text_assist: rmac_ui::text_assist::TextAssistSettings::default(),
             spell_checker: rmac_spelling::shared(),
-            smart_lists: false,
+            smart_lists: true,
             smart_tags: false,
             copied_style: None,
             maths_results_mode: MathsResultsMode::default(),

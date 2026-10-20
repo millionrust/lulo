@@ -1,30 +1,15 @@
-//! Format ▸ Bold/Italic/Paragraph Style/Lists: Markdown-marker commands over
-//! the note body. Notes keeps Markdown as its storage format (see
-//! `rmac-notes-storage/src/markdown_preview.rs`), so these commands edit the
-//! same Markdown source the body field already holds — a paragraph style is
-//! a line-prefix marker, and Bold/Italic wrap the current selection. This is
-//! the "Markdown-marker shortcuts" half of docs/parity.md's NOTES-01/NOTES-03
-//! sizing, not full WYSIWYG editing: there is no live-styled canvas, so the
-//! marker characters stay visible until Markdown Preview (or a future rich
-//! editor) renders them.
+//! Format ▸ paragraph styles, lists, checklists, fonts and text: commands
+//! over the note body's rich-text model (`rmac_editor::rich`). The body is
+//! edited as styled text, as on the Mac, and stored as Notes Markdown
+//! (`rich::markdown`), so a note written by an earlier Notes keeps reading
+//! the same.
+
+use rmac_editor::rich::{
+    self, Alignment, CharStyle, Document, ListKind, ListMetrics, Paragraph, ParagraphRole,
+    RichTextEditor, WritingDirection,
+};
 
 use super::*;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ParagraphStyle {
-    Title,
-    Heading,
-    Subheading,
-    Body,
-    Monospaced,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ListMarker {
-    Bulleted,
-    Dashed,
-    Numbered,
-}
 
 #[derive(Clone, Copy)]
 pub(super) enum ChecklistBulkAction {
@@ -41,38 +26,57 @@ pub(super) enum TextTransform {
     Capitalise,
 }
 
-/// Format ▸ Font ▸ Copy Style/Paste Style: which of Notes' five inline
-/// Markdown wrap-pairs the copied selection was wrapped in. Notes has no
-/// rich-text run model (NOTES-01/03), so "style" here means exactly the
-/// marker pairs `note_format_controller.rs` itself can apply — there is no
-/// font, size, or colour to copy.
-#[derive(Clone, Copy, Default)]
-pub(super) struct CopiedStyle {
-    bold: bool,
-    italic: bool,
-    strikethrough: bool,
-    underline: bool,
-    highlight: bool,
+/// Notes' typography: the face, size and weight of each paragraph style.
+pub(super) fn notes_typography(role: ParagraphRole) -> CharStyle {
+    match role {
+        ParagraphRole::Title => CharStyle {
+            bold: true,
+            ..CharStyle::with_size(TITLE_SIZE)
+        },
+        ParagraphRole::Heading => CharStyle {
+            bold: true,
+            ..CharStyle::with_size(HEADING_SIZE)
+        },
+        ParagraphRole::Subheading => CharStyle {
+            bold: true,
+            ..CharStyle::with_size(SUBHEADING_SIZE)
+        },
+        ParagraphRole::Body => CharStyle::with_size(BODY_SIZE),
+        ParagraphRole::Monostyled => CharStyle {
+            family: Some(Arc::from("Menlo")),
+            ..CharStyle::with_size(MONOSTYLED_SIZE)
+        },
+    }
 }
 
-/// The five inline wrap-pairs, outermost first, in the fixed nesting order
-/// [`CopiedStyle::rebuild`] always produces (bold > italic > strikethrough >
-/// underline > highlight > text) so copying and pasting style round-trips
-/// exactly for any selection Notes' own commands produced. A selection a
-/// person hand-typed in some other nesting order copies correctly (each
-/// pair is still detected independently) but may not fully re-wrap on
-/// paste, the same bounded, best-effort trade-off `strip_leading_marker`
-/// above already makes for paragraph markers.
-const STYLE_WRAP_PAIRS: [(&str, &str); 5] = [
-    ("**", "**"),
-    ("_", "_"),
-    ("~~", "~~"),
-    ("++", "++"),
-    ("==", "=="),
-];
+/// Notes' lists: the marker in the margin and the text 22 points in.
+pub(super) const NOTES_LIST_METRICS: ListMetrics = ListMetrics {
+    list_indent: 22.0,
+    marker_x: 6.0,
+    quote_indent: 14.0,
+};
 
-fn wrapped_by(text: &str, prefix: &str, suffix: &str) -> bool {
-    text.len() >= prefix.len() + suffix.len() && text.starts_with(prefix) && text.ends_with(suffix)
+/// A stored body as the editor's document.
+pub(super) fn body_document(markdown: &str) -> Document {
+    rich::markdown::parse(markdown, &notes_typography)
+}
+
+/// The editor's document as a stored body.
+pub(super) fn body_markdown(document: &Document) -> String {
+    rich::markdown::write(document, &notes_typography)
+}
+
+pub(super) fn new_body_editor(window: &mut Window, cx: &mut App) -> Entity<RichTextEditor> {
+    cx.new(|cx| {
+        let mut editor = RichTextEditor::new(window, cx);
+        editor.set_default_style(notes_typography(ParagraphRole::Body));
+        editor.set_role_typography(std::rc::Rc::new(notes_typography));
+        editor.set_list_metrics(NOTES_LIST_METRICS, cx);
+        editor.set_column(px(EDITOR_INSET), None, cx);
+        editor.set_smart_lists(true);
+        editor.set_document(body_document(""), cx);
+        editor
+    })
 }
 
 fn transformed_text(text: &str, transform: TextTransform) -> String {
@@ -100,224 +104,146 @@ fn transformed_text(text: &str, transform: TextTransform) -> String {
     }
 }
 
-fn checklist_line(line: &str) -> bool {
-    let line = line.trim_start();
-    line.starts_with("- [ ] ") || line.starts_with("- [x] ") || line.starts_with("- [X] ")
+fn is_checkbox(paragraph: &Paragraph) -> bool {
+    paragraph.style().list == Some(ListKind::Checkbox)
 }
 
-fn ticked_line(line: &str) -> bool {
-    let line = line.trim_start();
-    line.starts_with("- [x] ") || line.starts_with("- [X] ")
-}
-
-fn checklist_bulk_text(text: &str, action: ChecklistBulkAction) -> String {
-    let trailing_newline = text.ends_with('\n');
-    let mut lines = text.lines().map(str::to_owned).collect::<Vec<_>>();
+/// Format ▸ More's checklist commands over a whole document: Tick All and
+/// Untick All change every checklist item; Move Ticked to Bottom sorts each
+/// run of checklist items (ticked last, otherwise in order); Delete Ticked
+/// removes ticked items.
+pub(super) fn checklist_bulk(document: &Document, action: ChecklistBulkAction) -> Document {
+    let mut paragraphs: Vec<Paragraph> = document
+        .paragraphs()
+        .iter()
+        .map(|paragraph| (**paragraph).clone())
+        .collect();
     match action {
         ChecklistBulkAction::TickAll | ChecklistBulkAction::UntickAll => {
-            for line in &mut lines {
-                if !checklist_line(line) {
-                    continue;
-                }
-                if let Some(range) = find_checkbox_marker(line) {
-                    line.replace_range(
-                        range,
-                        if matches!(action, ChecklistBulkAction::TickAll) {
-                            "[x]"
-                        } else {
-                            "[ ]"
-                        },
-                    );
+            let checked = matches!(action, ChecklistBulkAction::TickAll);
+            for paragraph in &mut paragraphs {
+                if is_checkbox(paragraph) && paragraph.style().checked != checked {
+                    let mut style = paragraph.style();
+                    style.checked = checked;
+                    *paragraph = paragraph.with_style(style);
                 }
             }
         }
-        ChecklistBulkAction::DeleteTicked => lines.retain(|line| !ticked_line(line)),
+        ChecklistBulkAction::DeleteTicked => {
+            paragraphs.retain(|paragraph| !(is_checkbox(paragraph) && paragraph.style().checked));
+        }
         ChecklistBulkAction::MoveTickedToBottom => {
             let mut start = 0;
-            while start < lines.len() {
-                if !checklist_line(&lines[start]) {
+            while start < paragraphs.len() {
+                if !is_checkbox(&paragraphs[start]) {
                     start += 1;
                     continue;
                 }
                 let mut end = start + 1;
-                while end < lines.len() && checklist_line(&lines[end]) {
+                while end < paragraphs.len() && is_checkbox(&paragraphs[end]) {
                     end += 1;
                 }
-                lines[start..end].sort_by_key(|line| ticked_line(line));
+                paragraphs[start..end].sort_by_key(|paragraph| paragraph.style().checked);
                 start = end;
             }
         }
     }
-    let mut result = lines.join("\n");
-    if trailing_newline {
-        result.push('\n');
-    }
-    result
+    Document::from_paragraphs(paragraphs)
 }
 
-/// The current line's text with one leading Markdown marker (heading,
-/// checklist, list, or a whole-line code span) removed, so switching
-/// paragraph styles replaces rather than stacks markers.
-fn strip_leading_marker(line: &str) -> &str {
-    if let Some(rest) = line.strip_prefix('#') {
-        let extra_hashes = rest.chars().take_while(|&c| c == '#').count();
-        let hashes = 1 + extra_hashes;
-        if hashes <= 6 {
-            if let Some(stripped) = line[hashes..].strip_prefix(' ') {
-                return stripped;
-            }
-        }
-    }
-    for prefix in ["- [ ] ", "- [x] ", "- [X] ", "- ", "* "] {
-        if let Some(stripped) = line.strip_prefix(prefix) {
-            return stripped;
-        }
-    }
-    let digits = line.chars().take_while(char::is_ascii_digit).count();
-    if digits > 0 {
-        if let Some(stripped) = line[digits..].strip_prefix(". ") {
-            return stripped;
-        }
-    }
-    if line.len() >= 2 && line.starts_with('`') && line.ends_with('`') {
-        return &line[1..line.len() - 1];
-    }
-    line
-}
-
-fn plain_text_line(line: &str) -> &str {
-    strip_leading_marker(line.trim_start_matches("> "))
-}
-
-/// The byte range of a `- [ ] `/`- [x] `/`- [X] ` checkbox marker within
-/// `text`, searched only in a short prefix so a checklist item's own body
-/// text can never be mistaken for a marker further in.
-fn find_checkbox_marker(text: &str) -> Option<std::ops::Range<usize>> {
-    const MARKERS: [&str; 3] = ["[ ]", "[x]", "[X]"];
-    let window_end = (0..=text.len().min(16))
-        .rev()
-        .find(|&index| text.is_char_boundary(index))?;
-    let prefix = &text[..window_end];
-    MARKERS
-        .into_iter()
-        .find_map(|marker| prefix.find(marker).map(|index| index..index + marker.len()))
-}
-
-/// The byte range of the line in `value` that contains `cursor`.
-fn current_line_range(value: &str, cursor: usize) -> std::ops::Range<usize> {
-    let cursor = cursor.min(value.len());
-    let start = value[..cursor]
-        .rfind('\n')
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    let end = value[cursor..]
-        .find('\n')
-        .map(|index| cursor + index)
-        .unwrap_or(value.len());
-    start..end
-}
-
-fn is_list_item(line: &str) -> bool {
-    let line = line.trim_start();
-    if line.starts_with("- ") || line.starts_with("* ") {
-        return true;
-    }
-    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
-    digits > 0 && line[digits..].starts_with(". ")
-}
-
-/// Swap one Markdown list line with the adjacent item in its contiguous
-/// list. Return the source and new caret, keeping the caret within the item
-/// that moved rather than leaving it on its old row.
-fn moved_list_item(value: &str, cursor: usize, up: bool) -> Option<(String, usize)> {
-    let current = current_line_range(value, cursor);
-    let line = value.get(current.clone())?;
-    if !is_list_item(line) {
+/// The document with paragraph `index` swapped with its neighbour above
+/// (`up`) or below, when both are list items; and where `index` went.
+fn moved_list_item(document: &Document, index: usize, up: bool) -> Option<(Document, usize)> {
+    let other = if up {
+        index.checked_sub(1)?
+    } else {
+        index + 1
+    };
+    if other >= document.paragraph_count()
+        || document.paragraph(index).style().list.is_none()
+        || document.paragraph(other).style().list.is_none()
+    {
         return None;
     }
-    let offset = cursor.saturating_sub(current.start).min(line.len());
-    let adjacent = if up {
-        let previous_end = current.start.checked_sub(1)?;
-        current_line_range(value, previous_end)
-    } else {
-        let next_start = current.end.checked_add(1)?;
-        if next_start > value.len() {
-            return None;
-        }
-        current_line_range(value, next_start)
-    };
-    let other = value.get(adjacent.clone())?;
-    if !is_list_item(other) {
-        return None;
-    }
-    let (start, end, replacement, caret) = if up {
-        (
-            adjacent.start,
-            current.end,
-            format!("{line}\n{other}"),
-            adjacent.start + offset,
-        )
-    } else {
-        (
-            current.start,
-            adjacent.end,
-            format!("{other}\n{line}"),
-            current.start + other.len() + 1 + offset,
-        )
-    };
-    let mut updated = value.to_string();
-    updated.replace_range(start..end, &replacement);
-    Some((updated, caret))
+    let mut paragraphs: Vec<Paragraph> = document
+        .paragraphs()
+        .iter()
+        .map(|paragraph| (**paragraph).clone())
+        .collect();
+    paragraphs.swap(index, other);
+    Some((Document::from_paragraphs(paragraphs), other))
 }
 
 impl NotesView {
-    pub(super) fn current_line_has_structure(&self, cx: &Context<Self>) -> bool {
-        let body = self.body.read(cx);
-        let value = body.value().to_string();
-        let Some(line) = value.get(current_line_range(&value, body.cursor())) else {
-            return false;
-        };
-        plain_text_line(line) != line
+    /// Whether the body accepts an edit right now.
+    pub(super) fn body_format_editable(&self) -> bool {
+        self.is_interactive_ready()
+            && !self.markdown_preview_visible
+            && !self.selected_note_closed()
+            && self
+                .session
+                .selected_note()
+                .is_some_and(|note| !note.deleted)
     }
 
-    /// The current line's Format ▸ Text ▸ Align Left/Centre/Align Right
-    /// state, for the menu's live checkmarks.
-    pub(super) fn current_line_alignment(
-        &self,
-        cx: &Context<Self>,
-    ) -> rmac_notes_storage::TextAlign {
-        let body = self.body.read(cx);
-        let value = body.value().to_string();
-        let Some(line) = value.get(current_line_range(&value, body.cursor())) else {
-            return rmac_notes_storage::TextAlign::Left;
-        };
-        if line.ends_with(" :center:") {
-            rmac_notes_storage::TextAlign::Center
-        } else if line.ends_with(" :right:") {
-            rmac_notes_storage::TextAlign::Right
-        } else {
-            rmac_notes_storage::TextAlign::Left
-        }
+    pub(super) fn body_text(&self, cx: &App) -> String {
+        self.body.read(cx).text()
     }
 
-    pub(super) fn insert_table(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn body_selection(&self, cx: &App) -> std::ops::Range<usize> {
+        self.body.read(cx).selected_range()
+    }
+
+    pub(super) fn body_focused(&self, window: &Window, cx: &App) -> bool {
+        self.body.read(cx).is_focused(window)
+    }
+
+    pub(super) fn focus_body(&self, window: &mut Window, cx: &mut App) {
+        self.body.read(cx).focus(window, cx);
+    }
+
+    /// Run a formatting change on the body, then keep it focused. The
+    /// editor reports the change, which schedules the save.
+    fn format_body(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut RichTextEditor, &mut Context<RichTextEditor>),
+    ) {
         if !self.body_format_editable() {
             return;
         }
-        self.body.update(cx, |state, cx| {
-            let cursor = state.selected_range().start;
-            let value = state.value().to_string();
-            let needs_newline = cursor > 0 && !value[..cursor].ends_with('\n');
+        self.body.update(cx, |editor, cx| {
+            change(editor, cx);
+            editor.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    /// Whether the caret's paragraph has a style Convert to Text removes.
+    pub(super) fn current_line_has_structure(&self, cx: &App) -> bool {
+        let style = self.body.read(cx).paragraph_style_at_selection();
+        style.list.is_some() || style.quote || style.role != ParagraphRole::Body
+    }
+
+    /// The caret paragraph's alignment, for the menu's checkmarks.
+    pub(super) fn current_alignment(&self, cx: &App) -> Alignment {
+        self.body.read(cx).paragraph_style_at_selection().alignment
+    }
+
+    pub(super) fn insert_table(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.format_body(window, cx, |editor, cx| {
+            let selection = editor.selected_range();
+            let text = editor.text();
+            let needs_newline = selection.start > 0 && !text[..selection.start].ends_with('\n');
             let template = format!(
                 "{}| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n|  |  |\n",
                 if needs_newline { "\n" } else { "" }
             );
-            let first_heading = cursor + usize::from(needs_newline) + 2;
-            state.replace(template, window, cx);
-            state.set_selected_range(first_heading..first_heading + "Column 1".len(), cx);
-            state.focus(window, cx);
+            let first = selection.start + usize::from(needs_newline) + 2;
+            editor.replace_range(selection, &template, cx);
+            editor.select_range(first..first + "Column 1".len(), cx);
         });
-        self.schedule_current_edit(cx);
     }
 
     pub(super) fn transform_selection(
@@ -326,53 +252,33 @@ impl NotesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.body_format_editable() {
-            return;
-        }
-        let mut changed = false;
-        self.body.update(cx, |state, cx| {
-            let selected = state.selected_range();
-            let value = state.value();
-            let Some(text) = value.get(selected) else {
-                return;
-            };
-            if text.is_empty() {
-                return;
+        self.format_body(window, cx, |editor, cx| {
+            let selection = editor.selected_range();
+            let text = editor.document().slice(selection.clone());
+            let next = transformed_text(&text, transform);
+            if !text.is_empty() && next != text {
+                editor.replace_range(selection.clone(), &next, cx);
+                editor.select_range(selection.start..selection.start + next.len(), cx);
             }
-            let next = transformed_text(text, transform);
-            if next == text {
-                return;
-            }
-            state.replace(next, window, cx);
-            state.focus(window, cx);
-            changed = true;
         });
-        if changed {
-            self.schedule_current_edit(cx);
-        }
     }
 
+    /// Format ▸ Move Item ▸ Up / Down.
     pub(super) fn move_current_list_item(
         &mut self,
         up: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.body_format_editable() {
-            return;
-        }
-        let value = self.body.read(cx).value().to_string();
-        let cursor = self.body.read(cx).cursor();
-        let Some((updated, caret)) = moved_list_item(&value, cursor, up) else {
-            return;
-        };
-        self.body.update(cx, |state, cx| {
-            state.set_selected_range(0..value.len(), cx);
-            state.replace(updated, window, cx);
-            state.set_selected_range(caret..caret, cx);
-            state.focus(window, cx);
+        self.format_body(window, cx, |editor, cx| {
+            let document = editor.document().clone();
+            let caret = editor.cursor();
+            let (index, local) = document.locate(caret);
+            if let Some((moved, to)) = moved_list_item(&document, index, up) {
+                let at = moved.paragraph_start(to) + local;
+                editor.replace_document(moved, at..at, cx);
+            }
         });
-        self.schedule_current_edit(cx);
     }
 
     pub(super) fn apply_checklist_bulk(
@@ -381,427 +287,237 @@ impl NotesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.body_format_editable() {
-            return;
-        }
-        let current = self.body.read(cx).value().to_string();
-        let updated = checklist_bulk_text(&current, action);
-        if updated == current {
-            return;
-        }
-        self.body.update(cx, |state, cx| {
-            state.set_selected_range(0..current.len(), cx);
-            state.replace(updated, window, cx);
-            state.focus(window, cx);
+        self.format_body(window, cx, |editor, cx| {
+            let updated = checklist_bulk(editor.document(), action);
+            let caret = editor.cursor();
+            editor.replace_document(updated, caret..caret, cx);
         });
-        self.schedule_current_edit(cx);
-    }
-    /// Whether the body accepts an edit right now — mirrors
-    /// `edit_recovery_controller::assistive_fields_editable` and
-    /// `insert_checklist`'s own guard.
-    pub(super) fn body_format_editable(&self) -> bool {
-        self.is_interactive_ready()
-            && !self.markdown_preview_visible
-            && self
-                .session
-                .selected_note()
-                .is_some_and(|note| !note.deleted)
     }
 
-    fn apply_to_current_line(
+    /// Format ▸ Title / Heading / Subheading / Body / Monostyled.
+    pub(super) fn set_paragraph_role(
         &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        build: impl FnOnce(&str) -> String,
-    ) {
-        if !self.body_format_editable() {
-            return;
-        }
-        self.body.update(cx, |state, cx| {
-            let value = state.value().to_string();
-            let cursor = state.cursor();
-            let range = current_line_range(&value, cursor);
-            let Some(line) = value.get(range.clone()) else {
-                return;
-            };
-            let new_line = build(line);
-            state.set_selected_range(range, cx);
-            state.replace(new_line, window, cx);
-            state.focus(window, cx);
-        });
-        self.schedule_current_edit(cx);
-        cx.notify();
-    }
-
-    /// Format ▸ Paragraph Style: Title/Heading/Subheading are Markdown
-    /// headings, Body clears any marker, and Monospaced wraps the whole
-    /// line as an inline code span (the preview already draws `code` runs
-    /// in the monospace font).
-    pub(super) fn set_paragraph_style(
-        &mut self,
-        style: ParagraphStyle,
+        role: ParagraphRole,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.apply_to_current_line(window, cx, |line| {
-            let body = strip_leading_marker(line);
-            match style {
-                ParagraphStyle::Title => format!("# {body}"),
-                ParagraphStyle::Heading => format!("## {body}"),
-                ParagraphStyle::Subheading => format!("### {body}"),
-                ParagraphStyle::Body => body.to_string(),
-                ParagraphStyle::Monospaced if body.is_empty() => String::new(),
-                ParagraphStyle::Monospaced => format!("`{body}`"),
-            }
-        });
+        self.format_body(window, cx, |editor, cx| editor.set_paragraph_role(role, cx));
     }
 
-    /// Turn the current structured Markdown line into an ordinary paragraph.
+    /// Format ▸ Convert to Text: the paragraph becomes plain Body text.
     pub(super) fn convert_to_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_to_current_line(window, cx, |line| plain_text_line(line).to_string());
+        self.format_body(window, cx, |editor, cx| {
+            editor.set_list_marker(None, cx);
+            let style = editor.paragraph_style_at_selection();
+            if style.quote {
+                editor.toggle_quote(cx);
+            }
+            editor.set_paragraph_role(ParagraphRole::Body, cx);
+        });
     }
 
-    /// Format ▸ Lists: Bulleted and Numbered are line-prefix Markdown
-    /// markers, like Checklist (⇧⌘L) already inserts.
-    pub(super) fn insert_list_marker(
+    /// Format ▸ Bulleted / Dashed / Numbered List and Checklist: on, or
+    /// off again when the paragraph already is that kind of list.
+    pub(super) fn toggle_list(
         &mut self,
-        marker: ListMarker,
+        kind: ListKind,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.apply_to_current_line(window, cx, |line| {
-            let body = strip_leading_marker(line);
-            match marker {
-                ListMarker::Bulleted => format!("* {body}"),
-                ListMarker::Dashed => format!("- {body}"),
-                ListMarker::Numbered => format!("1. {body}"),
-            }
+        self.format_body(window, cx, |editor, cx| {
+            let current = editor.paragraph_style_at_selection().list;
+            editor.set_list_marker((current != Some(kind)).then_some(kind), cx);
         });
     }
 
     pub(super) fn insert_block_quote(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_to_current_line(window, cx, |line| {
-            if let Some(unquoted) = line.strip_prefix("> ") {
-                unquoted.to_string()
-            } else {
-                format!("> {line}")
-            }
-        });
+        self.format_body(window, cx, |editor, cx| editor.toggle_quote(cx));
     }
 
+    /// Format ▸ Indentation ▸ Increase / Decrease.
     pub(super) fn change_indent(
         &mut self,
         increase: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.apply_to_current_line(window, cx, |line| {
-            if increase {
-                format!("  {line}")
-            } else if let Some(rest) = line.strip_prefix("  ") {
-                rest.to_string()
-            } else if let Some(rest) = line.strip_prefix(' ') {
-                rest.to_string()
-            } else {
-                line.to_string()
-            }
+        self.format_body(window, cx, |editor, cx| {
+            editor.change_indent(if increase { 1 } else { -1 }, cx)
         });
     }
 
-    pub(super) fn insert_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.body_format_editable() {
-            return;
-        }
-        self.body.update(cx, |state, cx| {
-            let selection = state.selected_range();
-            let text = state.value().get(selection).unwrap_or_default().to_string();
-            let label = if text.is_empty() { "Link" } else { &text };
-            let markdown = format!("[{label}](https://)");
-            state.replace(markdown, window, cx);
-            let end = state.cursor();
-            state.set_selected_range(end - "https://".len() - 1..end - 1, cx);
-            state.focus(window, cx);
-        });
-        self.schedule_current_edit(cx);
-    }
-
+    /// Edit ▸ Paste and Match Style: the clipboard's text in the style at
+    /// the insertion point.
     pub(super) fn paste_plain_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.body_format_editable() {
-            return;
-        }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
-        self.body.update(cx, |state, cx| {
-            state.replace(text, window, cx);
-            state.focus(window, cx);
+        self.format_body(window, cx, |editor, cx| {
+            let selection = editor.selected_range();
+            editor.replace_range(selection, &text, cx);
         });
-        self.schedule_current_edit(cx);
     }
 
-    /// Wrap (or unwrap) the current selection in `prefix`/`suffix`, the
-    /// Markdown-insertion form of Bold (`**`) and Italic (`_`). An empty
-    /// selection gets an empty pair with the caret left inside it.
-    fn apply_inline_markdown(
-        &mut self,
-        prefix: &'static str,
-        suffix: &'static str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if !self.body_format_editable() {
-            return;
-        }
-        self.body.update(cx, |state, cx| {
-            let range = state.selected_range();
-            let value = state.value().to_string();
-            let selected = value.get(range).unwrap_or_default().to_string();
-            let already_wrapped = selected.len() >= prefix.len() + suffix.len()
-                && selected.starts_with(prefix)
-                && selected.ends_with(suffix);
-            if already_wrapped {
-                let inner = selected[prefix.len()..selected.len() - suffix.len()].to_string();
-                state.replace(inner, window, cx);
-            } else if selected.is_empty() {
-                state.replace(format!("{prefix}{suffix}"), window, cx);
-                let caret = state.cursor().saturating_sub(suffix.len());
-                state.set_selected_range(caret..caret, cx);
-            } else {
-                state.replace(format!("{prefix}{selected}{suffix}"), window, cx);
-            }
-            state.focus(window, cx);
-        });
-        self.schedule_current_edit(cx);
-        cx.notify();
+    /// Edit ▸ Paste and Retain Style: the clipboard with its own styles.
+    pub(super) fn paste_retaining_style(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.format_body(window, cx, |editor, cx| editor.paste_from_clipboard(cx));
     }
 
     pub(super) fn toggle_bold(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_inline_markdown("**", "**", window, cx);
+        self.format_body(window, cx, |editor, cx| editor.toggle_bold(cx));
     }
 
-    /// Markdown's `_..._` (rather than `*..*`) so Italic never collides
-    /// visually with a Bulleted List's `- ` or a lone `*`.
     pub(super) fn toggle_italic(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_inline_markdown("_", "_", window, cx);
+        self.format_body(window, cx, |editor, cx| editor.toggle_italic(cx));
     }
 
     pub(super) fn toggle_strikethrough(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_inline_markdown("~~", "~~", window, cx);
+        self.format_body(window, cx, |editor, cx| editor.toggle_strikethrough(cx));
     }
 
-    /// Format ▸ Font ▸ Underline: a `++marker++` span
-    /// (`markdown_preview::scan_custom_marker_spans`), the same
-    /// non-CommonMark convention Highlight and Baseline use.
     pub(super) fn toggle_underline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_inline_markdown("++", "++", window, cx);
+        self.format_body(window, cx, |editor, cx| editor.toggle_underline(cx));
     }
 
-    /// Format ▸ Font ▸ Highlight: a `==marker==` span.
+    /// Format ▸ Font ▸ Highlight (⇧⌘E).
     pub(super) fn toggle_highlight(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_inline_markdown("==", "==", window, cx);
+        self.format_body(window, cx, |editor, cx| {
+            let on = editor.style_at_selection().highlight.is_none();
+            editor.set_highlight(on.then_some(rich::markdown::NOTES_HIGHLIGHT), cx);
+        });
     }
 
-    /// Format ▸ Font ▸ Baseline ▸ Superscript: a `^marker^` span.
+    /// Format ▸ Font ▸ Bigger / Smaller (⌘+ / ⌘−): the selection's own
+    /// size, a point at a time.
+    pub(super) fn change_font_size(
+        &mut self,
+        delta: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.format_body(window, cx, |editor, cx| editor.change_size(delta, cx));
+    }
+
     pub(super) fn toggle_superscript(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_inline_markdown("^", "^", window, cx);
+        self.format_body(window, cx, |editor, cx| {
+            if editor.style_at_selection().superscript > 0 {
+                editor.reset_baseline(cx);
+            } else {
+                editor.reset_baseline(cx);
+                editor.adjust_superscript(1, cx);
+            }
+        });
     }
 
-    /// Format ▸ Font ▸ Baseline ▸ Subscript: a `::marker::` span. Not a
-    /// lone `~marker~`: this crate's GFM strikethrough accepts a single
-    /// `~` the same as a doubled `~~`, so that span is already claimed.
     pub(super) fn toggle_subscript(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_inline_markdown("::", "::", window, cx);
+        self.format_body(window, cx, |editor, cx| {
+            if editor.style_at_selection().superscript < 0 {
+                editor.reset_baseline(cx);
+            } else {
+                editor.reset_baseline(cx);
+                editor.adjust_superscript(-1, cx);
+            }
+        });
     }
 
-    /// Format ▸ Font ▸ Baseline ▸ Use Default: remove a Superscript or
-    /// Subscript wrap from the selection, if either is present.
     pub(super) fn baseline_use_default(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.body_format_editable() {
-            return;
-        }
-        self.body.update(cx, |state, cx| {
-            let range = state.selected_range();
-            let value = state.value().to_string();
-            let Some(selected) = value.get(range) else {
-                return;
-            };
-            for (prefix, suffix) in [("^", "^"), ("::", "::")] {
-                if wrapped_by(selected, prefix, suffix) {
-                    let inner = selected[prefix.len()..selected.len() - suffix.len()].to_string();
-                    state.replace(inner, window, cx);
-                    state.focus(window, cx);
-                    return;
-                }
-            }
-        });
-        self.schedule_current_edit(cx);
+        self.format_body(window, cx, |editor, cx| editor.reset_baseline(cx));
     }
 
-    /// Format ▸ Font ▸ Remove Style: strip every inline Markdown marker
-    /// Notes' own Format commands can produce from the selection, leaving
-    /// its plain text. Unlike the single-pair helpers above this removes
-    /// markers anywhere in the selection, not only at its edges, since a
-    /// selection can span several separately styled runs.
+    /// Format ▸ Font ▸ Remove Style: the selection back to its paragraph
+    /// style's plain face (links stay).
     pub(super) fn remove_style(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.body_format_editable() {
-            return;
-        }
-        self.body.update(cx, |state, cx| {
-            let range = state.selected_range();
-            let value = state.value().to_string();
-            let Some(selected) = value.get(range) else {
-                return;
-            };
-            if selected.is_empty() {
-                return;
-            }
-            let stripped = selected
-                .replace("**", "")
-                .replace("~~", "")
-                .replace("++", "")
-                .replace("==", "")
-                .replace("::", "")
-                .replace('^', "");
-            if stripped != selected {
-                state.replace(stripped, window, cx);
-                state.focus(window, cx);
-            }
+        self.format_body(window, cx, |editor, cx| {
+            let base = notes_typography(editor.paragraph_role());
+            editor.apply_char_style(base, cx);
         });
-        self.schedule_current_edit(cx);
     }
 
-    /// Format ▸ Font ▸ Copy Style: record which of the five wrap-pairs the
-    /// current selection is wrapped in, for a later Paste Style.
+    /// Format ▸ Font ▸ Copy Style (⌥⌘C).
     pub(super) fn copy_style(&mut self, cx: &mut Context<Self>) {
         if !self.body_format_editable() {
             return;
         }
-        let body = self.body.read(cx);
-        let value = body.value().to_string();
-        let Some(selected) = value.get(body.selected_range()) else {
-            return;
-        };
-        self.copied_style = Some(CopiedStyle {
-            bold: wrapped_by(selected, "**", "**"),
-            italic: wrapped_by(selected, "_", "_"),
-            strikethrough: wrapped_by(selected, "~~", "~~"),
-            underline: wrapped_by(selected, "++", "++"),
-            highlight: wrapped_by(selected, "==", "=="),
-        });
+        let mut style = self.body.read(cx).style_at_selection();
+        style.link = None;
+        self.copied_style = Some(style);
     }
 
-    /// Format ▸ Font ▸ Paste Style: wrap/unwrap the current selection so it
-    /// carries exactly the Copy Style selection's set of markers.
+    /// Format ▸ Font ▸ Paste Style (⌥⌘V).
     pub(super) fn paste_style(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.body_format_editable() {
-            return;
-        }
-        let Some(copied) = self.copied_style else {
+        let Some(copied) = self.copied_style.clone() else {
             return;
         };
-        self.body.update(cx, |state, cx| {
-            let range = state.selected_range();
-            let value = state.value().to_string();
-            let Some(selected) = value.get(range) else {
-                return;
-            };
-            if selected.is_empty() {
-                return;
-            }
-            let mut inner = selected.to_string();
-            for (prefix, suffix) in STYLE_WRAP_PAIRS {
-                if wrapped_by(&inner, prefix, suffix) {
-                    inner = inner[prefix.len()..inner.len() - suffix.len()].to_string();
-                }
-            }
-            let mut rebuilt = inner;
-            if copied.highlight {
-                rebuilt = format!("=={rebuilt}==");
-            }
-            if copied.underline {
-                rebuilt = format!("++{rebuilt}++");
-            }
-            if copied.strikethrough {
-                rebuilt = format!("~~{rebuilt}~~");
-            }
-            if copied.italic {
-                rebuilt = format!("_{rebuilt}_");
-            }
-            if copied.bold {
-                rebuilt = format!("**{rebuilt}**");
-            }
-            if rebuilt != selected {
-                state.replace(rebuilt, window, cx);
-                state.focus(window, cx);
-            }
-        });
-        self.schedule_current_edit(cx);
+        self.format_body(window, cx, |editor, cx| editor.apply_char_style(copied, cx));
     }
 
-    /// Format ▸ Text ▸ Align Left/Centre/Align Right: a trailing
-    /// ` :center:`/` :right:` marker on the current line
-    /// (`markdown_preview::strip_trailing_alignment_marker`). There is no
-    /// Justify: GPUI's text layout has no justified line-breaking API, so
-    /// it is left out of the menu rather than faked (docs/parity.md).
+    /// Format ▸ Text ▸ Align Left / Centre / Justify / Align Right.
     pub(super) fn set_text_alignment(
         &mut self,
-        align: rmac_notes_storage::TextAlign,
+        alignment: Alignment,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.apply_to_current_line(window, cx, |line| {
-            let mut base = line;
-            for marker in [" :center:", " :right:"] {
-                if let Some(stripped) = base.strip_suffix(marker) {
-                    base = stripped;
-                    break;
-                }
-            }
-            match align {
-                rmac_notes_storage::TextAlign::Left => base.to_string(),
-                rmac_notes_storage::TextAlign::Center => format!("{base} :center:"),
-                rmac_notes_storage::TextAlign::Right => format!("{base} :right:"),
-            }
+        self.format_body(window, cx, |editor, cx| editor.set_alignment(alignment, cx));
+    }
+
+    /// Format ▸ Text ▸ Writing Direction ▸ Paragraph.
+    pub(super) fn set_paragraph_direction(
+        &mut self,
+        direction: WritingDirection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.format_body(window, cx, |editor, cx| {
+            editor.set_writing_direction(direction, cx)
         });
     }
 
-    /// ⇧⌘U: mark the checklist item on the current line done/not done, like
-    /// the Mac. A line that is not yet a checklist item becomes one, not
-    /// done, matching Format ▸ Checklist's own insertion text.
+    /// Format ▸ Text ▸ Writing Direction ▸ Selection.
+    pub(super) fn set_selection_direction(
+        &mut self,
+        direction: WritingDirection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.format_body(window, cx, |editor, cx| {
+            editor.set_selection_direction(direction, cx)
+        });
+    }
+
+    /// Format ▸ Checklist (⇧⌘L).
+    pub(super) fn insert_checklist(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.toggle_list(ListKind::Checkbox, window, cx);
+    }
+
+    /// Format ▸ Mark as Ticked (⇧⌘U): tick the checklist item, or make the
+    /// paragraph an unticked one first.
     pub(super) fn toggle_checklist_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_to_current_line(window, cx, |line| match find_checkbox_marker(line) {
-            Some(marker_range) => {
-                let replacement = if &line[marker_range.clone()] == "[ ]" {
-                    "[x]"
-                } else {
-                    "[ ]"
-                };
-                let mut next = line.to_string();
-                next.replace_range(marker_range, replacement);
-                next
+        self.format_body(window, cx, |editor, cx| {
+            if editor.paragraph_style_at_selection().list == Some(ListKind::Checkbox) {
+                editor.toggle_checked(cx);
+            } else {
+                editor.set_list_marker(Some(ListKind::Checkbox), cx);
             }
-            None => format!("- [ ] {}", strip_leading_marker(line)),
         });
         self.apply_auto_sort_ticked_items(window, cx);
     }
 
-    /// Notes ▸ Settings… ▸ Automatically sort ticked items: reruns Format ▸
-    /// More ▸ Move Ticked to Bottom's own transform after any checklist
-    /// toggle. Simplification: the caret can land away from the line just
-    /// toggled when that line itself was the one moved, same as a Mac
-    /// animation moving an item out from under the caret.
-    fn apply_auto_sort_ticked_items(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Notes ▸ Settings… ▸ Automatically sort ticked items: Move Ticked to
+    /// Bottom after every tick.
+    pub(super) fn apply_auto_sort_ticked_items(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.auto_sort_ticked_items {
             self.apply_checklist_bulk(ChecklistBulkAction::MoveTickedToBottom, window, cx);
         }
     }
 
     /// Clicking a checkbox in Markdown Preview (NOTES-02): flip the
-    /// `- [ ] `/`- [x] ` marker at `range` (the whole list item's byte range
-    /// in the saved body, from `MarkdownPreviewBlock::source_range`) without
-    /// disturbing any other byte offset — `[ ]`/`[x]`/`[X]` are always 3
-    /// bytes, so no other range in the document moves. Goes through
-    /// `InputState::replace`, so it is undoable like any other edit.
+    /// `- [ ] `/`- [x] ` marker of the item at `range` (bytes of the saved
+    /// body) and show the result in the editor, undoably.
     pub(super) fn toggle_checklist_range(
         &mut self,
         range: std::ops::Range<usize>,
@@ -816,30 +532,31 @@ impl NotesView {
         if !editable {
             return;
         }
-        let mut toggled = false;
-        self.body.update(cx, |state, cx| {
-            let value = state.value().to_string();
-            let Some(item_text) = value.get(range.clone()) else {
-                return;
-            };
-            let Some(marker_range) = find_checkbox_marker(item_text) else {
-                return;
-            };
-            let absolute = range.start + marker_range.start..range.start + marker_range.end;
-            let replacement = match value.get(absolute.clone()) {
-                Some("[ ]") => "[x]",
-                Some("[x]") | Some("[X]") => "[ ]",
-                _ => return,
-            };
-            state.set_selected_range(absolute, cx);
-            state.replace(replacement, window, cx);
-            toggled = true;
+        let mut markdown = body_markdown(self.body.read(cx).document());
+        let Some(item) = markdown.get(range.clone()) else {
+            return;
+        };
+        let Some(offset) = item.get(..item.len().min(16)).and_then(|head| {
+            ["[ ]", "[x]", "[X]"]
+                .iter()
+                .find_map(|marker| head.find(marker))
+        }) else {
+            return;
+        };
+        let at = range.start + offset;
+        let replacement = if &markdown[at..at + 3] == "[ ]" {
+            "[x]"
+        } else {
+            "[ ]"
+        };
+        markdown.replace_range(at..at + 3, replacement);
+        let document = body_document(&markdown);
+        self.body.update(cx, |editor, cx| {
+            let caret = editor.cursor();
+            editor.replace_document(document, caret..caret, cx);
         });
-        if toggled {
-            self.schedule_current_edit(cx);
-            cx.notify();
-            self.apply_auto_sort_ticked_items(window, cx);
-        }
+        cx.notify();
+        self.apply_auto_sort_ticked_items(window, cx);
     }
 }
 
@@ -847,78 +564,38 @@ impl NotesView {
 mod tests {
     use super::*;
 
-    #[test]
-    fn paragraph_markers_are_replaced_rather_than_stacked() {
-        assert_eq!(strip_leading_marker("# Title"), "Title");
-        assert_eq!(strip_leading_marker("### Sub"), "Sub");
-        assert_eq!(strip_leading_marker("- [ ] Buy milk"), "Buy milk");
-        assert_eq!(strip_leading_marker("- [x] Done"), "Done");
-        assert_eq!(strip_leading_marker("- Item"), "Item");
-        assert_eq!(strip_leading_marker("12. Item"), "Item");
-        assert_eq!(strip_leading_marker("`Mono`"), "Mono");
-        assert_eq!(strip_leading_marker("Plain text"), "Plain text");
+    fn document(markdown: &str) -> Document {
+        body_document(markdown)
     }
 
     #[test]
-    fn current_line_range_finds_the_line_around_the_cursor() {
-        let value = "first\nsecond\nthird";
-        assert_eq!(current_line_range(value, 0), 0..5);
-        assert_eq!(current_line_range(value, 3), 0..5);
-        assert_eq!(current_line_range(value, 6), 6..12);
-        assert_eq!(current_line_range(value, value.len()), 13..18);
-    }
-
-    #[test]
-    fn checkbox_marker_is_found_only_near_the_start_of_the_item() {
-        assert_eq!(find_checkbox_marker("- [ ] Buy milk"), Some(2..5));
-        assert_eq!(find_checkbox_marker("- [x] Done"), Some(2..5));
-        assert_eq!(find_checkbox_marker("- [X] Done"), Some(2..5));
-        assert_eq!(find_checkbox_marker("- Not a checklist"), None);
-        // A literal "[ ]" deep in an item's own text is never mistaken for
-        // the marker: the search window is bounded.
+    fn checklist_bulk_actions_preserve_other_paragraphs_and_list_boundaries() {
+        let body = document("First\n- [x] one\n- [ ] two\n- [x] three\n\n- [x] four\n- [ ] five");
         assert_eq!(
-            find_checkbox_marker("- A very long line of text before any [ ] appears"),
-            None
-        );
-    }
-
-    #[test]
-    fn convert_to_text_removes_structural_markers() {
-        assert_eq!(plain_text_line("- [x] Buy milk"), "Buy milk");
-        assert_eq!(plain_text_line("> ## Heading"), "Heading");
-        assert_eq!(plain_text_line("ordinary text"), "ordinary text");
-    }
-
-    #[test]
-    fn checklist_bulk_actions_preserve_other_lines_and_list_boundaries() {
-        let body = "First\n- [x] one\n- [ ] two\n- [x] three\n\n- [x] four\n- [ ] five\n";
-        assert_eq!(
-            checklist_bulk_text(body, ChecklistBulkAction::MoveTickedToBottom),
-            "First\n- [ ] two\n- [x] one\n- [x] three\n\n- [ ] five\n- [x] four\n"
+            body_markdown(&checklist_bulk(
+                &body,
+                ChecklistBulkAction::MoveTickedToBottom
+            )),
+            "First\n- [ ] two\n- [x] one\n- [x] three\n\n- [ ] five\n- [x] four"
         );
         assert_eq!(
-            checklist_bulk_text(body, ChecklistBulkAction::DeleteTicked),
-            "First\n- [ ] two\n\n- [ ] five\n"
+            body_markdown(&checklist_bulk(&body, ChecklistBulkAction::DeleteTicked)),
+            "First\n- [ ] two\n\n- [ ] five"
         );
-        assert!(checklist_bulk_text(body, ChecklistBulkAction::TickAll)
-            .lines()
-            .filter(|line| checklist_line(line))
-            .all(ticked_line));
-        assert!(checklist_bulk_text(body, ChecklistBulkAction::UntickAll)
-            .lines()
-            .filter(|line| checklist_line(line))
-            .all(|line| !ticked_line(line)));
+        assert!(!body_markdown(&checklist_bulk(&body, ChecklistBulkAction::TickAll))
+            .contains("[ ]"));
+        assert!(!body_markdown(&checklist_bulk(&body, ChecklistBulkAction::UntickAll))
+            .contains("[x]"));
     }
 
     #[test]
-    fn moving_one_list_item_preserves_its_caret_and_other_paragraphs() {
-        let body = "Intro\n- [ ] one\n- [x] two\nOutro";
-        let cursor = body.find("two").unwrap() + 1;
-        let (moved, caret) = moved_list_item(body, cursor, true).unwrap();
-        assert_eq!(moved, "Intro\n- [x] two\n- [ ] one\nOutro");
-        assert_eq!(&moved[caret - 1..caret + 2], "two");
-        assert!(moved_list_item(body, cursor, false).is_none());
-        assert!(moved_list_item(body, 1, true).is_none());
+    fn moving_one_list_item_swaps_it_with_its_neighbour_only() {
+        let body = document("Intro\n- [ ] one\n- [x] two\nOutro");
+        let (moved, to) = moved_list_item(&body, 2, true).unwrap();
+        assert_eq!(to, 1);
+        assert_eq!(body_markdown(&moved), "Intro\n- [x] two\n- [ ] one\nOutro");
+        assert!(moved_list_item(&body, 2, false).is_none());
+        assert!(moved_list_item(&body, 0, false).is_none());
     }
 
     #[test]
@@ -935,5 +612,17 @@ mod tests {
             transformed_text("hELLO-world again", TextTransform::Capitalise),
             "Hello-World Again"
         );
+    }
+
+    #[test]
+    fn stored_bodies_from_earlier_notes_open_styled() {
+        let body = document("# Shopping\n- [ ] Milk\n**Soon**");
+        assert_eq!(body.text(), "Shopping\nMilk\nSoon");
+        assert_eq!(body.paragraph(0).style().role, ParagraphRole::Title);
+        assert_eq!(body.paragraph(0).style_of_char_at(0).size, TITLE_SIZE);
+        assert_eq!(body.paragraph(1).style().list, Some(ListKind::Checkbox));
+        assert!(body.paragraph(2).style_of_char_at(0).bold);
+        // And they are stored again exactly as they were.
+        assert_eq!(body_markdown(&body), "# Shopping\n- [ ] Milk\n**Soon**");
     }
 }

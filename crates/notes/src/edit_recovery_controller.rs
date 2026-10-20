@@ -16,40 +16,13 @@ impl NotesView {
             .update(cx, |state, cx| state.set_value(title, window, cx));
         self.tags
             .update(cx, |state, cx| state.set_value(tags, window, cx));
+        let document = note_format_controller::body_document(&body);
         self.body
-            .update(cx, |state, cx| state.set_value(body, window, cx));
+            .update(cx, |editor, cx| editor.set_document(document, cx));
+        self.maths_suggestion = None;
         self.applying_snapshot = false;
         self.sync_attachment_preview(false, cx);
         self.sync_markdown_preview(cx);
-    }
-
-    /// Format ▸ Checklist (⇧⌘L): start a Markdown checklist item on its own
-    /// line at the caret. The preview draws it as Notes' round checkbox.
-    pub(super) fn insert_checklist(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let editable = self.is_interactive_ready()
-            && !self.markdown_preview_visible
-            && !self.selected_note_closed()
-            && self
-                .session
-                .selected_note()
-                .is_some_and(|note| !note.deleted);
-        if !editable {
-            return;
-        }
-        self.body.update(cx, |state, cx| {
-            let cursor = state.cursor();
-            let value = state.value();
-            let at_line_start = cursor == 0
-                || value
-                    .get(..cursor)
-                    .is_some_and(|before| before.ends_with('\n'));
-            let item = if at_line_start { "- [ ] " } else { "\n- [ ] " };
-            state.insert(item, window, cx);
-            state.focus(window, cx);
-        });
-        // `insert` is silent, so record the edit explicitly.
-        self.schedule_current_edit(cx);
-        cx.notify();
     }
 
     /// Whether title/tags/body accept edits right now — mirrors
@@ -131,8 +104,11 @@ impl NotesView {
                 if !this.assistive_fields_editable() {
                     return;
                 }
-                this.body
-                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                this.body.update(cx, |editor, cx| {
+                    let end = editor.document().len();
+                    editor.replace_range(0..end, &text, cx);
+                });
+                let _ = window;
                 this.schedule_current_edit(cx);
             });
         }
@@ -160,7 +136,7 @@ impl NotesView {
         let previous_modified = note.modified_unix_ms;
         let accepted_tags = note.tags.clone();
         let title = self.title.read(cx).value().to_string();
-        let body = self.body.read(cx).value().to_string();
+        let body = note_format_controller::body_markdown(self.body.read(cx).document());
         let tag_text = self.tags.read(cx).value().to_string();
         let tags = match parse_tags(&tag_text) {
             Ok(tags) => tags,
@@ -253,9 +229,9 @@ impl NotesView {
         self.tags.update(cx, |state, cx| {
             state.set_value(changes.tags.join(", "), window, cx)
         });
-        self.body.update(cx, |state, cx| {
-            state.set_value(changes.body.clone(), window, cx)
-        });
+        let document = note_format_controller::body_document(&changes.body);
+        self.body
+            .update(cx, |editor, cx| editor.set_document(document, cx));
         self.applying_snapshot = false;
 
         let Some(request_id) = self.take_request_id() else {

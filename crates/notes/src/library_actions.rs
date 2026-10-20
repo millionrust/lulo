@@ -661,11 +661,8 @@ impl NotesView {
                 .session
                 .selected_note()
                 .is_some_and(|note| !note.deleted);
-        let body_focused = self.body.read(cx).focus_handle(cx).is_focused(window);
-        let body_has_selection = {
-            let body = self.body.read(cx);
-            !body.selected_range().is_empty()
-        };
+        let body_focused = self.body_focused(window, cx);
+        let body_has_selection = !self.body_selection(cx).is_empty();
         for action in [
             "notes::ToggleBold",
             "notes::ToggleItalic",
@@ -890,18 +887,94 @@ impl NotesView {
             "notes::RemoveStyle",
             "notes::AlignLeft",
             "notes::AlignCentre",
+            "notes::AlignJustify",
             "notes::AlignRight",
+            "notes::ParagraphDirectionDefault",
+            "notes::ParagraphDirectionLeftToRight",
+            "notes::ParagraphDirectionRightToLeft",
+            "notes::SelectionDirectionDefault",
+            "notes::SelectionDirectionLeftToRight",
+            "notes::SelectionDirectionRightToLeft",
+            "notes::FontBigger",
+            "notes::FontSmaller",
+            "notes::ShowFonts",
+            "notes::ShowColours",
         ] {
             rmac_ui::set_menu_enabled(action, body_editable && body_focused, cx);
         }
-        rmac_ui::set_menu_enabled(
-            "notes::FontBigger",
-            ready && has_note && self.note_zoom < 12,
+        // The Mac's section labels inside Writing Direction.
+        rmac_ui::set_menu_enabled("notes::WritingDirectionParagraphLabel", false, cx);
+        rmac_ui::set_menu_enabled("notes::WritingDirectionSelectionLabel", false, cx);
+        let paragraph = self.body.read(cx).paragraph_style_at_selection();
+        let char_style = self.body.read(cx).style_at_selection();
+        for (action, direction) in [
+            ("notes::ParagraphDirectionDefault", WritingDirection::Default),
+            (
+                "notes::ParagraphDirectionLeftToRight",
+                WritingDirection::LeftToRight,
+            ),
+            (
+                "notes::ParagraphDirectionRightToLeft",
+                WritingDirection::RightToLeft,
+            ),
+        ] {
+            rmac_ui::set_menu_checked(action, paragraph.direction == direction, cx);
+        }
+        for (action, direction) in [
+            ("notes::SelectionDirectionDefault", WritingDirection::Default),
+            (
+                "notes::SelectionDirectionLeftToRight",
+                WritingDirection::LeftToRight,
+            ),
+            (
+                "notes::SelectionDirectionRightToLeft",
+                WritingDirection::RightToLeft,
+            ),
+        ] {
+            rmac_ui::set_menu_checked(action, char_style.embedding == direction, cx);
+        }
+        for (action, role) in [
+            ("notes::SetStyleTitle", ParagraphRole::Title),
+            ("notes::SetStyleHeading", ParagraphRole::Heading),
+            ("notes::SetStyleSubheading", ParagraphRole::Subheading),
+            ("notes::SetStyleBody", ParagraphRole::Body),
+            ("notes::SetStyleMonospaced", ParagraphRole::Monostyled),
+        ] {
+            rmac_ui::set_menu_checked(action, body_focused && paragraph.role == role, cx);
+        }
+        for (action, list) in [
+            ("notes::InsertBulletedList", ListKind::Bullet),
+            ("notes::InsertDashedList", ListKind::Hyphen),
+            ("notes::InsertNumberedList", ListKind::Numbered),
+            ("notes::InsertChecklist", ListKind::Checkbox),
+        ] {
+            rmac_ui::set_menu_checked(action, body_focused && paragraph.list == Some(list), cx);
+        }
+        rmac_ui::set_menu_checked("notes::InsertBlockQuote", body_focused && paragraph.quote, cx);
+        rmac_ui::set_menu_label(
+            "notes::ToggleChecklistDone",
+            if paragraph.list == Some(ListKind::Checkbox) && paragraph.checked {
+                "Mark as Unticked"
+            } else {
+                "Mark as Ticked"
+            },
             cx,
         );
-        rmac_ui::set_menu_enabled(
-            "notes::FontSmaller",
-            ready && has_note && self.note_zoom > -5,
+        rmac_ui::set_menu_checked("notes::ToggleBold", body_focused && char_style.bold, cx);
+        rmac_ui::set_menu_checked("notes::ToggleItalic", body_focused && char_style.italic, cx);
+        rmac_ui::set_menu_checked(
+            "notes::ToggleUnderline",
+            body_focused && char_style.underline,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::ToggleStrikethrough",
+            body_focused && char_style.strikethrough,
+            cx,
+        );
+        rmac_ui::set_menu_checked(
+            "notes::ToggleHighlight",
+            body_focused && char_style.highlight.is_some(),
             cx,
         );
         rmac_ui::set_menu_enabled(
@@ -915,22 +988,15 @@ impl NotesView {
             cx,
         );
         rmac_ui::set_menu_enabled("notes::PasteAndRetainStyle", body_editable, cx);
-        let alignment = self.current_line_alignment(cx);
-        rmac_ui::set_menu_checked(
-            "notes::AlignLeft",
-            alignment == rmac_notes_storage::TextAlign::Left,
-            cx,
-        );
-        rmac_ui::set_menu_checked(
-            "notes::AlignCentre",
-            alignment == rmac_notes_storage::TextAlign::Center,
-            cx,
-        );
-        rmac_ui::set_menu_checked(
-            "notes::AlignRight",
-            alignment == rmac_notes_storage::TextAlign::Right,
-            cx,
-        );
+        let alignment = self.current_alignment(cx);
+        for (action, value) in [
+            ("notes::AlignLeft", Alignment::Left),
+            ("notes::AlignCentre", Alignment::Center),
+            ("notes::AlignJustify", Alignment::Justified),
+            ("notes::AlignRight", Alignment::Right),
+        ] {
+            rmac_ui::set_menu_checked(action, alignment == value, cx);
+        }
         rmac_ui::set_menu_checked(
             "notes::MathsResultsOff",
             self.maths_results_mode == MathsResultsMode::Off,
@@ -1508,16 +1574,19 @@ impl NotesView {
         cx.notify();
     }
 
-    /// Insert Results: typing `=` after an expression at the end of a line
-    /// appends the computed result. Only fires when the body grew by the
-    /// typed `=`, so deleting back to an `=` never re-inserts.
-    pub(super) fn insert_maths_result(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Format ▸ Maths Results after a change to the body: typing `=` after
+    /// an expression at the end of a line inserts its result (Insert
+    /// Results) or offers it (Suggest Results). Only a change that grew the
+    /// body by the typed `=` counts, so deleting back to an `=` never
+    /// computes again; any other change withdraws an offer.
+    pub(super) fn update_maths_results(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (text, cursor) = {
             let body = self.body.read(cx);
-            (body.value().to_string(), body.selected_range())
+            (body.text(), body.selected_range())
         };
         let previous = std::mem::replace(&mut self.maths_prev_len, text.len());
-        if self.maths_results_mode != MathsResultsMode::InsertResults
+        self.maths_suggestion = None;
+        if self.maths_results_mode == MathsResultsMode::Off
             || !self.body_format_editable()
             || cursor.start != cursor.end
             || text.len() != previous + 1
@@ -1531,12 +1600,46 @@ impl NotesView {
         else {
             return;
         };
-        self.body
-            .update(cx, |state, cx| state.replace(result, window, cx));
+        match self.maths_results_mode {
+            MathsResultsMode::InsertResults => {
+                let at = cursor.end;
+                self.body
+                    .update(cx, |editor, cx| editor.replace_range(at..at, &result, cx));
+            }
+            MathsResultsMode::SuggestResults => {
+                self.maths_suggestion = Some(crate::maths_results::Suggestion {
+                    at: cursor.end,
+                    result,
+                });
+            }
+            MathsResultsMode::Off => {}
+        }
+        let _ = window;
+        cx.notify();
+    }
+
+    /// Return or Tab while a result is offered: insert it.
+    pub(super) fn accept_maths_suggestion(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(suggestion) = self.maths_suggestion.take() else {
+            return false;
+        };
+        let caret = self.body_selection(cx);
+        if caret != (suggestion.at..suggestion.at) || !self.body_format_editable() {
+            cx.notify();
+            return false;
+        }
+        self.body.update(cx, |editor, cx| {
+            editor.replace_range(suggestion.at..suggestion.at, &suggestion.result, cx)
+        });
+        cx.notify();
+        true
     }
 
     pub(super) fn toggle_show_highlights(&mut self, cx: &mut Context<Self>) {
         self.show_highlights = !self.show_highlights;
+        let show = self.show_highlights;
+        self.body
+            .update(cx, |editor, cx| editor.set_show_highlights(show, cx));
         cx.notify();
     }
 

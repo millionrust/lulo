@@ -91,6 +91,22 @@ class Scenario:
             found = found or text
         return found
 
+    def line_pixels(self) -> list[tuple[int, int, int]]:
+        """The first text line of the Text Editor, to the right of "BASE",
+        read from niri's own screenshot (the document's text is not in the
+        accessibility tree)."""
+        window = self.driver.session.windows()
+        editor = next(w for w in window if w.get("app_id") == "org.rmac.TextEditor")
+        x, y = editor["layout"]["tile_pos_in_workspace_view"]
+        image = self.driver.screenshot()
+        scale = image.width / max(1, self.driver.session.width)
+        box = tuple(round(v * scale) for v in (x + 44, y + 34, x + 120, y + 52))
+        return list(image.crop(box).resize((24, 6)).getdata())
+
+    @staticmethod
+    def changed(a, b) -> bool:
+        return sum(abs(p - q) for u, v in zip(a, b) for p, q in zip(u, v)) / (len(a) * 3) > 4
+
     def recents(self) -> str:
         path = self.state_home / "rmac" / "emoji-recents"
         return path.read_text() if path.exists() else ""
@@ -114,8 +130,9 @@ class Scenario:
         subprocess.run(["wl-copy", "BASE"], env=self.driver.session.env, timeout=10, check=False)
         time.sleep(0.5)
         key("cmd-v")
-        self.facts["baseline_paste"] = bool(wait_until(lambda: "BASE" in self.document_text(), 5))
+        time.sleep(0.8)
         self.snapshot("baseline")
+        baseline = self.line_pixels()
 
         key("ctrl-cmd-space")
         opened = wait_until(self.panel_open, 10)
@@ -136,10 +153,10 @@ class Scenario:
         self.facts["closes_on_choice"] = bool(closed)
         if not closed:
             self.errors.append("choosing an emoji left the panel open")
-        inserted = wait_until(lambda: PARTY in self.document_text(), 10)
+        inserted = wait_until(lambda: self.changed(self.line_pixels(), baseline), 10)
         self.facts["inserted"] = bool(inserted)
         if not inserted:
-            self.errors.append(f"the emoji never reached the document: {self.document_text()!r}")
+            self.errors.append("nothing was inserted after BASE in the Text Editor")
         recents = self.recents()
         self.facts["recents"] = recents.strip()
         if PARTY not in recents:
@@ -152,6 +169,7 @@ class Scenario:
         self.snapshot("panel-recents")
         key("ctrl-cmd-space")
         toggled = wait_until(lambda: not self.panel_open(), 10)
+        time.sleep(1.0)
         self.facts["reopens"] = bool(reopened)
         self.facts["toggle_closes"] = bool(toggled)
         if not reopened:
@@ -160,7 +178,7 @@ class Scenario:
             self.errors.append("pressing ⌃⌘Space again did not close the panel")
 
         # Escape closes it and inserts nothing.
-        before = self.document_text()
+        before = self.line_pixels()
         key("ctrl-cmd-space")
         wait_until(self.panel_open, 10)
         time.sleep(0.5)
@@ -172,7 +190,7 @@ class Scenario:
         if not escaped:
             self.errors.append("Escape did not close the panel")
         time.sleep(0.5)
-        if self.document_text() != before:
+        if self.changed(self.line_pixels(), before):
             self.errors.append("Escape changed the document")
         focused = (self.driver.window() or {}).get("is_focused")
         self.facts["focus_returned"] = bool(focused)

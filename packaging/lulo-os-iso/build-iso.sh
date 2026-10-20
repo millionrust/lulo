@@ -138,7 +138,8 @@ printf 'Lulo OS %s "Live" - amd64 (%s)\n' "$version" "$(date -u +%Y%m%d)" > "$im
 touch "$image/.disk/base_installable"
 printf 'full_cd/single\n' > "$image/.disk/cd_type"
 mkdir -p "$image/boot/grub/themes"
-cp -a "$staging/grub-theme" "$image/boot/grub/themes/lulo"
+# The image's copy, which has the fonts chroot-setup.sh made with grub-mkfont.
+cp -a "$chroot_dir/boot/grub/themes/lulo" "$image/boot/grub/themes/lulo"
 sed "s/@VERSION@/$version/g" "$here/grub/grub.cfg" > "$image/boot/grub/grub.cfg"
 # The signed CD GRUB reads $prefix/x86_64-efi/grub.cfg when it exists; keep
 # one menu for both firmware types.

@@ -23,6 +23,14 @@ install -d -o "$user" -g "$group" "$home/.config" "$config"
 if [ ! -e "$config/shell.json" ]; then
     install -o "$user" -g "$group" -m 0644 /usr/share/lulo-live/shell.json "$config/shell.json"
 fi
+# The live user has no password: never lock or suspend while idle (Lulo's
+# idle lock policy, crates/rmac-shortcuts/src/lock.rs).
+if [ ! -e "$config/lock-policy.json" ]; then
+    printf '{"version":1,"lock_after_seconds":null,"suspend_after_seconds":null}\n' \
+        > "$config/lock-policy.json"
+    chown "$user:$group" "$config/lock-policy.json"
+    chmod 0600 "$config/lock-policy.json"
+fi
 # The setup assistant is for the installed system's first login.
 if [ ! -e "$config/setup-assistant-complete" ]; then
     printf 'skipped\n' > "$config/setup-assistant-complete"

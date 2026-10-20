@@ -22,6 +22,8 @@ apt_install() {
 
 apt-get update
 apt_install apt-utils
+# debootstrap takes the release pocket; bring it up to the current updates.
+apt-get full-upgrade --yes -o Dpkg::Options::=--force-confold
 
 packages=()
 while read -r line; do
@@ -98,11 +100,27 @@ chmod 0600 /etc/netplan/01-network-manager-all.yaml
 systemctl enable lulo-live-session.service lulo-ci-probe.service
 systemctl set-default graphical.target
 
+# Lulo is the only session on the login screen. gdm3 pulls in GNOME's session
+# files; divert them (dpkg keeps them out of the way across upgrades) so GDM,
+# casper's autologin and new users all land in Lulo. Lulo's own safe mode is
+# the recovery session.
+mkdir -p /usr/share/lulo-os/diverted-sessions
+for session in /usr/share/wayland-sessions/*.desktop /usr/share/xsessions/*.desktop; do
+    [ -e "$session" ] || continue
+    [ "$(basename "$session")" = rmac.desktop ] && continue
+    dpkg-divert --local --rename --add \
+        --divert "/usr/share/lulo-os/diverted-sessions/$(basename "$(dirname "$session")")-$(basename "$session")" \
+        "$session"
+done
+ls /usr/share/wayland-sessions /usr/share/xsessions 2>/dev/null || true
+test -f /usr/share/wayland-sessions/rmac.desktop
+
 # GDM: Wayland only, and Lulo as the default session for every user.
 mkdir -p /etc/gdm3
-if [ -f /etc/gdm3/custom.conf ]; then
-    sed -i 's/^#\?\s*WaylandEnable=.*/WaylandEnable=true/' /etc/gdm3/custom.conf
+if [ -f /etc/gdm3/custom.conf ] && ! grep -q '^DefaultSession=' /etc/gdm3/custom.conf; then
+    sed -i 's/^\[daemon\]$/[daemon]\nDefaultSession=rmac.desktop/' /etc/gdm3/custom.conf
 fi
+grep -n 'DefaultSession' /etc/gdm3/custom.conf || true
 
 # The live kernel's initramfs: casper, Plymouth with the Lulo theme.
 update-initramfs -u -k all

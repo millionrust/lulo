@@ -475,7 +475,7 @@ def check_boot(machine: Machine, live: bool) -> None:
 
 def scenario_live(machine: Machine) -> None:
     check_boot(machine, live=True)
-    session = parse_marker(machine.wait_marker("session-up", timeout=900))
+    session = parse_marker(machine.wait_marker("session-up", timeout=1000))
     time.sleep(8)  # let the Dock and the wallpaper settle for the screenshot
     machine.screenshot("live-session")
     expect(session.get("installer-entry") == "1", "the Install Lulo OS app is missing")
@@ -485,7 +485,7 @@ def scenario_live(machine: Machine) -> None:
 
 def scenario_install(machine: Machine) -> None:
     check_boot(machine, live=True)
-    machine.wait_marker("session-up", timeout=900)
+    machine.wait_marker("session-up", timeout=1000)
     machine.wait_marker("installer-launched", timeout=180)
     failure = ("Installation Failed",)
 

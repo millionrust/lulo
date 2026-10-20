@@ -227,29 +227,33 @@ impl SettingsView {
             .border_color(mac::separator())
             .children(Pane::ALL.into_iter().enumerate().map(|(index, pane)| {
                 let selected = self.pane == pane;
-                // The strip itself carries the real tab semantics (role and
-                // selected state) the way Finder's own window-tab strip does
-                // (`crates/finder/src/view/chrome_presentation/menus_tabs.rs`):
-                // `Button::selected` is purely a visual highlight with no
-                // accessibility signal of its own, so without this wrapper
-                // AT-SPI never reported which Settings pane was showing.
-                // Never shrunk below its button: a squeezed tab's extents
-                // would no longer cover the button drawn for it.
+                // The tab itself carries the tab semantics (role and selected
+                // state) the way Finder's own window-tab strip does
+                // (`crates/finder/src/view/chrome_presentation/menus_tabs.rs`).
+                // A compact text tab: eight bordered buttons no longer fit the
+                // Mac's 775-point window once Rules joined them.
                 div()
                     .id(("mail-settings-tab", index))
                     .flex_none()
                     .role(Role::Tab)
                     .aria_label(pane.label())
                     .aria_selected(selected)
-                    .child(
-                        Button::new(("mail-settings-tab-button", index), pane.label())
-                            .small()
-                            .selected(selected)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.pane = pane;
-                                cx.notify();
-                            })),
-                    )
+                    .h(px(26.0))
+                    .px(px(9.0))
+                    .flex()
+                    .items_center()
+                    .rounded(px(mac::radius_control()))
+                    .text_size(px(12.0))
+                    .when(selected, |tab| {
+                        tab.bg(mac::control_fill())
+                            .font_weight(FontWeight::SEMIBOLD)
+                    })
+                    .hover(|tab| tab.bg(mac::hover()))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.pane = pane;
+                        cx.notify();
+                    }))
+                    .child(pane.label())
             }))
             .into_any_element()
     }

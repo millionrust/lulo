@@ -278,6 +278,13 @@
           ]
         },
         {
+          "label": "Emoji & Symbols",
+          "action": "input::ShowCharacterPalette",
+          "shortcut": "⌃⌘Space",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Writing Tools",
           "action": "writing_tools::WritingToolsMenu",
           "shortcut": "",

@@ -287,11 +287,14 @@ def parse_macro_call(call: str) -> MenuItem:
     """Parse a single `item!(...)`/`submenu!(...)` invocation, or a call to
     one of the shared submenu macros in `_SHARED_SUBMENU_BUILDERS`."""
     call = call.strip()
-    names = "|".join(["item", "submenu", *_SHARED_SUBMENU_BUILDERS])
+    names = "|".join(["item", "submenu", "emoji_and_symbols_item", *_SHARED_SUBMENU_BUILDERS])
     m = re.match(rf"^({names})!\s*\(", call)
     if not m:
         raise ValueError(f"not a recognised macro call: {call[:60]!r}")
     kind = m.group(1)
+    if kind == "emoji_and_symbols_item":
+        # Mirrors `emoji_and_symbols_item!` in `rmac-app-menu/src/lib.rs`.
+        return MenuItem("Emoji & Symbols", "input::ShowCharacterPalette", "⌃⌘Space", False, [])
     open_idx = call.index("(", m.end() - 1)
     close_idx = _find_matching_paren(call, open_idx)
     inner = call[open_idx + 1 : close_idx]

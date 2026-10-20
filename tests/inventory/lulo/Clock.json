@@ -285,6 +285,13 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Emoji & Symbols",
+          "action": "input::ShowCharacterPalette",
+          "shortcut": "⌃⌘Space",
+          "separator_before": false,
+          "children": []
         }
       ]
     },

@@ -210,7 +210,7 @@ mod linux {
             let session_proxy = Proxy::new(
                 &connection,
                 BUS,
-                session.as_ref(),
+                session.clone(),
                 "org.gnome.Mutter.ScreenCast.Session",
             )
             .map_err(|e| error("session proxy", e))?;
@@ -229,7 +229,7 @@ mod linux {
             let stream_proxy = Proxy::new(
                 &connection,
                 BUS,
-                stream.as_ref(),
+                stream.clone(),
                 "org.gnome.Mutter.ScreenCast.Stream",
             )
             .map_err(|e| error("stream proxy", e))?;
@@ -266,7 +266,7 @@ mod linux {
             if let Ok(proxy) = Proxy::new(
                 &self.connection,
                 BUS,
-                self.session.as_ref(),
+                self.session.clone(),
                 "org.gnome.Mutter.ScreenCast.Session",
             ) {
                 let _ = proxy.call::<_, _, ()>("Stop", &());
@@ -291,13 +291,14 @@ mod linux {
         path: PathBuf,
     ) -> Result<(Recording, mpsc::Receiver<io::Result<std::process::ExitStatus>>), String> {
         let session = Session::open(connector, show_pointer)?;
-        let mut child: Child = match Command::new("gst-launch-1.0")
-            .args(pipeline_arguments(session.node, crop, encoder, &path))
+        let arguments = pipeline_arguments(session.node, crop, encoder, &path);
+        let spawned = Command::new("gst-launch-1.0")
+            .args(&arguments)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
-            .spawn()
-        {
+            .spawn();
+        let mut child: Child = match spawned {
             Ok(child) => child,
             Err(error) => {
                 session.close();

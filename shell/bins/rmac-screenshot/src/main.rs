@@ -11,6 +11,8 @@ mod capture;
 #[cfg(unix)]
 mod ipc;
 mod model;
+#[cfg(target_os = "linux")]
+#[cfg_attr(not(feature = "wayland"), allow(dead_code, unused_imports))]
 mod record;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
@@ -31,6 +33,7 @@ mod linux_wayland {
     use uuid::Uuid;
 
     use crate::capture::{self, Region};
+    use crate::record;
     use crate::model::{
         self, Command, Destination, Handle, MenuEntry, MenuItem, Point, Rect, Settings, Target,
     };
@@ -804,6 +807,8 @@ mod linux_wayland {
             let point = Self::local(event.position);
             self.pointer = Some(point);
             match (self.mode, self.target.shape()) {
+                // `shape` never leaves a Record target: it is Screen or Selection.
+                (_, Target::RecordScreen | Target::RecordSelection) => {}
                 (_, Target::Window) => {
                     if let Some(index) = model::window_at(&self.windows, point) {
                         let rect = self.windows[index];
@@ -862,7 +867,8 @@ mod linux_wayland {
 
         fn cursor(&self) -> CursorStyle {
             match (self.mode, self.target.shape()) {
-                (_, Target::Window) | (Mode::Toolbar, Target::Screen) => CursorStyle::Arrow,
+                (_, Target::Window | Target::RecordScreen | Target::RecordSelection)
+                | (Mode::Toolbar, Target::Screen) => CursorStyle::Arrow,
                 (Mode::Interactive, _) => CursorStyle::Crosshair,
                 (Mode::Toolbar, Target::Selection) => {
                     if matches!(self.gesture, Gesture::Moving { .. }) {

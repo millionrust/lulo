@@ -229,6 +229,7 @@ mod tests {
 
     fn window(id: u64, app: &str, pid: Option<i32>) -> Window {
         Window {
+            always_on_top: false,
             id: WindowId(id),
             title: None,
             app_id: Some(app.to_owned()),

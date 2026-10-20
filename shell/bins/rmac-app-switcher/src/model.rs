@@ -510,6 +510,7 @@ mod tests {
 
     fn window(id: u64, app: &str, workspace: u64, focused_at: u64) -> Window {
         Window {
+            always_on_top: false,
             id: WindowId(id),
             title: None,
             app_id: Some(app.to_owned()),

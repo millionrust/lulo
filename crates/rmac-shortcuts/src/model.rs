@@ -52,6 +52,8 @@ pub fn known_action(id: &ShortcutId) -> bool {
             | "shutdown-dialog"
             | "restart-to-update"
             | "menu-bar-focus"
+            // ⌃F8: keyboard focus to the status menus (CC-05).
+            | "status-menus-focus"
             // ⇧⌘Q: the Log Out confirmation (KB-01).
             | "log-out-dialog"
             | "voice"

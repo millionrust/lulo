@@ -62,6 +62,16 @@ Mouse Keys, dwell click, session-wide double-click timing, or per-device input
 overrides. These features remain explicitly unavailable rather than becoming
 local switches that work only in rmac applications.
 
+## Keyboard navigation
+
+Keyboard ▸ Keyboard navigation is an appearance preference
+(`rmac_theme::Preferences::keyboard_navigation`, off by default as on the
+Mac) that every rmac app reads through `rmac_ui::mac::keyboard_navigation`.
+Off, Tab stops only at text fields, lists and tables; rmac-ui buttons,
+switches, checkboxes, radio buttons, pop-ups, toolbar buttons and the
+window's traffic lights are skipped. On, they become Tab stops too. A
+change applies to running apps at once, with the rest of the theme.
+
 ## Orca readiness boundary
 
 Niri provides basic Orca support only when it runs as a full desktop session,

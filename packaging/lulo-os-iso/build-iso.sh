@@ -99,7 +99,10 @@ cp -a "$here/plymouth" "$chroot_dir/tmp/lulo-build/plymouth"
 cp -a "$here/grub" "$chroot_dir/tmp/lulo-build/grub"
 # The overlay goes in before the packages so policy files (casper.conf,
 # netplan, GRUB defaults) are in place when their packages configure.
-cp -a "$here/rootfs/." "$chroot_dir/"
+# Owned by root, and existing directories (/etc, /usr, ...) keep their own
+# owner and mode.
+tar -C "$here/rootfs" --owner=0 --group=0 -cf - . \
+    | tar -C "$chroot_dir" --no-overwrite-dir -xf -
 sed -i "s/@VERSION@/$version/g" "$chroot_dir/etc/calamares/branding/lulo/branding.desc"
 chroot "$chroot_dir" /usr/bin/env -i \
     HOME=/root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 \

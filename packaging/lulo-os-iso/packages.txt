@@ -15,7 +15,6 @@ sudo
 locales
 tzdata
 dbus-user-session
-systemd-timesyncd
 bash-completion
 
 # Boot: BIOS GRUB in the image, UEFI GRUB swapped in by the installer

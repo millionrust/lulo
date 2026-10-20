@@ -116,6 +116,18 @@ class OcrMatchingTest(unittest.TestCase):
         [match] = driver.find_phrase(self.words(), "Erase disk")
         self.assertEqual((match.left, match.right), (100, 175))
 
+    def test_words_of_one_line_with_uneven_tops_stay_together(self) -> None:
+        words = [
+            driver.Word("is", 140, 79, 12, 14),
+            driver.Word("What", 100, 81, 36, 13),
+            driver.Word("your", 156, 82, 30, 12),
+            driver.Word("name?", 190, 80, 44, 14),
+            driver.Word("login", 100, 160, 40, 13),
+        ]
+        [match] = driver.find_phrase(words, "What is your name?")
+        self.assertEqual((match.left, match.right), (100, 234))
+        self.assertEqual(driver.find_phrase(words, "name login"), [])
+
     def test_lowest_match_is_the_button(self) -> None:
         matches = driver.find_phrase(self.words(), "Install")
         self.assertEqual(len(matches), 2)

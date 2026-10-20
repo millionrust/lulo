@@ -116,26 +116,35 @@ def parse_tesseract_tsv(tsv: str, scale: float = 1.0) -> list[Word]:
 
 
 def cluster_lines(words: list[Word]) -> list[list[Word]]:
-    """Group words into visual lines: similar height, close horizontally.
+    """Group words into visual lines: one row, then split at wide gaps.
 
     Tesseract's own line ids split a UI into odd blocks (a button next to a
-    label), so phrases are matched on geometry instead.
+    label), so phrases are matched on geometry instead. Words of one line
+    differ by a pixel or two in height, so rows are found first and only
+    then ordered left to right.
     """
-    lines: list[list[Word]] = []
-    for word in sorted(words, key=lambda item: (item.top, item.left)):
-        placed = False
-        for line in lines:
-            last = line[-1]
-            same_row = abs(last.middle_y - word.middle_y) <= max(last.height, word.height) * 0.6
-            near = 0 <= word.left - last.right <= max(last.height, word.height) * 1.8
-            if same_row and near:
-                line.append(word)
-                placed = True
+    rows: list[list[Word]] = []
+    for word in sorted(words, key=lambda item: item.middle_y):
+        for row in rows:
+            centre = sum(item.middle_y for item in row) / len(row)
+            height = max(item.height for item in row)
+            if abs(word.middle_y - centre) <= max(height, word.height) * 0.5:
+                row.append(word)
                 break
-        if not placed:
-            lines.append([word])
-    for line in lines:
-        line.sort(key=lambda item: item.left)
+        else:
+            rows.append([word])
+    lines: list[list[Word]] = []
+    for row in rows:
+        row.sort(key=lambda item: item.left)
+        line = [row[0]]
+        for word in row[1:]:
+            last = line[-1]
+            if word.left - last.right > max(last.height, word.height) * 1.8:
+                lines.append(line)
+                line = [word]
+            else:
+                line.append(word)
+        lines.append(line)
     return lines
 
 
@@ -488,7 +497,10 @@ class Machine:
             path.unlink(missing_ok=True)
             self.shots -= 1
             time.sleep(2)
-        self.screenshot("missing-" + normalise(phrase)[:24])
+        path, words = self.screen_words("missing-" + normalise(phrase)[:24])
+        path.with_suffix(".ocr.txt").write_text(
+            "\n".join(" ".join(word.text for word in line) for line in cluster_lines(words)) + "\n"
+        )
         raise TestFailure(f"{phrase!r} did not appear within {timeout:.0f}s")
 
     def click_text(self, phrase: str, timeout: float = 120, **options) -> Match:
@@ -552,28 +564,16 @@ def scenario_install(machine: Machine) -> None:
     machine.screenshot("partition-erase")
     machine.click_text("Next", avoid=failure)
 
-    # Users: the fields' placeholders, else the questions above them.
-    name_field = None
-    for phrase, below in (("Your Full Name", 0), ("What is your name?", 32)):
-        try:
-            match = machine.wait_text(phrase, timeout=60 if not below else 20)
-            name_field = (match.x, match.y + below)
-            break
-        except TestFailure:
-            continue
-    expect(name_field is not None, "the users page did not appear")
-    machine.click(*name_field)
+    # Users: the page opens with the full-name field focused. The login and
+    # computer names fill themselves in from it; Tab walks past them to the
+    # two password fields.
+    machine.wait_text("Choose a password", timeout=120)
+    time.sleep(1)
     machine.type_text(CI_USER_NAME)
     time.sleep(1)
-    _, words = machine.screen_words("users-name")
-    password = [match for match in find_phrase(words, "Password", exact_line=True)]
-    if password:
-        first = min(password, key=lambda match: match.left)
-        machine.click(first.x, first.y)
-    else:
-        machine.key("tab")  # login name, filled in from the full name
-        machine.key("tab")  # computer name, filled in too
-        machine.key("tab")
+    machine.key("tab")  # login name
+    machine.key("tab")  # computer name
+    machine.key("tab")
     machine.type_text(CI_PASSWORD)
     machine.key("tab")
     machine.type_text(CI_PASSWORD)

@@ -841,7 +841,7 @@ mod edit_tests {
         let path = temp_path("roundtrip-png.png");
         let edited = rotate(&swatch(), Rotation::from_degrees(90));
         save_image(&edited, ImageKind::Png, &path).unwrap();
-        let reloaded = load_image(&path).unwrap();
+        let reloaded = load_image(&path, ImageKind::Png).unwrap();
         assert_eq!(reloaded.pixels.dimensions(), edited.dimensions());
         assert_eq!(*reloaded.pixels, edited);
         let _ = std::fs::remove_file(&path);
@@ -858,7 +858,7 @@ mod edit_tests {
             let path = temp_path(name);
             let edited = crop(&swatch(), 0, 0, 2, 1);
             save_image(&edited, kind, &path).unwrap();
-            let reloaded = load_image(&path).unwrap();
+            let reloaded = load_image(&path, kind).unwrap();
             assert_eq!(*reloaded.pixels, edited, "{name}");
             let _ = std::fs::remove_file(&path);
         }
@@ -874,7 +874,7 @@ mod edit_tests {
         // BGRA (this module's convention): blue 200, green/red 40.
         let solid = RgbaImage::from_pixel(4, 4, image::Rgba([200, 40, 40, 255]));
         save_image(&solid, ImageKind::Jpeg, &path).unwrap();
-        let reloaded = load_image(&path).unwrap();
+        let reloaded = load_image(&path, ImageKind::Jpeg).unwrap();
         assert_eq!(reloaded.pixels.dimensions(), (4, 4));
         let pixel = reloaded.pixels.get_pixel(0, 0).0;
         assert!((i32::from(pixel[0]) - 200).abs() < 10, "{pixel:?}");

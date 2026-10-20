@@ -1466,12 +1466,7 @@ impl PreviewView {
     fn delete_markup(&mut self, cx: &mut Context<Self>) {
         let Some(index) = self.markup_selected.take() else {
             if self.can_delete_page() {
-                self.edit_pdf_pages(
-                    "delete the page",
-                    markup::delete_page,
-                    false,
-                    cx,
-                );
+                self.edit_pdf_pages("delete the page", markup::delete_page, false, cx);
             }
             return;
         };

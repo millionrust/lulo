@@ -47,6 +47,8 @@ pub fn known_action(id: &ShortcutId) -> bool {
             | "shutdown-dialog"
             | "restart-to-update"
             | "menu-bar-focus"
+            // ⇧⌘Q: the Log Out confirmation (KB-01).
+            | "log-out-dialog"
             | "voice"
             // ⌘Q and ⌘W, answered by the menu bar for every app (WIN-17).
             | "app-quit"

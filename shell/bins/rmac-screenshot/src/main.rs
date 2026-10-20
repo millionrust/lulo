@@ -302,6 +302,12 @@ mod linux_wayland {
                 directory,
                 name: model::file_name(&chrono::Local::now().naive_local()),
             };
+            if destination == Destination::Preview {
+                // Save to ▸ Preview: no thumbnail; the capture opens at once.
+                self.dismiss_thumbnail(cx);
+                self.deliver(pending, true, cx);
+                return;
+            }
             // A newer capture saves the previous thumbnail's file at once.
             self.dismiss_thumbnail(cx);
             if !self.settings.show_thumbnail {

@@ -326,6 +326,13 @@ fn the_power_button_and_its_dialog_have_their_own_endpoints() {
 }
 
 #[test]
+fn shift_command_q_opens_the_log_out_dialog_through_its_own_endpoint() {
+    let id = ShortcutId("log-out-dialog".into());
+    assert!(known_action(&id));
+    assert!(!default_shortcuts().iter().any(|spec| spec.id == id));
+}
+
+#[test]
 fn ctrl_f2_moves_menu_bar_focus_through_its_own_endpoint() {
     let runtime = Path::new("/tmp/rmac-shortcuts-test");
     let focus = ShortcutId("menu-bar-focus".into());

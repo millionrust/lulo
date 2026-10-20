@@ -285,6 +285,9 @@ binds {
     // asks a third-party app to close its windows. With the keyd Mac
     // keyboard on (ADR 0017) a third-party app gets Ctrl+Q/Ctrl+W instead,
     // before niri sees them, so a browser's ⌘W still closes a tab.
+    // ⇧⌘Q opens the Log Out confirmation, as on macOS (KB-01); the menu
+    // bar's popover shows it and its 60-second countdown.
+    Mod+Shift+Q repeat=false hotkey-overlay-title="Log Out" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "log-out-dialog"; }
     Mod+Q repeat=false hotkey-overlay-title="Quit" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "app-quit"; }
     Mod+W repeat=false hotkey-overlay-title="Close Window" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "window-close"; }
     // Screenshots are the resident rmac-screenshot service
@@ -308,6 +311,9 @@ binds {
     XF86AudioStop allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "stop"; }
     XF86MonBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-up"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-down"; }
+    // Keyboard-backlight keys (KB-04): the OSD shows Keyboard Brightness.
+    XF86KbdBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "keyboard-brightness-up"; }
+    XF86KbdBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "keyboard-brightness-down"; }
     // Allowed while locked: a press on the lock screen sleeps at once.
     XF86PowerOff repeat=false allow-when-locked=true hotkey-overlay-title=null { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "power-key"; }
     // ⌘F5, as on the Mac, toggles the screen reader (Accessibility >

@@ -16,7 +16,7 @@ use std::sync::{Mutex, OnceLock};
 use async_channel::{Receiver, Sender};
 use rmac_compositor as domain;
 use windows::core::{w, BOOL, HSTRING, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
 };
@@ -28,6 +28,7 @@ use windows::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
 };
 use windows::Win32::System::Com::CoIncrementMTAUsage;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{
     AttachThreadInput, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
     QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -46,6 +47,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
     SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CLOSE,
     WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, RegisterClassW, SPI_SETWORKAREA, WM_DISPLAYCHANGE,
+    WM_SETTINGCHANGE, WNDCLASSW, WS_OVERLAPPED,
 };
 
 /// The workspace holding minimised windows (`rmac_compositor::PARKING_WORKSPACE`).
@@ -136,6 +141,7 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::CloseWindow,
             domain::ActionKind::FullscreenWindow,
             domain::ActionKind::FillWindow,
+            domain::ActionKind::QuitApplication,
             domain::ActionKind::CenterWindow,
             domain::ActionKind::TileWindow,
             domain::ActionKind::SetWindowFrame,
@@ -628,6 +634,10 @@ fn start_hooks() -> Result<(), String> {
                 let _ = ready_tx.send(Err("SetWinEventHook refused every hook".into()));
                 return;
             }
+            // Changes to the work area (the bar's and the Dock's AppBars,
+            // a display's resolution) are broadcast to top-level windows
+            // only: a hidden one on this thread hears them.
+            watch_work_area();
             let _ = ready_tx.send(Ok(()));
             let mut message = MSG::default();
             // SAFETY: a plain message loop on this thread, which owns the
@@ -1288,6 +1298,10 @@ fn run_action(action: &domain::Action) -> Result<(), domain::ActionError> {
             unsafe { PostMessageW(Some(handle(*window)), WM_CLOSE, WPARAM(0), LPARAM(0)) }
                 .map_err(|error| rejected(error.to_string()))
         }
+        domain::Action::QuitApplication { window } => {
+            quit_application(handle(*window));
+            Ok(())
+        }
         domain::Action::MinimizeWindow { window } => {
             show(handle(*window), SW_MINIMIZE);
             Ok(())
@@ -1353,6 +1367,25 @@ fn run_action(action: &domain::Action) -> Result<(), domain::ActionError> {
             Ok(())
         }
         other => Err(unsupported(other.kind())),
+    }
+}
+
+/// Quit for a Windows app, which has no Lulo Quit command (⌘Q, the bar's
+/// Quit): `WM_CLOSE` to every visible top-level window of its process, as
+/// its close buttons would send, so each may ask to save, and the app
+/// exits when its last window goes. Never the shell's own windows.
+fn quit_application(hwnd: HWND) {
+    let pid = process_id(hwnd);
+    // SAFETY: no arguments.
+    if pid == 0 || pid == unsafe { GetCurrentProcessId() } {
+        return;
+    }
+    for window in top_level_windows() {
+        // SAFETY: reads a property of a window EnumWindows just named.
+        if process_id(window) == pid && unsafe { IsWindowVisible(window) }.as_bool() {
+            // SAFETY: posts WM_CLOSE, as the window's close button does.
+            let _ = unsafe { PostMessageW(Some(window), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+        }
     }
 }
 
@@ -1511,6 +1544,128 @@ fn fit_new_window(hwnd: HWND) {
     }
 }
 
+/// Every monitor's rectangle and work area, in physical pixels.
+fn work_areas() -> Vec<(RECT, RECT)> {
+    monitors()
+        .iter()
+        .filter_map(|monitor| {
+            let mut info = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            // SAFETY: a MONITORINFO whose size field says so.
+            unsafe { GetMonitorInfoW(HMONITOR(monitor.handle as _), &mut info) }
+                .as_bool()
+                .then_some((info.rcMonitor, info.rcWork))
+        })
+        .collect()
+}
+
+/// The work areas the last change left, to tell which windows were inside.
+static WORK_AREAS: Mutex<Vec<(RECT, RECT)>> = Mutex::new(Vec::new());
+
+/// Where a restored window goes when its monitor's work area changes:
+/// macOS moves the windows that were inside the old visible frame and now
+/// reach under the bar or the Dock back in. A window the user put partly
+/// under the Dock before the change stays.
+fn refit_frame(frame: RECT, old_work: Option<RECT>, work: RECT, monitor: RECT) -> Option<RECT> {
+    let was_inside = old_work
+        .is_none_or(|old| domain::placement::inside(logical_rect(frame), logical_rect(old)));
+    was_inside
+        .then(|| new_window_frame(frame, work, monitor))
+        .flatten()
+}
+
+/// Runs on the hook thread when the work area or a display changed.
+fn refit_after_work_area_change() {
+    let now = work_areas();
+    let before = WORK_AREAS
+        .lock()
+        .map(|mut areas| std::mem::replace(&mut *areas, now.clone()))
+        .unwrap_or_default();
+    // SAFETY: no arguments.
+    let own = unsafe { GetCurrentProcessId() };
+    for (monitor, work) in &now {
+        let old = before
+            .iter()
+            .find(|(previous, _)| previous == monitor)
+            .map(|(_, area)| *area);
+        if old == Some(*work) {
+            continue;
+        }
+        for hwnd in top_level_windows() {
+            if !is_app_window(hwnd, own) {
+                continue;
+            }
+            let Some((frame, current, on)) = placeable(hwnd) else {
+                continue;
+            };
+            if on != *monitor || current != *work {
+                continue;
+            }
+            if let Some(target) = refit_frame(frame, old, *work, *monitor) {
+                trace_placement(hwnd, "window after a work-area change", frame, target);
+                place_frame(hwnd, target);
+            }
+        }
+    }
+}
+
+unsafe extern "system" fn work_area_procedure(
+    window: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    let changed = match message {
+        WM_SETTINGCHANGE => wparam.0 as u32 == SPI_SETWORKAREA.0,
+        WM_DISPLAYCHANGE => true,
+        _ => false,
+    };
+    if changed {
+        refit_after_work_area_change();
+    }
+    // SAFETY: the default handling for this thread's own window.
+    unsafe { DefWindowProcW(window, message, wparam, lparam) }
+}
+
+/// A hidden top-level window on the hook thread, which owns the message
+/// loop that delivers its messages.
+fn watch_work_area() {
+    if let Ok(mut areas) = WORK_AREAS.lock() {
+        *areas = work_areas();
+    }
+    // SAFETY: a 'static class name and a procedure that lives for the
+    // program; the window lives as long as the thread.
+    unsafe {
+        let Ok(module) = GetModuleHandleW(None) else {
+            return;
+        };
+        let instance = HINSTANCE::from(module);
+        let class = WNDCLASSW {
+            lpfnWndProc: Some(work_area_procedure),
+            hInstance: instance,
+            lpszClassName: w!("LuloWorkAreaWatch"),
+            ..Default::default()
+        };
+        let _ = RegisterClassW(&class);
+        let _ = CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            w!("LuloWorkAreaWatch"),
+            w!(""),
+            WS_OVERLAPPED,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(instance),
+            None,
+        );
+    }
+}
+
 /// Runs on the hook thread when a move or resize ends.
 fn keep_title_bar_below_bar(hwnd: HWND) {
     let Some((frame, work, monitor)) = placeable(hwnd) else {
@@ -1643,6 +1798,21 @@ mod placement_tests {
         assert_eq!(
             new_window_frame(rect(200, 300, 1000, 700), WORK, MONITOR),
             Some(rect(200, 250, 1000, 650))
+        );
+    }
+
+    #[test]
+    fn a_bigger_dock_moves_only_the_windows_that_were_inside() {
+        let bigger = rect(0, 29, 1366, 600);
+        // Inside the old work area, now reaching under the Dock: moved up.
+        assert_eq!(
+            super::refit_frame(rect(100, 300, 900, 640), Some(WORK), bigger, MONITOR),
+            Some(rect(100, 260, 900, 600))
+        );
+        // Already partly under the old Dock: left where the user put it.
+        assert_eq!(
+            super::refit_frame(rect(100, 400, 900, 700), Some(WORK), bigger, MONITOR),
+            None
         );
     }
 

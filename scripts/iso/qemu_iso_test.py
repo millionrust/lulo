@@ -586,7 +586,9 @@ def scenario_install(machine: Machine) -> None:
     machine.wait_text("Install", timeout=60, min_count=2)
     machine.screenshot("summary")
     machine.click_text("Install", avoid=failure, min_count=2)
-    machine.click_text("Install now", timeout=60)
+    # "Continue with Installation?": Install Now is the default button.
+    machine.wait_text("Continue with Installation", timeout=60)
+    machine.key("ret")
 
     started = time.monotonic()
     machine.wait_text("All done", timeout=machine.args.install_timeout, avoid=("Installation Failed",))

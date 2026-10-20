@@ -341,6 +341,7 @@ pub(super) fn convert_window(window: wire::Window) -> domain::Window {
         focused: window.is_focused,
         floating: window.is_floating,
         urgent: window.is_urgent,
+        always_on_top: window.is_always_on_top,
         focus_timestamp: window.focus_timestamp.map(convert_timestamp),
         layout: convert_window_layout(window.layout),
     }

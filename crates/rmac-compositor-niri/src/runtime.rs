@@ -72,6 +72,7 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::MoveWindowBy,
             domain::ActionKind::CrossfadeScreen,
             domain::ActionKind::ResizeWindow,
+            domain::ActionKind::SetAlwaysOnTop,
         ],
     }
 }
@@ -210,6 +211,10 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
         domain::Action::QuitApplication { window } => {
             wire::Action::CloseWindow { id: Some(window.0) }
         }
+        domain::Action::SetAlwaysOnTop { window, on } => wire::Action::SetWindowAlwaysOnTop {
+            id: Some(window.0),
+            on: *on,
+        },
         // `convert_action_sequence` sends the height too.
         domain::Action::ResizeWindow { window, width, .. } => wire::Action::SetWindowWidth {
             id: Some(window.0),

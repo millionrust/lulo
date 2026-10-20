@@ -27,3 +27,9 @@ rmac-shell-ui.workspace = true
 rmac-sound.workspace = true
 rmac-storage.workspace = true
 uuid.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Screen recording (SHOT-01): niri's screen cast over D-Bus, and SIGINT to
+# the encoder to end the file.
+libc.workspace = true
+zbus.workspace = true

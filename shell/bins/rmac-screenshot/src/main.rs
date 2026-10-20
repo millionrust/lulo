@@ -11,6 +11,7 @@ mod capture;
 #[cfg(unix)]
 mod ipc;
 mod model;
+mod record;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
@@ -71,6 +72,12 @@ mod linux_wayland {
                 "screenshot/capture-selection.svg" => Some(include_bytes!(
                     "../../../assets/screenshot/capture-selection.svg"
                 )),
+                "screenshot/record-screen.svg" => Some(include_bytes!(
+                    "../../../assets/screenshot/record-screen.svg"
+                )),
+                "screenshot/record-selection.svg" => Some(include_bytes!(
+                    "../../../assets/screenshot/record-selection.svg"
+                )),
                 "screenshot/close-x.svg" => {
                     Some(include_bytes!("../../../assets/screenshot/close-x.svg"))
                 }
@@ -97,6 +104,10 @@ mod linux_wayland {
         y: f64,
         width: f32,
         height: f32,
+        /// Device pixels per point, and the size of the output's pixels: what
+        /// a recording of it measures its crop in.
+        scale: f32,
+        pixels: (u32, u32),
     }
 
     impl OutputInfo {
@@ -118,6 +129,9 @@ mod linux_wayland {
         height: f32,
         to_clipboard: bool,
         delay: Duration,
+        /// Record instead of capture (SHOT-01): `selection` is the part of
+        /// the output to film, `None` for all of it.
+        record: Option<Option<Rect>>,
     }
 
     /// A captured file waiting behind the floating thumbnail.
@@ -160,6 +174,17 @@ mod linux_wayland {
             y: logical.position.y,
             width: logical.size.width as f32,
             height: logical.size.height as f32,
+            scale: logical.scale as f32,
+            pixels: output
+                .current_mode
+                .and_then(|index| output.modes.get(index))
+                .map(|mode| (mode.physical_size.width, mode.physical_size.height))
+                .unwrap_or_else(|| {
+                    (
+                        (logical.size.width * logical.scale).round() as u32,
+                        (logical.size.height * logical.scale).round() as u32,
+                    )
+                }),
         };
         let active = snapshot
             .workspaces
@@ -191,6 +216,15 @@ mod linux_wayland {
         Some((info, rects))
     }
 
+    /// Where a screen recording stands (SHOT-01).
+    enum Recorder {
+        Idle,
+        /// The timer is running down, or niri and the encoder are starting.
+        Starting,
+        /// The pipeline runs; `pid` is the encoder to stop.
+        Running { pid: u32 },
+    }
+
     struct Service {
         settings: Settings,
         clipboard: bool,
@@ -198,6 +232,7 @@ mod linux_wayland {
         thumbnail: Option<WindowHandle<Thumbnail>>,
         busy: bool,
         sequence: u64,
+        recorder: Recorder,
     }
 
     impl Service {
@@ -209,7 +244,103 @@ mod linux_wayland {
                 thumbnail: None,
                 busy: false,
                 sequence: 0,
+                recorder: Recorder::Idle,
             }
+        }
+
+        /// ⇧⌘5 ▸ Record: start filming `request`'s area once its timer is
+        /// down. Stopped by [`Self::stop_recording`] (⌃⌘⎋, the menu bar's
+        /// stop button, or ⇧⌘5 again).
+        fn start_recording(&mut self, request: Request, output: OutputInfo, cx: &mut Context<Self>) {
+            if !matches!(self.recorder, Recorder::Idle) {
+                return;
+            }
+            self.recorder = Recorder::Starting;
+            let Some(selection) = request.record else {
+                return;
+            };
+            let destination = match self.settings.destination {
+                Destination::Clipboard => Destination::Desktop,
+                destination => destination,
+            };
+            let open_afterwards = destination == Destination::Preview;
+            let directory = model::destination_directory(destination);
+            let show_pointer = self.settings.show_pointer;
+            let delay = request.delay;
+            cx.spawn(async move |this, cx: &mut AsyncApp| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(model::SETTLE_MS) + delay)
+                    .await;
+                let started = blocking::unblock(move || {
+                    let directory = directory.ok_or("no folder to save the recording in")?;
+                    let encoder = record::detect_encoder()?;
+                    std::fs::create_dir_all(&directory)
+                        .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
+                    let name = record::file_name(&chrono::Local::now().naive_local(), encoder);
+                    let path = model::unique_path(&directory, &name, |path| path.exists());
+                    let crop = selection.map(|rect| {
+                        record::crop_for(
+                            (rect.x, rect.y, rect.width, rect.height),
+                            output.scale,
+                            output.pixels,
+                        )
+                    });
+                    record::start(&output.name, show_pointer, crop, encoder, path)
+                })
+                .await;
+                match started {
+                    Ok((recording, ended)) => {
+                        let pid = recording.pid;
+                        let path = recording.path.clone();
+                        let started_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map_or(0, |elapsed| elapsed.as_millis() as u64);
+                        record::write_state(started_ms, &path);
+                        let _ = rmac_sound::play(rmac_sound::Cue::Screenshot);
+                        let _ = this.update(cx, |service, _| {
+                            service.recorder = Recorder::Running { pid };
+                        });
+                        // The recorder ends by a stop, or by itself.
+                        let ended = blocking::unblock(move || ended.recv()).await;
+                        if let Ok(Ok(status)) = &ended {
+                            if !status.success() {
+                                eprintln!("the screen recorder stopped with {status}");
+                            }
+                        }
+                        blocking::unblock(move || recording.session.close()).await;
+                        record::clear_state();
+                        let empty = std::fs::metadata(&path).is_ok_and(|meta| meta.len() == 0);
+                        if empty {
+                            let _ = std::fs::remove_file(&path);
+                        } else if open_afterwards {
+                            capture::open(&path);
+                        }
+                        let _ = this.update(cx, |service, _| service.recorder = Recorder::Idle);
+                    }
+                    Err(error) => {
+                        eprintln!("screen recording could not start: {error}");
+                        let _ = this.update(cx, |service, _| service.recorder = Recorder::Idle);
+                    }
+                }
+            })
+            .detach();
+        }
+
+        /// Finish the recording that is running: the encoder is asked to end
+        /// the file, and killed if it takes too long.
+        fn stop_recording(&mut self, cx: &mut Context<Self>) {
+            let Recorder::Running { pid } = self.recorder else {
+                return;
+            };
+            record::request_stop(pid);
+            cx.spawn(async move |_, cx: &mut AsyncApp| {
+                cx.background_executor().timer(record::finish_timeout()).await;
+                // Only does anything if the process is still there.
+                if std::path::Path::new(&format!("/proc/{pid}")).exists() {
+                    record::kill(pid);
+                }
+            })
+            .detach();
         }
 
         fn store(&mut self, settings: Settings) {
@@ -528,7 +659,7 @@ mod linux_wayland {
             let mut delay = Duration::ZERO;
             if self.mode == Mode::Toolbar {
                 settings.target = self.target;
-                if let (Area::Rect(rect), Target::Selection) = (&area, self.target) {
+                if let (Area::Rect(rect), Target::Selection) = (&area, self.target.shape()) {
                     settings.last_selection = Some(*rect);
                 }
                 delay = Duration::from_secs(u64::from(settings.timer_seconds));
@@ -541,6 +672,10 @@ mod linux_wayland {
                 ),
                 Area::Rect(rect) => (self.output.region(&rect), rect.width, rect.height),
             };
+            let record = self.target.is_recording().then(|| match area {
+                Area::Screen => None,
+                Area::Rect(rect) => Some(rect),
+            });
             let request = Request {
                 region,
                 output: self.output.uuid,
@@ -549,19 +684,25 @@ mod linux_wayland {
                 to_clipboard: self.to_clipboard
                     || (settings.destination == Destination::Clipboard && self.clipboard_available),
                 delay,
+                record,
             };
+            let output = self.output.clone();
             if !self.close(window, cx) {
                 return;
             }
             let _ = self.service.update(cx, |service, cx| {
                 service.store(settings);
-                service.start_capture(request, cx);
+                if request.record.is_some() {
+                    service.start_recording(request, output, cx);
+                } else {
+                    service.start_capture(request, cx);
+                }
             });
         }
 
         /// The Capture button and Return.
         fn capture_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-            match self.target {
+            match self.target.shape() {
                 Target::Screen => self.capture(Area::Screen, window, cx),
                 Target::Selection => self.capture(Area::Rect(self.selection), window, cx),
                 Target::Window => {
@@ -569,6 +710,7 @@ mod linux_wayland {
                         self.capture(Area::Rect(rect), window, cx);
                     }
                 }
+                Target::RecordScreen | Target::RecordSelection => {}
             }
         }
 
@@ -640,7 +782,7 @@ mod linux_wayland {
                 }
                 _ => {}
             }
-            if self.target == Target::Window {
+            if self.target.shape() == Target::Window {
                 self.hovered_window = model::window_at(&self.windows, point);
             }
             cx.notify();
@@ -659,7 +801,7 @@ mod linux_wayland {
             }
             let point = Self::local(event.position);
             self.pointer = Some(point);
-            match (self.mode, self.target) {
+            match (self.mode, self.target.shape()) {
                 (_, Target::Window) => {
                     if let Some(index) = model::window_at(&self.windows, point) {
                         let rect = self.windows[index];
@@ -717,7 +859,7 @@ mod linux_wayland {
         }
 
         fn cursor(&self) -> CursorStyle {
-            match (self.mode, self.target) {
+            match (self.mode, self.target.shape()) {
                 (_, Target::Window) | (Mode::Toolbar, Target::Screen) => CursorStyle::Arrow,
                 (Mode::Interactive, _) => CursorStyle::Crosshair,
                 (Mode::Toolbar, Target::Selection) => {
@@ -973,6 +1115,15 @@ mod linux_wayland {
                 )
                 .child(
                     div()
+                        .absolute()
+                        .left(px(model::SEPARATOR2_X))
+                        .top(px(model::SEPARATOR_TOP))
+                        .w(px(1.0))
+                        .h(px(model::SEPARATOR_HEIGHT))
+                        .bg(rgba(model::TOOLBAR_PLATE)),
+                )
+                .child(
+                    div()
                         .id("screenshot-options")
                         .role(Role::Button)
                         .aria_label("Options")
@@ -1005,7 +1156,11 @@ mod linux_wayland {
                     div()
                         .id("screenshot-capture")
                         .role(Role::Button)
-                        .aria_label("Capture")
+                        .aria_label(if self.target.is_recording() {
+                            "Record"
+                        } else {
+                            "Capture"
+                        })
                         .absolute()
                         .right(px(model::CAPTURE_INSET))
                         .top(px(model::CAPTURE_INSET))
@@ -1022,7 +1177,11 @@ mod linux_wayland {
                         .on_click(
                             cx.listener(|this, _, window, cx| this.capture_current(window, cx)),
                         )
-                        .child("Capture"),
+                        .child(if self.target.is_recording() {
+                            "Record"
+                        } else {
+                            "Capture"
+                        }),
                 );
             bar.into_any_element()
         }
@@ -1162,12 +1321,12 @@ mod linux_wayland {
                 .on_mouse_move(cx.listener(Self::mouse_move))
                 .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
                 .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up));
-            if self.target == Target::Window {
+            if self.target.shape() == Target::Window {
                 root = root.children(self.window_highlight());
             }
             match self.mode {
                 Mode::Interactive => {
-                    if self.target == Target::Selection {
+                    if self.target.shape() == Target::Selection {
                         if let (Gesture::Drawing { start }, Some(pointer)) =
                             (self.gesture, self.pointer)
                         {
@@ -1183,7 +1342,7 @@ mod linux_wayland {
                     }
                 }
                 Mode::Toolbar => {
-                    if self.target == Target::Selection {
+                    if self.target.shape() == Target::Selection {
                         root = root.child(self.selection_frame()).children(self.handles());
                     }
                     root = root.child(self.toolbar(cx));
@@ -1457,6 +1616,10 @@ mod linux_wayland {
             }
             return;
         }
+        if command == Command::StopRecording {
+            service.update(cx, |service, cx| service.stop_recording(cx));
+            return;
+        }
         let (busy, open) = {
             let state = service.read(cx);
             (state.busy, state.overlay.is_some())
@@ -1508,6 +1671,7 @@ mod linux_wayland {
                         height: output.height,
                         to_clipboard: command == Command::ScreenToClipboard || clipboard_default,
                         delay: Duration::ZERO,
+                        record: None,
                     };
                     service.update(cx, |service, cx| service.start_capture(request, cx));
                 }
@@ -1522,7 +1686,7 @@ mod linux_wayland {
                 Command::Toolbar => {
                     open_overlay(&service, Mode::Toolbar, false, output, windows, cx)
                 }
-                Command::Cancel => {}
+                Command::Cancel | Command::StopRecording => {}
             });
         })
         .detach();
@@ -1575,7 +1739,7 @@ mod linux_wayland {
                 crate::ipc::send(command)
                     .map_err(|error| format!("the screenshot service is not running: {error}"))
             }
-            _ => Err("usage: screenshot --service | screen | screen-to-clipboard | selection | selection-to-clipboard | toolbar | cancel".to_owned()),
+            _ => Err("usage: screenshot --service | screen | screen-to-clipboard | selection | selection-to-clipboard | toolbar | cancel | stop-recording".to_owned()),
         }
     }
 }

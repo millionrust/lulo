@@ -28,6 +28,7 @@ pub enum ActionKind {
     CrossfadeScreen,
     ResizeWindow,
     QuitApplication,
+    SetAlwaysOnTop,
 }
 
 /// Target region for [`Action::TileWindow`]: the halves offered by the green
@@ -291,6 +292,12 @@ pub enum Action {
     QuitApplication {
         window: WindowId,
     },
+    /// Keep `window` above every other window (`on`) or let it stack
+    /// normally again: Window ▸ Always on Top.
+    SetAlwaysOnTop {
+        window: WindowId,
+        on: bool,
+    },
 }
 
 impl Action {
@@ -317,6 +324,7 @@ impl Action {
             Self::CrossfadeScreen { .. } => ActionKind::CrossfadeScreen,
             Self::ResizeWindow { .. } => ActionKind::ResizeWindow,
             Self::QuitApplication { .. } => ActionKind::QuitApplication,
+            Self::SetAlwaysOnTop { .. } => ActionKind::SetAlwaysOnTop,
         }
     }
 }

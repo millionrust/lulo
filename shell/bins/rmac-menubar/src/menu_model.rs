@@ -334,6 +334,8 @@ pub struct MenuWindow {
     pub title: String,
     /// Minimised: parked on the hidden workspace.
     pub parked: bool,
+    /// Window ▸ Always on Top is on for this window.
+    pub always_on_top: bool,
 }
 
 /// What a Window-menu row does. The menu bar runs these itself, so every
@@ -371,11 +373,9 @@ pub enum WindowCommand {
     /// window-tab-set feature to remove a window from, matching the Mac's
     /// own greyed state when no window belongs to a set.
     RemoveFromSet,
-    /// Window ▸ Always on Top (Calculator only, CALC-08): raises the
-    /// window immediately. A persistent pin that keeps re-raising it as
-    /// focus moves elsewhere needs compositor support rmac-compositor-niri
-    /// does not have yet, so this is a one-shot raise rather than a true
-    /// toggle (documented at its dispatch site).
+    /// Window ▸ Always on Top (Calculator only, CALC-08): keeps the window
+    /// above every other window until it is chosen again. niri carries the
+    /// state (patch 0003) and Windows puts the window in the topmost band.
     AlwaysOnTop,
     BringAllToFront,
     /// Window ▸ Arrange in Front: raises every window of the app without
@@ -726,9 +726,13 @@ pub fn window_menu(
         .separated(),
     ];
     if is_calculator {
+        let on_top = focused
+            .and_then(|id| windows.iter().find(|window| window.id == id))
+            .is_some_and(|window| window.always_on_top);
         items.push(
             Item::new("Always on Top", WindowCommand::AlwaysOnTop.action(), "")
                 .enabled(has_focus)
+                .checked(on_top)
                 .separated(),
         );
     }
@@ -2330,6 +2334,7 @@ mod tests {
             id: rmac_compositor::WindowId(id),
             title: title.into(),
             parked: false,
+            always_on_top: false,
         }
     }
 

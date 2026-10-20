@@ -1789,6 +1789,7 @@ mod bar {
                         id: window.id,
                         title: window.title.clone().unwrap_or_default(),
                         parked: rmac_compositor::window_is_parked(&snapshot, window),
+                        always_on_top: window.always_on_top,
                     })
                     .collect::<Vec<_>>();
                 let _ = this.update(cx, |this, cx| {
@@ -6005,12 +6006,16 @@ mod bar {
                         .map(|window| Action::FillWindow { window })
                         .collect()
                 }
-                // Always on Top (Calculator, CALC-08) raises the window once.
-                // A true persistent pin needs rmac-compositor-niri to re-raise
-                // it on every later focus change, which it cannot do yet, so
-                // this is a one-shot raise rather than a toggle.
+                // Always on Top (Calculator, CALC-08) is a real toggle: the
+                // compositor keeps the window above the others while it is on
+                // (niri's patch 0003, HWND_TOPMOST on Windows).
                 (WindowCommand::AlwaysOnTop, Some(window)) => {
-                    vec![Action::FocusWindow { window }]
+                    let on = snapshot
+                        .windows
+                        .iter()
+                        .find(|candidate| candidate.id == window)
+                        .is_some_and(|candidate| !candidate.always_on_top);
+                    vec![Action::SetAlwaysOnTop { window, on }]
                 }
                 // Full-Screen Tile's "Left of Screen"/"Right of Screen": the
                 // Mac puts the window in a full-screen Space split with

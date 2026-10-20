@@ -40,7 +40,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetForegroundWindow, GetMessageW, GetWindow, GetWindowLongPtrW, GetWindowRect,
     GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
     IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, TranslateMessage,
-    ASFW_ANY, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
+    ASFW_ANY, CHILDID_SELF, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, WS_EX_TOPMOST,
+    EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
     EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
     EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
@@ -148,6 +149,7 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::MinimizeWindow,
             domain::ActionKind::RestoreWindow,
             domain::ActionKind::MoveWindowBy,
+            domain::ActionKind::SetAlwaysOnTop,
         ],
     }
 }
@@ -1101,6 +1103,7 @@ fn read_snapshot() -> domain::Snapshot {
             focused: hwnd == foreground,
             floating: true,
             urgent: false,
+            always_on_top: is_topmost(hwnd),
             // Front-most is the most recently focused.
             focus_timestamp: Some(domain::Timestamp {
                 seconds: count - rank as u64,
@@ -1350,6 +1353,10 @@ fn run_action(action: &domain::Action) -> Result<(), domain::ActionError> {
             width,
             height,
         } => frame_percent(handle(*window), x.0, y.0, width.0, height.0),
+        domain::Action::SetAlwaysOnTop { window, on } => {
+            set_topmost(handle(*window), *on);
+            Ok(())
+        }
         domain::Action::MoveWindowBy { window, dx, dy } => {
             let hwnd = handle(*window);
             let (_, scale) = work_area(hwnd).ok_or_else(|| rejected("no monitor"))?;
@@ -1723,6 +1730,30 @@ fn frame_percent(
 
 /// Move `hwnd` so its visible frame is `target` (physical pixels): the
 /// window rectangle is wider than the frame by its invisible resize border.
+/// Whether `hwnd` is in the topmost band (Window ▸ Always on Top).
+fn is_topmost(hwnd: HWND) -> bool {
+    // SAFETY: reads a property of a live window.
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
+    style as u32 & WS_EX_TOPMOST.0 != 0
+}
+
+/// Window ▸ Always on Top: move `hwnd` into or out of the topmost band
+/// without moving, resizing or activating it.
+fn set_topmost(hwnd: HWND, on: bool) {
+    // SAFETY: restacks another app's window without waiting on its thread.
+    let _ = unsafe {
+        SetWindowPos(
+            hwnd,
+            Some(if on { HWND_TOPMOST } else { HWND_NOTOPMOST }),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+        )
+    };
+}
+
 fn place_frame(hwnd: HWND, target: RECT) {
     // SAFETY: reads a property of a live window.
     if unsafe { IsZoomed(hwnd) }.as_bool() || unsafe { IsIconic(hwnd) }.as_bool() {

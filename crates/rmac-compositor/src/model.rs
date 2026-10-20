@@ -136,6 +136,9 @@ pub struct Window {
     pub focused: bool,
     pub floating: bool,
     pub urgent: bool,
+    /// The window stays above the others (Window ▸ Always on Top).
+    #[serde(default)]
+    pub always_on_top: bool,
     pub focus_timestamp: Option<Timestamp>,
     pub layout: WindowLayout,
 }

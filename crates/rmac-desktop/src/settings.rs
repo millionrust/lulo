@@ -27,7 +27,10 @@ pub enum Arrangement {
     SnapToGrid,
     Name,
     Kind,
+    /// Linux keeps no "added" time, so Date Added orders by creation.
+    DateAdded,
     DateModified,
+    DateCreated,
     Size,
 }
 
@@ -37,6 +40,7 @@ impl Arrangement {
         match self {
             Self::None | Self::SnapToGrid | Self::Name => SortOrder::Name,
             Self::Kind => SortOrder::Kind,
+            Self::DateAdded | Self::DateCreated => SortOrder::DateCreated,
             Self::DateModified => SortOrder::DateModified,
             Self::Size => SortOrder::Size,
         }
@@ -319,6 +323,12 @@ mod tests {
         assert!(!Arrangement::SnapToGrid.is_sorted());
         assert!(Arrangement::DateModified.is_sorted());
         assert_eq!(Arrangement::Size.sort_order(), SortOrder::Size);
+        assert_eq!(Arrangement::DateAdded.sort_order(), SortOrder::DateCreated);
+        assert_eq!(
+            Arrangement::DateCreated.sort_order(),
+            SortOrder::DateCreated
+        );
+        assert!(Arrangement::DateCreated.is_sorted());
         assert_eq!(
             GalleryTarget::parse(GalleryTarget::NotificationCenter.token()),
             Some(GalleryTarget::NotificationCenter)

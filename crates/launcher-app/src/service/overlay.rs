@@ -258,6 +258,32 @@ fn fallback_options(cx: &App) -> WindowOptions {
     )
 }
 
+/// Close Spotlight if it is open (Apps opened: SPOT-04).
+#[cfg(target_os = "linux")]
+pub(super) fn dismiss_active(cx: &mut App) {
+    let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
+    if let Some(active) = active {
+        if let Some(view) = active.view.upgrade() {
+            let _ = cx.update_window(active.window, |_, window, cx| {
+                view.update(cx, |view, cx| view.dismiss(window, cx));
+            });
+        }
+    }
+}
+
+/// Opening Spotlight closes Apps, as the Mac's one panel does (SPOT-04).
+#[cfg(target_os = "linux")]
+fn dismiss_apps(cx: &mut App) {
+    cx.background_executor()
+        .spawn(async {
+            let id = rmac_shortcuts::ShortcutId(rmac_shortcuts::APP_DRAWER_DISMISS.into());
+            if let Err(error) = rmac_shortcuts::notify(&id) {
+                eprintln!("Spotlight could not close Apps: {error}");
+            }
+        })
+        .detach();
+}
+
 fn route_existing(event: &rmac_shortcuts::Event, cx: &mut App) -> bool {
     let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
     if let Some(active) = active {
@@ -281,6 +307,8 @@ fn open_launcher(
 ) {
     #[cfg(not(target_os = "linux"))]
     let _ = excluded;
+    #[cfg(target_os = "linux")]
+    dismiss_apps(cx);
     let (token, registry, settings, error, clipboard, applications, learning) = cx
         .update_global::<LauncherService, _>(|service, _| {
             service.next_overlay = service.next_overlay.wrapping_add(1).max(1);

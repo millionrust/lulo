@@ -192,6 +192,7 @@ impl Provider for ApplicationProvider {
                 },
                 category: Category::Applications,
                 application_group: Some(application_group(&application.categories)),
+                kind: None,
                 title: application.name.clone(),
                 subtitle,
                 detail: None,

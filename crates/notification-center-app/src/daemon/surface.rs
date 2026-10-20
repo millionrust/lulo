@@ -388,7 +388,10 @@ fn options_list(view: &CardView, host: &Entity<BannerHost>) -> AnyElement {
             let host = host.clone();
             let busy = view.busy == Some(control);
             div()
-                .id(SharedString::from(format!("banner-{}-option-{index}", id.get())))
+                .id(SharedString::from(format!(
+                    "banner-{}-option-{index}",
+                    id.get()
+                )))
                 .role(Role::MenuItem)
                 .aria_label(label.clone())
                 .h(px(OPTIONS_ROW_HEIGHT))

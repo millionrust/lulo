@@ -5,6 +5,8 @@
 //! `rmac-compositor-system`'s window list.
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
+mod genie;
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 mod ipc;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
@@ -166,6 +168,110 @@ mod dock {
         launcher: rmac_dock::badges::LauncherEntries,
     }
 
+    /// DOCK-11: each window minimised into a Dock tile since `previous`
+    /// pours into it with Desktop & Dock's effect (Genie or Scale), from its
+    /// last frame on screen to the new tile. Reduced motion skips it, and so
+    /// does a window minimised before its picture was taken.
+    #[cfg(target_os = "linux")]
+    fn play_minimize_effects(
+        previous: &rmac_dock_runtime::Snapshot,
+        next: &rmac_dock_runtime::Snapshot,
+        cx: &mut App,
+    ) {
+        if next.reduced_motion {
+            return;
+        }
+        let effect = match next.settings.minimize_effect {
+            rmac_shell_settings::DockMinimizeEffect::Genie => crate::genie::Effect::Genie,
+            rmac_shell_settings::DockMinimizeEffect::Scale => crate::genie::Effect::Scale,
+        };
+        let Ok(surfaces) = &next.surface_plan else {
+            return;
+        };
+        for item in &next.model.minimized {
+            if previous
+                .model
+                .minimized
+                .iter()
+                .any(|known| known.window == item.window)
+            {
+                continue;
+            }
+            let Some(picture) = item.thumbnail.clone() else {
+                continue;
+            };
+            let Some(window) = previous
+                .compositor
+                .windows
+                .iter()
+                .find(|window| window.id == item.window)
+            else {
+                continue;
+            };
+            let Some(position) = window.layout.tile_position_in_view else {
+                continue;
+            };
+            let Some(output) = window.workspace.and_then(|workspace| {
+                previous
+                    .compositor
+                    .workspaces
+                    .iter()
+                    .find(|candidate| candidate.id == workspace)
+                    .and_then(|workspace| workspace.output.clone())
+            }) else {
+                continue;
+            };
+            let Some(surface) = surfaces.iter().find(|surface| surface.output == output) else {
+                continue;
+            };
+            if surface.placement != rmac_shell_settings::DockPlacement::Bottom {
+                continue;
+            }
+            let Some(height) = next
+                .compositor
+                .outputs
+                .iter()
+                .find(|candidate| candidate.id == output)
+                .and_then(|candidate| candidate.logical.as_ref())
+                .map(|logical| logical.size.height as f32)
+            else {
+                continue;
+            };
+            let Some(slot) = next.content.layout(surface, None).ok().and_then(|layout| {
+                layout.slots.into_iter().find(|slot| {
+                    slot.id == rmac_dock::presentation::EntryId::Minimized(item.window)
+                })
+            }) else {
+                continue;
+            };
+            let from = crate::genie::Frame {
+                x: position.x as f32,
+                y: position.y as f32,
+                width: window.layout.tile_size.width as f32,
+                height: window.layout.tile_size.height as f32,
+            };
+            // The tile keeps the window's proportions inside its square.
+            let aspect = (from.width / from.height.max(1.0)).max(f32::EPSILON);
+            let (width, tile_height) = if aspect >= 1.0 {
+                (slot.size, slot.size / aspect)
+            } else {
+                (slot.size * aspect, slot.size)
+            };
+            let centre_y = height - surface.base_thickness / 2.0;
+            let to = crate::genie::Frame {
+                x: slot.center - width / 2.0,
+                y: centre_y - tile_height / 2.0,
+                width,
+                height: tile_height,
+            };
+            let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
+            let display = displays
+                .get(&rmac_shell_layer::stable_output_uuid(&output))
+                .map(|display| display.id());
+            crate::genie::play(display, picture, from, to, effect, cx);
+        }
+    }
+
     impl DockStatus {
         fn new(
             updates: async_channel::Receiver<rmac_dock_runtime::Update>,
@@ -199,6 +305,10 @@ mod dock {
                                 );
                             }
                             this.outputs = outputs;
+                            #[cfg(target_os = "linux")]
+                            if let Some(previous) = &this.snapshot {
+                                play_minimize_effects(previous, &update.snapshot, cx);
+                            }
                             this.snapshot = Some(update.snapshot);
                         })
                         .is_err()

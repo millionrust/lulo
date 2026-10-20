@@ -383,6 +383,9 @@ pub enum WindowCommand {
     /// their positions; Lulo does not reposition windows yet, so this
     /// reuses Bring All to Front's raise.
     ArrangeInFront,
+    /// Window ▸ Cycle Through Windows: focus the app's next window after
+    /// the one the menu opened over, wrapping to the first.
+    CycleWindows,
     Focus(rmac_compositor::WindowId),
 }
 
@@ -481,6 +484,7 @@ impl WindowCommand {
             Self::ReturnToPreviousSize => "restore-size",
             Self::BringAllToFront => "bring-all-to-front",
             Self::ArrangeInFront => "arrange-in-front",
+            Self::CycleWindows => "cycle",
             Self::AlwaysOnTop => "always-on-top",
             Self::RemoveFromSet => "remove-from-set",
             Self::FullScreenTileUnavailable => "full-screen-tile",
@@ -530,6 +534,7 @@ impl WindowCommand {
             "restore-size" => Self::ReturnToPreviousSize,
             "bring-all-to-front" => Self::BringAllToFront,
             "arrange-in-front" => Self::ArrangeInFront,
+            "cycle" => Self::CycleWindows,
             "always-on-top" => Self::AlwaysOnTop,
             "remove-from-set" => Self::RemoveFromSet,
             "full-screen-tile" => Self::FullScreenTileUnavailable,
@@ -574,6 +579,7 @@ impl WindowCommand {
             | Self::ZoomAll
             | Self::BringAllToFront
             | Self::ArrangeInFront
+            | Self::CycleWindows
             | Self::AlwaysOnTop
             | Self::RemoveFromSet
             | Self::FullScreenTileUnavailable
@@ -732,11 +738,25 @@ pub fn window_menu(
                 .separated(),
         );
     }
-    let mut app_items = app_items.into_iter();
-    if let Some(first) = app_items.next() {
-        items.push(first.separated());
-        items.extend(app_items);
-    }
+    // The Mac's order: Cycle Through Windows, Bring All to Front and
+    // Arrange in Front, then the app's own block (its tabs), then the
+    // window list. An app that cycles its own windows (Files, Terminal)
+    // keeps its row; any other app gets the menu bar's, which works for
+    // every app, first-party or not. ⌘` is bound in every Lulo app
+    // (rmac-ui), so only those show it.
+    let (cycle, app_items): (Vec<_>, Vec<_>) = app_items
+        .into_iter()
+        .partition(|item| item.label == CYCLE_THROUGH_WINDOWS);
+    let cycle = cycle.into_iter().next().unwrap_or_else(|| {
+        let first_party = app_id.is_some_and(|app_id| app_id.starts_with("org.rmac."));
+        Item::new(
+            CYCLE_THROUGH_WINDOWS,
+            WindowCommand::CycleWindows.action(),
+            if first_party { "⌘`" } else { "" },
+        )
+        .enabled(windows.len() > 1)
+    });
+    items.push(cycle.separated());
     items.push(
         Item::new(
             "Bring All to Front",
@@ -754,6 +774,11 @@ pub fn window_menu(
         )
         .enabled(!windows.is_empty()),
     );
+    let mut app_items = app_items.into_iter();
+    if let Some(first) = app_items.next() {
+        items.push(first.separated());
+        items.extend(app_items);
+    }
     for (index, window) in windows.iter().enumerate() {
         let title = if window.title.trim().is_empty() {
             "Untitled".to_owned()
@@ -769,6 +794,8 @@ pub fn window_menu(
         items,
     }
 }
+
+const CYCLE_THROUGH_WINDOWS: &str = "Cycle Through Windows";
 
 fn shorten(text: &str, limit: usize) -> String {
     let mut characters = text.chars();
@@ -2361,9 +2388,10 @@ mod tests {
                 "Move & Resize",
                 "Full-Screen Tile",
                 "Remove Window from Set",
-                "Show Next Tab",
+                "Cycle Through Windows",
                 "Bring All to Front",
                 "Arrange in Front",
+                "Show Next Tab",
                 "Documents",
                 "Untitled",
             ]
@@ -2413,16 +2441,50 @@ mod tests {
             Some(WindowCommand::RemoveFromSet)
         );
         assert!(menu.items[9].separator_before);
+        // Finder-like apps without their own row get the menu bar's
+        // Cycle Through Windows, with ⌘` (bound in every Lulo app).
+        assert_eq!(
+            WindowCommand::parse(&menu.items[9].action),
+            Some(WindowCommand::CycleWindows)
+        );
+        assert_eq!(menu.items[9].shortcut, "⌘`");
+        assert!(menu.items[9].enabled);
         assert_eq!(
             WindowCommand::parse(&menu.items[11].action),
             Some(WindowCommand::ArrangeInFront)
         );
-        assert_eq!(menu.items[13].checked, rmac_app_menu::CheckState::On);
-        assert_eq!(menu.items[12].checked, rmac_app_menu::CheckState::Off);
+        assert!(menu.items[12].separator_before);
+        assert_eq!(menu.items[14].checked, rmac_app_menu::CheckState::On);
+        assert_eq!(menu.items[13].checked, rmac_app_menu::CheckState::Off);
         assert_eq!(
-            WindowCommand::parse(&menu.items[12].action),
+            WindowCommand::parse(&menu.items[13].action),
             Some(WindowCommand::Focus(rmac_compositor::WindowId(7)))
         );
+
+        // An app with its own Cycle Through Windows row keeps it, in the
+        // Mac's place; a third-party app's row has no ⌘` hint.
+        let own = window_menu(
+            &[window(7, "A")],
+            Some(rmac_compositor::WindowId(7)),
+            vec![Item::new(
+                "Cycle Through Windows",
+                "rmac_ui::CycleThroughWindows",
+                "⌘`",
+            )],
+            words,
+            Some("org.rmac.Files"),
+        );
+        assert_eq!(own.items[9].action, "rmac_ui::CycleThroughWindows");
+        assert_eq!(
+            own.items
+                .iter()
+                .filter(|item| item.label == "Cycle Through Windows")
+                .count(),
+            1
+        );
+        let foreign = window_menu(&[window(7, "A")], None, Vec::new(), words, Some("firefox"));
+        assert_eq!(foreign.items[9].shortcut, "");
+        assert!(!foreign.items[9].enabled);
         assert!(rmac_app_menu::validate_menus(std::slice::from_ref(&menu)).is_ok());
 
         // With no window focused, the window commands are greyed out, and
@@ -2508,6 +2570,7 @@ mod tests {
             WindowCommand::ReturnToPreviousSize,
             WindowCommand::BringAllToFront,
             WindowCommand::ArrangeInFront,
+            WindowCommand::CycleWindows,
             WindowCommand::AlwaysOnTop,
             WindowCommand::RemoveFromSet,
             WindowCommand::FullScreenTileUnavailable,

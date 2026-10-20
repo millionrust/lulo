@@ -6005,6 +6005,19 @@ mod bar {
                         .map(|window| Action::FocusWindow { window })
                         .collect()
                 }
+                // Cycle Through Windows: the app's next window after the
+                // one the menu opened over, wrapping to the first.
+                (WindowCommand::CycleWindows, focused) => {
+                    let windows = rmac_compositor::application_windows(&snapshot, &app_id);
+                    let next = focused
+                        .and_then(|focused| windows.iter().position(|window| *window == focused))
+                        .map_or(0, |index| (index + 1) % windows.len().max(1));
+                    windows
+                        .get(next)
+                        .filter(|window| Some(**window) != focused)
+                        .map(|window| vec![Action::FocusWindow { window: *window }])
+                        .unwrap_or_default()
+                }
                 (WindowCommand::Minimise, Some(window)) => {
                     store.record_from(&snapshot, &[window]);
                     store_changed = true;

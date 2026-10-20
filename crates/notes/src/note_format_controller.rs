@@ -197,7 +197,8 @@ impl NotesView {
     }
 
     pub(super) fn focus_body(&self, window: &mut Window, cx: &mut App) {
-        self.body.read(cx).focus(window, cx);
+        let focus = gpui::Focusable::focus_handle(self.body.read(cx), cx);
+        window.focus(&focus, cx);
     }
 
     /// Run a formatting change on the body, then keep it focused. The

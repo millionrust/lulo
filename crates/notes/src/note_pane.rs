@@ -82,7 +82,8 @@ impl NotePane {
             loading: false,
         };
         pane.follow(window, cx);
-        pane.body.read(cx).focus(window, cx);
+        let focus = gpui::Focusable::focus_handle(pane.body.read(cx), cx);
+        window.focus(&focus, cx);
         pane
     }
 

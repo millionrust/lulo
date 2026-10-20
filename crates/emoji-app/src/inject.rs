@@ -109,14 +109,6 @@ impl Paste {
             Self::Control
         }
     }
-
-    fn modifiers(self) -> u32 {
-        match self {
-            Self::Command => MOD_SUPER,
-            Self::Control => MOD_CONTROL,
-            Self::ControlShift => MOD_CONTROL | MOD_SHIFT,
-        }
-    }
 }
 
 /// What the clipboard held before the emoji went in, so it can come back.

@@ -6484,6 +6484,7 @@ dependencies = [
  "rmac-compositor-system",
  "rmac-emoji",
  "rmac-ui",
+ "wayland-backend",
  "wayland-client",
  "wayland-scanner",
 ]

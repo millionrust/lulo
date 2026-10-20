@@ -23,5 +23,6 @@ futures-lite.workspace = true
 libc.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-system.workspace = true
+wayland-backend.workspace = true
 wayland-client.workspace = true
 wayland-scanner.workspace = true

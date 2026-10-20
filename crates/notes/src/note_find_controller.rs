@@ -20,6 +20,19 @@ fn note_find_offsets(hay: &str, needle: &str) -> Vec<usize> {
         .collect()
 }
 
+/// `hay` with every case-insensitive match of `needle` replaced.
+fn replace_all_matches(hay: &str, needle: &str, replacement: &str) -> String {
+    let mut out = String::with_capacity(hay.len());
+    let mut last = 0;
+    for offset in note_find_offsets(hay, needle) {
+        out.push_str(&hay[last..offset]);
+        out.push_str(replacement);
+        last = offset + needle.len();
+    }
+    out.push_str(&hay[last..]);
+    out
+}
+
 impl NotesView {
     pub(super) fn open_note_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.is_interactive_ready()
@@ -52,6 +65,28 @@ impl NotesView {
         self.body.update(cx, |state, cx| {
             state.set_selected_range(offset..offset + query_len, cx);
             state.replace(replacement, window, cx);
+        });
+        self.schedule_current_edit(cx);
+        self.recompute_note_find_matches(cx);
+        cx.notify();
+    }
+
+    /// Replace All: one undoable edit over the whole body.
+    pub(super) fn replace_all_note_matches(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.note_replace_open || self.note_find_matches.is_empty() {
+            return;
+        }
+        let query = self.note_find_input.read(cx).value().to_string();
+        let replacement = self.note_replace_input.read(cx).value().to_string();
+        let body = self.body.read(cx).value().to_string();
+        let updated = replace_all_matches(&body, &query, &replacement);
+        self.body.update(cx, |state, cx| {
+            state.set_selected_range(0..body.len(), cx);
+            state.replace(updated, window, cx);
         });
         self.schedule_current_edit(cx);
         self.recompute_note_find_matches(cx);
@@ -202,6 +237,14 @@ impl NotesView {
                                 this.replace_current_note_match(window, cx)
                             })),
                     )
+                    .child(
+                        Button::new("replace-all", "Replace All")
+                            .xsmall()
+                            .disabled(self.note_find_matches.is_empty())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.replace_all_note_matches(window, cx)
+                            })),
+                    )
             })
             .child(accessible_icon_button(
                 "note-find-prev",
@@ -268,5 +311,15 @@ mod tests {
         );
         assert!(note_find_offsets("no query", "").is_empty());
         assert!(note_find_offsets("nothing here", "zzz").is_empty());
+    }
+
+    #[test]
+    fn replace_all_replaces_every_match() {
+        assert_eq!(
+            replace_all_matches("alpha beta ALPHA", "alpha", "gamma"),
+            "gamma beta gamma"
+        );
+        assert_eq!(replace_all_matches("abc", "", "x"), "abc");
+        assert_eq!(replace_all_matches("aaa", "a", "aa"), "aaaaaa");
     }
 }

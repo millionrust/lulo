@@ -115,7 +115,9 @@ pub fn catalog() -> &'static [Entry] {
 }
 
 pub fn in_category(category: Category) -> impl Iterator<Item = &'static Entry> {
-    catalog().iter().filter(move |entry| entry.category == category)
+    catalog()
+        .iter()
+        .filter(move |entry| entry.category == category)
 }
 
 pub fn find(glyph: &str) -> Option<&'static Entry> {
@@ -134,10 +136,16 @@ pub fn search(query: &str, limit: usize) -> Vec<&'static Entry> {
     let mut scored: Vec<(u32, usize, &'static Entry)> = catalog()
         .iter()
         .enumerate()
-        .filter_map(|(index, entry)| score(entry, &query, &words).map(|score| (score, index, entry)))
+        .filter_map(|(index, entry)| {
+            score(entry, &query, &words).map(|score| (score, index, entry))
+        })
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-    scored.into_iter().take(limit).map(|(_, _, entry)| entry).collect()
+    scored
+        .into_iter()
+        .take(limit)
+        .map(|(_, _, entry)| entry)
+        .collect()
 }
 
 fn score(entry: &Entry, query: &str, words: &[&str]) -> Option<u32> {
@@ -279,7 +287,9 @@ mod tests {
         let hits = search("grinning", 5);
         assert_eq!(hits[0].glyph, "😀");
         // "cheerful" is only a keyword of the grinning face.
-        assert!(search("cheerful", 20).iter().any(|entry| entry.glyph == "😀"));
+        assert!(search("cheerful", 20)
+            .iter()
+            .any(|entry| entry.glyph == "😀"));
         assert!(search("zzzzqqq", 5).is_empty());
         assert!(search("   ", 5).is_empty());
     }
@@ -289,7 +299,11 @@ mod tests {
         let hits = search("red heart", 5);
         assert_eq!(hits[0].name, "red heart");
         assert!(hits.iter().all(|entry| {
-            let text = format!("{} {}", entry.name, entry.keywords().collect::<Vec<_>>().join(" "));
+            let text = format!(
+                "{} {}",
+                entry.name,
+                entry.keywords().collect::<Vec<_>>().join(" ")
+            );
             text.to_lowercase().contains("heart")
         }));
     }
@@ -313,7 +327,8 @@ mod tests {
 
     #[test]
     fn recents_round_trip_and_ignore_damage() {
-        let directory = std::env::temp_dir().join(format!("rmac-emoji-test-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("rmac-emoji-test-{}", std::process::id()));
         let path = directory.join("recents");
         let mut recents = Recents::default();
         recents.record("😀");

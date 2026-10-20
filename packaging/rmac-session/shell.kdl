@@ -337,6 +337,9 @@ binds {
     // the keyboard and activates the selection when ⌘ is released.
     Mod+Tab hotkey-overlay-title="Switch Applications" { spawn "/usr/libexec/rmac/rmac-app-switcher" "next"; }
     Mod+Shift+Tab hotkey-overlay-title="Switch Applications Backwards" { spawn "/usr/libexec/rmac/rmac-app-switcher" "previous"; }
+    // ⌃⌘Space opens Emoji & Symbols (KB-02); pressing it again closes the
+    // panel. The panel pastes the chosen emoji into the focused field.
+    Ctrl+Mod+Space repeat=false hotkey-overlay-title="Emoji & Symbols" { spawn "/usr/libexec/rmac/rmac-emoji"; }
     // ⌃F2 moves keyboard focus to the menu bar, as on macOS (ACC-05,
     // docs/known-limitations.md). The menu bar's own layer surface only
     // takes keyboard on a click, so this goes through the same invisible-
@@ -414,6 +417,26 @@ layer-rule {
 layer-rule {
     match namespace=r#"^rmac-quick-settings$"#
     geometry-corner-radius 44
+    background-effect {
+        xray false
+        blur true
+        noise 0.025
+        saturation 1.35
+    }
+    shadow {
+        on
+        softness 30
+        spread 2
+        offset x=0 y=10
+        color "#00000055"
+    }
+}
+
+// Emoji & Symbols is a 344 x 392 popover: blur, the popover radius and a
+// shadow, like the Control Center panels.
+layer-rule {
+    match namespace=r#"^rmac-emoji$"#
+    geometry-corner-radius 20
     background-effect {
         xray false
         blur true

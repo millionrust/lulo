@@ -2395,6 +2395,24 @@ impl PlatformWindow for WaylandWindow {
         self.borrow().background_appearance
     }
 
+    /// Edit ▸ Emoji & Symbols and ⌃⌘Space inside an app: Lulo's panel, which
+    /// pastes the chosen emoji into this window's focused field
+    /// (docs/parity.md KB-02). Toggles like the shortcut does.
+    fn show_character_palette(&self) {
+        match std::process::Command::new("/usr/libexec/rmac/rmac-emoji")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(mut child) => {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            }
+            Err(error) => log::warn!("could not open Emoji & Symbols: {error}"),
+        }
+    }
+
     fn is_subpixel_rendering_supported(&self) -> bool {
         let client = self.borrow().client.get_client();
         let state = client.borrow();

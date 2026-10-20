@@ -74,6 +74,7 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-screenshot",
     "rmac-mission-control",
     "rmac-launcher",
+    "rmac-emoji",
     "rmac-app-drawer",
     "rmac-quick-settings",
     "rmac-notification-center-panel",

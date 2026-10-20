@@ -46,9 +46,18 @@ pub fn wants_terminal_paste(app_id: Option<&str>) -> bool {
         return false;
     };
     let app_id = app_id.to_lowercase();
-    ["terminal", "kitty", "alacritty", "foot", "wezterm", "konsole", "ptyxis", "xterm"]
-        .iter()
-        .any(|name| app_id.contains(name))
+    [
+        "terminal",
+        "kitty",
+        "alacritty",
+        "foot",
+        "wezterm",
+        "konsole",
+        "ptyxis",
+        "xterm",
+    ]
+    .iter()
+    .any(|name| app_id.contains(name))
 }
 
 /// What the clipboard held before the emoji went in, so it can come back.
@@ -68,13 +77,17 @@ fn save_clipboard() -> Saved {
         return Saved::Other;
     };
     let listing = String::from_utf8_lossy(&types.stdout).into_owned();
-    let kinds: Vec<&str> = listing.lines().map(str::trim).filter(|k| !k.is_empty()).collect();
+    let kinds: Vec<&str> = listing
+        .lines()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .collect();
     if kinds.is_empty() {
         return Saved::Empty;
     }
-    let text_only = kinds
-        .iter()
-        .all(|kind| kind.starts_with("text/") || *kind == "UTF8_STRING" || *kind == "STRING" || *kind == "TEXT");
+    let text_only = kinds.iter().all(|kind| {
+        kind.starts_with("text/") || *kind == "UTF8_STRING" || *kind == "STRING" || *kind == "TEXT"
+    });
     if !text_only {
         return Saved::Other;
     }

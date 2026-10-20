@@ -172,6 +172,7 @@ fi
     -p rmac-text-editor --bin rmac-text-editor \
     -p rmac-session --bin rmac-session-supervisor \
     -p rmac-launcher-app --bin rmac-launcher \
+    -p rmac-emoji-app --bin rmac-emoji \
     -p rmac-quick-settings-app --bin rmac-quick-settings \
     -p rmac-notification-center-app --bin rmac-notification-center-panel \
     -p rmac-notification-center-app --bin rmac-notification-center \

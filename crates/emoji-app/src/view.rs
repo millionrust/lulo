@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, App, AppContext as _, Context, Entity, Focusable as _,
-    FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement as _,
-    Render, Role, ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _,
-    UniformListScrollHandle, Window,
+    div, prelude::FluentBuilder as _, px, uniform_list, AnyElement, App, AppContext as _, Context,
+    Entity, Focusable as _, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
+    MouseButton, ParentElement as _, Render, Role, ScrollStrategy, SharedString,
+    StatefulInteractiveElement as _, Styled as _, UniformListScrollHandle, Window,
 };
 use rmac_emoji::{Category, Entry, Recents};
 use rmac_ui::{mac, InputEvent, InputState, SearchField};
@@ -243,10 +243,7 @@ fn build_layout(query: &str, recents: &Recents) -> Layout {
     };
 
     if query.trim().is_empty() {
-        let used: Vec<&'static Entry> = recents
-            .glyphs()
-            .filter_map(rmac_emoji::find)
-            .collect();
+        let used: Vec<&'static Entry> = recents.glyphs().filter_map(rmac_emoji::find).collect();
         if !used.is_empty() {
             sections.push(Section {
                 category: None,
@@ -307,11 +304,15 @@ impl Render for EmojiView {
 
         let rows_view = view.clone();
         let rows_layout = layout.clone();
-        let list = uniform_list("emoji-grid", layout.rows.len(), move |range, _window, _cx| {
-            range
-                .map(|index| render_row(&rows_layout.rows[index], selected, &rows_view))
-                .collect::<Vec<_>>()
-        })
+        let list = uniform_list(
+            "emoji-grid",
+            layout.rows.len(),
+            move |range, _window, _cx| {
+                range
+                    .map(|index| render_row(&rows_layout.rows[index], selected, &rows_view))
+                    .collect::<Vec<_>>()
+            },
+        )
         .track_scroll(&self.scroll)
         .flex_1()
         .min_h(px(0.0));

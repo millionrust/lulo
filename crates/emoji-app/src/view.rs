@@ -21,6 +21,9 @@ const COLUMNS: usize = 8;
 const CELL: f32 = 38.0;
 const ROW_HEIGHT: f32 = 40.0;
 const SEARCH_RESULTS: usize = 400;
+/// Colour emoji come from this family; without naming it, a text font that
+/// has monochrome faces for the common ones (DejaVu Sans) wins the fallback.
+const EMOJI_FONT: &str = "Noto Color Emoji";
 
 /// What the panel hands back to `main` when it closes.
 #[derive(Default)]
@@ -341,6 +344,7 @@ impl Render for EmojiView {
                         .items_center()
                         .justify_center()
                         .rounded(px(6.0))
+                        .font_family(EMOJI_FONT)
                         .text_size(px(16.0))
                         .when(index == current, |button| button.bg(mac::control_fill()))
                         .hover(|button| button.bg(mac::hover()))
@@ -372,6 +376,7 @@ impl Render for EmojiView {
                                 .items_center()
                                 .justify_center()
                                 .rounded(px(6.0))
+                                .font_family(EMOJI_FONT)
                                 .text_size(px(20.0))
                                 .hover(|button| button.bg(mac::hover()))
                                 .on_click(move |_, window, cx| {
@@ -477,6 +482,7 @@ fn render_row(row: &Row, selected: usize, view: &Entity<EmojiView>) -> AnyElemen
                     .items_center()
                     .justify_center()
                     .rounded(px(8.0))
+                    .font_family(EMOJI_FONT)
                     .text_size(px(26.0))
                     .when(index == selected, |cell| cell.bg(mac::accent()))
                     .hover(|cell| cell.bg(mac::hover()))

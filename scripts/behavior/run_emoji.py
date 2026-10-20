@@ -124,6 +124,8 @@ class Scenario:
         self.snapshot("panel-search")
         key("return")
         closed = wait_until(lambda: not self.panel_open(), 10)
+        time.sleep(1.5)
+        self.snapshot("after-choice")
         self.facts["closes_on_choice"] = bool(closed)
         if not closed:
             self.errors.append("choosing an emoji left the panel open")
@@ -157,6 +159,8 @@ class Scenario:
         time.sleep(0.5)
         key("escape")
         escaped = wait_until(lambda: not self.panel_open(), 10)
+        self.snapshot("after-escape")
+        self.facts["layers_after_escape"] = [layer.get("namespace") for layer in self.layers()]
         self.facts["escape_closes"] = bool(escaped)
         if not escaped:
             self.errors.append("Escape did not close the panel")

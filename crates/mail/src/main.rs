@@ -8,6 +8,8 @@ mod accounts_win;
 mod compose_window;
 mod delivery;
 mod live;
+mod people;
+mod rules_view;
 mod settings_view;
 mod view;
 
@@ -79,6 +81,10 @@ gpui::actions!(
         FilterToMe,
         FilterCcMe,
         FilterAttachments,
+        FilterVip,
+        AddSenderToContacts,
+        ToggleSenderVip,
+        ApplyRules,
         ToggleColumnLayout,
         ToggleBottomPreview,
         ToggleDateAndTime,
@@ -296,6 +302,10 @@ fn forward_events(
         };
         match event {
             UiEvent::Snapshot(_) | UiEvent::NewMail(_) | UiEvent::AccountRemoved(_) => {
+                let arrived = match &event {
+                    UiEvent::NewMail(new) => Some((new.account, new.message_id)),
+                    _ => None,
+                };
                 // Windows lets accounts come and go while Mail runs, so each
                 // reload asks the store again.
                 #[cfg(not(windows))]
@@ -310,6 +320,17 @@ fn forward_events(
                     .await;
                 // Every viewer window shows the same mail.
                 refresh_viewers(mailboxes, messages, cx);
+                // Settings ▸ Rules act on mail as it arrives, once: in the
+                // first viewer, which shares the result with the others.
+                if let Some((account, row)) = arrived {
+                    cx.update(|cx| {
+                        if let Some(view) = view::viewers().into_iter().next() {
+                            view.update(cx, |view: &mut MailView, cx| {
+                                view.apply_rules_to_arrival(account, row, cx);
+                            });
+                        }
+                    });
+                }
             }
             UiEvent::OpenMessage {
                 account,
@@ -548,6 +569,7 @@ fn main() {
                 KeyBinding::new("cmd-l", ToggleMessageFilter, Some("Mail")),
                 KeyBinding::new("alt-cmd-b", ToggleBccField, None),
                 KeyBinding::new("alt-cmd-u", ShowRawSource, Some("Mail")),
+                KeyBinding::new("alt-cmd-l", ApplyRules, Some("Mail")),
                 KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Mail")),
                 KeyBinding::new("alt-cmd-t", ToggleToolbar, Some("Mail")),
                 KeyBinding::new("cmd-shift-n", GetAllNewMail, None),
@@ -604,6 +626,8 @@ fn main() {
             // Edit ▸ Writing Tools in compose windows; hidden until Lulo
             // Intelligence is known to be on with its model present.
             rmac_writing_tools::init(cx);
+            // Contacts (VIPs) and Settings ▸ Rules, read off the UI thread.
+            people::load(cx);
             cx.observe_new(|_: &mut MailView, window, cx| {
                 if let Some(window) = window {
                     cx.observe_window_activation(window, |_, window, cx| {

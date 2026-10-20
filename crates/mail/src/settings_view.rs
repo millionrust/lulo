@@ -90,10 +90,11 @@ enum Pane {
     Viewing,
     Composing,
     Signatures,
+    Rules,
 }
 
 impl Pane {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::General,
         Self::Accounts,
         Self::JunkMail,
@@ -101,6 +102,7 @@ impl Pane {
         Self::Viewing,
         Self::Composing,
         Self::Signatures,
+        Self::Rules,
     ];
 
     fn label(self) -> &'static str {
@@ -112,6 +114,7 @@ impl Pane {
             Self::Viewing => "Viewing",
             Self::Composing => "Composing",
             Self::Signatures => "Signatures",
+            Self::Rules => "Rules",
         }
     }
 }
@@ -176,6 +179,8 @@ struct SettingsView {
     /// however many mail accounts (zero, one or several) the person
     /// actually has.
     accounts: Vec<ComposeAccount>,
+    /// Settings ▸ Rules, made the first time the pane opens.
+    rules_pane: Option<gpui::Entity<crate::rules_view::RulesPane>>,
     /// Windows adds and removes accounts here (`accounts_win`); Lulo OS does
     /// it in System Settings.
     #[cfg(windows)]
@@ -195,6 +200,7 @@ impl SettingsView {
             settings,
             save_error: error.map(SharedString::from),
             accounts: delivery::accounts(),
+            rules_pane: None,
             #[cfg(windows)]
             accounts_view: None,
         }
@@ -731,6 +737,9 @@ impl SettingsView {
 impl Render for SettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pane = self.pane;
+        if pane == Pane::Rules && self.rules_pane.is_none() {
+            self.rules_pane = Some(cx.new(crate::rules_view::RulesPane::new));
+        }
         div()
             .size_full()
             .v_flex()
@@ -790,6 +799,7 @@ impl Render for SettingsView {
                         Pane::Viewing => parent.child(self.viewing_pane(cx)),
                         Pane::Composing => parent.child(self.composing_pane(cx)),
                         Pane::Signatures => parent.child(self.signatures_pane(cx)),
+                        Pane::Rules => parent.children(self.rules_pane.clone()),
                     }),
             )
     }

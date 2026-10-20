@@ -21,10 +21,12 @@ use crate::{
 };
 
 mod menu;
+mod people;
 mod tools;
 mod windows;
 
 pub use menu::close_all;
+pub use people::rule_destinations;
 #[cfg(any(target_os = "linux", windows))]
 pub use tools::viewers;
 pub use tools::{open_viewer, show_viewer};
@@ -274,6 +276,7 @@ impl MailView {
             show_size: false,
             shared_revision: std::cell::Cell::new(0),
         };
+        view.observe_people(cx);
         view.ensure_body_loaded(cx);
         view
     }
@@ -479,7 +482,7 @@ impl MailView {
     /// Address completion candidates for a freshly opened compose window:
     /// every distinct sender this mailbox has seen (`compose::known_recipients`).
     fn compose_candidates(&self) -> Vec<rmac_mail::compose::Recipient> {
-        rmac_mail::compose::known_recipients(&self.state.messages)
+        rmac_mail::compose::recipients_with_contacts(&self.state.messages, &self.state.people)
     }
 
     fn control(
@@ -1691,7 +1694,8 @@ impl Render for MailView {
             .when_some(self.notice.clone(), |root, notice| {
                 root.child(self.notice_alert(notice, cx))
             });
-        self.on_menu_actions(root, cx).into_any_element()
+        let root = self.on_menu_actions(root, cx);
+        self.on_people_actions(root, cx).into_any_element()
     }
 }
 
@@ -1926,6 +1930,7 @@ fn column_row(
 fn mailbox_icon(mailbox: &Mailbox) -> &'static str {
     match mailbox {
         Mailbox::AllInboxes => "▤",
+        Mailbox::Vips => "★",
         Mailbox::Flagged => "⚑",
         Mailbox::Drafts => "✎",
         Mailbox::Sent => "➤",

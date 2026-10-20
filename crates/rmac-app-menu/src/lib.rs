@@ -2418,6 +2418,7 @@ const MAIL_MENUS: &[MenuSpec] = &[
                         "",
                         separator
                     ),
+                    item!("Only from VIP", "mail::FilterVip", ""),
                 ]
             ),
             item!(
@@ -2572,6 +2573,9 @@ const MAIL_MENUS: &[MenuSpec] = &[
                 [item!("Mailbox", "mail::CopyToMailbox0", "")]
             ),
             item!("Move Again", "mail::MoveAgain", ""),
+            item!("Apply Rules", "mail::ApplyRules", "⌥⌘L", separator),
+            item!("Add Sender to Contacts", "mail::AddSenderToContacts", ""),
+            item!("Add Sender to VIPs", "mail::ToggleSenderVip", ""),
         ],
     },
     // Mail composes plain text, so Format offers what plain text supports:

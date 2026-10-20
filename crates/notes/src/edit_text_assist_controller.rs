@@ -24,7 +24,7 @@ pub(super) fn misspelled_ranges(
 ) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
     let mut word_start: Option<usize> = None;
-    let mut check = |range: Range<usize>, ranges: &mut Vec<Range<usize>>| {
+    let check = |range: Range<usize>, ranges: &mut Vec<Range<usize>>| {
         let word = text[range.clone()].trim_end_matches('\'');
         let range = range.start..range.start + word.len();
         let typing = range.start <= caret && caret <= range.end;

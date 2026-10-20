@@ -9,6 +9,8 @@ use rmac_editor::rich::{
     RichTextEditor, WritingDirection,
 };
 
+use gpui::App;
+
 use super::*;
 
 #[derive(Clone, Copy)]

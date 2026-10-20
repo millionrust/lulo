@@ -207,7 +207,7 @@ impl NotePane {
 }
 
 impl Render for NotePane {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let (record, light, zoom, show_highlights, editable_main) = {
             let main = self.main.read(cx);
             let record = self.note.and_then(|note_id| {

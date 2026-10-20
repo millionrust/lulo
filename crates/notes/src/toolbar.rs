@@ -489,14 +489,14 @@ impl NotesView {
         // Attachment View, then Delete Note. Also in the » menu when the ⋯
         // capsule has no room.
         macro_rules! more_items {
-            ($menu:expr, $window:expr, $cx:expr) => {{
+            ($menu:expr, $window:expr, $cx:expr, $folders:expr, $recent:expr) => {{
                 let menu = $menu;
                 if deleted {
                     menu.menu("Recover Note", Box::new(TrashOrRestore))
                         .menu("Delete Permanently…", Box::new(DeleteNotePermanently))
                 } else {
-                    let folders = folders.clone();
-                    let recent = recent.clone();
+                    let folders = $folders.clone();
+                    let recent = $recent.clone();
                     menu.menu(
                         if pinned { "Unpin Note" } else { "Pin Note" },
                         Box::new(TogglePin),
@@ -610,7 +610,7 @@ impl NotesView {
                         .dropdown_menu({
                             let folders = folders.clone();
                             let recent = recent.clone();
-                            move |menu, window, cx| more_items!(menu, window, cx)
+                            move |menu, window, cx| more_items!(menu, window, cx, folders, recent)
                         }),
                 )
         });
@@ -669,7 +669,7 @@ impl NotesView {
                         if rows {
                             menu = menu.separator();
                         }
-                        menu = more_items!(menu, window, cx);
+                        menu = more_items!(menu, window, cx, folders, recent);
                         rows = true;
                     }
                     if search_over {

@@ -10,6 +10,6 @@
     {"select": "Add Rule…", "settle": 0.6},
     {"observe": "sheet", "facts": ["pane_text"]},
     {"select": "OK", "settle": 0.6},
-    {"observe": "listed", "facts": ["pane_text"]}
+    {"observe": "listed", "facts": ["pane_text", "settings_controls"]}
   ]
 }

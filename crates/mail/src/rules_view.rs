@@ -166,7 +166,10 @@ impl RulesPane {
                         }),
                     )
                     .child(
+                        // The Active box carries the rule's name, so a screen
+                        // reader reads "Rule #1, checked".
                         Checkbox::new(("mail-rule-active", index))
+                            .label(rule.description.clone())
                             .checked(rule.enabled)
                             .on_change(cx.listener(move |this, value: &bool, _, cx| {
                                 if let Some(rule) = this.rules.get_mut(index) {
@@ -175,7 +178,6 @@ impl RulesPane {
                                 this.save(cx);
                             })),
                     )
-                    .child(div().text_size(px(13.0)).child(rule.description.clone()))
             }))
             .when(self.rules.is_empty(), |list| {
                 list.child(

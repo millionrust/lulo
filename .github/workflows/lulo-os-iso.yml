@@ -13,6 +13,10 @@
 name: Lulo OS ISO
 
 on:
+  # Agent branches that change the image (.claude/ci-branch.sh push ... lulo-iso*):
+  # workflow_dispatch only works once this file is on the default branch.
+  push:
+    branches: ["agent/lulo-iso*"]
   workflow_dispatch:
     inputs:
       release_tag:

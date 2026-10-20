@@ -144,6 +144,7 @@ fn settings_and_compositor_changes_rebuild_the_authoritative_model() {
 
     coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
         windows: vec![rmac_compositor::Window {
+            always_on_top: false,
             id: rmac_compositor::WindowId(5),
             title: Some("Terminal".into()),
             app_id: Some("terminal".into()),
@@ -189,6 +190,7 @@ fn show_running_indicators_off_hides_the_dot_without_changing_running_state() {
     coordinator.apply_settings(Ok(settings));
     coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
         windows: vec![rmac_compositor::Window {
+            always_on_top: false,
             id: rmac_compositor::WindowId(5),
             title: Some("Terminal".into()),
             app_id: Some("terminal".into()),
@@ -231,6 +233,7 @@ fn quit_after_running(show_recent_apps: bool) -> Coordinator {
     settings.dock.show_recent_apps = show_recent_apps;
     coordinator.apply_settings(Ok(settings));
     let window = rmac_compositor::Window {
+        always_on_top: false,
         id: rmac_compositor::WindowId(9),
         title: Some("Notes".into()),
         app_id: Some("notes".into()),

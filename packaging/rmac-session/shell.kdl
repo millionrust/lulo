@@ -311,6 +311,9 @@ binds {
     XF86AudioStop allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "stop"; }
     XF86MonBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-up"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-down"; }
+    // Keyboard-backlight keys (KB-04): the OSD shows Keyboard Brightness.
+    XF86KbdBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "keyboard-brightness-up"; }
+    XF86KbdBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "keyboard-brightness-down"; }
     // Allowed while locked: a press on the lock screen sleeps at once.
     XF86PowerOff repeat=false allow-when-locked=true hotkey-overlay-title=null { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "power-key"; }
     // ⌘F5, as on the Mac, toggles the screen reader (Accessibility >

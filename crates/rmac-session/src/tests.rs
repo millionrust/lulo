@@ -738,6 +738,9 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     assert!(shell.contains(
         "Ctrl+F2 repeat=false hotkey-overlay-title=\"Move Focus to the Menu Bar\" { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"menu-bar-focus\"; }"
     ));
+    // Keyboard-backlight keys (KB-04) go to the OSD.
+    assert!(shell.contains("XF86KbdBrightnessUp allow-when-locked=true { spawn \"/usr/libexec/rmac/rmac-osd\" \"keyboard-brightness-up\"; }"));
+    assert!(shell.contains("XF86KbdBrightnessDown allow-when-locked=true { spawn \"/usr/libexec/rmac/rmac-osd\" \"keyboard-brightness-down\"; }"));
     // ⇧⌘Q (KB-01) opens the Log Out confirmation.
     assert!(shell.contains(
         "Mod+Shift+Q repeat=false hotkey-overlay-title=\"Log Out\" { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"log-out-dialog\"; }"

@@ -19,6 +19,8 @@ pub enum Command {
     ToggleInputMute,
     BrightnessUp,
     BrightnessDown,
+    KeyboardBrightnessUp,
+    KeyboardBrightnessDown,
     ShowVolume,
     ShowBrightness,
 }
@@ -32,6 +34,8 @@ impl Command {
             "toggle-input-mute" => Some(Self::ToggleInputMute),
             "brightness-up" => Some(Self::BrightnessUp),
             "brightness-down" => Some(Self::BrightnessDown),
+            "keyboard-brightness-up" => Some(Self::KeyboardBrightnessUp),
+            "keyboard-brightness-down" => Some(Self::KeyboardBrightnessDown),
             "show-volume" => Some(Self::ShowVolume),
             "show-brightness" => Some(Self::ShowBrightness),
             _ => None,
@@ -45,6 +49,7 @@ pub enum Kind {
     Output,
     Input,
     Display,
+    Keyboard,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -89,13 +94,14 @@ impl Presentation {
             (Kind::Output, false) => format!("{} volume {} percent", self.title, self.level),
             (Kind::Input, false) => format!("{} level {} percent", self.title, self.level),
             (Kind::Display, _) => format!("Display brightness {} percent", self.level),
+            (Kind::Keyboard, _) => format!("Keyboard brightness {} percent", self.level),
         }
     }
 
     fn validate(&self) -> Result<(), Error> {
         if self.version != PRESENTATION_VERSION
             || self.level > 100
-            || (self.kind == Kind::Display && self.muted)
+            || (matches!(self.kind, Kind::Display | Kind::Keyboard) && self.muted)
             || self.title.is_empty()
             || self.title.len() > MAX_TITLE_BYTES
             || self.title.trim() != self.title
@@ -247,6 +253,14 @@ mod tests {
             Command::parse("show-brightness"),
             Some(Command::ShowBrightness)
         );
+        assert_eq!(
+            Command::parse("keyboard-brightness-up"),
+            Some(Command::KeyboardBrightnessUp)
+        );
+        assert_eq!(
+            Command::parse("keyboard-brightness-down"),
+            Some(Command::KeyboardBrightnessDown)
+        );
         assert_eq!(Command::parse("volume-up;shutdown"), None);
         assert_eq!(Command::parse(""), None);
     }
@@ -258,6 +272,10 @@ mod tests {
         assert_eq!(muted.accessible_label(), "Built-in Speakers muted");
         assert!(Presentation::new(Kind::Display, "Display", 42, true).is_err());
         assert!(Presentation::new(Kind::Display, "Display", 101, false).is_err());
+        let keyboard =
+            Presentation::new(Kind::Keyboard, "Keyboard Brightness", 50, false).unwrap();
+        assert_eq!(keyboard.accessible_label(), "Keyboard brightness 50 percent");
+        assert!(Presentation::new(Kind::Keyboard, "Keyboard Brightness", 50, true).is_err());
         assert!(Presentation::new(Kind::Output, " bad", 42, false).is_err());
         assert!(Presentation::new(Kind::Output, "x".repeat(129), 42, false).is_err());
     }

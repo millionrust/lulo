@@ -687,7 +687,7 @@ mod linux_wayland {
                 ),
                 Area::Rect(rect) => (self.output.region(&rect), rect.width, rect.height),
             };
-            let record = self.target.is_recording().then(|| match area {
+            let record = self.target.is_recording().then_some(match area {
                 Area::Screen => None,
                 Area::Rect(rect) => Some(rect),
             });

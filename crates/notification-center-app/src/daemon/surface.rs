@@ -72,6 +72,12 @@ const SURFACE_WIDTH: f32 = LEFT_ROOM + card::CLOSE_LEFT + metrics::CARD_WIDTH + 
 /// Before the first layout the surface is one small banner tall.
 const INITIAL_HEIGHT: f32 = 120.0;
 const OPTIONS_LABEL: &str = "Options";
+/// The drop-down chevron after "Options", as macOS 26 draws it (NC-10).
+const OPTIONS_CHEVRON: &str = " \u{25BE}";
+/// The Options drop-down: macOS 26's menu rows (design-lab/menus.html).
+const OPTIONS_ROW_HEIGHT: f32 = 24.0;
+const OPTIONS_MENU_WIDTH: f32 = 180.0;
+const OPTIONS_MENU_PAD: f32 = 5.0;
 
 pub(crate) struct BannerSurface {
     output: String,
@@ -341,7 +347,7 @@ fn action_button(view: &CardView, host: &Entity<BannerHost>) -> Option<AnyElemen
             let host = host.clone();
             pill(
                 SharedString::from(format!("banner-{}-options", id.get())),
-                OPTIONS_LABEL.into(),
+                format!("{OPTIONS_LABEL}{OPTIONS_CHEVRON}").into(),
                 view.busy.is_some(),
                 move |cx| host.update(cx, |host, cx| host.toggle_options(id, cx)),
             )
@@ -369,7 +375,8 @@ fn action_button(view: &CardView, host: &Entity<BannerHost>) -> Option<AnyElemen
     )
 }
 
-/// With several actions, "Options" lists them all under the text.
+/// With several actions, "Options ▾" drops down a menu of them under the
+/// button, one row each, as macOS 26 does (NC-10).
 fn options_list(view: &CardView, host: &Entity<BannerHost>) -> AnyElement {
     let id = view.id;
     let rows = view
@@ -379,20 +386,48 @@ fn options_list(view: &CardView, host: &Entity<BannerHost>) -> AnyElement {
         .map(|(index, (control, label))| {
             let control = *control;
             let host = host.clone();
-            pill(
-                SharedString::from(format!("banner-{}-option-{index}", id.get())),
-                label.clone(),
-                view.busy == Some(control),
-                move |cx| host.update(cx, |host, cx| host.activate(control, cx)),
-            )
+            let busy = view.busy == Some(control);
+            div()
+                .id(SharedString::from(format!("banner-{}-option-{index}", id.get())))
+                .role(Role::MenuItem)
+                .aria_label(label.clone())
+                .h(px(OPTIONS_ROW_HEIGHT))
+                .px(px(11.0))
+                .flex()
+                .items_center()
+                .rounded(px(rmac_design::Radii::default().menu_item))
+                .text_size(rmac_ui::text_px(card::TEXT_SIZE))
+                .text_color(mac::text())
+                .whitespace_nowrap()
+                .when(busy, |row| row.opacity(0.5))
+                .hover(|row| row.bg(mac::accent()).text_color(mac::white()))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(move |_, _, cx| {
+                    cx.stop_propagation();
+                    host.update(cx, |host, cx| host.activate(control, cx));
+                })
+                .child(label.clone())
+                .into_any_element()
         })
         .collect::<Vec<_>>();
     div()
-        .pt(px(8.0))
+        .pt(px(6.0))
         .flex()
-        .flex_wrap()
-        .gap(px(6.0))
-        .children(rows)
+        .justify_end()
+        .child(
+            div()
+                .role(Role::Menu)
+                .aria_label(OPTIONS_LABEL)
+                .w(px(OPTIONS_MENU_WIDTH))
+                .p(px(OPTIONS_MENU_PAD))
+                .v_flex()
+                .rounded(px(rmac_design::Radii::default().menu))
+                .bg(mac::material_popover())
+                .border_1()
+                .border_color(mac::separator())
+                .shadow_lg()
+                .children(rows),
+        )
         .into_any_element()
 }
 

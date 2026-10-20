@@ -7056,6 +7056,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-system",
+ "rmac-design",
  "rmac-desktop",
  "rmac-desktop-widgets",
  "rmac-hardware",

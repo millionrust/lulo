@@ -157,8 +157,8 @@ mod linux {
         if let Some(glyph) = glyph {
             // Focus follows the compositor's own pace.
             std::thread::sleep(std::time::Duration::from_millis(120));
-            let terminal = crate::inject::wants_terminal_paste(previous.app_id.as_deref());
-            if let Err(error) = crate::inject::paste(&glyph, terminal) {
+            let chord = crate::inject::Paste::for_app(previous.app_id.as_deref());
+            if let Err(error) = crate::inject::paste(&glyph, chord) {
                 eprintln!("rmac-emoji: could not insert {glyph}: {error}");
                 return ExitCode::FAILURE;
             }

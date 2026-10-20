@@ -18,46 +18,70 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboar
 
 /// Evdev key codes.
 const KEY_V: u32 = 47;
-/// XKB modifier bits: Shift and Control.
+/// XKB modifier bits: Shift, Control and Mod4 (Super, the ⌘ key).
 const MOD_SHIFT: u32 = 1;
 const MOD_CONTROL: u32 = 4;
+const MOD_SUPER: u32 = 64;
 const KEY_RELEASED: u32 = 0;
 const KEY_PRESSED: u32 = 1;
 const XKB_V1: u32 = 1;
 
-/// The keymap the virtual keyboard declares: the two modifiers and `v`.
+/// The keymap the virtual keyboard declares: the three modifiers and `v`.
 const KEYMAP: &str = r#"xkb_keymap {
-  xkb_keycodes "rmac" { minimum = 8; maximum = 255; <LCTL> = 37; <LFSH> = 50; <AB04> = 55; };
+  xkb_keycodes "rmac" { minimum = 8; maximum = 255; <LCTL> = 37; <LFSH> = 50; <LWIN> = 133; <AB04> = 55; };
   xkb_types "rmac" { include "complete" };
   xkb_compat "rmac" { include "complete" };
   xkb_symbols "rmac" {
     key <LCTL> { [ Control_L ] };
     key <LFSH> { [ Shift_L ] };
+    key <LWIN> { [ Super_L ] };
     key <AB04> { [ v, V ] };
     modifier_map Control { <LCTL> };
     modifier_map Shift { <LFSH> };
+    modifier_map Mod4 { <LWIN> };
   };
 };
 "#;
 
-/// Terminals take Ctrl+Shift+V; Ctrl+V is a literal ^V there.
-pub fn wants_terminal_paste(app_id: Option<&str>) -> bool {
-    let Some(app_id) = app_id else {
-        return false;
-    };
-    let app_id = app_id.to_lowercase();
-    [
-        "terminal",
-        "kitty",
-        "alacritty",
-        "foot",
-        "wezterm",
-        "konsole",
-        "ptyxis",
-        "xterm",
-    ]
-    .iter()
-    .any(|name| app_id.contains(name))
+/// The paste shortcut the focused app listens for. keyd turns ⌘V into Ctrl+V
+/// for other apps, but a virtual keyboard bypasses keyd, so the chord has to
+/// be the one the app itself sees.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Paste {
+    /// ⌘V: Lulo's own apps, which take Super as ⌘.
+    Command,
+    /// Ctrl+V: GTK, Qt and the browsers.
+    Control,
+    /// Ctrl+Shift+V: other terminals, where Ctrl+V is a literal ^V.
+    ControlShift,
+}
+
+impl Paste {
+    pub fn for_app(app_id: Option<&str>) -> Self {
+        let Some(app_id) = app_id else {
+            return Self::Control;
+        };
+        if app_id.starts_with("org.rmac.") {
+            return Self::Command;
+        }
+        let app_id = app_id.to_lowercase();
+        let terminal = ["terminal", "kitty", "alacritty", "foot", "wezterm", "konsole", "ptyxis", "xterm"]
+            .iter()
+            .any(|name| app_id.contains(name));
+        if terminal {
+            Self::ControlShift
+        } else {
+            Self::Control
+        }
+    }
+
+    fn modifiers(self) -> u32 {
+        match self {
+            Self::Command => MOD_SUPER,
+            Self::Control => MOD_CONTROL,
+            Self::ControlShift => MOD_CONTROL | MOD_SHIFT,
+        }
+    }
 }
 
 /// What the clipboard held before the emoji went in, so it can come back.
@@ -134,14 +158,14 @@ fn clear_clipboard() {
 
 /// Paste `glyph` into the focused field. Returns whether the paste keys
 /// were sent.
-pub fn paste(glyph: &str, terminal: bool) -> Result<(), String> {
+pub fn paste(glyph: &str, chord: Paste) -> Result<(), String> {
     let saved = save_clipboard();
     if !set_clipboard(glyph) {
         return Err("wl-copy is not available".to_owned());
     }
     // Let the selection reach the focused client before the key arrives.
     std::thread::sleep(Duration::from_millis(60));
-    let sent = press_paste(terminal);
+    let sent = press_paste(chord);
     std::thread::sleep(Duration::from_millis(250));
     match saved {
         Saved::Text(text) => {
@@ -223,7 +247,7 @@ fn keymap_file() -> Result<std::fs::File, String> {
     Ok(file)
 }
 
-fn press_paste(terminal: bool) -> Result<(), String> {
+fn press_paste(chord: Paste) -> Result<(), String> {
     let connection = Connection::connect_to_env().map_err(|error| error.to_string())?;
     let (globals, mut queue) =
         registry_queue_init::<State>(&connection).map_err(|error| error.to_string())?;
@@ -241,12 +265,7 @@ fn press_paste(terminal: bool) -> Result<(), String> {
 
     let start = Instant::now();
     let time = |offset: u32| u32::try_from(start.elapsed().as_millis()).unwrap_or(0) + offset;
-    let modifiers = if terminal {
-        MOD_CONTROL | MOD_SHIFT
-    } else {
-        MOD_CONTROL
-    };
-    keyboard.modifiers(modifiers, 0, 0, 0);
+    keyboard.modifiers(chord.modifiers(), 0, 0, 0);
     keyboard.key(time(1), KEY_V, KEY_PRESSED);
     keyboard.key(time(2), KEY_V, KEY_RELEASED);
     keyboard.modifiers(0, 0, 0, 0);
@@ -262,16 +281,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn terminals_paste_with_shift() {
-        assert!(wants_terminal_paste(Some("org.rmac.Terminal")));
-        assert!(wants_terminal_paste(Some("Alacritty")));
-        assert!(!wants_terminal_paste(Some("org.rmac.TextEditor")));
-        assert!(!wants_terminal_paste(None));
+    fn the_paste_chord_is_the_one_the_focused_app_sees() {
+        assert_eq!(Paste::for_app(Some("org.rmac.Terminal")), Paste::Command);
+        assert_eq!(Paste::for_app(Some("org.rmac.TextEditor")), Paste::Command);
+        assert_eq!(Paste::for_app(Some("Alacritty")), Paste::ControlShift);
+        assert_eq!(Paste::for_app(Some("org.gnome.TextEditor")), Paste::Control);
+        assert_eq!(Paste::for_app(Some("firefox")), Paste::Control);
+        assert_eq!(Paste::for_app(None), Paste::Control);
     }
 
     #[test]
     fn the_keymap_declares_only_what_the_paste_needs() {
         assert!(KEYMAP.contains("<AB04> = 55"));
+        assert!(KEYMAP.contains("<LWIN> = 133"));
+        assert_eq!(MOD_SUPER, 1 << 6);
         assert_eq!(KEY_V + 8, 55);
     }
 }

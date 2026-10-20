@@ -2266,6 +2266,23 @@ mod dock {
         /// otherwise launch/focus through the system authority. As on the
         /// Mac, ⌥-click also hides the application being left, and ⌥⌘-click
         /// hides every other application.
+        /// The pointer reached an app's tile: on Windows, have the app's
+        /// exe scanned now, while the pointer is still on its way to the
+        /// click, rather than after it (`rmac_app_launch::prewarm`,
+        /// WIN-OS-99). Nothing for an app that is already running.
+        fn prewarm_launch(&self, app_id: &str, cx: &App) {
+            let status = self.status.read(cx);
+            let Some(spec) = status
+                .model()
+                .and_then(|model| model.items.iter().find(|item| item.id == app_id))
+                .filter(|item| !item.running)
+                .and_then(|item| item.launch_spec())
+            else {
+                return;
+            };
+            rmac_app_launch::prewarm(spec);
+        }
+
         fn activate_entry(
             &mut self,
             app_id: &str,
@@ -4068,8 +4085,10 @@ mod dock {
                                 cx.notify();
                             }),
                         );
+                        let prewarm_app_id = app_id.clone();
                         item = item.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                             if *hovered {
+                                this.prewarm_launch(&prewarm_app_id, cx);
                                 this.hovered_item = Some((relative_center, tooltip_label.clone()));
                                 cx.notify();
                             } else if this

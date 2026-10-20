@@ -47,6 +47,9 @@ pub struct WindowsPlatform {
     handle: HWND,
     suspend_resume_notification: RefCell<Option<HPOWERNOTIFY>>,
     disable_direct_composition: bool,
+    /// rmac: the thread making the Direct3D devices, until the first thing
+    /// that needs them (`directx_devices`) takes them.
+    pending_devices: RefCell<Option<std::thread::JoinHandle<SendDevices>>>,
 }
 
 struct WindowsPlatformInner {
@@ -101,10 +104,12 @@ impl WindowsPlatformState {
 impl WindowsPlatform {
     pub fn new(headless: bool) -> Result<Self> {
         crate::rmac_trace::startup("platform_new");
-        // rmac: creating the Direct3D devices loads the GPU driver, and
-        // DirectWrite loads the system font collection; neither needs the
-        // other, so the devices are made on their own thread while OLE starts
-        // and the fonts load here (docs/decisions/0025-vendor-gpui-windows.md).
+        // rmac: creating the Direct3D devices loads the GPU driver (60 to 70
+        // ms on the reference laptop), and nothing before the first window
+        // needs them, so they are made on their own thread while OLE and
+        // DirectWrite start, GPUI starts and the app sets itself up; the
+        // first window takes them (`directx_devices`,
+        // docs/decisions/0025-vendor-gpui-windows.md).
         let devices_thread = if headless {
             None
         } else {
@@ -122,19 +127,12 @@ impl WindowsPlatform {
         }
         crate::rmac_trace::startup("ole_initialized");
         let (directx_devices, text_system, direct_write_text_system) = if !headless {
-            let (dw_text_system, devices) = DirectWriteTextSystem::new(|| {
-                match devices_thread.map(|thread| thread.join()) {
-                    Some(Ok(SendDevices(devices))) => devices,
-                    // The thread could not start or panicked: make them here.
-                    _ => DirectXDevices::new(),
-                }
-                .context("Creating DirectX devices")
-            })
-            .context("Error creating DirectWriteTextSystem")?;
+            let dw_text_system =
+                DirectWriteTextSystem::new().context("Error creating DirectWriteTextSystem")?;
             let dw_text_system = Arc::new(dw_text_system);
             crate::rmac_trace::startup("direct_write_text_system");
             (
-                Some(devices),
+                None,
                 dw_text_system.clone() as Arc<dyn PlatformTextSystem>,
                 Some(dw_text_system),
             )
@@ -224,7 +222,35 @@ impl WindowsPlatform {
             disable_direct_composition,
             drop_target_helper,
             invalidate_devices: Arc::new(AtomicBool::new(false)),
+            pending_devices: RefCell::new(devices_thread),
         })
+    }
+
+    /// rmac: the Direct3D devices. The first call waits for the thread
+    /// `new` started (or, if it failed, makes them here) and hands them to
+    /// the text system.
+    fn directx_devices(&self) -> Result<DirectXDevices> {
+        if let Some(devices) = self.inner.state.directx_devices.borrow().clone() {
+            return Ok(devices);
+        }
+        let devices = match self
+            .pending_devices
+            .borrow_mut()
+            .take()
+            .map(|thread| thread.join())
+        {
+            Some(Ok(SendDevices(Ok(devices)))) => devices,
+            // The thread could not start, failed or panicked: make them here.
+            _ => DirectXDevices::new().context("Creating DirectX devices")?,
+        };
+        if let Some(text_system) = &self.direct_write_text_system {
+            text_system
+                .attach_devices(&devices)
+                .context("Creating the text system's GPU state")?;
+        }
+        *self.inner.state.directx_devices.borrow_mut() = Some(devices.clone());
+        crate::rmac_trace::startup("directx_devices_attached");
+        Ok(devices)
     }
 
     pub(crate) fn window_from_hwnd(&self, hwnd: HWND) -> Option<Rc<WindowsWindowInner>> {
@@ -245,8 +271,8 @@ impl WindowsPlatform {
             });
     }
 
-    fn generate_creation_info(&self) -> WindowCreationInfo {
-        WindowCreationInfo {
+    fn generate_creation_info(&self) -> Result<WindowCreationInfo> {
+        Ok(WindowCreationInfo {
             icon: self.icon,
             executor: self.foreground_executor.clone(),
             current_cursor: self.inner.state.current_cursor.get(),
@@ -256,9 +282,9 @@ impl WindowsPlatform {
             main_receiver: self.inner.main_receiver.clone(),
             platform_window_handle: self.handle,
             disable_direct_composition: self.disable_direct_composition,
-            directx_devices: self.inner.state.directx_devices.borrow().clone().unwrap(),
+            directx_devices: self.directx_devices()?,
             invalidate_devices: self.invalidate_devices.clone(),
-        }
+        })
     }
 
     fn set_dock_menus(&self, menus: Vec<MenuItem>) {
@@ -323,7 +349,9 @@ impl WindowsPlatform {
     }
 
     fn begin_vsync_thread(&self) {
-        let Some(directx_devices) = self.inner.state.directx_devices.borrow().clone() else {
+        // rmac: an app that opened no window while launching (an Open panel
+        // first) takes the devices here.
+        let Some(directx_devices) = self.directx_devices().log_err() else {
             return;
         };
         let Some(direct_write_text_system) = &self.direct_write_text_system else {
@@ -607,7 +635,7 @@ impl Platform for WindowsPlatform {
         options: WindowParams,
     ) -> Result<Box<dyn PlatformWindow>> {
         crate::rmac_trace::startup("open_window");
-        let window = WindowsWindow::new(handle, options, self.generate_creation_info())?;
+        let window = WindowsWindow::new(handle, options, self.generate_creation_info()?)?;
         let handle = window.get_raw_handle();
         self.raw_window_handles.write().push(handle.into());
         crate::rmac_trace::startup("window_opened");

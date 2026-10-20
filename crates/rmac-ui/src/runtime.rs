@@ -32,9 +32,11 @@ fn apply_window_text_scale(window: &mut Window, scale: rmac_appearance::TextScal
 /// Initialize the shared component, theme, and accessibility runtimes for a
 /// long-lived shell process that creates windows on demand.
 pub fn init_application(cx: &mut App) {
+    crate::startup_mark("init_application");
     // Windows: Lulo's Inter, before any text is laid out.
     #[cfg(windows)]
     crate::fonts_windows::install(cx);
+    crate::startup_mark("lulo_fonts_added");
     seed_initial_theme();
     warn_if_ui_font_missing(cx);
     gpui_component::init(cx);
@@ -46,6 +48,7 @@ pub fn init_application(cx: &mut App) {
     // Windows: each app window's edge follows Lulo's appearance.
     #[cfg(windows)]
     crate::window_frame_windows::install(cx);
+    crate::startup_mark("init_application_done");
 }
 
 /// Release an on-demand shell renderer after its last window has been closed
@@ -252,7 +255,9 @@ fn initial_host_appearance_from(value: &str) -> Option<rmac_appearance::Snapshot
 /// from the desktop menu bar into the app's key window (see
 /// [`crate::register_menu_target`]).
 pub fn install_app_menu(app_id: &'static str, cx: &mut App) {
+    crate::startup_mark("install_app_menu");
     crate::app_menu::install(app_id, None, cx);
+    crate::startup_mark("app_menu_installed");
 }
 
 /// [`install_app_menu`] for an app whose windows share one process: later
@@ -264,12 +269,15 @@ pub fn install_app_instance(
     open_window: impl Fn(Vec<String>, &mut App) + 'static,
     cx: &mut App,
 ) {
+    crate::startup_mark("install_app_menu");
     crate::app_menu::install(app_id, Some(Box::new(open_window)), cx);
+    crate::startup_mark("app_menu_installed");
 }
 
 /// Apply the current shared theme and text scale before an on-demand shell
 /// surface renders its first frame.
 pub fn prepare_surface_window(window: &mut Window, cx: &mut App) {
+    crate::startup_mark("prepare_surface_window");
     apply_window_text_scale(window, theme::current().text_scale);
     gpui_component::theme::Theme::change(current_component_theme_mode(), Some(window), cx);
     // `Theme::change` reloads gpui-component's stock palette; put the rmac
@@ -277,6 +285,7 @@ pub fn prepare_surface_window(window: &mut Window, cx: &mut App) {
     // window draw with them (as `apply_resolved_tokens` does on a change).
     apply_component_theme(cx);
     mark_benchmark_first_frame(window);
+    crate::startup_mark("surface_window_prepared");
 }
 
 /// Root for a shell surface such as Spotlight or Control Center. The surface

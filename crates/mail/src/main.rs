@@ -1,3 +1,8 @@
+// A GUI app on Windows: no console behind it (ADR 0023). Without this
+// Windows made a console host for the process before `main` ran, about
+// 200 ms of every launch on the reference laptop (WIN-OS-99).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 #[cfg(windows)]
 mod accounts_win;
 mod compose_window;
@@ -400,6 +405,7 @@ fn watch_account_changes(
 }
 
 fn main() {
+    rmac_ui::startup_mark("mail_main");
     // One Mail per user on Windows: a later launch hands its `mailto:` link
     // (or sign-in return) to the running one instead of opening a second.
     #[cfg(windows)]

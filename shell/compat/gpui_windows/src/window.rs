@@ -80,6 +80,8 @@ pub struct WindowsWindowState {
     pub(crate) pan_smoother: crate::rmac_smooth_scroll::PanSmoother,
     /// rmac: the Mac corners, shadow and hairline (`rmac_window_frame.rs`).
     pub(crate) mac_frame: crate::rmac_window_frame::MacFrame,
+    /// rmac: keeps a new window off screen until its first frame drew.
+    pub(crate) first_frame: crate::rmac_first_frame::FirstFrame,
 
     pub click_state: ClickState,
     pub current_cursor: Cell<Option<HCURSOR>>,
@@ -195,6 +197,7 @@ impl WindowsWindowState {
             smooth_scroll: Default::default(),
             pan_smoother: Default::default(),
             mac_frame: Default::default(),
+            first_frame: Default::default(),
             click_state,
             current_cursor: Cell::new(current_cursor),
             cursor_visible,
@@ -597,6 +600,10 @@ impl WindowsWindow {
         )?;
         crate::rmac_trace::startup("window_created");
         if params.show {
+            if params.kind == WindowKind::Normal && this.state.first_frame.cloak(hwnd) {
+                this.state.mac_frame.hold_back(true);
+                crate::rmac_trace::startup("window_cloaked");
+            }
             unsafe { SetWindowPlacement(hwnd, &placement)? };
             crate::rmac_trace::startup("window_shown");
         } else {

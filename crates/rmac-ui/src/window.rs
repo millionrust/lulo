@@ -474,8 +474,9 @@ pub fn window_options(width: f32, height: f32, cx: &App) -> WindowOptions {
 
 /// Standard window options with a stable Linux desktop identity.
 pub fn window_options_for_app(app_id: &str, width: f32, height: f32, cx: &App) -> WindowOptions {
+    crate::startup_mark("window_options_for_app");
     let height = height + crate::menu_strip::height(cx);
-    WindowOptions {
+    let options = WindowOptions {
         app_id: Some(app_id.to_owned()),
         ..window_options_with_bounds(
             width,
@@ -483,7 +484,9 @@ pub fn window_options_for_app(app_id: &str, width: f32, height: f32, cx: &App) -
             restored_window_bounds(app_id, width, height, cx),
             rmac_apps::identity::window_title(app_id).map(SharedString::from),
         )
-    }
+    };
+    crate::startup_mark("window_options_ready");
+    options
 }
 
 /// Identified window options for a fixed-size secondary window of `app_id`

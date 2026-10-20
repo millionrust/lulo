@@ -110,6 +110,13 @@ class Scenario:
         wait_until(lambda: (self.driver.window() or {}).get("is_focused"), 15)
         time.sleep(1.0)
 
+        # Baseline: the Text Editor pastes the clipboard on a physical ⌘V.
+        subprocess.run(["wl-copy", "BASE"], env=self.driver.session.env, timeout=10, check=False)
+        time.sleep(0.5)
+        key("cmd-v")
+        self.facts["baseline_paste"] = bool(wait_until(lambda: "BASE" in self.document_text(), 5))
+        self.snapshot("baseline")
+
         key("ctrl-cmd-space")
         opened = wait_until(self.panel_open, 10)
         self.facts["opens"] = bool(opened)

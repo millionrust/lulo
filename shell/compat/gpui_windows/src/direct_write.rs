@@ -261,6 +261,7 @@ impl DirectWriteTextSystem {
         Ok(Self {
             components,
             state: RwLock::new(DirectWriteState {
+                gpu_state: None,
                 system_font_collection,
                 custom_font_collection,
                 fonts: Vec::new(),

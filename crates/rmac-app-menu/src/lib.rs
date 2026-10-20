@@ -520,6 +520,15 @@ macro_rules! transformations_submenu {
 
 /// Edit ▸ Speech: Clock, Notes, Preview and Text Editor all show the same
 /// two rows.
+/// Edit ▸ Emoji & Symbols (KB-02): opens Lulo's character panel, which pastes
+/// the chosen emoji into the focused text field. The Mac shows 🌐E; a PC has no
+/// Globe key, so the same panel answers ⌃⌘Space here.
+macro_rules! emoji_and_symbols_item {
+    () => {
+        item!("Emoji & Symbols", "input::ShowCharacterPalette", "⌃⌘Space")
+    };
+}
+
 macro_rules! speech_submenu {
     ($prefix:literal) => {
         submenu!(
@@ -813,6 +822,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
                 ]
             ),
             speech_submenu!("text_editor"),
+            emoji_and_symbols_item!(),
             writing_tools_submenu!("writing_tools", separator),
         ],
     },
@@ -1452,6 +1462,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 ]
             ),
             speech_submenu!("notes"),
+            emoji_and_symbols_item!(),
             writing_tools_submenu!("writing_tools", separator),
         ],
     },
@@ -2315,6 +2326,7 @@ const MAIL_MENUS: &[MenuSpec] = &[
             ),
             transformations_submenu!("mail"),
             speech_submenu!("mail"),
+            emoji_and_symbols_item!(),
             writing_tools_submenu!("writing_tools", separator),
         ],
     },
@@ -2719,6 +2731,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             ),
             spelling_and_grammar_submenu!("preview"),
             speech_submenu!("preview"),
+            emoji_and_symbols_item!(),
         ],
     },
     MenuSpec {
@@ -2905,6 +2918,7 @@ const CLOCK_MENUS: &[MenuSpec] = &[
             substitutions_submenu_with_master_toggle!("clock"),
             transformations_submenu!("clock"),
             speech_submenu!("clock"),
+            emoji_and_symbols_item!(),
         ],
     },
     MenuSpec {

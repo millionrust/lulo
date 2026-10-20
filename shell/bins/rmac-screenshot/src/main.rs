@@ -1618,7 +1618,9 @@ mod linux_wayland {
             }
             return;
         }
-        if command == Command::StopRecording {
+        // ⇧⌘5 while a recording runs ends it, like the stop button.
+        let recording = matches!(service.read(cx).recorder, Recorder::Running { .. });
+        if command == Command::StopRecording || (command == Command::Toolbar && recording) {
             service.update(cx, |service, cx| service.stop_recording(cx));
             return;
         }

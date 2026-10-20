@@ -1355,13 +1355,19 @@ mod focus_timer_tests {
             .with_ymd_and_hms(2026, 10, 20, 15, 0, 0)
             .earliest()
             .unwrap();
-        assert_eq!(FocusTimer::UntilLater.label(afternoon), "Until this evening");
+        assert_eq!(
+            FocusTimer::UntilLater.label(afternoon),
+            "Until this evening"
+        );
         assert_eq!(FocusTimer::UntilLater.duration_ms(afternoon), 4 * 3_600_000);
         let night = chrono::Local
             .with_ymd_and_hms(2026, 10, 20, 22, 0, 0)
             .earliest()
             .unwrap();
-        assert_eq!(FocusTimer::UntilLater.label(night), "Until tomorrow morning");
+        assert_eq!(
+            FocusTimer::UntilLater.label(night),
+            "Until tomorrow morning"
+        );
         assert_eq!(FocusTimer::UntilLater.duration_ms(night), 10 * 3_600_000);
         assert_eq!(FocusTimer::ForAnHour.duration_ms(night), 3_600_000);
     }

@@ -428,7 +428,11 @@ pub struct FocusMode {
 /// the one on drawn on. Choosing a mode turns it on until it is turned off;
 /// choosing the one that is on turns Focus off. Each row's ⋯ offers timed
 /// activations. `modes` is empty until the service's list has been read.
-pub fn focus_panel(focus: &rmac_shell_settings::FocusSettings, available: bool, modes: &[FocusMode]) -> Panel {
+pub fn focus_panel(
+    focus: &rmac_shell_settings::FocusSettings,
+    available: bool,
+    modes: &[FocusMode],
+) -> Panel {
     let mut panel = Panel {
         detail: Detail::Focus,
         switch: None,
@@ -1203,7 +1207,10 @@ mod tests {
         assert!(!placed.iter().any(|part| part.kind == Part::Heading));
         assert_eq!(Module::Focus.detail(), Some(Detail::Focus));
 
-        assert_eq!(focus_panel(&focus, false, &modes).empty, Some("Focus Unavailable"));
+        assert_eq!(
+            focus_panel(&focus, false, &modes).empty,
+            Some("Focus Unavailable")
+        );
         assert_eq!(focus_panel(&focus, true, &[]).empty, Some("No Focus Modes"));
     }
 }

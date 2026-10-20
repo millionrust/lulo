@@ -861,7 +861,13 @@ fn file_results_are_grouped_by_kind_in_the_order_of_their_best_match() {
     );
     assert_eq!(
         titles(&session),
-        ["plan a.pdf", "plan c.pdf", "plan b.txt", "plan e.txt", "plan d"]
+        [
+            "plan a.pdf",
+            "plan c.pdf",
+            "plan b.txt",
+            "plan e.txt",
+            "plan d"
+        ]
     );
     let labels = session
         .results()
@@ -870,7 +876,13 @@ fn file_results_are_grouped_by_kind_in_the_order_of_their_best_match() {
         .collect::<Vec<_>>();
     assert_eq!(
         labels,
-        ["PDF Documents", "PDF Documents", "Documents", "Documents", "Folders"]
+        [
+            "PDF Documents",
+            "PDF Documents",
+            "Documents",
+            "Documents",
+            "Folders"
+        ]
     );
     assert_eq!(section_starts(&labels), [0, 1, 2, 4]);
 }
@@ -878,12 +890,30 @@ fn file_results_are_grouped_by_kind_in_the_order_of_their_best_match() {
 #[test]
 fn file_kinds_follow_spotlight_categories() {
     use std::path::Path;
-    assert_eq!(FileKind::of(Path::new("/h/Report.PDF"), false), FileKind::PdfDocuments);
-    assert_eq!(FileKind::of(Path::new("/h/notes.md"), false), FileKind::Documents);
-    assert_eq!(FileKind::of(Path::new("/h/photo.jpeg"), false), FileKind::Images);
-    assert_eq!(FileKind::of(Path::new("/h/budget.ods"), false), FileKind::Spreadsheets);
-    assert_eq!(FileKind::of(Path::new("/h/src.rs"), false), FileKind::Developer);
+    assert_eq!(
+        FileKind::of(Path::new("/h/Report.PDF"), false),
+        FileKind::PdfDocuments
+    );
+    assert_eq!(
+        FileKind::of(Path::new("/h/notes.md"), false),
+        FileKind::Documents
+    );
+    assert_eq!(
+        FileKind::of(Path::new("/h/photo.jpeg"), false),
+        FileKind::Images
+    );
+    assert_eq!(
+        FileKind::of(Path::new("/h/budget.ods"), false),
+        FileKind::Spreadsheets
+    );
+    assert_eq!(
+        FileKind::of(Path::new("/h/src.rs"), false),
+        FileKind::Developer
+    );
     assert_eq!(FileKind::of(Path::new("/h/blob"), false), FileKind::Other);
-    assert_eq!(FileKind::of(Path::new("/h/Projects.pdf"), true), FileKind::Folders);
+    assert_eq!(
+        FileKind::of(Path::new("/h/Projects.pdf"), true),
+        FileKind::Folders
+    );
     assert_eq!(FileKind::PdfDocuments.label(), "PDF Documents");
 }

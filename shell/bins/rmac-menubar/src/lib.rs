@@ -2660,13 +2660,11 @@ mod bar {
                     joining: self.wifi_joining.as_ref(),
                     error: self.wifi_error.as_deref(),
                 }),
-                StatusMenuKind::Battery => {
-                    battery_menu_rows(
-                        self.battery_menu.as_ref(),
-                        self.battery_error.as_deref(),
-                        self.battery_energy.as_deref(),
-                    )
-                }
+                StatusMenuKind::Battery => battery_menu_rows(
+                    self.battery_menu.as_ref(),
+                    self.battery_error.as_deref(),
+                    self.battery_energy.as_deref(),
+                ),
                 StatusMenuKind::Sound => sound_menu_rows(SoundMenuInput {
                     audio: self.sound_menu.as_ref(),
                     error: self.sound_error.as_deref(),

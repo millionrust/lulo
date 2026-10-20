@@ -231,7 +231,12 @@ impl NotificationCenterView {
     /// "Mute for 1 Hour" / "Mute for Today": the app's notifications keep
     /// arriving in Notification Centre, without a banner or a sound, until
     /// `until` (Unix seconds).
-    pub(crate) fn mute_menu_app(&mut self, until: u64, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn mute_menu_app(
+        &mut self,
+        until: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(target) = self.take_menu_target(window, cx) {
             self.update_policies(
                 target.app_ids,

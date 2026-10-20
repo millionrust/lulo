@@ -350,9 +350,11 @@ impl Render for NotificationCenterView {
             .on_action(cx.listener(|this, _: &TurnOffApp, window, cx| {
                 this.turn_off_menu_app(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &OpenNotificationSettings, window, cx| {
-                this.open_notification_settings(window, cx);
-            }))
+            .on_action(
+                cx.listener(|this, _: &OpenNotificationSettings, window, cx| {
+                    this.open_notification_settings(window, cx);
+                }),
+            )
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
                     cx.stop_propagation();
@@ -414,7 +416,9 @@ impl Render for NotificationCenterView {
                             .child(measure),
                     ),
             )
-            .when_some(app_menu, |root, (menu, state)| root.child(menu.render(&state)))
+            .when_some(app_menu, |root, (menu, state)| {
+                root.child(menu.render(&state))
+            })
     }
 }
 

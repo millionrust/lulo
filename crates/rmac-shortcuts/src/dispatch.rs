@@ -103,8 +103,8 @@ pub fn notify(id: &ShortcutId) -> Result<(), Error> {
     let path = shortcut_socket_path(id)?;
     let socket = std::os::unix::net::UnixDatagram::unbound()
         .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
-    let bytes =
-        serde_json::to_vec(id).map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
+    let bytes = serde_json::to_vec(id)
+        .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
     match socket.send_to(&bytes, &path) {
         Ok(_) => Ok(()),
         Err(error)

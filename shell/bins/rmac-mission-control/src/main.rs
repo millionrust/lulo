@@ -742,8 +742,7 @@ mod linux_wayland {
                         .enumerate()
                         .partition(|(_, window)| window.minimised);
                     let mut rects = vec![model::Rect::new(0.0, 0.0, 0.0, 0.0); frames.len()];
-                    for (group, area, gap_y) in
-                        [(open, open_area, 0.0), (minimised, row_area, 0.0)]
+                    for (group, area, gap_y) in [(open, open_area, 0.0), (minimised, row_area, 0.0)]
                     {
                         let group_frames: Vec<Rect> =
                             group.iter().map(|(_, window)| window.frame).collect();

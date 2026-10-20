@@ -226,13 +226,12 @@ impl Render for QuickSettingsView {
         let detail = shown_panel.as_ref().map(|shown| match reveal {
             None => self.detail_view(shown, g::PANEL_LEFT, banner_block, cx),
             Some((detail, amount)) => {
-                let (tile_x, tile_y, tile_width, tile_height) =
-                    tile_rect(
-                        detail,
-                        &modules,
-                        self.hardware.wifi,
-                        usize::from(self.hardware.wifi) + usize::from(self.hardware.bluetooth),
-                    );
+                let (tile_x, tile_y, tile_width, tile_height) = tile_rect(
+                    detail,
+                    &modules,
+                    self.hardware.wifi,
+                    usize::from(self.hardware.wifi) + usize::from(self.hardware.bluetooth),
+                );
                 let lerp = |from: f32, to: f32| from + (to - from) * amount;
                 let (x, y) = (lerp(tile_x, g::PANEL_LEFT), lerp(tile_y, banner_block));
                 let width = lerp(tile_width, g::PANEL_WIDTH);

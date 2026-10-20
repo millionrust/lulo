@@ -141,9 +141,7 @@ impl FileKind {
             | "svg" | "avif" | "ico" | "raw" | "cr2" | "nef" | "dng" | "xcf" | "psd" => {
                 Self::Images
             }
-            "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "mpg" | "mpeg" | "ogv" => {
-                Self::Movies
-            }
+            "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "mpg" | "mpeg" | "ogv" => Self::Movies,
             "mp3" | "m4a" | "flac" | "wav" | "ogg" | "oga" | "opus" | "aac" | "aif" | "aiff" => {
                 Self::Music
             }

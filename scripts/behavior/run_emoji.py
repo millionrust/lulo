@@ -104,8 +104,8 @@ class Scenario:
     # ---- scenario --------------------------------------------------------
 
     def run(self) -> dict:
-        key = self.driver.session.pointer.key
         self.driver.start()
+        key = self.driver.session.pointer.key
         self.driver.launch({"launch": "text-editor"})
         wait_until(lambda: (self.driver.window() or {}).get("is_focused"), 15)
         time.sleep(1.0)

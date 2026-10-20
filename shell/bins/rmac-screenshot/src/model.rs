@@ -143,6 +143,10 @@ pub enum Destination {
     Documents,
     Downloads,
     Clipboard,
+    /// ⇧⌘5 Options ▸ Save to ▸ Preview (SHOT-02): the capture opens in the
+    /// default image viewer (Preview) from a cache folder, with no file left
+    /// in the user's folders.
+    Preview,
 }
 
 impl Destination {
@@ -152,6 +156,7 @@ impl Destination {
             Self::Documents => "Documents",
             Self::Downloads => "Downloads",
             Self::Clipboard => "Clipboard",
+            Self::Preview => "Preview",
         }
     }
 
@@ -161,6 +166,7 @@ impl Destination {
             Self::Documents => "documents",
             Self::Downloads => "downloads",
             Self::Clipboard => "clipboard",
+            Self::Preview => "preview",
         }
     }
 
@@ -170,6 +176,7 @@ impl Destination {
             Self::Documents,
             Self::Downloads,
             Self::Clipboard,
+            Self::Preview,
         ]
         .into_iter()
         .find(|destination| destination.key() == value)
@@ -181,7 +188,7 @@ impl Destination {
             Self::Desktop => Some(("XDG_DESKTOP_DIR", "Desktop")),
             Self::Documents => Some(("XDG_DOCUMENTS_DIR", "Documents")),
             Self::Downloads => Some(("XDG_DOWNLOAD_DIR", "Downloads")),
-            Self::Clipboard => None,
+            Self::Clipboard | Self::Preview => None,
         }
     }
 }
@@ -593,6 +600,15 @@ fn config_home() -> Option<PathBuf> {
         .or_else(|| home().map(|home| home.join(".config")))
 }
 
+/// Where Save to ▸ Preview keeps the capture it hands to the viewer.
+fn preview_directory() -> Option<PathBuf> {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| home().map(|home| home.join(".cache")))
+        .map(|cache| cache.join("rmac/screenshots"))
+}
+
 fn settings_path() -> Option<PathBuf> {
     config_home().map(|config| config.join("rmac/screenshot.conf"))
 }
@@ -600,6 +616,9 @@ fn settings_path() -> Option<PathBuf> {
 /// The folder a file destination saves into, from `user-dirs.dirs` like
 /// Files and the Desktop, falling back to `$HOME/<Name>`.
 pub fn destination_directory(destination: Destination) -> Option<PathBuf> {
+    if destination == Destination::Preview {
+        return preview_directory();
+    }
     let (key, fallback) = destination.user_dir()?;
     let home = home()?;
     let user_dirs =
@@ -755,7 +774,7 @@ impl MenuEntry {
 }
 
 /// The Mac's sections, keeping only destinations rmac can deliver to (Mail,
-/// Preview and Other Location… have no backend). Clipboard needs wl-copy.
+/// Messages and Other Location… have no backend). Clipboard needs wl-copy.
 pub fn menu_entries(clipboard: bool) -> Vec<MenuEntry> {
     let mut entries = vec![
         MenuEntry::Header("Save to"),
@@ -768,6 +787,7 @@ pub fn menu_entries(clipboard: bool) -> Vec<MenuEntry> {
             Destination::Clipboard,
         )));
     }
+    entries.push(MenuEntry::Item(MenuItem::Destination(Destination::Preview)));
     entries.extend([
         MenuEntry::Separator,
         MenuEntry::Header("Timer"),
@@ -1002,7 +1022,7 @@ mod tests {
         let entries = menu_entries(true);
         assert_eq!(
             menu_height(&entries),
-            5.0 + 4.0 * 24.0 + 10.0 * 24.0 + 3.0 * 11.0 + 5.0
+            5.0 + 4.0 * 24.0 + 11.0 * 24.0 + 3.0 * 11.0 + 5.0
         );
         let menu = menu_origin(toolbar, &entries);
         assert_eq!(menu.y + menu_height(&entries), toolbar.y + 27.0);
@@ -1011,6 +1031,8 @@ mod tests {
                 Destination::Clipboard
             )))
         );
+        assert_eq!(Destination::parse("preview"), Some(Destination::Preview));
+        assert!(Destination::Preview.user_dir().is_none());
         let (width, height) = thumbnail_size(1470.0, 956.0);
         assert_eq!(width, 155.0);
         assert!((height - 103.6).abs() < 0.1);

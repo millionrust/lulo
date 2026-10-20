@@ -16,6 +16,7 @@ pub enum Detail {
     Bluetooth,
     Display,
     Sound,
+    Focus,
 }
 
 impl Detail {
@@ -25,6 +26,7 @@ impl Detail {
             Self::Bluetooth => "Bluetooth",
             Self::Display => "Display",
             Self::Sound => "Sound",
+            Self::Focus => "Focus",
         }
     }
 
@@ -35,6 +37,7 @@ impl Detail {
             Self::Bluetooth => ("Bluetooth Settings\u{2026}", "bluetooth"),
             Self::Display => ("Display Settings\u{2026}", "displays"),
             Self::Sound => ("Sound Settings\u{2026}", "sound"),
+            Self::Focus => ("Focus Settings\u{2026}", "focus"),
         }
     }
 }
@@ -115,6 +118,8 @@ pub enum RowGlyph {
     Wifi,
     Bluetooth,
     Speaker,
+    /// A Focus mode (the moon, drawn indigo when the mode is on).
+    Focus,
 }
 
 /// What choosing a row does.
@@ -134,6 +139,8 @@ pub struct Row {
     pub locked: bool,
     /// `None` when choosing it does nothing (it is already current).
     pub action: Option<RowAction>,
+    /// A Focus mode's id: the row shows a ⋯ button with its timer menu.
+    pub timer: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -214,6 +221,7 @@ fn network_row(network: &rmac_network::WifiNetwork) -> Row {
         on: network.connected,
         locked: network.security.is_secure(),
         action,
+        timer: None,
     }
 }
 
@@ -323,6 +331,7 @@ pub fn bluetooth_panel(bluetooth: &rmac_bluetooth::Snapshot) -> Panel {
                 glyph: RowGlyph::Bluetooth,
                 on: device.connected,
                 locked: false,
+                timer: None,
                 // A device the platform cannot connect from an app (on
                 // Windows, anything but Bluetooth audio) is listed only.
                 action: device.can_connect.then(|| {
@@ -372,6 +381,7 @@ pub fn sound_panel<'a>(
             glyph: RowGlyph::Speaker,
             on: output.current,
             locked: false,
+            timer: None,
             action: (can_choose && !output.current)
                 .then(|| RowAction::Run(Command::SetDefaultOutput(output.id.to_owned()))),
         })
@@ -407,15 +417,75 @@ pub fn display_panel(dark_mode: Option<bool>) -> Panel {
     }
 }
 
+/// One configured Focus mode, as the Focus service lists it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FocusMode {
+    pub id: String,
+    pub name: String,
+}
+
+/// Focus: every mode (Do Not Disturb first, as the service orders them),
+/// the one on drawn on. Choosing a mode turns it on until it is turned off;
+/// choosing the one that is on turns Focus off. Each row's ⋯ offers timed
+/// activations. `modes` is empty until the service's list has been read.
+pub fn focus_panel(focus: &rmac_shell_settings::FocusSettings, available: bool, modes: &[FocusMode]) -> Panel {
+    let mut panel = Panel {
+        detail: Detail::Focus,
+        switch: None,
+        notice: None,
+        slider: false,
+        toggles: Vec::new(),
+        sections: Vec::new(),
+        disclosure: None,
+        others: Vec::new(),
+        empty: None,
+    };
+    if !available {
+        panel.empty = Some("Focus Unavailable");
+        return panel;
+    }
+    if modes.is_empty() {
+        panel.empty = Some("No Focus Modes");
+        return panel;
+    }
+    let rows = modes
+        .iter()
+        .take(MAX_NETWORKS)
+        .map(|mode| {
+            let on = focus.enabled && focus.selected_mode.as_deref() == Some(mode.name.as_str());
+            Row {
+                label: mode.name.clone(),
+                glyph: RowGlyph::Focus,
+                on,
+                locked: false,
+                action: Some(RowAction::Run(if on {
+                    Command::SetFocusEnabled(false)
+                } else {
+                    Command::ActivateFocusMode {
+                        mode: mode.id.clone(),
+                        duration_ms: 0,
+                    }
+                })),
+                timer: Some(mode.id.clone()),
+            }
+        })
+        .collect();
+    panel.sections.push(Section { heading: "", rows });
+    panel
+}
+
 /// The panel for `detail` from the live inputs. `dark_mode` is the
-/// resolved appearance, for Display's Dark Mode toggle.
+/// resolved appearance, for Display's Dark Mode toggle; `focus_modes` the
+/// Focus service's modes.
 pub fn panel(
     detail: Detail,
     inputs: &Inputs,
     others_expanded: bool,
     dark_mode: Option<bool>,
+    focus_modes: &[FocusMode],
 ) -> Panel {
     match detail {
+        Detail::Focus => focus_panel(&inputs.focus, inputs.focus_available, focus_modes),
         Detail::Wifi => wifi_panel(&inputs.wifi, others_expanded),
         Detail::Bluetooth => bluetooth_panel(&inputs.bluetooth),
         Detail::Display => display_panel(dark_mode),
@@ -557,13 +627,18 @@ impl Panel {
             }
             first = false;
             separator(&mut placed, y);
-            y += HEADING_GAP;
-            placed.push(Placed {
-                target: None,
-                kind: Part::Heading,
-                top: y,
-            });
-            y += HEADING_HEIGHT + HEADING_TO_ROW;
+            if section.heading.is_empty() {
+                // Focus lists its modes straight under the title.
+                y += ITEM_GAP;
+            } else {
+                y += HEADING_GAP;
+                placed.push(Placed {
+                    target: None,
+                    kind: Part::Heading,
+                    top: y,
+                });
+                y += HEADING_HEIGHT + HEADING_TO_ROW;
+            }
             for row in 0..section.rows.len() {
                 placed.push(Placed {
                     target: Some(Target::Row {
@@ -657,6 +732,7 @@ impl Module {
             Self::Bluetooth => Some(Detail::Bluetooth),
             Self::Display => Some(Detail::Display),
             Self::Sound => Some(Detail::Sound),
+            Self::Focus => Some(Detail::Focus),
             _ => None,
         }
     }
@@ -1085,5 +1161,49 @@ mod tests {
         assert_eq!(nudge(98, true), 100);
         assert_eq!(nudge(3, false), 0);
         assert_eq!(nudge(50, true), 56);
+    }
+
+    #[test]
+    fn focus_lists_every_mode_and_turns_the_one_that_is_on_off() {
+        let modes = [
+            FocusMode {
+                id: "do-not-disturb".into(),
+                name: "Do Not Disturb".into(),
+            },
+            FocusMode {
+                id: "work".into(),
+                name: "Work".into(),
+            },
+        ];
+        let focus = rmac_shell_settings::FocusSettings {
+            enabled: true,
+            selected_mode: Some("Work".into()),
+            ends_at_unix_ms: None,
+        };
+        let panel = focus_panel(&focus, true, &modes);
+        assert_eq!(panel.detail.title(), "Focus");
+        assert_eq!(panel.detail.settings(), ("Focus Settings\u{2026}", "focus"));
+        let rows = &panel.sections[0].rows;
+        assert_eq!(rows.len(), 2);
+        assert!(!rows[0].on && rows[1].on);
+        assert_eq!(
+            rows[0].action,
+            Some(RowAction::Run(Command::ActivateFocusMode {
+                mode: "do-not-disturb".into(),
+                duration_ms: 0,
+            }))
+        );
+        assert_eq!(
+            rows[1].action,
+            Some(RowAction::Run(Command::SetFocusEnabled(false)))
+        );
+        assert_eq!(rows[1].timer.as_deref(), Some("work"));
+        // No heading: the modes sit straight under the title.
+        let (placed, _) = panel.layout();
+        assert!(!placed.iter().any(|part| part.kind == Part::Heading));
+        assert_eq!(Module::Focus.detail(), Some(Detail::Focus));
+
+        assert_eq!(focus_panel(&focus, false, &modes).empty, Some("Focus Unavailable"));
+        assert_eq!(focus_panel(&focus, true, &[]).empty, Some("No Focus Modes"));
     }
 }

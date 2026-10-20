@@ -263,7 +263,7 @@ impl QuickSettingsView {
                 title: "Focus",
                 subtitle: None,
                 pane: "focus",
-                detail: None,
+                detail: Some(Detail::Focus),
                 module: Module::Focus,
             },
             move |this, cx| this.execute(Command::SetFocusEnabled(next), cx),

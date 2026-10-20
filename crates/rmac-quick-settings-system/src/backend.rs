@@ -16,6 +16,7 @@ pub trait Backend {
     fn power(&self) -> Result<rmac_power::Snapshot, String>;
 
     fn set_focus_enabled(&self, enabled: bool) -> Result<(), String>;
+    fn activate_focus_mode(&self, mode: &str, duration_ms: u64) -> Result<(), String>;
     fn focus(&self) -> Result<rmac_shell_settings::FocusSettings, String>;
 }
 
@@ -87,6 +88,12 @@ impl Backend for SystemBackend {
 
     fn set_focus_enabled(&self, enabled: bool) -> Result<(), String> {
         rmac_focus_linux::client::set_enabled(enabled)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    fn activate_focus_mode(&self, mode: &str, duration_ms: u64) -> Result<(), String> {
+        rmac_focus_linux::client::activate(mode, duration_ms)
             .map(|_| ())
             .map_err(|error| error.to_string())
     }

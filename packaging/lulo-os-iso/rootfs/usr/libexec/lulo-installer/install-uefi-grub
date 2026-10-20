@@ -1,0 +1,11 @@
+#!/bin/sh
+# Calamares contextualprocess@lulo_bootloader_packages on a UEFI PC (ADR
+# 0029): replace the image's grub-pc with grub-efi-amd64 from the .deb kept
+# in the image, so the install needs no network. The signed shim and GRUB
+# are already installed.
+set -eu
+
+deb=$(find /usr/share/lulo-installer/debs -maxdepth 1 -name 'grub-efi-amd64_*.deb' | head -n 1)
+[ -n "$deb" ] || { echo "install-uefi-grub: no grub-efi-amd64 package in the image" >&2; exit 1; }
+DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-download \
+    -o Dpkg::Options::=--force-confold "$deb"

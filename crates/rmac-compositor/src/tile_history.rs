@@ -119,12 +119,7 @@ impl TileHistoryStore {
     }
 
     pub fn default_path() -> Option<PathBuf> {
-        let runtime = std::env::var_os("XDG_RUNTIME_DIR")?;
-        Some(
-            PathBuf::from(runtime)
-                .join("rmac")
-                .join("tile-history.json"),
-        )
+        crate::runtime_dir().map(|runtime| runtime.join("tile-history.json"))
     }
 
     pub fn load_default() -> Self {

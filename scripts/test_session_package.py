@@ -298,6 +298,11 @@ class SessionPackageTests(unittest.TestCase):
                 shell.index('workspace "Desktop"'),
                 shell.index('workspace "rmac-parking"'),
             )
+            # Touches land on the laptop's own panel even with an external
+            # display first in the layout (ADR 0028).
+            touch = shell[shell.index("    touch {") :]
+            touch = touch[: touch.index("\n    }")]
+            self.assertIn('map-to-output "eDP-1"', touch)
 
     def test_ships_the_rmac_gtk_theme_and_desktop_scoped_defaults(self):
         with tempfile.TemporaryDirectory() as temporary:

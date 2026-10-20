@@ -341,11 +341,13 @@ impl WindowsPlatform {
             .spawn(move || {
                 let vsync_provider = VSyncProvider::new();
                 let demand = crate::rmac_frame_loop::vsync_demand();
+                crate::rmac_smooth_scroll::note_vsync_interval(vsync_provider.interval());
                 loop {
                     // rmac: sleep until a window wants frames instead of
                     // waking every vblank for windows that draw nothing.
                     demand.wait();
                     vsync_provider.wait_for_vsync();
+                    crate::rmac_smooth_scroll::note_vblank();
                     crate::rmac_trace::wake("vsync", "tick");
                     if check_device_lost(&directx_device.device)
                         || invalidate_devices.fetch_and(false, Ordering::Acquire)

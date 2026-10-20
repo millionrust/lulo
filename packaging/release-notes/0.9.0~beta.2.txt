@@ -1,0 +1,19 @@
+Lulo 0.9.0 Beta 2 is the first public beta of Lulo, for Ubuntu and Windows: a desktop that looks and works like macOS 26, built to run well on everyday and low-spec PCs.
+
+# What's new since Beta 1
+
+- Faster everywhere: apps open sooner, Spotlight, Control Centre, Notification Centre, Launchpad and the App Switcher open in about 25 to 30 ms, the Dock is there at login, and big folders scroll smoothly.
+- Touchscreens: tap, double-tap, rest a finger to right-click, natural swipe scrolling, dragging, and two-finger scroll and pinch.
+- Security: the TLS library used by Mail, Calendar and accounts is updated for RUSTSEC-2026-0346 to 0349.
+- Dock: drag an app onto the Dock to keep it, drag to rearrange, and the blurred shelf.
+- Context menus, window corners and shadows now match the Mac much more closely.
+- Many System Settings panes, and dozens of menu items in Files, Notes, Preview, Text Editor and Terminal, brought in line with macOS 26.
+- Lulo Intelligence, off by default: Writing Tools, plain-language requests in Spotlight and voice commands, with a small model that runs on this PC.
+
+# Known limitations
+
+Tested on Intel graphics only. Some apps still take one to two seconds to open on a slow PC. Files does not browse network shares or phones yet. Mail's Google and Microsoft sign-in has not been tested against real accounts.
+
+# Feedback
+
+Report problems at github.com/millionrust/lulo/issues.

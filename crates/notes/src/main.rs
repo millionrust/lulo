@@ -266,6 +266,11 @@ struct NotesView {
     markdown_preview_visible: bool,
     light_background_notes: BTreeSet<NoteId>,
     folders_visible: bool,
+    /// The window is too narrow for the folder list (`narrow_window`), as
+    /// of the last frame.
+    window_narrow: bool,
+    /// The user showed the folder list although the window is narrow.
+    folders_shown_while_narrow: bool,
     show_note_count: bool,
     group_notes_by_date: bool,
     toolbar_visible: bool,
@@ -453,6 +458,8 @@ impl NotesView {
             markdown_preview_visible: false,
             light_background_notes: BTreeSet::new(),
             folders_visible: true,
+            window_narrow: false,
+            folders_shown_while_narrow: false,
             show_note_count: true,
             group_notes_by_date: true,
             toolbar_visible: true,

@@ -10,6 +10,7 @@ pub mod svg_icon;
 pub mod text_edit;
 pub mod text_field;
 pub mod tokens;
+pub mod touch;
 
 pub use svg_icon::svg_icon;
 

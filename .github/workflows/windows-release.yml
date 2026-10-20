@@ -1,0 +1,159 @@
+# Add the Windows Preview MSI to an already-published Lulo Release: the
+# second step of a Ubuntu-first release (docs/release-process.md "Ubuntu
+# first, Windows later"). release.yml skips its own windows-installer job
+# while the RMAC_WINDOWS_WITH_RELEASE variable is "false"; this workflow
+# then builds the MSI from the commit it is dispatched on (which may be
+# later than the tag, for example dev with a Windows fix), runs the same
+# install/launch/uninstall smoke, attests it, adds it and its line in
+# SHA256SUMS to the Release, and switches the Release's notes to the full
+# Ubuntu + Windows notes (docs/release-notes/<version>.md).
+#
+#   gh workflow run windows-release.yml --ref dev -f tag=v0.9.0-beta.2
+#
+# The commit's workspace version must be the tag's, so the MSI is named
+# for the Release it joins. Its MSI ProductVersion is 0.9.<commit count>
+# (packaging/windows/msi_version.py), which a later commit only raises.
+name: Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to add the MSI to (e.g. v0.9.0-beta.2)"
+        required: true
+        type: string
+      publish:
+        description: "Upload to the Release (false: build and smoke-test only)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rmac-release-windows-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows-installer:
+    name: Build the Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      filename: ${{ steps.build.outputs.filename }}
+    steps:
+      # Full history (commits only): the MSI's version is
+      # <major>.<minor>.<commit count> (msi_version.py, WIN-OS-54).
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          filter: tree:0
+
+      - name: Check the tag names this commit's workspace version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n '/^\[workspace\.package\]/,/^\[/{s/^version = "\(.*\)"$/\1/p;}' Cargo.toml)"
+          [ "$RELEASE_TAG" = "v$version" ] \
+            || { echo "tag $RELEASE_TAG does not match this commit's workspace version $version" >&2; exit 1; }
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Generate Windows app icons
+        run: bash scripts/windows/make_icons.sh
+
+      # The same app set as release.yml, windows-preview.yml and
+      # packaging/windows/apps.json (scripts/test_release_workflows.py
+      # keeps the lists equal).
+      - name: Build the apps
+        run: |
+          cargo build --locked --release -p rmac-calculator -p rmac-notes \
+            -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
+            -p rmac-terminal -p rmac-finder -p rmac-system-settings \
+            -p rmac-activity-monitor -p rmac-mail -p rmac-calendar \
+            -p rmac-calendar-agent -p rmac-player -p rmac-archive-utility \
+            -p rmac-win-shell --bins
+
+      - name: Collect the built exes
+        run: |
+          mkdir -p exes
+          for app in calculator notes text-editor preview clock weather terminal files system-settings system-monitor mail calendar calendar-agent player archive-utility; do
+            cp "target/release/rmac-$app.exe" exes/
+          done
+          cp target/release/lulo-session.exe target/release/lulo-shell.exe exes/
+
+      - name: Install the WiX Toolset CLI
+        # 5.0.2, as in release.yml (WiX 6 added an EULA gate this build
+        # does not accept on the owner's behalf).
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Build the installer
+        id: build
+        run: |
+          version="$(sed -n '/^\[workspace\.package\]/,/^\[/{s/^version = "\(.*\)"$/\1/p;}' Cargo.toml)"
+          filename="Lulo-Setup-$version-x64.msi"
+          bash packaging/windows/build-installer.sh exes "$version" "$filename"
+          echo "filename=$filename" >> "$GITHUB_OUTPUT"
+
+      - name: Install, launch, and uninstall, checking every step
+        run: python3 scripts/windows/installer_smoke.py "${{ steps.build.outputs.filename }}"
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-installer
+          path: ${{ steps.build.outputs.filename }}
+          if-no-files-found: error
+
+  add-to-release:
+    name: Add the MSI to the Release
+    needs: [windows-installer]
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      MSI: ${{ needs.windows-installer.outputs.filename }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-installer
+          path: windows-installer
+
+      - name: Add the MSI to SHA256SUMS
+        run: bash scripts/release/add-windows-msi.sh prepare "$RELEASE_TAG" "windows-installer/$MSI" release-windows
+
+      - name: Prepare the full release notes
+        run: bash scripts/release/split-release-notes.sh "docs/release-notes/${RELEASE_TAG#v}.md" release-notes
+
+      - name: Generate build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "release-windows/*"
+
+      - name: Upload to the Release
+        run: bash scripts/release/add-windows-msi.sh publish "$RELEASE_TAG" "windows-installer/$MSI" release-windows release-notes

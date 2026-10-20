@@ -87,7 +87,7 @@ class KeyringPackageTests(unittest.TestCase):
             policy["installed_keyring"],
             "/usr/share/keyrings/rmac-archive-keyring.gpg",
         )
-        self.assertEqual(contract.package_version(policy), "0.9.0~beta.1-1")
+        self.assertEqual(contract.package_version(policy), "0.9.0~beta.2-1")
         identity = contract.KeyringIdentity(("A" * 40,), b"public")
         files = contract.source_files(
             identity,

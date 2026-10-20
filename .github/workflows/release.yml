@@ -60,11 +60,30 @@ jobs:
     timeout-minutes: 10
     outputs:
       passed: ${{ steps.mark.outputs.passed }}
+      release-name: ${{ steps.release-name.outputs.name }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The release's name is its tag, which must be exactly "v" plus the
+      # workspace version (Cargo.toml), so the .debs, the MSI, the About
+      # panels and the Release all carry one version. A dry run
+      # (workflow_dispatch on a branch) uses the name the tag would have,
+      # so its bundle has the real file names.
+      - name: Check the tag names the workspace version
+        id: release-name
+        run: |
+          set -euo pipefail
+          version="$(sed -n '/^\[workspace\.package\]/,/^\[/{s/^version = "\(.*\)"$/\1/p;}' Cargo.toml)"
+          [ -n "$version" ] || { echo "no workspace version in Cargo.toml" >&2; exit 1; }
+          name="v$version"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$name" ]; then
+            echo "tag $GITHUB_REF_NAME does not match the workspace version $version (expected $name)" >&2
+            exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Check advisories, licenses, bans, and sources
         uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
@@ -754,21 +773,17 @@ jobs:
 
   windows-installer:
     name: Build the Windows installer
-    # ADR 0023 "Installer": non-blocking while Windows support is new, the
-    # same way `keyring` above is optional -- attach-release's own
-    # `needs.windows-installer.result == 'success'` check (not present in
-    # its required-success list) decides whether to attach the installer,
-    # so a failure here is visible (this job, and so the run, still shows
-    # red) but never holds up the Linux release the way build-amd64's
-    # would. (Job-level `continue-on-error` was deliberately not used
-    # here: it would make `needs.windows-installer.result` always read
-    # "success" downstream, hiding a real failure from that check.)
-    # windows-preview.yml runs the same steps on every push for fast
-    # iteration; this is the tagged-release copy that signs (when the
-    # owner's Azure Trusted Signing secrets exist) and attaches to the
-    # Release itself.
+    # ADR 0023 "Installer". Since 0.9.0-beta.2 a release ships Ubuntu and
+    # Windows together: when this job runs, attach-release publishes
+    # nothing unless the MSI built and passed its install/launch/uninstall
+    # smoke. Setting the RMAC_WINDOWS_WITH_RELEASE repository variable to
+    # "false" skips it, so the tag publishes the Ubuntu release alone and
+    # windows-release.yml adds the MSI to that Release later (from a later
+    # commit if need be). windows-preview.yml runs the same build on demand
+    # for fast iteration.
+    if: ${{ vars.RMAC_WINDOWS_WITH_RELEASE != 'false' }}
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -791,16 +806,23 @@ jobs:
       - name: Generate Windows app icons
         run: bash scripts/windows/make_icons.sh
 
+      # The same app set as windows-preview.yml and
+      # packaging/windows/apps.json: generate_apps_wxs.py refuses an MSI
+      # with an app's exe missing, and scripts/test_release_workflows.py
+      # keeps the lists equal.
       - name: Build the apps
         run: |
           cargo build --locked --release -p rmac-calculator -p rmac-notes \
             -p rmac-text-editor -p rmac-preview -p rmac-clock -p rmac-weather \
-            -p rmac-terminal -p rmac-finder -p rmac-win-shell --bins
+            -p rmac-terminal -p rmac-finder -p rmac-system-settings \
+            -p rmac-activity-monitor -p rmac-mail -p rmac-calendar \
+            -p rmac-calendar-agent -p rmac-player -p rmac-archive-utility \
+            -p rmac-win-shell --bins
 
       - name: Collect the built exes
         run: |
           mkdir -p exes
-          for app in calculator notes text-editor preview clock weather terminal files; do
+          for app in calculator notes text-editor preview clock weather terminal files system-settings system-monitor mail calendar calendar-agent player archive-utility; do
             cp "target/release/rmac-$app.exe" exes/
           done
           cp target/release/lulo-session.exe target/release/lulo-shell.exe exes/
@@ -822,12 +844,10 @@ jobs:
       - name: Build the installer
         id: build
         run: |
-          version="$GITHUB_REF_NAME"
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            version="${version#v}"
-          else
-            version="0.0.0-dev"
-          fi
+          # The workspace version, on a tag and a dry run alike
+          # (dependency-policy refuses a tag that names another version).
+          version="$(sed -n '/^\[workspace\.package\]/,/^\[/{s/^version = "\(.*\)"$/\1/p;}' Cargo.toml)"
+          [ -n "$version" ] || { echo "no workspace version in Cargo.toml" >&2; exit 1; }
           filename="Lulo-Setup-$version-x64.msi"
           bash packaging/windows/build-installer.sh exes "$version" "$filename"
           echo "filename=$filename" >> "$GITHUB_OUTPUT"
@@ -916,18 +936,20 @@ jobs:
     # keyring job skipped before the archive key exists) through.
     # rmac-session cannot install without niri and xwayland-satellite, so a
     # Release is only published once their amd64 packages exist too, and
-    # never without rmac's own source package. `github.ref_type == 'tag'`
-    # keeps this (and apt-repository below) off a workflow_dispatch or
-    # test-branch dry run (see the "on:" trigger above): everything else
-    # in this workflow still builds and verifies on those triggers.
-    # windows-installer is listed here only so its result/output are
-    # visible below; it is deliberately absent from the success
-    # conditions -- ADR 0023 "Installer" starts it non-blocking, the same
-    # way keyring is optional until the archive key exists.
+    # never without rmac's own source package, nor (since 0.9.0-beta.2,
+    # released for Ubuntu and Windows together) without the Windows MSI
+    # unless windows-installer was switched off (RMAC_WINDOWS_WITH_RELEASE
+    # = false; the MSI then follows through windows-release.yml).
+    # On a workflow_dispatch dry run this job still assembles the whole
+    # bundle and checksums and uploads them as the `release-bundle-dry-run`
+    # artifact, so the file names and sizes can be checked before tagging;
+    # every step that publishes or attests is gated on
+    # `github.ref_type == 'tag'` (as apt-repository below is).
     needs: [dependency-policy, build-amd64, build-arm64, build-third-party-amd64, build-third-party-arm64, sbom, rmac-source, keyring, windows-installer]
     if: >-
       always() &&
-      github.ref_type == 'tag' &&
+      (needs.windows-installer.result == 'success' ||
+        (needs.windows-installer.result == 'skipped' && vars.RMAC_WINDOWS_WITH_RELEASE == 'false')) &&
       needs.dependency-policy.result == 'success' &&
       needs.build-amd64.result == 'success' &&
       needs.build-third-party-amd64.result == 'success' &&
@@ -997,9 +1019,7 @@ jobs:
           name: keyring
           path: release-assets/keyring
 
-      - name: Download the Windows installer, if built
-        # ADR 0023 "Installer": non-blocking, so absent on a run where it
-        # failed -- the release still publishes Linux's own assets.
+      - name: Download the Windows installer
         if: needs.windows-installer.result == 'success'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -1007,6 +1027,7 @@ jobs:
           path: release-assets/windows-installer
 
       - name: Refuse to change a Release the APT repository already serves
+        if: github.ref_type == 'tag'
         # Every pool object the signed repository publishes is re-fetched from
         # its Release's apt-inputs tar on later runs (docs/update-trust.md
         # "Stateless publication from GitHub Releases"), so once a Release
@@ -1027,6 +1048,9 @@ jobs:
           fi
 
       - name: Assemble the release bundle and checksums
+        env:
+          RELEASE_NAME: ${{ needs.dependency-policy.outputs.release-name }}
+          WINDOWS_RESULT: ${{ needs.windows-installer.result }}
         run: |
           set -euo pipefail
           bundle="$PWD/release-bundle"
@@ -1043,12 +1067,25 @@ jobs:
               cp -v "$dir/native-packages.json" "$bundle/${arch_name}-packages.json"
             fi
           done
-          if [ -d release-assets/sbom ]; then
-            find release-assets/sbom -type f -exec cp -v {} "$bundle/" \;
+          # rmac's SBOM is one CycloneDX file per crate (about 140); they
+          # ship as one archive so the Release page stays readable.
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
+            -cf - -C release-assets/sbom . | gzip -n > "$bundle/rmac-sbom-${RELEASE_NAME}.tar.gz"
+          # The MSI, unless windows-installer was switched off for a
+          # Ubuntu-first release (windows-release.yml adds it later).
+          if [ "$WINDOWS_RESULT" = success ]; then
+            msi_count="$(find release-assets/windows-installer -maxdepth 1 -name 'Lulo-Setup-*-x64.msi' | wc -l)"
+            [ "$msi_count" -eq 1 ] || { echo "expected one Windows MSI, found $msi_count" >&2; exit 1; }
+            find release-assets/windows-installer -maxdepth 1 -name 'Lulo-Setup-*-x64.msi' -exec cp -v {} "$bundle/" \;
           fi
-          if [ -d release-assets/windows-installer ]; then
-            find release-assets/windows-installer -maxdepth 1 -name '*.msi' -exec cp -v {} "$bundle/" \;
-          fi
+          # The one-command installer for this release: `curl -fsSL
+          # .../releases/download/<tag>/install.sh | sh` installs this
+          # Release's packages (install.sh's RMAC_RELEASE_TAG; see
+          # docs/install-ubuntu.md). uninstall.sh goes back.
+          sed 's/^RMAC_RELEASE_TAG=""$/RMAC_RELEASE_TAG="'"$RELEASE_NAME"'"/' scripts/linux/install.sh > "$bundle/install.sh"
+          [ "$(grep -c '^RMAC_RELEASE_TAG="'"$RELEASE_NAME"'"$' "$bundle/install.sh")" -eq 1 ] \
+            || { echo "install.sh has no RMAC_RELEASE_TAG line to stamp" >&2; exit 1; }
+          cp -v scripts/linux/uninstall.sh "$bundle/uninstall.sh"
           # niri and xwayland-satellite: every architecture contributes its
           # .deb, .buildinfo, .changes, and SBOM (all named per
           # architecture); the source package (.dsc, orig tarballs,
@@ -1084,7 +1121,7 @@ jobs:
             fi
           done
           tar --sort=name --owner=0 --group=0 --numeric-owner \
-            -cf "$bundle/apt-inputs-${GITHUB_REF_NAME}.tar" -C "$inputs" .
+            -cf "$bundle/apt-inputs-${RELEASE_NAME}.tar" -C "$inputs" .
           for path in "$bundle"/*~*; do
             [ -e "$path" ] || continue
             name="$(basename "$path")"
@@ -1093,12 +1130,42 @@ jobs:
           (cd "$bundle" && sha256sum -- * > SHA256SUMS)
           ls -l "$bundle"
 
+      # docs/release-notes/<version>.md: its first line ("# <title>") is
+      # the Release's title and the rest its description. A Ubuntu-first
+      # release (no MSI yet) uses <version>.ubuntu.md; windows-release.yml
+      # switches to the full notes when it adds the MSI. A release without
+      # its notes stops here, on a dry run too.
+      - name: Prepare the release notes
+        env:
+          RELEASE_NAME: ${{ needs.dependency-policy.outputs.release-name }}
+          WINDOWS_RESULT: ${{ needs.windows-installer.result }}
+        run: |
+          set -euo pipefail
+          notes="docs/release-notes/${RELEASE_NAME#v}.md"
+          if [ "$WINDOWS_RESULT" != success ]; then
+            notes="docs/release-notes/${RELEASE_NAME#v}.ubuntu.md"
+          fi
+          bash scripts/release/split-release-notes.sh "$notes" release-notes
+
+      - name: Upload the dry-run bundle
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-bundle-dry-run
+          path: |
+            release-bundle
+            release-notes
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Generate build provenance
+        if: github.ref_type == 'tag'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "release-bundle/*"
 
       - name: Create or update the GitHub Release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -1113,9 +1180,11 @@ jobs:
             prerelease_args=(--prerelease)
           fi
           if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "$tag" --generate-notes "${prerelease_args[@]}"
-          elif [ "${#prerelease_args[@]}" -gt 0 ]; then
-            gh release edit "$tag" "${prerelease_args[@]}"
+            gh release create "$tag" --title "$(cat release-notes/title.txt)" \
+              --notes-file release-notes/body.md "${prerelease_args[@]}"
+          else
+            gh release edit "$tag" --title "$(cat release-notes/title.txt)" \
+              --notes-file release-notes/body.md "${prerelease_args[@]}"
           fi
           gh release upload "$tag" release-bundle/* --clobber
 

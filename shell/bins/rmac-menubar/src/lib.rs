@@ -95,6 +95,11 @@ mod bar {
     const STATUS_PAD: f32 = 10.0;
     const CLOCK_DATE_TIME_GAP: f32 = 7.0;
     const SLOT_HEIGHT: f32 = 22.0;
+    /// On touch, status items reach to the bar's edges (ADR 0028); the
+    /// footprint stays the same, so nothing moves.
+    fn touch_reach() -> f32 {
+        rmac_shell_ui::touch::touch_slop().min((BAR_HEIGHT - SLOT_HEIGHT) / 2.0)
+    }
     /// macOS opens a menu with nothing highlighted until hover or arrow keys.
     const NO_ITEM: usize = usize::MAX;
     const MENU_TEXT_SIZE: f32 = 13.0;
@@ -4070,6 +4075,20 @@ mod bar {
                 || self.revealed
                 || self.open_menu.is_some()
                 || self.status_menu.is_some();
+            // For shell_smoke's full-screen check: hidden over a
+            // full-screen window, shown at the top edge (ADR 0023).
+            #[cfg(windows)]
+            rmac_shell_layer::windows::trace::trace_changed("top bar", || {
+                format!(
+                    "top bar {}{}",
+                    if visible { "shown" } else { "hidden" },
+                    if self.fullscreen {
+                        " over full screen"
+                    } else {
+                        ""
+                    }
+                )
+            });
             let palette = menu_palette();
             let menu_top = BAR_HEIGHT + menu_model::MENU_TOP_GAP;
             // Menus are as wide as their widest item, as on macOS, and stay
@@ -4964,12 +4983,14 @@ mod bar {
                                         _ => None,
                                     };
                                     let slots = self.status_slots.clone();
+                                    let reach = touch_reach();
                                     let mut item = div()
                                         .id(format!("status-{}-{index}", self.display_id))
                                         .role(Role::Button)
                                         .aria_label(indicator.accessible)
                                         .relative()
-                                        .h(px(SLOT_HEIGHT))
+                                        .h(px(SLOT_HEIGHT + 2.0 * reach))
+                                        .my(px(-reach))
                                         .flex()
                                         .items_center()
                                         .gap(px(5.0))
@@ -5045,7 +5066,8 @@ mod bar {
                                 .id(format!("spotlight-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("Spotlight")
-                                .h(px(SLOT_HEIGHT))
+                                .h(px(SLOT_HEIGHT + 2.0 * touch_reach()))
+                                .my(px(-touch_reach()))
                                 .px(px(STATUS_PAD))
                                 .flex()
                                 .items_center()
@@ -5077,6 +5099,7 @@ mod bar {
                                 .cursor_pointer()
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("quick-settings", cx))
+                                .children(trace_probe("bar control centre"))
                                 .child(
                                     svg()
                                         .path(shell_icon_path("control-center.svg"))
@@ -5898,6 +5921,18 @@ mod bar {
                 }
                 #[cfg(target_os = "linux")]
                 cx.update(|cx| run_mission_control(word, cx));
+                return;
+            }
+            // Full-Screen Tile on Windows: the window takes that half and
+            // Windows' Snap Assist offers the other windows for the other
+            // half, as the Mac offers them.
+            #[cfg(windows)]
+            if let (WindowCommand::FullScreenTileSide(region), Some(window)) = (command, window_id)
+            {
+                let right = matches!(region, menu_model::WindowRegion::Right);
+                if let Err(error) = rmac_compositor_system::full_screen_tile(window, right).await {
+                    eprintln!("could not tile the window: {error:?}");
+                }
                 return;
             }
             let snapshot = match rmac_compositor_system::snapshot().await {

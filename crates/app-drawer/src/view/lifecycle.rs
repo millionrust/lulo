@@ -20,6 +20,9 @@ impl AppDrawer {
         // own bounded cache) are decoded into the process-wide image cache,
         // which keeps them for good: drop them with the panel, so a closed
         // Apps costs nothing (WIN-OS-64).
+        // On Windows the shell keeps running, so the decoded icons stay for
+        // the next open: Apps then paints them on its first frame.
+        #[cfg(not(windows))]
         cx.on_release(|this: &mut AppDrawer, cx| {
             for path in this.apps.iter().filter_map(|app| app.icon.as_ref()) {
                 let svg = path
@@ -31,6 +34,10 @@ impl AppDrawer {
             }
         })
         .detach();
+
+        // The catalog the process already has: Apps opens with its tiles.
+        let cached = catalog::cached(cx);
+        let have_cache = cached.is_some();
 
         // Typing in the search field re-anchors the cursor to the first match
         // and is the redraw trigger for live filtering.
@@ -111,10 +118,22 @@ impl AppDrawer {
             {
                 return;
             }
-            let (apps, scan_error) = cx.background_executor().spawn(scan_catalog()).await;
+            // With a cached catalog the change watcher keeps it current:
+            // no scan on open.
+            let (apps, scan_error) = if have_cache {
+                (None, None)
+            } else {
+                let (apps, error) = cx.background_executor().spawn(scan_catalog()).await;
+                (Some(apps), error)
+            };
             if this
                 .update(cx, |this: &mut AppDrawer, cx| {
-                    this.apps = apps;
+                    if let Some(apps) = apps {
+                        if scan_error.is_none() {
+                            catalog::store(&apps, cx);
+                        }
+                        this.apps = apps;
+                    }
                     this.loading = false;
                     this.catalog_error = scan_error.or_else(|| watcher_error.take());
                     cx.notify();
@@ -138,6 +157,9 @@ impl AppDrawer {
                 let (apps, error) = cx.background_executor().spawn(scan_catalog()).await;
                 if this
                     .update(cx, |this: &mut AppDrawer, cx| {
+                        if error.is_none() {
+                            catalog::store(&apps, cx);
+                        }
                         this.replace_catalog(apps, error, cx)
                     })
                     .is_err()
@@ -150,7 +172,7 @@ impl AppDrawer {
 
         Self {
             service_token,
-            apps: Vec::new(),
+            apps: cached.unwrap_or_default(),
             query,
             focus,
             view: ViewMode::Grid,
@@ -162,12 +184,16 @@ impl AppDrawer {
             catalog_error: None,
             action_error: None,
             launching: false,
-            loading: true,
+            loading: !have_cache,
             was_active: false,
             _catalog_watcher: None,
             #[cfg(windows)]
             dock_drag: None,
             recent_ids: Vec::new(),
+            #[cfg(windows)]
+            ready_traced: std::cell::Cell::new(false),
+            #[cfg(windows)]
+            grid_scroll: gpui::ScrollHandle::new(),
             scale_factor: window.scale_factor(),
         }
     }

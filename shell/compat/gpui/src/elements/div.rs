@@ -681,6 +681,13 @@ impl Interactivity {
         self.window_control = Some(area);
     }
 
+    /// rmac (ADR 0028): a finger moving on this element drags it straight
+    /// away, as a held mouse button would, instead of scrolling.
+    /// The imperative API equivalent to [`InteractiveElement::touch_drag`]
+    pub fn touch_drag(&mut self) {
+        self.touch_drag = true;
+    }
+
     /// Block non-scroll mouse interactions with elements behind this element's hitbox.
     /// The imperative API equivalent to [`InteractiveElement::block_mouse_except_scroll`].
     ///
@@ -1163,6 +1170,16 @@ pub trait InteractiveElement: Sized {
     /// The fluent API equivalent to [`Interactivity::window_control_area`].
     fn window_control_area(mut self, area: WindowControlArea) -> Self {
         self.interactivity().window_control_area(area);
+        self
+    }
+
+    /// rmac (ADR 0028): a finger moving on this element (or anything inside
+    /// it) drags straight away, as a held mouse button would, instead of
+    /// scrolling: sliders, Dock tiles and other surfaces that never scroll.
+    /// Elements with `on_drag` already drag after a short hold.
+    /// The fluent API equivalent to [`Interactivity::touch_drag`].
+    fn touch_drag(mut self) -> Self {
+        self.interactivity().touch_drag();
         self
     }
 
@@ -1960,6 +1977,7 @@ pub struct Interactivity {
     pub(crate) tooltip_builder: Option<TooltipBuilder>,
     pub(crate) tooltip_show_delay: Option<Duration>,
     pub(crate) window_control: Option<WindowControlArea>,
+    pub(crate) touch_drag: bool,
     pub(crate) hitbox_behavior: HitboxBehavior,
     pub(crate) tab_index: Option<isize>,
     pub(crate) tab_group: bool,
@@ -2180,6 +2198,7 @@ impl Interactivity {
     fn should_insert_hitbox(&self, style: &Style, window: &Window, cx: &App) -> bool {
         self.hitbox_behavior != HitboxBehavior::Normal
             || self.window_control.is_some()
+            || self.touch_drag
             || style.mouse_cursor.is_some()
             || self.group.is_some()
             || self.scroll_offset.is_some()
@@ -2340,6 +2359,17 @@ impl Interactivity {
                                                 window.insert_window_control_hitbox(
                                                     area,
                                                     hitbox.clone(),
+                                                );
+                                            }
+                                            if self.touch_drag {
+                                                window.insert_touch_drag_hitbox(
+                                                    crate::TouchDragMode::Immediate,
+                                                    hitbox,
+                                                );
+                                            } else if self.drag_listener.is_some() {
+                                                window.insert_touch_drag_hitbox(
+                                                    crate::TouchDragMode::AfterHold,
+                                                    hitbox,
                                                 );
                                             }
 

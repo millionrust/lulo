@@ -10,8 +10,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use async_channel::Sender;
+use windows::core::w;
 use windows::core::GUID;
 use windows::Win32::Foundation::{HANDLE, WIN32_ERROR};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Media::Audio::Endpoints::{
     IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl,
 };
@@ -34,17 +36,19 @@ use windows::Win32::System::Power::{
 use windows::Win32::System::SystemServices::{
     GUID_ACDC_POWER_SOURCE, GUID_BATTERY_PERCENTAGE_REMAINING,
 };
-use windows::Win32::UI::WindowsAndMessaging::DEVICE_NOTIFY_CALLBACK;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
+    DEVICE_NOTIFY_CALLBACK, MSG, PBT_APMPOWERSTATUSCHANGE, WM_POWERBROADCAST, WNDCLASSW,
+    WS_EX_TOOLWINDOW, WS_POPUP,
+};
 
 use crate::runtime::ServiceReader;
 use crate::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Battery {
-    percent: u8,
-    charging: bool,
-    on_battery: bool,
-}
+/// The power status's charge, battery flags and AC line: only compared,
+/// so a change (plugged in, charging, charged, a percent) wakes the
+/// coordinator, which reads the full state through `rmac_power`.
+type Battery = (u8, u8, u8);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Wifi {
@@ -108,8 +112,15 @@ fn start() {
                 watch_wifi();
                 // The volume callback and its endpoint must stay alive.
                 let _volume = watch_volume();
-                loop {
-                    std::thread::park();
+                // Windows broadcasts every power status change (plugged in,
+                // charging, charged) to top-level windows: this thread's
+                // hidden one hears them and waits for messages, nothing else.
+                watch_power_broadcasts();
+                let mut message = MSG::default();
+                // SAFETY: this thread's own message loop.
+                while unsafe { GetMessageW(&mut message, None, 0, 0) }.as_bool() {
+                    // SAFETY: a message GetMessageW just filled in.
+                    unsafe { DispatchMessageW(&message) };
                 }
             });
         if let Err(error) = spawned {
@@ -248,31 +259,11 @@ impl ServiceReader for WindowsServiceReader {
         })
     }
 
+    /// The same reading as the Battery menu and System Settings
+    /// (`rmac_power`: the power status and the battery driver's charge
+    /// flags), taken when Windows reports a change.
     fn power(&self) -> Result<rmac_power::Snapshot, String> {
-        let battery = readings().battery.map(|battery| rmac_power::Battery {
-            percentage: battery.percent.min(100),
-            state: if battery.charging {
-                rmac_power::BatteryState::Charging
-            } else if !battery.on_battery && battery.percent >= 100 {
-                rmac_power::BatteryState::FullyCharged
-            } else if battery.on_battery {
-                rmac_power::BatteryState::Discharging
-            } else {
-                rmac_power::BatteryState::PendingCharge
-            },
-            on_battery: battery.on_battery,
-            seconds_remaining: None,
-            capacity: None,
-            charge_cycles: None,
-            energy_rate_watts: None,
-            model: None,
-            charge_threshold: rmac_power::ChargeThreshold::default(),
-            history: rmac_power::BatteryHistory::default(),
-        });
-        Ok(rmac_power::Snapshot {
-            battery,
-            profiles: rmac_power::Profiles::default(),
-        })
+        rmac_power::snapshot().map_err(|error| error.to_string())
     }
 }
 
@@ -285,12 +276,56 @@ fn read_battery() -> Option<Battery> {
     {
         return None;
     }
-    Some(Battery {
-        percent: status.BatteryLifePercent,
-        // 8: charging.
-        charging: status.BatteryFlag & 8 != 0,
-        on_battery: status.ACLineStatus == 0,
-    })
+    Some((
+        status.BatteryLifePercent,
+        status.BatteryFlag,
+        status.ACLineStatus,
+    ))
+}
+
+unsafe extern "system" fn on_power_broadcast(
+    window: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if message == WM_POWERBROADCAST && wparam.0 == PBT_APMPOWERSTATUSCHANGE as usize {
+        let battery = read_battery();
+        update(|readings| readings.battery = battery);
+        return LRESULT(1);
+    }
+    // SAFETY: the default handling of a message to this window.
+    unsafe { DefWindowProcW(window, message, wparam, lparam) }
+}
+
+/// A hidden top-level window for `WM_POWERBROADCAST`, which Windows sends
+/// only to top-level windows; it is never shown, so no window list sees it.
+fn watch_power_broadcasts() {
+    let class = w!("LuloPowerWatch");
+    let description = WNDCLASSW {
+        lpfnWndProc: Some(on_power_broadcast),
+        lpszClassName: class,
+        ..Default::default()
+    };
+    // SAFETY: registers a class with a static name and a valid procedure,
+    // then creates one hidden window of it on this thread.
+    unsafe {
+        RegisterClassW(&description);
+        let _ = CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            class,
+            w!(""),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            None,
+            None,
+        );
+    }
 }
 
 unsafe extern "system" fn on_power(

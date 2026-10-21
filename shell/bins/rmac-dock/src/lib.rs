@@ -3274,6 +3274,21 @@ mod dock {
                 let state = if trash_full { "full" } else { "empty" };
                 lines.push(format!("dock tile trash at {x},{y} {state}"));
                 rmac_shell_layer::windows::trace::trace_changed("dock tiles", || lines.join("\n"));
+                // The open tile menu's rows, for the Windows robot.
+                rmac_shell_layer::windows::trace::trace_changed("dock menu", || {
+                    match &self.context_menu {
+                        Some(menu) => format!(
+                            "dock menu: {}",
+                            menu.session
+                                .rows()
+                                .iter()
+                                .map(|row| row.label.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" | ")
+                        ),
+                        None => "dock menu closed".to_owned(),
+                    }
+                });
             }
             let menu_anchor = self.context_menu.as_ref().map(|menu| menu.anchor);
             // (menu start along the Dock axis, pointer tip from that start,

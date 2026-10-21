@@ -884,6 +884,9 @@ def check_shell(
     # Closed panels let go of their windows after 3 s instead of 30, so the
     # memory they give back can be measured here.
     environment["LULO_PANEL_RELEASE_SECONDS"] = "3"
+    # CI runners have no battery: a stand-in charging one for the battery
+    # check (crates/rmac-power/src/win.rs).
+    environment["LULO_FAKE_BATTERY"] = FAKE_BATTERY
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
     # Lulo OS's default Dock (Files, Notes, Text Editor, Terminal, System
@@ -1304,6 +1307,11 @@ def check_shell(
         # 6e. Every Lulo app opens inside the work area the bar and the
         # Dock leave (WIN-OS-50).
         check_app_placement(bin_dir, environment, screenshots, failures)
+        print(f"shell: lulo-shell memory after the apps' placement: {memory_mb(shell_pid)}")
+        # 6e1. The Dock's recent apps are the last three used that are not
+        # kept; the bar's battery and its menu (macOS 26's bolt, "Charging").
+        check_dock_recents(log, profile, failures)
+        print(f"shell: lulo-shell memory after the recent apps: {memory_mb(shell_pid)}")
 
         # 6e2. Control Centre inside the screen; the bar over a full-screen
         # window; the Window menu's Full-Screen Tile and the app menu's
@@ -1311,6 +1319,7 @@ def check_shell(
         check_control_centre(log, shell_pid, screenshots, failures)
         check_full_screen_bar(log, bin_dir, environment, screenshots, failures)
         check_window_menu(log, bin_dir, environment, screenshots, failures)
+        print(f"shell: lulo-shell memory after Control Centre and the Window menu: {memory_mb(shell_pid)}")
 
         # 6f. ⌘Tab (Alt+Tab) and Notification Centre, the shared views
         # lulo-shell hosts; then their memory once they have closed.
@@ -1320,12 +1329,20 @@ def check_shell(
         # dragged across the separator, a reorder, a drag off to remove,
         # and an app dragged in from Apps.
         check_dock_drag(log, bin_dir, environment, screenshots, failures)
+        print(f"shell: lulo-shell memory after the Dock drags: {memory_mb(shell_pid)}")
         check_apps_open_speed(log, bin_dir, environment, failures)
+        print(f"shell: lulo-shell memory after Apps opened again and again: {memory_mb(shell_pid)}")
         time.sleep(5.0)
         memory = memory_mb(shell_pid)
         print(f"shell: lulo-shell memory after the switcher and Notification Centre closed: {memory}")
         if memory is not None:
             measurements["lulo-shell"]["after_switcher_nc_private_mb"] = memory["private_mb"]
+
+        # 6f2. The bar's battery and its menu (after the memory readings:
+        # the menu's full power reading is not part of the idle shell).
+        check_battery(log, screenshots, failures)
+        memory = memory_mb(shell_pid)
+        print(f"shell: lulo-shell memory after the Battery menu: {memory}")
 
         # 6g. A third-party window that opens at 0,0 and 4000 × 4000 is put
         # inside the work area (macOS's visible frame); a full-screen one is
@@ -2172,6 +2189,75 @@ def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | No
         except subprocess.TimeoutExpired:
             process.kill()
         time.sleep(0.5)
+
+
+#: The stand-in battery: 85%, charging, 1:05 until full.
+FAKE_BATTERY = "85,charging,3900"
+
+#: The Lulo apps check_app_placement opens that the smoke Dock does not
+#: keep, in the order it opens them: the Dock's recent apps afterwards.
+RECENT_APPS = ("org.rmac.Preview.desktop", "org.rmac.Clock.desktop", "org.rmac.Weather.desktop")
+
+
+def check_dock_recents(log: Log, profile: Path, failures: list[str]) -> None:
+    """After check_app_placement opened and quit every Lulo app, the Dock's
+    recent apps (as on the Mac and Lulo OS) are the last three it opened
+    that the Dock does not keep, oldest first, kept in the Dock's state
+    file and shown as tiles after the kept apps."""
+    state = profile / "Local" / "Lulo" / "State" / "rmac" / "dock-recents"
+
+    def recents() -> list[str]:
+        try:
+            return [line.strip() for line in state.read_text(encoding="utf-8").splitlines() if line.strip()]
+        except OSError:
+            return []
+
+    # The last two opened are the newest; the third may have given its
+    # place to an app still open from an earlier check (running apps are
+    # never dropped, as on the Mac).
+    newest = list(RECENT_APPS[-2:])
+    saved = wait_until(lambda: recents()[-2:] == newest and len(recents()) <= 4, 10.0)
+    print(f"shell: the Dock's recent apps after opening the Lulo apps: {recents()}")
+    if saved is None:
+        failures.append(f"the Dock's recent apps are {recents()}, not ending with the last used {newest}")
+    _, running = dock_groups(log)
+    shown = [app_id for app_id, _, _ in running if app_id != "trash"]
+    wanted = [dock_app_id(app_id) for app_id in newest]
+    print(f"shell: Dock tiles after the separator: {shown}")
+    if [app_id for app_id in shown if app_id in wanted] != wanted:
+        failures.append(f"the Dock shows {shown} after its kept apps, not the recent apps {wanted}")
+
+
+def check_battery(log: Log, screenshots: Path | None, failures: list[str]) -> None:
+    """The bar's battery while it charges, as macOS 26 draws it: the bolt,
+    "Battery 85%, Charging" to a screen reader, and its menu: the
+    percentage, Power Source: Power Adapter and "Charging: 1:05 until
+    full" (the stand-in FAKE_BATTERY)."""
+    item = log.wait_for(r"^battery item Battery 85%, Charging, mark Some\(Charging\)", 10.0)
+    print(f"shell: the bar's battery: {item.group(0) if item else log.last(r'^battery item .*')}")
+    if item is None:
+        failures.append("the bar's battery does not show the charging bolt for a charging battery")
+        return
+    spot = log.last(r"^battery status at (-?\d+),(-?\d+)")
+    if spot is None:
+        failures.append("the bar did not say where its battery is")
+        return
+    before = len(log.lines())
+    click(int(spot.group(1)), int(spot.group(2)))
+    # The charge and power source show at once (from the bar); the time to
+    # full arrives with the full reading.
+    first = log.wait_for(r"^status menu Battery: (.+)$", 5.0, after=before)
+    menu = log.wait_for(r"^status menu Battery: (.*until full.*)$", 5.0, after=before)
+    save(screenshots, "battery-menu")
+    text = (menu or first).group(1) if (menu or first) else ""
+    if first is not None and "Battery 85%" not in first.group(1).split(" | "):
+        failures.append(f"the Battery menu opened without its charge: {first.group(1)!r}")
+    print(f"shell: the Battery menu: {text}")
+    for row in ("Battery 85%", "Power Source: Power Adapter", "Charging: 1:05 until full", "Battery Settings…"):
+        if row not in text.split(" | "):
+            failures.append(f"the Battery menu has no \"{row}\" row: {text!r}")
+    tap(VK_ESCAPE)
+    time.sleep(0.5)
 
 
 VK_TAB = 0x09

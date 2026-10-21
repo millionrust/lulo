@@ -935,17 +935,18 @@ Lulo's apps running directly on Windows 10/11, without Lulo OS. Mac reference as
 
 ## Lulo OS → Windows
 
-Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` over `shell/`, the Dock, Spotlight, Apps, Control Centre, Notification Centre and the session package, plus the shell code's Linux-only paths), and how the Windows Lulo layer stands. **works**: the shared view runs it on Windows and a robot or CI check saw it; **shared**: the same view code runs it, not yet seen working on the test PC; **fixed**: on `op/win-parity` / `op/win-parity-2`; **missing**; **impossible**, with the reason. Linked rows hold the detail.
+Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` over `shell/`, the Dock, Spotlight, Apps, Control Centre, Notification Centre and the session package, plus the shell code's Linux-only paths), and how the Windows Lulo layer stands. `scripts/robot/windows/verify.ps1` checks every working row live on the test PC (op/win-parity-3, 2026-10-22: every row passes; Sound, Bluetooth and Focus menus are off the bar by default; Edge's entry by its program is checked in the user's own profile, as a private one lists fewer Apps folder items). **works**: the shared view runs it on Windows and a robot or CI check saw it; **shared**: the same view code runs it, not yet seen working on the test PC; **fixed**: on `op/win-parity` / `op/win-parity-2` / `op/win-parity-3`; **missing**; **impossible**, with the reason. Linked rows hold the detail.
 
 | Area | Lulo OS behaviour | Windows |
 | --- | --- | --- |
 | Menu bar | Lulo menu: About, Settings, Software Center, Recent Items, Force Quit, Sleep, Restart, Shut Down, Lock, Log Out, with confirmations | works (robot); Force Quit Applications is Lulo's own window (op/win-parity-2, Ctrl+Alt+Esc) |
 | Menu bar | Option in the Lulo menu skips the confirmations (BAR-04) | shared |
 | Menu bar | Front app's menus with submenus, ticks and live state; Lulo apps through the menu pipe | works; Windows apps get Lulo's standard menus only |
-| Menu bar | Wi-Fi, Battery, Sound, Bluetooth and Focus menus (BAR-03) | works (Focus fixed, WIN-OS-104) |
+| Menu bar | Wi-Fi, Battery, Sound, Bluetooth and Focus menus (BAR-03) | works (Focus fixed, WIN-OS-104); Sound, Bluetooth and Focus are off the bar by default, as on the Mac |
+| Menu bar | Battery: bolt while charging, plug on power when full or held, "Battery NN%", Power Source, Charging/Fully Charged/time left (owner report) | fixed on both (op/win-parity-3): the mark is the shared `BatteryIndicator::mark`; the menu opens with the bar's reading and fills in the time left; Windows reads `rmac_power` (driver flags) and hears `WM_POWERBROADCAST`; nested UPower check and Windows smoke check |
 | Menu bar | Battery ▸ Using Significant Energy (BAR-05) | fixed (op/win-parity-2: GetProcessTimes) |
 | Menu bar | Clock Options… and Battery Options… sheets | shared |
-| Menu bar | ⌃F2 menu focus, ⌃F8 status-item focus, ⌃F3 Dock focus (ACC-05, CC-05) | fixed (op/win-parity-2: Ctrl+F2, Ctrl+F8, Ctrl+F3) |
+| Menu bar | ⌃F2 menu focus, ⌃F8 status-item focus, ⌃F3 Dock focus (ACC-05, CC-05) | fixed (op/win-parity-2: Ctrl+F2, Ctrl+F8, Ctrl+F3); Ctrl+F2 then ↓ verified live |
 | Menu bar | Hides over full-screen windows, reveal strip at the top edge | works (WIN-OS-90) |
 | Menu bar | ⌘Q/⌘W close third-party apps' windows | missing: Windows apps keep their own keys; needs a keyboard hook |
 | Menu bar | Other apps' status icons (menu extras) | fixed when Lulo is the shell (WIN-OS-103); over Explorer they stay in Explorer's hidden tray |
@@ -955,7 +956,8 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Dock | ⌥⌘D turns hiding on and off (DOCK-04) | fixed (op/win-parity-2: Ctrl+Alt+D) |
 | Dock | Drag to reorder, drag off to remove, keep apps dropped from Apps | works |
 | Dock | Drop files on an app or the Trash | works |
-| Dock | Recent apps and indicator switches (SET-32) | shared |
+| Dock | Recent apps: the last three used that are not kept (owner report) | fixed (op/win-parity-3): Edge, Chrome, VS Code and other apps the Apps folder lists by an AppUserModelID now get entries by their program, so they count; Calendar, System Monitor and Media Player are Lulo apps on Windows; an app running before its entry appears joins; nested and Windows smoke checks; verified live |
+| Dock | Indicator switches (SET-32) | shared |
 | Dock | Folder and Downloads stacks, Fan and Grid | shared |
 | Dock | Minimised windows as thumbnail tiles | fixed (op/win-parity-2): each window is pictured (PrintWindow) shortly after it comes to the front and when it leaves it, kept as PNG for the 12 latest, and stored when Windows minimises it; seen on the test PC with Calculator. Tile names fixed (WIN-OS-106) |
 | Dock | Genie and Scale minimise animations (DOCK-11) | fixed (op/win-parity-2), with real pictures in minimised tiles; third-party windows also play Windows' own minimise |
@@ -979,7 +981,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Windows | Title-bar double-click follows Desktop & Dock | fixed (op/win-parity-2) |
 | Windows | New windows kept between the bar and the Dock | works |
 | Windows | Window move and resize animations | impossible: DWM animates windows itself |
-| Switcher | ⌘Tab (Alt+Tab) switcher, quick switch, ⌘Q/⌘H on the selection | works |
+| Switcher | ⌘Tab (Alt+Tab) switcher, quick switch, ⌘Q/⌘H on the selection | works; order fixed (op/win-parity-3): most recently used, not stacking order, which put an always-on-top window first |
 | Switcher | ↑/↓ on the selected app opens its App Exposé (MC-07) | fixed (op/win-parity-2) |
 | Spotlight | Apps, files, settings panes, answers (sums, units, currency, clocks, definitions) | works; file names from the Windows index (WIN-OS-102); definitions need a dictionary |
 | Spotlight | File results grouped by kind (SPOT-03) | shared |

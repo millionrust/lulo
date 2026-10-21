@@ -432,6 +432,7 @@ unsafe extern "system" fn on_event(
     // stops being the foreground one, and hand a minimised window's picture
     // to the Dock; that path wakes the watchers once the picture is stored.
     if event == EVENT_SYSTEM_FOREGROUND {
+        activated(hwnd.0 as isize, true);
         let previous = LAST_FOREGROUND.swap(hwnd.0 as isize, Ordering::AcqRel);
         if previous != 0
             && previous != hwnd.0 as isize
@@ -1087,6 +1088,12 @@ fn read_snapshot() -> domain::Snapshot {
     let foreground = unsafe { GetForegroundWindow() };
     let handles = top_level_windows();
     let count = handles.len() as u64;
+    // The window in front now is the most recently used, even if it came
+    // to the front before the shell heard of it.
+    if !foreground.is_invalid() {
+        activated(foreground.0 as isize, false);
+    }
+    let activations = activation_order();
     let mut windows = Vec::new();
     let mut alive_pids = Vec::new();
     let mut alive_windows = Vec::new();
@@ -1125,9 +1132,16 @@ fn read_snapshot() -> domain::Snapshot {
             focused: hwnd == foreground,
             floating: true,
             urgent: urgent(hwnd),
-            // Front-most is the most recently focused.
+            // Most recently brought to the front first (the switcher's and
+            // App Exposé's order); a window never in front since the shell
+            // started ranks below, by its place in the stacking order. The
+            // stacking order alone puts always-on-top windows first.
             focus_timestamp: Some(domain::Timestamp {
-                seconds: count - rank as u64,
+                seconds: recency(
+                    activations.get(&(hwnd.0 as isize)).copied(),
+                    count,
+                    rank as u64,
+                ),
                 nanoseconds: 0,
             }),
             layout: domain::WindowLayout {
@@ -1909,7 +1923,19 @@ mod placement_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{event_kind, relevant, EventKind};
+    use super::{event_kind, recency, relevant, EventKind};
+
+    #[test]
+    fn windows_brought_to_the_front_rank_by_when_not_by_stacking() {
+        // An always-on-top window (rank 0) never brought to the front ranks
+        // below Calculator, brought to the front after it was.
+        let count = 3;
+        let topmost = recency(None, count, 0);
+        let calculator = recency(Some(7), count, 1);
+        let editor = recency(Some(9), count, 2);
+        assert!(editor > calculator && calculator > topmost);
+        assert!(recency(None, count, 0) > recency(None, count, 2));
+    }
     use windows::Win32::UI::WindowsAndMessaging::{
         EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
         EVENT_SYSTEM_MOVESIZEEND,
@@ -2066,6 +2092,43 @@ pub fn restore_window_size(window: domain::WindowId) -> bool {
 }
 
 /// Whether `raw` is the foreground window.
+/// When each window last came to the front, as a running count.
+static ACTIVATIONS: Mutex<Option<HashMap<isize, u64>>> = Mutex::new(None);
+static NEXT_ACTIVATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// `raw` came to the front; `again` counts it anew even if it is known.
+fn activated(raw: isize, again: bool) {
+    if let Ok(mut order) = ACTIVATIONS.lock() {
+        let order = order.get_or_insert_with(HashMap::new);
+        if again || !order.contains_key(&raw) {
+            let next = NEXT_ACTIVATION.fetch_add(1, Ordering::Relaxed);
+            order.insert(raw, next);
+        }
+        // Closed windows' entries go once there are many.
+        if order.len() > 512 {
+            order.retain(|raw, _| is_window(*raw));
+        }
+    }
+}
+
+fn activation_order() -> HashMap<isize, u64> {
+    ACTIVATIONS
+        .lock()
+        .ok()
+        .and_then(|order| order.clone())
+        .unwrap_or_default()
+}
+
+/// A window's recency for its focus timestamp: brought to the front `n`th
+/// ranks above every window never brought to the front, which keep their
+/// stacking order (`rank` from the top of `count`).
+fn recency(activation: Option<u64>, count: u64, rank: u64) -> u64 {
+    match activation {
+        Some(n) => count + n,
+        None => count - rank,
+    }
+}
+
 pub(crate) fn is_foreground(raw: isize) -> bool {
     // SAFETY: no arguments.
     unsafe { GetForegroundWindow() }.0 as isize == raw

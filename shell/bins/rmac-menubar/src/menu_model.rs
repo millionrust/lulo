@@ -1600,7 +1600,8 @@ pub fn battery_menu_rows(
 }
 
 /// A status menu row's text, as a person reads it: the title with its
-/// value, information lines, headers and commands.
+/// value, information lines, headers and commands (the Windows trace).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn status_row_text(row: &StatusRow) -> Option<String> {
     match row {
         StatusRow::Title { label, value, .. } => Some(match value {

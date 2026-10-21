@@ -440,8 +440,10 @@ unsafe extern "system" fn on_event(
             crate::thumbnails::keep(previous);
         }
         // The window now in front may be minimised before it ever leaves
-        // the front (⌘M, its own button): picture it once it has drawn.
-        if !own && is_app_window(hwnd, own_pid) {
+        // the front (⌘M, its own button): picture it once it has drawn. A
+        // window just opened is not shown or titled yet when it comes to
+        // the front, so whether it is an app's window is asked then.
+        if !own {
             crate::thumbnails::keep_soon(hwnd.0 as isize);
         }
     } else if event == EVENT_SYSTEM_MINIMIZESTART && !own && is_app_window(hwnd, own_pid) {
@@ -2067,4 +2069,10 @@ pub fn restore_window_size(window: domain::WindowId) -> bool {
 pub(crate) fn is_foreground(raw: isize) -> bool {
     // SAFETY: no arguments.
     unsafe { GetForegroundWindow() }.0 as isize == raw
+}
+
+/// Whether `raw` is an app's window the window list shows.
+pub(crate) fn is_listed_window(raw: isize) -> bool {
+    // SAFETY: no arguments.
+    is_app_window(handle_raw(raw), unsafe { GetCurrentProcessId() })
 }

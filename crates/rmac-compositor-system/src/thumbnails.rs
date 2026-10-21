@@ -103,13 +103,14 @@ pub(crate) fn keep(hwnd: isize) {
 const SETTLE: std::time::Duration = std::time::Duration::from_millis(800);
 
 /// `hwnd` came to the front: picture it once it has drawn, unless it is no
-/// longer in front then (it is pictured when it leaves).
+/// longer in front then (it is pictured when it leaves) or is not an app's
+/// window.
 pub(crate) fn keep_soon(hwnd: isize) {
     let _ = std::thread::Builder::new()
         .name("lulo-window-thumbnail-wait".into())
         .spawn(move || {
             std::thread::sleep(SETTLE);
-            if crate::win32::is_foreground(hwnd) {
+            if crate::win32::is_foreground(hwnd) && crate::win32::is_listed_window(hwnd) {
                 send(Job::Keep(hwnd));
             }
         });

@@ -23,7 +23,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardLayoutList, RegisterHotKey, SendInput, UnregisterHotKey,
     HOT_KEY_MODIFIERS, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
     KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VIRTUAL_KEY, VK_CONTROL, VK_D,
-    VK_DOWN, VK_F2, VK_F3, VK_F8, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_SPACE, VK_UP,
+    VK_DOWN, VK_ESCAPE, VK_F2, VK_F3, VK_F8, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_SPACE, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetAncestor, GetMessageW, PostThreadMessageW,
@@ -52,7 +52,7 @@ pub enum DesktopEvent {
 /// Lulo OS's system shortcuts, with Ctrl for the Mac's ⌃ and Ctrl+Alt for
 /// ⌥⌘, as thread hotkeys: (id, modifiers, key, the shell request). Another
 /// app that holds one keeps it; nothing of theirs is touched.
-const SHORTCUTS: [(i32, HOT_KEY_MODIFIERS, VIRTUAL_KEY, &str); 6] = [
+const SHORTCUTS: [(i32, HOT_KEY_MODIFIERS, VIRTUAL_KEY, &str); 7] = [
     // ⌃↑ Mission Control, ⌃↓ App Exposé.
     (0x4C56, MOD_CONTROL, VK_UP, "mission-control"),
     (0x4C57, MOD_CONTROL, VK_DOWN, "app-windows"),
@@ -61,13 +61,13 @@ const SHORTCUTS: [(i32, HOT_KEY_MODIFIERS, VIRTUAL_KEY, &str); 6] = [
     (0x4C59, MOD_CONTROL, VK_F3, "dock-focus"),
     (0x4C5A, MOD_CONTROL, VK_F8, "status-menus-focus"),
     // ⌥⌘D Dock hiding on and off (DOCK-04).
-    (
-        0x4C5B,
-        HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0),
-        VK_D,
-        "dock-toggle-hiding",
-    ),
+    (0x4C5B, CTRL_ALT, VK_D, "dock-toggle-hiding"),
+    // ⌥⌘⎋ Force Quit Applications.
+    (0x4C5C, CTRL_ALT, VK_ESCAPE, "force-quit"),
 ];
+
+/// Ctrl+Alt, the Windows keys for the Mac's ⌥⌘.
+const CTRL_ALT: HOT_KEY_MODIFIERS = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0);
 
 const HOTKEY_ID: i32 = 0x4C55;
 /// Marks the keystroke Lulo itself sends, so its own hook lets it pass.

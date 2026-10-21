@@ -38,7 +38,7 @@ use rmac_shell_layer::layer::*;
 use rmac_shell_ui::tokens;
 use uuid::Uuid;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use crate::force_quit_window::{self, ForceQuitView};
 use crate::model::{self, Command, Layout, OptimisticPlan, Recency, RunningApp, Session};
 
@@ -173,9 +173,9 @@ pub(crate) struct Service {
     /// the next ⌘Tab maps it again instead of creating a surface and a
     /// swapchain (SPEED-11).
     kept: Option<(WindowHandle<SwitcherView>, Option<gpui::DisplayId>)>,
-    /// Force Quit Applications (Lulo OS; Windows has Task Manager, from
-    /// the Lulo menu).
-    #[cfg(target_os = "linux")]
+    /// Force Quit Applications (⌥⌘⎋, the Lulo menu's Force Quit…;
+    /// Ctrl+Alt+Esc on Windows).
+    #[cfg(any(target_os = "linux", windows))]
     force_quit: Option<WindowHandle<ForceQuitView>>,
     /// Windows: commands that arrived while the window list for a new
     /// switch was being read; they run once the panel is open.
@@ -191,7 +191,7 @@ impl Service {
             catalog: Rc::new(Vec::new()),
             open: None,
             kept: None,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             force_quit: None,
             #[cfg(windows)]
             pending: None,
@@ -267,7 +267,7 @@ impl Service {
     }
 
     /// Force Quit's list and icons, from the live window set.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn force_quit_entries(&self) -> (Vec<crate::force_quit::Entry>, BTreeMap<String, PathBuf>) {
         let snapshot = self.compositor.snapshot();
         let entries = crate::force_quit::entries(
@@ -287,7 +287,7 @@ impl Service {
     }
 
     /// Keep an open Force Quit list in step with the windows.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn refresh_force_quit(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.force_quit else {
             return;
@@ -301,7 +301,7 @@ impl Service {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub(crate) fn force_quit_closed(&mut self, cx: &mut Context<Self>) {
         self.force_quit = None;
         self.refresh_catalog(cx);
@@ -1214,8 +1214,8 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
         }
     }
     if command == Command::ForceQuit {
-        // Windows has Task Manager for this, from the Lulo menu.
-        #[cfg(target_os = "linux")]
+        // Lulo's own window on both systems.
+        #[cfg(any(target_os = "linux", windows))]
         open_force_quit(service, cx);
         return;
     }
@@ -1296,7 +1296,7 @@ fn open_app_expose(after: Option<async_channel::Receiver<()>>, cx: &mut Context<
 
 /// ⌥⌘⎋ and the logo menu's Force Quit…: bring the open window forward,
 /// or open it on the app that was frontmost.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn open_force_quit(service: &Entity<Service>, cx: &mut App) {
     let (existing, snapshot) = {
         let state = service.read(cx);
@@ -1532,6 +1532,11 @@ fn watch_compositor(service: &Entity<Service>, cx: &mut App) {
 #[cfg(windows)]
 pub fn start(cx: &mut App) {
     let (command_tx, command_rx) = async_channel::bounded(32);
+    // Force Quit Applications, from the Lulo menu and Ctrl+Alt+Esc.
+    let force_quit = command_tx.clone();
+    rmac_shell_layer::system::requests::register("force-quit", move |_| {
+        let _ = force_quit.try_send(Command::ForceQuit);
+    });
     if !crate::alt_tab::start(command_tx) {
         eprintln!("app switcher: the Alt+Tab hook could not be installed");
     }

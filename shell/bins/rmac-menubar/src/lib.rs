@@ -6542,11 +6542,14 @@ mod bar {
             "system::force-quit" => {
                 spawn_command("/usr/libexec/rmac/rmac-app-switcher", &["force-quit"], cx)
             }
-            // Windows' Task Manager ends apps that stopped answering.
+            // Lulo's Force Quit Applications, in this same process; Task
+            // Manager only if the switcher is not running.
             #[cfg(windows)]
             "system::force-quit" => {
-                if let Err(error) = Command::new("taskmgr.exe").spawn() {
-                    eprintln!("could not open Task Manager: {error}");
+                if !system::requests::run("force-quit", cx) {
+                    if let Err(error) = Command::new("taskmgr.exe").spawn() {
+                        eprintln!("could not open Task Manager: {error}");
+                    }
                 }
             }
             #[cfg(target_os = "linux")]

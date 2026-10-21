@@ -939,7 +939,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 
 | Area | Lulo OS behaviour | Windows |
 | --- | --- | --- |
-| Menu bar | Lulo menu: About, Settings, Software Center, Recent Items, Force Quit, Sleep, Restart, Shut Down, Lock, Log Out, with confirmations | works (robot); Force Quit opens Task Manager, not Lulo's Force Quit window: missing |
+| Menu bar | Lulo menu: About, Settings, Software Center, Recent Items, Force Quit, Sleep, Restart, Shut Down, Lock, Log Out, with confirmations | works (robot); Force Quit Applications is Lulo's own window (op/win-parity-2, Ctrl+Alt+Esc) |
 | Menu bar | Option in the Lulo menu skips the confirmations (BAR-04) | shared |
 | Menu bar | Front app's menus with submenus, ticks and live state; Lulo apps through the menu pipe | works; Windows apps get Lulo's standard menus only |
 | Menu bar | Wi-Fi, Battery, Sound, Bluetooth and Focus menus (BAR-03) | works (Focus fixed, WIN-OS-104) |

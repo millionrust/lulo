@@ -21,6 +21,14 @@ serde_json.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 rmac-compositor-niri.workspace = true
 
+# Ending an application's processes (`termination`).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 # POSIX checks (executable-bit, O_NOFOLLOW locks, signals): Linux and the
 # macOS development build, not Windows.
 [target.'cfg(unix)'.dependencies]

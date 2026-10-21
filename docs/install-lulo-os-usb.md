@@ -16,8 +16,8 @@ place of Windows.
 ## 1. Download Lulo OS
 
 1. Open the [Lulo OS releases page](https://github.com/millionrust/lulo/releases).
-2. Under the newest release, download `lulo-os-<version>-amd64.iso`. It is a
-   bit under 2 GB. If you like, also download the `.sha256` file next to it.
+2. Under the newest release, download `lulo-os-<version>-amd64.iso`. It is about
+   1.7 GB. If you like, also download the `.sha256` file next to it.
 
 You can check that the download is complete (optional). In Windows, open
 **PowerShell** from the Start menu and type:

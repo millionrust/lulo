@@ -45,7 +45,17 @@ install it next to Windows or in place of it. The constraints:
   BlueZ, PipeWire, GDM, Plymouth and `ubuntu-drivers-common`. No snaps, no
   GNOME session, no LibreOffice. `--no-install-recommends` everywhere, and
   the recommends we want (keyd, pkexec, the Qt GTK platform theme,
-  onnxruntime, evolution-ews-core) are listed by name.
+  onnxruntime, evolution-ews-core) are listed by name. No kernel headers.
+  `/etc/dpkg/dpkg.cfg.d/lulo-os-lean` leaves out manuals, package
+  documentation and firmware no PC running Lulo uses (data-centre switches,
+  Snapdragon SoCs), and dpkg keeps leaving them out on updates.
+- **Accounts:** the live user and every installed account get
+  `Session=rmac` in AccountsService (the installer writes it for the
+  accounts it creates, and `/etc/accountsservice/user-templates` covers
+  accounts made later). Ubuntu's GDM otherwise falls back to the GNOME
+  session, which the image doesn't have, and the sign-in drops straight back
+  to the login screen. Every other session file is diverted away, so Lulo is
+  the only choice at the login screen.
 - **Lulo:** `rmac-apps`, `rmac-session`, `niri` and `xwayland-satellite` are
   taken from the GitHub Release named by the build. They are checked
   against that release's `SHA256SUMS` and its build-provenance attestation.
@@ -120,6 +130,19 @@ only when QEMU passes the `opt/org.lulo.ci` fw_cfg entry, so on a real PC its
 only cost is one skipped unit. Screenshots and serial logs are CI artifacts
 only. On a tag, the tested ISO and its checksum are attached to the release.
 
+## Results (CI run 39530410028, 2026-10-21, release v0.9.0-beta.2)
+
+| Check | Result |
+|---|---|
+| ISO size | 1,718,812,672 bytes (1639 MiB), under the 2 GiB asset limit |
+| Live boot, UEFI with Secure Boot enforced | Lulo session 55 s after power-on |
+| Live boot, SeaBIOS | Lulo session 41 s after power-on |
+| Install through the Calamares UI (Erase disk) | 160 s |
+| Installed system, Secure Boot | Lulo session (setup assistant open) 30 s after power-on, including the scripted sign-in at GDM |
+
+These are QEMU/KVM times on a 4-vCPU GitHub runner with a software-rendered
+virgl GPU. They are upper bounds for a real PC with a GPU and an SSD.
+
 ## Consequences
 
 - The image depends on the Ubuntu archive at build time and on the matching
@@ -135,6 +158,10 @@ only. On a tag, the tested ISO and its checksum are attached to the release.
 - Proprietary NVIDIA drivers are not on the image (size, and the open
   driver works out of the box). `ubuntu-drivers-common` is installed, so the
   installed system can add them the Ubuntu way.
+- The image takes niri, xwayland-satellite and the rmac packages from one
+  GitHub Release, so they always match. A release built from integ after
+  2026-10-20 carries niri `26.04+lulo1-4` (window-move edges), and the next
+  image gets it without any change here.
 - Branding and live-session files are copied into the image, not packaged,
   so a later release changes them only for new installs. Packaging them as
   `lulo-os-branding` is follow-up work.

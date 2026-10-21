@@ -935,7 +935,7 @@ Lulo's apps running directly on Windows 10/11, without Lulo OS. Mac reference as
 
 ## Lulo OS → Windows
 
-Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` over `shell/`, the Dock, Spotlight, Apps, Control Centre, Notification Centre and the session package, plus the shell code's Linux-only paths), and how the Windows Lulo layer stands. `scripts/robot/windows/verify.ps1` checks every working row live on the test PC (op/win-parity-3: all pass but the two noted). **works**: the shared view runs it on Windows and a robot or CI check saw it; **shared**: the same view code runs it, not yet seen working on the test PC; **fixed**: on `op/win-parity` / `op/win-parity-2` / `op/win-parity-3`; **missing**; **impossible**, with the reason. Linked rows hold the detail.
+Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` over `shell/`, the Dock, Spotlight, Apps, Control Centre, Notification Centre and the session package, plus the shell code's Linux-only paths), and how the Windows Lulo layer stands. `scripts/robot/windows/verify.ps1` checks every working row live on the test PC (op/win-parity-3, 2026-10-22: every row passes; Sound, Bluetooth and Focus menus are off the bar by default; Edge's entry by its program is checked in the user's own profile, as a private one lists fewer Apps folder items). **works**: the shared view runs it on Windows and a robot or CI check saw it; **shared**: the same view code runs it, not yet seen working on the test PC; **fixed**: on `op/win-parity` / `op/win-parity-2` / `op/win-parity-3`; **missing**; **impossible**, with the reason. Linked rows hold the detail.
 
 | Area | Lulo OS behaviour | Windows |
 | --- | --- | --- |

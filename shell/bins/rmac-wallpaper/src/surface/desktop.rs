@@ -1094,6 +1094,11 @@ impl Wallpaper {
                 if std::mem::take(&mut self.desk.reveal_click) && dx.hypot(dy) <= DRAG_THRESHOLD {
                     #[cfg(target_os = "linux")]
                     super::reveal::wallpaper_clicked();
+                    // Windows: Mission Control runs in this same process.
+                    #[cfg(windows)]
+                    if !rmac_shell_layer::system::requests::run("wallpaper-click", cx) {
+                        eprintln!("desktop: Mission Control did not take the wallpaper click");
+                    }
                 }
             }
             Drag::Slider { .. } => {}

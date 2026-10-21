@@ -1054,9 +1054,31 @@ pub fn traffic_lights_fixed_size(active: bool) -> TrafficLights {
 /// callback runs on the second press while the compositor still owns the
 /// pointer grab, so its frame request can be acknowledged without applying.
 pub fn title_bar_drag_region(id: &'static str) -> Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .window_control_area(WindowControlArea::Drag)
+    let region = div().id(id).window_control_area(WindowControlArea::Drag);
+    // Windows maximises or restores on a caption double-click by itself;
+    // Desktop & Dock's "Double-click a window's title bar to" (WIN-OS-08)
+    // decides instead: Zoom and Fill keep Windows' own toggle, Minimise and
+    // Do Nothing take the click so Windows does not.
+    #[cfg(windows)]
+    let region = region.on_mouse_down(MouseButton::Left, |event, window, cx| {
+        if event.click_count != 2 {
+            return;
+        }
+        let setting = rmac_shell_settings::ShellSettingsStore::from_environment()
+            .and_then(|store| store.load())
+            .map(|snapshot| snapshot.settings.double_click_title_bar)
+            .unwrap_or_default();
+        match setting {
+            rmac_shell_settings::DoubleClickTitleBarAction::Zoom
+            | rmac_shell_settings::DoubleClickTitleBarAction::Fill => {}
+            rmac_shell_settings::DoubleClickTitleBarAction::Minimize => {
+                cx.stop_propagation();
+                window.minimize_window();
+            }
+            rmac_shell_settings::DoubleClickTitleBarAction::DoNothing => cx.stop_propagation(),
+        }
+    });
+    region
         // Child toolbar controls can stop bubbling. Observe the release in
         // capture so a double-click on title text still reaches the bar.
         .capture_any_mouse_up(|event, _, cx| {

@@ -563,6 +563,32 @@ fn run_actions(actions: Vec<Action>, cx: &mut App) {
     if actions.is_empty() {
         return;
     }
+    // Windows: the windows a wallpaper click pushes aside (and brings back)
+    // slide together, as niri animates them on Lulo OS; Windows itself
+    // would move each at once. A crossfade is niri's alone.
+    #[cfg(windows)]
+    let actions = {
+        let (moves, others): (Vec<Action>, Vec<Action>) = actions
+            .into_iter()
+            .filter(|action| !matches!(action, Action::CrossfadeScreen { .. }))
+            .partition(|action| matches!(action, Action::MoveWindowBy { .. }));
+        let moves: Vec<(WindowId, f64, f64)> = moves
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::MoveWindowBy { window, dx, dy } => Some((window, dx.0, dy.0)),
+                _ => None,
+            })
+            .collect();
+        if !moves.is_empty() {
+            cx.background_executor()
+                .spawn(rmac_compositor_system::move_windows_animated(
+                    moves,
+                    Duration::from_millis(u64::from(WINDOW_MOVEMENT_MS)),
+                ))
+                .detach();
+        }
+        others
+    };
     cx.spawn(async move |_cx: &mut AsyncApp| {
         for action in actions {
             if let Err(error) = rmac_compositor_system::execute_action(&action).await {
@@ -2427,6 +2453,7 @@ pub fn start(cx: &mut App) {
     requests::register("mission-control", |cx| request(Command::MissionControl, cx));
     requests::register("app-windows", |cx| request(Command::AppWindows, cx));
     requests::register("show-desktop", |cx| request(Command::ShowDesktop, cx));
+    requests::register("wallpaper-click", |cx| request(Command::WallpaperClick, cx));
 }
 
 /// Run one Mission Control command (a hotkey, the Dock, the menu bar).

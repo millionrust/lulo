@@ -44,9 +44,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
     EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
-    MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
-    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CLOSE,
-    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOSIZE,
+    SWP_NOZORDER, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS, WM_CLOSE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, RegisterClassW, SPI_SETWORKAREA, WM_DISPLAYCHANGE,
@@ -1878,4 +1878,60 @@ mod tests {
             true
         ));
     }
+}
+
+/// Ease-out cubic, as niri eases a window move.
+fn ease_out(t: f64) -> f64 {
+    1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
+}
+
+/// Slide windows by `(dx, dy)` logical points each over `duration`, as
+/// niri animates a move on Lulo OS (click wallpaper to reveal the desktop,
+/// and back). Windows moves a window at once, so the frames are stepped
+/// here on a blocking thread, about 60 a second; nothing runs after the
+/// last one.
+pub async fn move_windows_animated(
+    moves: Vec<(domain::WindowId, f64, f64)>,
+    duration: std::time::Duration,
+) {
+    blocking::unblock(move || {
+        let started: Vec<(HWND, RECT, i32, i32)> = moves
+            .iter()
+            .filter_map(|(window, dx, dy)| {
+                let hwnd = handle(*window);
+                let (_, scale) = work_area(hwnd)?;
+                let mut rect = RECT::default();
+                // SAFETY: reads the rectangle of a live window.
+                unsafe { GetWindowRect(hwnd, &mut rect) }.ok()?;
+                Some((
+                    hwnd,
+                    rect,
+                    (dx * scale).round() as i32,
+                    (dy * scale).round() as i32,
+                ))
+            })
+            .collect();
+        let frames = (duration.as_millis() / 16).max(1) as u32;
+        for frame in 1..=frames {
+            let t = ease_out(f64::from(frame) / f64::from(frames));
+            for (hwnd, rect, dx, dy) in &started {
+                // SAFETY: moves a live window; no size or z-order change.
+                let _ = unsafe {
+                    SetWindowPos(
+                        *hwnd,
+                        None,
+                        rect.left + (f64::from(*dx) * t).round() as i32,
+                        rect.top + (f64::from(*dy) * t).round() as i32,
+                        0,
+                        0,
+                        SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS,
+                    )
+                };
+            }
+            if frame < frames {
+                std::thread::sleep(std::time::Duration::from_millis(16));
+            }
+        }
+    })
+    .await;
 }

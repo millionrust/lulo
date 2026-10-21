@@ -2057,3 +2057,9 @@ pub fn restore_window_size(window: domain::WindowId) -> bool {
         None => false,
     }
 }
+
+/// Whether `raw` is the foreground window.
+pub(crate) fn is_foreground(raw: isize) -> bool {
+    // SAFETY: no arguments.
+    unsafe { GetForegroundWindow() }.0 as isize == raw
+}

@@ -76,6 +76,22 @@ pub(crate) fn keep(hwnd: isize) {
     send(Job::Keep(hwnd));
 }
 
+/// How long after a window comes to the front it is pictured.
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(800);
+
+/// `hwnd` came to the front: picture it once it has drawn, unless it is no
+/// longer in front then (it is pictured when it leaves).
+pub(crate) fn keep_soon(hwnd: isize) {
+    let _ = std::thread::Builder::new()
+        .name("lulo-window-thumbnail-wait".into())
+        .spawn(move || {
+            std::thread::sleep(SETTLE);
+            if crate::win32::is_foreground(hwnd) {
+                send(Job::Keep(hwnd));
+            }
+        });
+}
+
 /// Windows minimised `hwnd`.
 pub(crate) fn minimized(hwnd: isize) {
     send(Job::Minimized(hwnd));

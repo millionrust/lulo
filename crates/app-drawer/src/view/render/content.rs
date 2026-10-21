@@ -623,17 +623,6 @@ fn fallback_icon(app: &App, edge: f32, text_basis: f32) -> gpui::AnyElement {
         .into_any_element()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{icon_plate_edge, third_party_art_edge};
-
-    #[test]
-    fn third_party_art_uses_the_measured_seventy_six_percent_scale() {
-        assert_eq!(icon_plate_edge(54.0), 50.0);
-        assert!((third_party_art_edge(54.0) - 38.0).abs() < f32::EPSILON);
-    }
-}
-
 /// The two name lines for a tile, measured with the window's UI font at the
 /// scaled 12 pt size so the break matches what is drawn.
 fn name_lines(window: &Window, name: &str) -> [String; 2] {
@@ -650,4 +639,15 @@ fn name_lines(window: &Window, name: &str) -> [String; 2] {
             .sum()
     };
     super::super::name_wrap::wrap_name(name, TILE_W - 8.0 - 1.0, &measure)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{icon_plate_edge, third_party_art_edge};
+
+    #[test]
+    fn third_party_art_uses_the_measured_seventy_six_percent_scale() {
+        assert_eq!(icon_plate_edge(54.0), 50.0);
+        assert!((third_party_art_edge(54.0) - 38.0).abs() < f32::EPSILON);
+    }
 }

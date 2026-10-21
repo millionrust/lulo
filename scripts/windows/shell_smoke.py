@@ -2204,15 +2204,17 @@ def check_dock_recents(log: Log, profile: Path, failures: list[str]) -> None:
         except OSError:
             return []
 
-    # Apps still open from earlier checks stay too (running apps are never
-    # dropped), before these.
-    saved = wait_until(lambda: recents()[-len(RECENT_APPS):] == list(RECENT_APPS), 10.0)
+    # The last two opened are the newest; the third may have given its
+    # place to an app still open from an earlier check (running apps are
+    # never dropped, as on the Mac).
+    newest = list(RECENT_APPS[-2:])
+    saved = wait_until(lambda: recents()[-2:] == newest and len(recents()) <= 4, 10.0)
     print(f"shell: the Dock's recent apps after opening the Lulo apps: {recents()}")
     if saved is None:
-        failures.append(f"the Dock's recent apps are {recents()}, not the last three used {list(RECENT_APPS)}")
+        failures.append(f"the Dock's recent apps are {recents()}, not ending with the last used {newest}")
     _, running = dock_groups(log)
     shown = [app_id for app_id, _, _ in running if app_id != "trash"]
-    wanted = [dock_app_id(app_id) for app_id in RECENT_APPS]
+    wanted = [dock_app_id(app_id) for app_id in newest]
     print(f"shell: Dock tiles after the separator: {shown}")
     if [app_id for app_id in shown if app_id in wanted] != wanted:
         failures.append(f"the Dock shows {shown} after its kept apps, not the recent apps {wanted}")

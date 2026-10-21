@@ -22,8 +22,9 @@ use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVE
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardLayoutList, RegisterHotKey, SendInput, UnregisterHotKey,
     HOT_KEY_MODIFIERS, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-    KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VIRTUAL_KEY, VK_CONTROL,
-    VK_DOWN, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_SPACE, VK_UP,
+    KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, VIRTUAL_KEY,
+    VK_CONTROL, VK_D, VK_DOWN, VK_ESCAPE, VK_F2, VK_F3, VK_F8, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    VK_SPACE, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetAncestor, GetMessageW, PostThreadMessageW,
@@ -45,15 +46,34 @@ pub enum DesktopEvent {
     WindowsChanged,
     /// Spotlight's hotkey.
     Hotkey,
-    /// Ctrl+Up: Mission Control (the Mac's ⌃↑).
-    MissionControl,
-    /// Ctrl+Down: App Exposé, the front app's windows (the Mac's ⌃↓).
-    AppWindows,
+    /// One of [`SHORTCUTS`]: the shell request it asks for.
+    Request(&'static str),
 }
 
+/// Lulo OS's system shortcuts, with Ctrl for the Mac's ⌃ and Ctrl+Alt for
+/// ⌥⌘, as thread hotkeys: (id, modifiers, key, the shell request). Another
+/// app that holds one keeps it; nothing of theirs is touched.
+const SHORTCUTS: [(i32, HOT_KEY_MODIFIERS, VIRTUAL_KEY, &str); 8] = [
+    // ⌃↑ Mission Control, ⌃↓ App Exposé.
+    (0x4C56, MOD_CONTROL, VK_UP, "mission-control"),
+    (0x4C57, MOD_CONTROL, VK_DOWN, "app-windows"),
+    // ⌃F2 the menu bar, ⌃F3 the Dock, ⌃F8 the status menus (ACC-05).
+    (0x4C58, MOD_CONTROL, VK_F2, "menu-bar-focus"),
+    (0x4C59, MOD_CONTROL, VK_F3, "dock-focus"),
+    (0x4C5A, MOD_CONTROL, VK_F8, "status-menus-focus"),
+    // ⌥⌘D Dock hiding on and off (DOCK-04).
+    (0x4C5B, CTRL_ALT, VK_D, "dock-toggle-hiding"),
+    // ⌥⌘⎋ Force Quit Applications.
+    (0x4C5C, CTRL_ALT, VK_ESCAPE, "force-quit"),
+    // Show Desktop (the Mac's F11): Win+D, which is free when Lulo is the
+    // shell; over Explorer, Explorer keeps it.
+    (0x4C5D, MOD_WIN, VK_D, "show-desktop"),
+];
+
+/// Ctrl+Alt, the Windows keys for the Mac's ⌥⌘.
+const CTRL_ALT: HOT_KEY_MODIFIERS = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0);
+
 const HOTKEY_ID: i32 = 0x4C55;
-const MISSION_CONTROL_ID: i32 = 0x4C56;
-const APP_WINDOWS_ID: i32 = 0x4C57;
 /// Marks the keystroke Lulo itself sends, so its own hook lets it pass.
 const OWN_INPUT: usize = 0x4C55_4C4F;
 /// An unassigned virtual key: pressed between Win down and Win up, it
@@ -290,13 +310,11 @@ pub fn start(sender: async_channel::Sender<DesktopEvent>) -> Option<Hooks> {
                 })
                 .collect::<Vec<_>>();
             let claimed = claim_hotkey();
-            // Mission Control's ⌃↑ and ⌃↓ as on the Mac. Another app that
-            // holds either keeps it; nothing of theirs is touched.
+            // Lulo OS's system shortcuts (`SHORTCUTS`).
             // SAFETY: thread hotkeys; WM_HOTKEY arrives in this queue.
-            let expose_keys =
-                [(MISSION_CONTROL_ID, VK_UP), (APP_WINDOWS_ID, VK_DOWN)].map(|(id, key)| unsafe {
-                    RegisterHotKey(None, id, MOD_CONTROL | MOD_NOREPEAT, u32::from(key.0)).is_ok()
-                });
+            let registered = SHORTCUTS.map(|(id, modifiers, key, _)| unsafe {
+                RegisterHotKey(None, id, modifiers | MOD_NOREPEAT, u32::from(key.0)).is_ok()
+            });
             // SAFETY: no arguments.
             let thread_id = unsafe { GetCurrentThreadId() };
             let _ = ready_tx.send((thread_id, claimed.hotkey, claimed.taken.clone()));
@@ -304,11 +322,14 @@ pub fn start(sender: async_channel::Sender<DesktopEvent>) -> Option<Hooks> {
             // SAFETY: the standard message loop; `message` is a valid MSG.
             while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
                 if message.message == WM_HOTKEY {
-                    let event = match message.wParam.0 as i32 {
-                        HOTKEY_ID => Some(DesktopEvent::Hotkey),
-                        MISSION_CONTROL_ID => Some(DesktopEvent::MissionControl),
-                        APP_WINDOWS_ID => Some(DesktopEvent::AppWindows),
-                        _ => None,
+                    let id = message.wParam.0 as i32;
+                    let event = if id == HOTKEY_ID {
+                        Some(DesktopEvent::Hotkey)
+                    } else {
+                        SHORTCUTS
+                            .iter()
+                            .find(|shortcut| shortcut.0 == id)
+                            .map(|shortcut| DesktopEvent::Request(shortcut.3))
                     };
                     if let (Some(event), Some(sender)) = (event, SENDER.get()) {
                         let _ = sender.try_send(event);
@@ -326,12 +347,9 @@ pub fn start(sender: async_channel::Sender<DesktopEvent>) -> Option<Hooks> {
                 if claimed.registered {
                     let _ = UnregisterHotKey(None, HOTKEY_ID);
                 }
-                for (id, registered) in [MISSION_CONTROL_ID, APP_WINDOWS_ID]
-                    .into_iter()
-                    .zip(expose_keys)
-                {
+                for (shortcut, registered) in SHORTCUTS.iter().zip(registered) {
                     if registered {
-                        let _ = UnregisterHotKey(None, id);
+                        let _ = UnregisterHotKey(None, shortcut.0);
                     }
                 }
                 if let Some(hook) = claimed.keyboard_hook {

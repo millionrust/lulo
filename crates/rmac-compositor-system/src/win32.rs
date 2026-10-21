@@ -44,13 +44,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
     EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, GA_ROOT, GWL_EXSTYLE, GW_OWNER,
-    MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
-    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CLOSE,
-    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    MONITORINFOF_PRIMARY, MSG, OBJID_WINDOW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOSIZE,
+    SWP_NOZORDER, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS, WM_CLOSE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, RegisterClassW, SPI_SETWORKAREA, WM_DISPLAYCHANGE,
-    WM_SETTINGCHANGE, WNDCLASSW, WS_OVERLAPPED,
+    CreateWindowExW, DefWindowProcW, RegisterClassW, RegisterShellHookWindow,
+    RegisterWindowMessageW, SPI_SETWORKAREA, WM_DISPLAYCHANGE, WM_SETTINGCHANGE, WNDCLASSW,
+    WS_OVERLAPPED,
 };
 
 /// The workspace holding minimised windows (`rmac_compositor::PARKING_WORKSPACE`).
@@ -422,8 +423,31 @@ unsafe extern "system" fn on_event(
     // Dock's keyboard surface) are not apps' windows; only the foreground
     // coming to the shell matters.
     // SAFETY: no arguments.
-    let own = process_id(hwnd) == unsafe { GetCurrentProcessId() };
+    let own_pid = unsafe { GetCurrentProcessId() };
+    let own = process_id(hwnd) == own_pid;
     if own && event != EVENT_SYSTEM_FOREGROUND {
+        return;
+    }
+    // Minimised windows' Dock tiles (`thumbnails`): picture the window that
+    // stops being the foreground one, and hand a minimised window's picture
+    // to the Dock; that path wakes the watchers once the picture is stored.
+    if event == EVENT_SYSTEM_FOREGROUND {
+        let previous = LAST_FOREGROUND.swap(hwnd.0 as isize, Ordering::AcqRel);
+        if previous != 0
+            && previous != hwnd.0 as isize
+            && is_app_window(handle_raw(previous), own_pid)
+        {
+            crate::thumbnails::keep(previous);
+        }
+        // The window now in front may be minimised before it ever leaves
+        // the front (⌘M, its own button): picture it once it has drawn. A
+        // window just opened is not shown or titled yet when it comes to
+        // the front, so whether it is an app's window is asked then.
+        if !own {
+            crate::thumbnails::keep_soon(hwnd.0 as isize);
+        }
+    } else if event == EVENT_SYSTEM_MINIMIZESTART && !own && is_app_window(hwnd, own_pid) {
+        crate::thumbnails::minimized(hwnd.0 as isize);
         return;
     }
     // A Lulo app window's shadow (gpui_windows' `rmac_window_frame.rs`)
@@ -1100,7 +1124,7 @@ fn read_snapshot() -> domain::Snapshot {
             }),
             focused: hwnd == foreground,
             floating: true,
-            urgent: false,
+            urgent: urgent(hwnd),
             // Front-most is the most recently focused.
             focus_timestamp: Some(domain::Timestamp {
                 seconds: count - rank as u64,
@@ -1322,6 +1346,7 @@ fn run_action(action: &domain::Action) -> Result<(), domain::ActionError> {
             Ok(())
         }
         domain::Action::CenterWindow { window } => {
+            remember_frame(handle(*window));
             let hwnd = handle(*window);
             let (work, _) = work_area(hwnd).ok_or_else(|| rejected("no monitor"))?;
             let frame = frame_bounds(hwnd).ok_or_else(|| rejected("no frame"))?;
@@ -1340,6 +1365,7 @@ fn run_action(action: &domain::Action) -> Result<(), domain::ActionError> {
             Ok(())
         }
         domain::Action::TileWindow { window, region } => {
+            remember_frame(handle(*window));
             let (x, y, width, height) = region.frame_percent();
             frame_percent(handle(*window), x, y, width, height)
         }
@@ -1617,6 +1643,35 @@ unsafe extern "system" fn work_area_procedure(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    // An app asking for attention (`FlashWindowEx`, as a taskbar button
+    // flashes): its Dock tile bounces, as on the Mac and Lulo OS
+    // (`urgent`); its window coming to the front ends it.
+    let shell_hook = SHELL_HOOK_MESSAGE.load(Ordering::Acquire);
+    if shell_hook != 0 && message == shell_hook {
+        let code = wparam.0 as u32 & 0x7FFF;
+        let target = lparam.0;
+        let changed = match code {
+            HSHELL_FLASH => URGENT.lock().is_ok_and(|mut urgent| {
+                let added = !urgent.contains(&target);
+                if added {
+                    urgent.push(target);
+                }
+                added
+            }),
+            HSHELL_WINDOWACTIVATED | HSHELL_WINDOWDESTROYED => {
+                URGENT.lock().is_ok_and(|mut urgent| {
+                    let before = urgent.len();
+                    urgent.retain(|window| *window != target);
+                    urgent.len() != before
+                })
+            }
+            _ => false,
+        };
+        if changed {
+            notify_watchers();
+        }
+        return LRESULT(0);
+    }
     let changed = match message {
         WM_SETTINGCHANGE => wparam.0 as u32 == SPI_SETWORKAREA.0,
         WM_DISPLAYCHANGE => true,
@@ -1649,7 +1704,7 @@ fn watch_work_area() {
             ..Default::default()
         };
         let _ = RegisterClassW(&class);
-        let _ = CreateWindowExW(
+        let window = CreateWindowExW(
             WS_EX_TOOLWINDOW,
             w!("LuloWorkAreaWatch"),
             w!(""),
@@ -1663,7 +1718,30 @@ fn watch_work_area() {
             Some(instance),
             None,
         );
+        if let Ok(window) = window {
+            // Shell hooks: attention requests (see `work_area_procedure`).
+            let message = RegisterWindowMessageW(w!("SHELLHOOK"));
+            if message != 0 && RegisterShellHookWindow(window).as_bool() {
+                SHELL_HOOK_MESSAGE.store(message, Ordering::Release);
+            }
+        }
     }
+}
+
+/// The registered `SHELLHOOK` message, once this thread's window hears it.
+static SHELL_HOOK_MESSAGE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// Windows that asked for attention and have not come to the front since.
+static URGENT: Mutex<Vec<isize>> = Mutex::new(Vec::new());
+/// `HSHELL_FLASH`: a window flashed its taskbar button.
+const HSHELL_FLASH: u32 = 0x8006;
+const HSHELL_WINDOWACTIVATED: u32 = 4;
+const HSHELL_WINDOWDESTROYED: u32 = 2;
+
+/// Whether `hwnd` is asking for attention.
+fn urgent(hwnd: HWND) -> bool {
+    URGENT
+        .lock()
+        .is_ok_and(|urgent| urgent.contains(&(hwnd.0 as isize)))
 }
 
 /// Runs on the hook thread when a move or resize ends.
@@ -1878,4 +1956,123 @@ mod tests {
             true
         ));
     }
+}
+
+/// Ease-out cubic, as niri eases a window move.
+fn ease_out(t: f64) -> f64 {
+    1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
+}
+
+/// Slide windows by `(dx, dy)` logical points each over `duration`, as
+/// niri animates a move on Lulo OS (click wallpaper to reveal the desktop,
+/// and back). Windows moves a window at once, so the frames are stepped
+/// here on a blocking thread, about 60 a second; nothing runs after the
+/// last one.
+pub async fn move_windows_animated(
+    moves: Vec<(domain::WindowId, f64, f64)>,
+    duration: std::time::Duration,
+) {
+    blocking::unblock(move || {
+        let started: Vec<(HWND, RECT, i32, i32)> = moves
+            .iter()
+            .filter_map(|(window, dx, dy)| {
+                let hwnd = handle(*window);
+                let (_, scale) = work_area(hwnd)?;
+                let mut rect = RECT::default();
+                // SAFETY: reads the rectangle of a live window.
+                unsafe { GetWindowRect(hwnd, &mut rect) }.ok()?;
+                Some((
+                    hwnd,
+                    rect,
+                    (dx * scale).round() as i32,
+                    (dy * scale).round() as i32,
+                ))
+            })
+            .collect();
+        let frames = (duration.as_millis() / 16).max(1) as u32;
+        for frame in 1..=frames {
+            let t = ease_out(f64::from(frame) / f64::from(frames));
+            for (hwnd, rect, dx, dy) in &started {
+                // SAFETY: moves a live window; no size or z-order change.
+                let _ = unsafe {
+                    SetWindowPos(
+                        *hwnd,
+                        None,
+                        rect.left + (f64::from(*dx) * t).round() as i32,
+                        rect.top + (f64::from(*dy) * t).round() as i32,
+                        0,
+                        0,
+                        SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS,
+                    )
+                };
+            }
+            if frame < frames {
+                std::thread::sleep(std::time::Duration::from_millis(16));
+            }
+        }
+        // Windows reports no event for a plain move, so read the list again:
+        // the windows' new places are where a restore measures from.
+        notify_watchers();
+    })
+    .await;
+}
+
+/// The window that was in front last (`thumbnails` pictures it when
+/// another takes its place).
+static LAST_FOREGROUND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+fn handle_raw(raw: isize) -> HWND {
+    HWND(raw as *mut core::ffi::c_void)
+}
+
+/// Whether `raw` still names a window.
+pub(crate) fn is_window(raw: isize) -> bool {
+    // SAFETY: asks whether a handle names a window; no pointers.
+    unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(handle_raw(raw))) }.as_bool()
+}
+
+/// The frame each window had before Move & Resize first placed it, for
+/// Return to Previous Size (WIN-01, as Mission Control's tile history on
+/// Lulo OS). Kept for this session only.
+static PREVIOUS_FRAMES: Mutex<Option<HashMap<isize, RECT>>> = Mutex::new(None);
+
+fn remember_frame(hwnd: HWND) {
+    let Some(frame) = frame_bounds(hwnd) else {
+        return;
+    };
+    if let Ok(mut frames) = PREVIOUS_FRAMES.lock() {
+        let frames = frames.get_or_insert_with(HashMap::new);
+        frames.retain(|window, _| is_window(*window));
+        frames.entry(hwnd.0 as isize).or_insert(frame);
+    }
+}
+
+/// Return to Previous Size: put `window` back where it was before Move &
+/// Resize first placed it. False when nothing is recorded (it does
+/// nothing, as on the Mac).
+pub fn restore_window_size(window: domain::WindowId) -> bool {
+    let hwnd = handle(window);
+    let frame = PREVIOUS_FRAMES
+        .lock()
+        .ok()
+        .and_then(|mut frames| frames.as_mut()?.remove(&(hwnd.0 as isize)));
+    match frame {
+        Some(frame) => {
+            place_frame(hwnd, frame);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Whether `raw` is the foreground window.
+pub(crate) fn is_foreground(raw: isize) -> bool {
+    // SAFETY: no arguments.
+    unsafe { GetForegroundWindow() }.0 as isize == raw
+}
+
+/// Whether `raw` is an app's window the window list shows.
+pub(crate) fn is_listed_window(raw: isize) -> bool {
+    // SAFETY: no arguments.
+    is_app_window(handle_raw(raw), unsafe { GetCurrentProcessId() })
 }

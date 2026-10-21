@@ -563,6 +563,32 @@ fn run_actions(actions: Vec<Action>, cx: &mut App) {
     if actions.is_empty() {
         return;
     }
+    // Windows: the windows a wallpaper click pushes aside (and brings back)
+    // slide together, as niri animates them on Lulo OS; Windows itself
+    // would move each at once. A crossfade is niri's alone.
+    #[cfg(windows)]
+    let actions = {
+        let (moves, others): (Vec<Action>, Vec<Action>) = actions
+            .into_iter()
+            .filter(|action| !matches!(action, Action::CrossfadeScreen { .. }))
+            .partition(|action| matches!(action, Action::MoveWindowBy { .. }));
+        let moves: Vec<(WindowId, f64, f64)> = moves
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::MoveWindowBy { window, dx, dy } => Some((window, dx.0, dy.0)),
+                _ => None,
+            })
+            .collect();
+        if !moves.is_empty() {
+            cx.background_executor()
+                .spawn(rmac_compositor_system::move_windows_animated(
+                    moves,
+                    Duration::from_millis(u64::from(WINDOW_MOVEMENT_MS)),
+                ))
+                .detach();
+        }
+        others
+    };
     cx.spawn(async move |_cx: &mut AsyncApp| {
         for action in actions {
             if let Err(error) = rmac_compositor_system::execute_action(&action).await {
@@ -1652,6 +1678,12 @@ impl Render for CornerView {
         div()
             .id("hot-corner")
             .size_full()
+            // A click in the corner still reaches what is under it (the
+            // Lulo menu at the top left), as the Apple menu does on the Mac.
+            .on_mouse_down(MouseButton::Left, |_, _window, _| {
+                #[cfg(windows)]
+                rmac_shell_layer::windows::click_through::click_through(_window);
+            })
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                 if !*hovered {
                     this.armed = true;
@@ -1886,6 +1918,16 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
             // The overlay covers the wallpaper; a click there is its own.
             if service.read(cx).overlay.is_none() {
                 let actions = service.update(cx, |service, _| service.wallpaper_click());
+                #[cfg(windows)]
+                {
+                    let (count, windows) =
+                        (actions.len(), service.read(cx).compositor.windows.len());
+                    rmac_shell_layer::windows::trace::trace(|| {
+                        format!(
+                            "mission control wallpaper click: {count} moves of {windows} windows"
+                        )
+                    });
+                }
                 run_actions(actions, cx);
             }
         }
@@ -2223,11 +2265,16 @@ fn follow_compositor(service: &Entity<Service>, cx: &mut App) {
         .detach();
     let watched = service.clone();
     cx.spawn(async move |cx: &mut AsyncApp| {
+        // niri sends a whole snapshot only when it connects; the Win32 list
+        // sends one for every change, so only its first is a reconnection.
+        let mut connected = false;
         while let Ok(event) = compositor_rx.recv().await {
+            let snapshot = matches!(event, rmac_compositor::Event::Snapshot { .. });
+            let reconnected = snapshot && !(cfg!(windows) && connected);
+            connected |= snapshot;
             cx.update(|cx| {
                 #[cfg(target_os = "linux")]
                 let drag = rmac_compositor_niri::edge_drag(&event);
-                let reconnected = matches!(event, rmac_compositor::Event::Snapshot { .. });
                 let (topology, action) = watched.update(cx, |service, _| service.apply(event));
                 if let Some(action) = action {
                     run_actions(vec![action], cx);
@@ -2421,6 +2468,7 @@ pub fn start(cx: &mut App) {
     requests::register("mission-control", |cx| request(Command::MissionControl, cx));
     requests::register("app-windows", |cx| request(Command::AppWindows, cx));
     requests::register("show-desktop", |cx| request(Command::ShowDesktop, cx));
+    requests::register("wallpaper-click", |cx| request(Command::WallpaperClick, cx));
 }
 
 /// Run one Mission Control command (a hotkey, the Dock, the menu bar).

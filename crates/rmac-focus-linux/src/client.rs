@@ -74,18 +74,27 @@ impl std::fmt::Debug for Snapshot {
 }
 
 pub fn state() -> Result<Snapshot, Error> {
+    if let Some(local) = crate::local::get() {
+        return decode(local.state());
+    }
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     decode(proxy.state().map_err(|_| Error::Call)?)
 }
 
 pub fn set_enabled(enabled: bool) -> Result<Snapshot, Error> {
+    if let Some(local) = crate::local::get() {
+        return ensure_persisted(decode(local.set_enabled(enabled)?)?);
+    }
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(proxy.set_enabled(enabled).map_err(call_error)?)?)
 }
 
 pub fn activate(mode_id: &str, duration_ms: u64) -> Result<Snapshot, Error> {
+    if let Some(local) = crate::local::get() {
+        return ensure_persisted(decode(local.activate(mode_id, duration_ms)?)?);
+    }
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(
@@ -94,12 +103,18 @@ pub fn activate(mode_id: &str, duration_ms: u64) -> Result<Snapshot, Error> {
 }
 
 pub fn disable() -> Result<Snapshot, Error> {
+    if let Some(local) = crate::local::get() {
+        return ensure_persisted(decode(local.disable()?)?);
+    }
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(proxy.disable().map_err(call_error)?)?)
 }
 
 pub fn configuration() -> Result<Config, Error> {
+    if let Some(local) = crate::local::get() {
+        return Ok(local.configuration());
+    }
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     decode_configuration(proxy.configuration().map_err(call_error)?).map_err(|_| Error::Protocol)
@@ -112,6 +127,9 @@ pub fn settings() -> Result<SettingsSnapshot, Error> {
 }
 
 pub fn replace_configuration(configuration: &Config) -> Result<Snapshot, Error> {
+    if let Some(local) = crate::local::get() {
+        return ensure_persisted(decode(local.replace_configuration(configuration)?)?);
+    }
     let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(
@@ -143,6 +161,12 @@ pub async fn enforce_with_connection(
 }
 
 pub async fn watch(sender: Sender<Result<Projection, String>>) -> Result<(), Error> {
+    if let Some(local) = crate::local::get() {
+        // This process runs Focus itself (Windows): its changes come here.
+        local.subscribe(sender.clone());
+        sender.closed().await;
+        return Ok(());
+    }
     loop {
         let service_unavailable = match watch_once(&sender).await {
             Ok(()) if sender.is_closed() => return Ok(()),

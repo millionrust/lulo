@@ -13,9 +13,10 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    div, img, layer_shell::*, point, prelude::*, px, App, Bounds, Context, DisplayId, ObjectFit,
-    Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+    div, img, point, prelude::*, px, App, Bounds, Context, DisplayId, ObjectFit, Size, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowOptions,
 };
+use rmac_shell_layer::layer::*;
 
 /// macOS 26's Genie takes about half a second; Scale a little less.
 pub const GENIE_DURATION: Duration = Duration::from_millis(520);
@@ -204,15 +205,6 @@ pub fn play(
         display_id: display,
         app_id: Some("dev.rmac.MinimizeEffect".to_owned()),
         window_background: WindowBackgroundAppearance::Transparent,
-        kind: WindowKind::LayerShell(LayerShellOptions {
-            namespace: "rmac-minimize-effect".to_owned(),
-            layer: Layer::Overlay,
-            anchor: Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
-            // Over the menu bar and the Dock: the picture pours into a tile.
-            exclusive_zone: Some(px(-1.0)),
-            keyboard_interactivity: KeyboardInteractivity::None,
-            ..Default::default()
-        }),
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
@@ -222,8 +214,22 @@ pub fn play(
         Effect::Genie => GENIE_DURATION,
         Effect::Scale => SCALE_DURATION,
     };
-    let opened = cx.open_window(options, move |window, cx| {
+    let layer = LayerShellOptions {
+        namespace: "rmac-minimize-effect".to_owned(),
+        layer: Layer::Overlay,
+        anchor: Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
+        // Over the menu bar and the Dock: the picture pours into a tile.
+        exclusive_zone: Some(px(-1.0)),
+        keyboard_interactivity: KeyboardInteractivity::None,
+        ..Default::default()
+    };
+    let opened = rmac_shell_layer::open_layer_window(cx, options, layer, move |window, cx| {
+        // Clicks pass through on Lulo OS. On Windows an empty region would
+        // hide the window too, so it takes the half second's clicks.
+        #[cfg(target_os = "linux")]
         window.set_input_region(Some(&[]));
+        #[cfg(windows)]
+        let _ = &window;
         cx.new(|_| MinimizeAnimation {
             picture,
             from,

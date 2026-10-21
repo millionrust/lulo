@@ -38,7 +38,7 @@ use rmac_shell_layer::layer::*;
 use rmac_shell_ui::tokens;
 use uuid::Uuid;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 use crate::force_quit_window::{self, ForceQuitView};
 use crate::model::{self, Command, Layout, OptimisticPlan, Recency, RunningApp, Session};
 
@@ -173,9 +173,9 @@ pub(crate) struct Service {
     /// the next ⌘Tab maps it again instead of creating a surface and a
     /// swapchain (SPEED-11).
     kept: Option<(WindowHandle<SwitcherView>, Option<gpui::DisplayId>)>,
-    /// Force Quit Applications (Lulo OS; Windows has Task Manager, from
-    /// the Lulo menu).
-    #[cfg(target_os = "linux")]
+    /// Force Quit Applications (⌥⌘⎋, the Lulo menu's Force Quit…;
+    /// Ctrl+Alt+Esc on Windows).
+    #[cfg(any(target_os = "linux", windows))]
     force_quit: Option<WindowHandle<ForceQuitView>>,
     /// Windows: commands that arrived while the window list for a new
     /// switch was being read; they run once the panel is open.
@@ -191,7 +191,7 @@ impl Service {
             catalog: Rc::new(Vec::new()),
             open: None,
             kept: None,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             force_quit: None,
             #[cfg(windows)]
             pending: None,
@@ -267,7 +267,7 @@ impl Service {
     }
 
     /// Force Quit's list and icons, from the live window set.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn force_quit_entries(&self) -> (Vec<crate::force_quit::Entry>, BTreeMap<String, PathBuf>) {
         let snapshot = self.compositor.snapshot();
         let entries = crate::force_quit::entries(
@@ -287,7 +287,7 @@ impl Service {
     }
 
     /// Keep an open Force Quit list in step with the windows.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     fn refresh_force_quit(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.force_quit else {
             return;
@@ -301,7 +301,7 @@ impl Service {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub(crate) fn force_quit_closed(&mut self, cx: &mut Context<Self>) {
         self.force_quit = None;
         self.refresh_catalog(cx);
@@ -1214,9 +1214,20 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
         }
     }
     if command == Command::ForceQuit {
-        // Windows has Task Manager for this, from the Lulo menu.
+        // Lulo's own window on both systems.
         #[cfg(target_os = "linux")]
         open_force_quit(service, cx);
+        // Windows reads the window list only while it is needed: follow it
+        // while Force Quit is open, so a quit app leaves the list.
+        #[cfg(windows)]
+        {
+            let already_open = service.read(cx).force_quit.is_some();
+            if already_open {
+                open_force_quit(service, cx);
+            } else {
+                follow_while_force_quit_open(service, cx);
+            }
+        }
         return;
     }
     let open = service.read(cx).open;
@@ -1275,12 +1286,68 @@ fn open_app_expose(after: Option<async_channel::Receiver<()>>, cx: &mut Context<
     .detach();
 }
 
+/// Windows: Mission Control runs in this same process (`lulo-shell`).
 #[cfg(windows)]
-fn open_app_expose(_after: Option<async_channel::Receiver<()>>, _cx: &mut Context<SwitcherView>) {}
+fn open_app_expose(after: Option<async_channel::Receiver<()>>, cx: &mut Context<SwitcherView>) {
+    cx.spawn(async move |_, cx: &mut AsyncApp| {
+        if let Some(done) = after {
+            let _ = done.recv().await;
+        }
+        cx.background_executor()
+            .timer(Duration::from_millis(150))
+            .await;
+        cx.update(|cx| {
+            if !rmac_shell_layer::system::requests::run("app-windows", cx) {
+                eprintln!("switcher: Mission Control is not running");
+            }
+        });
+    })
+    .detach();
+}
+
+/// Windows: open Force Quit on a fresh window list and keep the list
+/// following the windows until Force Quit closes.
+#[cfg(windows)]
+fn follow_while_force_quit_open(service: &Entity<Service>, cx: &mut App) {
+    let (events_tx, events) = async_channel::bounded(64);
+    cx.background_executor()
+        .spawn(async move {
+            let _ = rmac_compositor_system::watch(events_tx).await;
+        })
+        .detach();
+    let service = service.clone();
+    cx.spawn(async move |cx: &mut AsyncApp| {
+        let mut opened = false;
+        while let Ok(event) = events.recv().await {
+            let snapshot = matches!(event, rmac_compositor::Event::Snapshot { .. });
+            let keep = cx.update(|cx| {
+                service.update(cx, |service, _| service.apply(event));
+                if !opened {
+                    if !snapshot {
+                        return true;
+                    }
+                    opened = true;
+                    open_force_quit(&service, cx);
+                    return service.read(cx).force_quit.is_some();
+                }
+                let open = service.read(cx).force_quit.is_some();
+                if open {
+                    service.update(cx, |service, cx| service.refresh_force_quit(cx));
+                }
+                open
+            });
+            if !keep {
+                // Dropping the receiver ends the watch.
+                return;
+            }
+        }
+    })
+    .detach();
+}
 
 /// ⌥⌘⎋ and the logo menu's Force Quit…: bring the open window forward,
 /// or open it on the app that was frontmost.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 fn open_force_quit(service: &Entity<Service>, cx: &mut App) {
     let (existing, snapshot) = {
         let state = service.read(cx);
@@ -1516,6 +1583,11 @@ fn watch_compositor(service: &Entity<Service>, cx: &mut App) {
 #[cfg(windows)]
 pub fn start(cx: &mut App) {
     let (command_tx, command_rx) = async_channel::bounded(32);
+    // Force Quit Applications, from the Lulo menu and Ctrl+Alt+Esc.
+    let force_quit = command_tx.clone();
+    rmac_shell_layer::system::requests::register("force-quit", move |_| {
+        let _ = force_quit.try_send(Command::ForceQuit);
+    });
     if !crate::alt_tab::start(command_tx) {
         eprintln!("app switcher: the Alt+Tab hook could not be installed");
     }

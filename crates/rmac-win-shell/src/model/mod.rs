@@ -5,3 +5,4 @@
 pub mod apps;
 pub mod hotkey;
 pub mod search;
+pub mod startup;

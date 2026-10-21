@@ -417,6 +417,15 @@ pub fn display_panel(dark_mode: Option<bool>) -> Panel {
     }
 }
 
+/// The line under Focus's title saying what Focus silences: on Windows
+/// only Lulo's own notifications (Windows' Do Not Disturb, which apps
+/// cannot set, covers the others); on Lulo OS every notification.
+pub const FOCUS_SCOPE: Option<&str> = if cfg!(windows) {
+    Some("Silences Lulo notifications")
+} else {
+    None
+};
+
 /// One configured Focus mode, as the Focus service lists it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FocusMode {
@@ -448,6 +457,9 @@ pub fn focus_panel(
         panel.empty = Some("Focus Unavailable");
         return panel;
     }
+    // Windows: Lulo's Focus governs Lulo's notifications; Windows' own
+    // Do Not Disturb, which no app may set, governs the rest.
+    panel.notice = FOCUS_SCOPE;
     if modes.is_empty() {
         panel.empty = Some("No Focus Modes");
         return panel;

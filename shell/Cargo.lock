@@ -5467,6 +5467,7 @@ dependencies = [
  "rmac-storage",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -5631,6 +5632,7 @@ dependencies = [
  "async-channel",
  "blocking",
  "futures-util",
+ "image",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
@@ -6101,6 +6103,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -6204,6 +6207,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -6229,7 +6233,6 @@ dependencies = [
  "uuid",
  "wayland-client",
  "wayland-protocols-wlr",
- "windows 0.61.3",
 ]
 
 [[package]]

@@ -101,6 +101,8 @@ mod bar {
     const STATUS_PAD: f32 = 10.0;
     const CLOCK_DATE_TIME_GAP: f32 = 7.0;
     const SLOT_HEIGHT: f32 = 22.0;
+    /// Other apps' status icons, as the Mac draws a menu extra's template.
+    const TRAY_ICON_SIZE: f32 = 16.0;
     /// On touch, status items reach to the bar's edges (ADR 0028); the
     /// footprint stays the same, so nothing moves.
     fn touch_reach() -> f32 {
@@ -1251,6 +1253,66 @@ mod bar {
         .detach();
     }
 
+    /// Other apps' status icons (Windows' tray when Lulo is the shell):
+    /// draw the bar again whenever they change.
+    fn watch_tray_changes(cx: &mut Context<TopBar>) {
+        let Some(changes) = rmac_shell_layer::system::tray::subscribe() else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            while changes.recv().await.is_ok() {
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Other apps' status icons, left of Lulo's own as the Mac puts
+    /// third-party menu extras: a click goes to the app, the right button
+    /// asks for its menu.
+    fn tray_items(display_id: u64) -> Vec<AnyElement> {
+        rmac_shell_layer::system::tray::items()
+            .into_iter()
+            .map(|item| {
+                let key = item.key;
+                let reach = touch_reach();
+                div()
+                    .id(format!("tray-{display_id}-{key}"))
+                    .role(Role::Button)
+                    .aria_label(if item.tip.is_empty() {
+                        "Status item".to_owned()
+                    } else {
+                        item.tip.clone()
+                    })
+                    .h(px(SLOT_HEIGHT + 2.0 * reach))
+                    .my(px(-reach))
+                    .px(px(STATUS_PAD))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(tokens::menu_item_radius()))
+                    .cursor_pointer()
+                    .hover(|style| style.bg(rgba(tokens::light_hover())))
+                    .on_click(move |_, _, cx| {
+                        cx.stop_propagation();
+                        rmac_shell_layer::system::tray::activate(key, false);
+                    })
+                    .on_mouse_down(MouseButton::Right, move |_, _, cx| {
+                        cx.stop_propagation();
+                        rmac_shell_layer::system::tray::activate(key, true);
+                    })
+                    .children(
+                        item.image.map(|image| {
+                            gpui::img(image).w(px(TRAY_ICON_SIZE)).h(px(TRAY_ICON_SIZE))
+                        }),
+                    )
+                    .into_any_element()
+            })
+            .collect()
+    }
+
     impl TopBar {
         fn new(
             display_id: DisplayId,
@@ -1270,6 +1332,7 @@ mod bar {
             });
             watch_sound_changes(cx);
             watch_bluetooth_changes(cx);
+            watch_tray_changes(cx);
             Self {
                 display_id,
                 output_uuid,
@@ -5152,6 +5215,7 @@ mod bar {
                         .flex()
                         .items_center()
                         .justify_end()
+                        .children(tray_items(self.display_id))
                         .children(
                             indicators
                                 .into_iter()
@@ -6133,6 +6197,12 @@ mod bar {
                 #[cfg(windows)]
                 {
                     let _ = &cx;
+                    // Return to Previous Size: the frame recorded before the
+                    // window was first tiled or centred.
+                    if word == "restore-size" {
+                        let _ = rmac_compositor_system::restore_window_size(window);
+                        return;
+                    }
                     if let Some(action) = window_sizing_action(word, window) {
                         if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                             eprintln!("could not {word} the window: {error:?}");
@@ -6275,7 +6345,6 @@ mod bar {
             // Windows' maximise toggles back to the restored frame.
             "fill" | "zoom" => Action::FillWindow { window },
             "centre" => Action::CenterWindow { window },
-            "restore-size" => Action::FullscreenWindow { window, on: false },
             "tile-left" => tile(TileRegion::Left),
             "tile-right" => tile(TileRegion::Right),
             "tile-top" => tile(TileRegion::Top),
@@ -6478,11 +6547,14 @@ mod bar {
             "system::force-quit" => {
                 spawn_command("/usr/libexec/rmac/rmac-app-switcher", &["force-quit"], cx)
             }
-            // Windows' Task Manager ends apps that stopped answering.
+            // Lulo's Force Quit Applications, in this same process; Task
+            // Manager only if the switcher is not running.
             #[cfg(windows)]
             "system::force-quit" => {
-                if let Err(error) = Command::new("taskmgr.exe").spawn() {
-                    eprintln!("could not open Task Manager: {error}");
+                if !system::requests::run("force-quit", cx) {
+                    if let Err(error) = Command::new("taskmgr.exe").spawn() {
+                        eprintln!("could not open Task Manager: {error}");
+                    }
                 }
             }
             #[cfg(target_os = "linux")]

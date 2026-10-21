@@ -15,7 +15,7 @@
 mod alt_tab;
 #[cfg_attr(not(all(target_os = "linux", feature = "wayland")), allow(dead_code))]
 mod force_quit;
-#[cfg(all(target_os = "linux", feature = "wayland"))]
+#[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
 mod force_quit_window;
 #[cfg(unix)]
 #[cfg_attr(not(all(target_os = "linux", feature = "wayland")), allow(dead_code))]

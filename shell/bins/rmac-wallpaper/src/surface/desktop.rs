@@ -819,6 +819,11 @@ impl Wallpaper {
             && self.desk.panel.is_none()
             && self.desk.rename.is_none()
             && self.status.read(cx).app_drawer_window().is_none();
+        #[cfg(windows)]
+        {
+            let reveal = self.desk.reveal_click;
+            rmac_shell_layer::windows::trace::trace(|| format!("desktop press, reveal {reveal}"));
+        }
         self.dismiss_app_drawer(cx);
         // Focusing the desktop ends any rename in progress (it commits).
         window.focus(&self.focus, cx);
@@ -1094,6 +1099,16 @@ impl Wallpaper {
                 if std::mem::take(&mut self.desk.reveal_click) && dx.hypot(dy) <= DRAG_THRESHOLD {
                     #[cfg(target_os = "linux")]
                     super::reveal::wallpaper_clicked();
+                    // Windows: Mission Control runs in this same process.
+                    #[cfg(windows)]
+                    {
+                        rmac_shell_layer::windows::trace::trace(|| {
+                            "desktop wallpaper click".into()
+                        });
+                        if !rmac_shell_layer::system::requests::run("wallpaper-click", cx) {
+                            eprintln!("desktop: Mission Control did not take the wallpaper click");
+                        }
+                    }
                 }
             }
             Drag::Slider { .. } => {}

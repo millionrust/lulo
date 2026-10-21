@@ -771,6 +771,10 @@ jobs:
           path: target/rmac-source-rebuild
           if-no-files-found: error
 
+  # Media Player's libmpv and FFmpeg under the LGPL (WIN-OS-88).
+  libmpv:
+    uses: ./.github/workflows/windows-libmpv.yml
+
   windows-installer:
     name: Build the Windows installer
     # ADR 0023 "Installer". Since 0.9.0-beta.2 a release ships Ubuntu and
@@ -782,6 +786,7 @@ jobs:
     # commit if need be). windows-preview.yml runs the same build on demand
     # for fast iteration.
     if: ${{ vars.RMAC_WINDOWS_WITH_RELEASE != 'false' }}
+    needs: [libmpv]
     runs-on: windows-latest
     timeout-minutes: 90
     defaults:
@@ -826,6 +831,14 @@ jobs:
             cp "target/release/rmac-$app.exe" exes/
           done
           cp target/release/lulo-session.exe target/release/lulo-shell.exe exes/
+
+      # Media Player's LGPL libmpv beside rmac-player.exe, with its licences
+      # (generate_apps_wxs.py installs every DLL and licenses\libmpv).
+      - name: Download libmpv
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: lulo-windows-libmpv
+          path: exes
 
       - name: Install the WiX Toolset CLI
         # Pinned exact version for reproducibility (ADR 0023 "Installer":

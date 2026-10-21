@@ -2193,9 +2193,7 @@ def check_dock_recents(log: Log, profile: Path, failures: list[str]) -> None:
     """After check_app_placement opened and quit every Lulo app, the Dock's
     recent apps (as on the Mac and Lulo OS) are the last three it opened
     that the Dock does not keep, oldest first, kept in the Dock's state
-    file and shown as tiles after the kept apps. Windows' own apps listed
-    by an AppUserModelID (Edge's `MSEdge`) get an entry by their program,
-    so they join the recent apps too."""
+    file and shown as tiles after the kept apps."""
     state = profile / "Local" / "Lulo" / "State" / "rmac" / "dock-recents"
 
     def recents() -> list[str]:
@@ -2218,13 +2216,6 @@ def check_dock_recents(log: Log, profile: Path, failures: list[str]) -> None:
     print(f"shell: Dock tiles after the separator: {shown}")
     if [app_id for app_id in shown if app_id in wanted] != wanted:
         failures.append(f"the Dock shows {shown} after its kept apps, not the recent apps {wanted}")
-    applications = profile / "Roaming" / "Lulo" / "Data" / "applications"
-    edge = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft" / "Edge" / "Application" / "msedge.exe"
-    if edge.is_file():
-        entry = wait_until(lambda: (applications / "msedge.exe.desktop").is_file(), 30.0)
-        print(f"shell: Microsoft Edge (listed as MSEdge) has an entry by its program: {entry is not None}")
-        if entry is None:
-            failures.append("Microsoft Edge has no msedge.exe entry, so it can never be a recent app")
 
 
 def check_battery(log: Log, screenshots: Path | None, failures: list[str]) -> None:

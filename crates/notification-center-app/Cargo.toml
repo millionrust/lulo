@@ -39,6 +39,7 @@ rmac-apps.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-system.workspace = true
 rmac-desktop.workspace = true
+rmac-design.workspace = true
 rmac-desktop-widgets.workspace = true
 rmac-hardware.workspace = true
 rmac-locale.workspace = true

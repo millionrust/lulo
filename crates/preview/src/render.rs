@@ -75,7 +75,22 @@ pub fn sniff_path(path: &Path) -> Result<Kind, String> {
             Err(error) => return Err(open_error(path, &error.to_string())),
         }
     }
-    document::sniff(&head[..filled]).ok_or_else(|| {
+    let sniffed = document::sniff(&head[..filled]);
+    // Camera RAW files are TIFF (or other containers) underneath; the
+    // extension is what tells them apart.
+    let raw_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(crate::libraw::has_raw_extension);
+    if raw_name
+        && !matches!(
+            sniffed,
+            Some(Kind::Pdf) | Some(Kind::Image(ImageKind::Jpeg | ImageKind::Png))
+        )
+    {
+        return Ok(Kind::Image(ImageKind::Raw));
+    }
+    sniffed.ok_or_else(|| {
         format!(
             "“{}” can’t be opened because it isn’t a PDF or a supported image.",
             document::display_name(path)
@@ -99,7 +114,7 @@ pub fn load(path: &Path) -> Result<Loaded, String> {
         modified: metadata.modified().ok(),
     };
     let content = match kind {
-        Kind::Image(_) => Content::Image(load_image(path)?),
+        Kind::Image(image_kind) => Content::Image(load_image(path, image_kind)?),
         Kind::Pdf => Content::Pdf(Arc::new(load_pdf_info(path)?)),
     };
     Ok(Loaded {
@@ -132,8 +147,61 @@ pub fn image_dimensions(path: &Path) -> Option<(u32, u32)> {
     })
 }
 
-fn load_image(path: &Path) -> Result<ImageContent, String> {
+/// Decodes the formats the `image` crate does not read itself (PREV-09):
+/// HEIC/AVIF, SVG, Photoshop and camera RAW. Returns the RGBA picture and
+/// the document's natural size (an SVG is drawn larger than its point
+/// size).
+fn decode_extended(
+    path: &Path,
+    kind: ImageKind,
+) -> Result<(RgbaImage, (u32, u32), &'static str), String> {
+    let read = || std::fs::read(path).map_err(|error| error.to_string());
+    let picture = match kind {
+        ImageKind::Heic | ImageKind::Avif => {
+            let picture = crate::heif::decode(path)?;
+            let size = picture.dimensions();
+            (picture, size, "RGB")
+        }
+        ImageKind::Svg => {
+            let (picture, natural) = crate::vector::decode(&read()?)?;
+            (picture, natural, "RGB")
+        }
+        ImageKind::Psd => {
+            let picture = crate::psd::decode(&read()?)?;
+            let size = picture.dimensions();
+            (picture, size, "RGB")
+        }
+        ImageKind::Raw => {
+            let picture = crate::libraw::decode(path)?;
+            let size = picture.dimensions();
+            (picture, size, "RGB")
+        }
+        _ => return Err("not an extended format".to_owned()),
+    };
+    Ok(picture)
+}
+
+fn load_image(path: &Path, kind: ImageKind) -> Result<ImageContent, String> {
     let failure = |detail: String| open_error(path, &detail);
+    if matches!(
+        kind,
+        ImageKind::Heic | ImageKind::Avif | ImageKind::Svg | ImageKind::Psd | ImageKind::Raw
+    ) {
+        let (picture, size, colour_model) = decode_extended(path, kind).map_err(failure)?;
+        let mut decoded = image::DynamicImage::ImageRgba8(picture);
+        if decoded.width().max(decoded.height()) > MAX_IMAGE_SIDE {
+            decoded = decoded.thumbnail(MAX_IMAGE_SIDE, MAX_IMAGE_SIDE);
+        }
+        let mut pixels = decoded.into_rgba8();
+        swap_red_blue(&mut pixels);
+        let thumbnail = image_thumbnail(&pixels);
+        return Ok(ImageContent {
+            pixels: Arc::new(pixels),
+            size,
+            colour_model,
+            thumbnail,
+        });
+    }
     let mut decoder = ImageReader::open(path)
         .map_err(|error| failure(error.to_string()))?
         .with_guessed_format()
@@ -238,9 +306,49 @@ pub fn adjust_size(pixels: &RgbaImage, width: u32, height: u32) -> RgbaImage {
 /// original file's own bytes unchanged — this is the one path that
 /// actually converts formats.
 pub fn export_image(pixels: &RgbaImage, destination: &Path) -> Result<(), String> {
+    export_image_to(pixels, destination, destination)
+}
+
+/// Encodes `pixels` in the format `destination`'s extension names (PNG when
+/// it has none that is known), writing the bytes to `target` — which is
+/// `destination` itself, or a temporary file renamed onto it afterwards.
+pub fn export_image_to(
+    pixels: &RgbaImage,
+    destination: &Path,
+    target: &Path,
+) -> Result<(), String> {
     let mut rgba = pixels.clone();
     swap_red_blue(&mut rgba);
-    rgba.save(destination).map_err(|error| error.to_string())
+    let extension = destination
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("png")
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "heic" | "heif" => crate::heif::encode(&rgba, crate::heif::Format::Heic, target),
+        "avif" => crate::heif::encode(&rgba, crate::heif::Format::Avif, target),
+        other => {
+            let format =
+                image::ImageFormat::from_extension(other).unwrap_or(image::ImageFormat::Png);
+            if format == image::ImageFormat::Jpeg {
+                // JPEG has no alpha: flatten onto white like a printed page.
+                let mut flat = image::RgbImage::new(rgba.width(), rgba.height());
+                for (x, y, pixel) in rgba.enumerate_pixels() {
+                    let [red, green, blue, alpha] = pixel.0;
+                    let blend = |channel: u8| {
+                        ((u16::from(channel) * u16::from(alpha) + 255 * (255 - u16::from(alpha)))
+                            / 255) as u8
+                    };
+                    flat.put_pixel(x, y, image::Rgb([blend(red), blend(green), blend(blue)]));
+                }
+                flat.save_with_format(target, format)
+                    .map_err(|error| error.to_string())
+            } else {
+                rgba.save_with_format(target, format)
+                    .map_err(|error| error.to_string())
+            }
+        }
+    }
 }
 
 /// File ▸ Save / Save As for a loaded image: writes `pixels` to `path` in
@@ -261,6 +369,11 @@ pub fn export_image(pixels: &RgbaImage, destination: &Path) -> Result<(), String
 pub fn write_image(pixels: &RgbaImage, kind: ImageKind, path: &Path) -> Result<(), String> {
     let mut rgba = pixels.clone();
     swap_red_blue(&mut rgba);
+    match kind {
+        ImageKind::Heic => return crate::heif::encode(&rgba, crate::heif::Format::Heic, path),
+        ImageKind::Avif => return crate::heif::encode(&rgba, crate::heif::Format::Avif, path),
+        _ => {}
+    }
     let (width, height) = rgba.dimensions();
     let raw = rgba.as_raw().as_slice();
     let file = File::create(path).map_err(|error| error.to_string())?;
@@ -280,7 +393,9 @@ pub fn write_image(pixels: &RgbaImage, kind: ImageKind, path: &Path) -> Result<(
                 .write_image(rgb.as_raw(), width, height, image::ExtendedColorType::Rgb8)
                 .map_err(|error| error.to_string())?;
         }
-        ImageKind::Png => {
+        // Read-only formats are written as PNG (Save As); the in-place
+        // `save_image` refuses them before getting here.
+        ImageKind::Png | ImageKind::Svg | ImageKind::Psd | ImageKind::Raw => {
             image::codecs::png::PngEncoder::new(&mut writer)
                 .write_image(raw, width, height, image::ExtendedColorType::Rgba8)
                 .map_err(|error| error.to_string())?;
@@ -305,8 +420,45 @@ pub fn write_image(pixels: &RgbaImage, kind: ImageKind, path: &Path) -> Result<(
                 .write_image(raw, width, height, image::ExtendedColorType::Rgba8)
                 .map_err(|error| error.to_string())?;
         }
+        // Written through libheif before the file is opened above.
+        ImageKind::Heic | ImageKind::Avif => {}
     }
     writer.flush().map_err(|error| error.to_string())
+}
+
+/// Draws `items` (markup on a picture: page 0, unrotated frame) onto
+/// `pixels` (BGRA) and returns the result; `pixels` themselves when there is
+/// nothing to draw or the drawing cannot be made.
+pub fn bake_markup(pixels: &RgbaImage, items: &[crate::markup::Annotation]) -> RgbaImage {
+    let (width, height) = pixels.dimensions();
+    let drawn: Vec<_> = items.iter().filter(|item| item.page == 0).collect();
+    if drawn.is_empty() || width == 0 || height == 0 {
+        return pixels.clone();
+    }
+    let unit = crate::shapes::image_unit((width as f32, height as f32));
+    let svg = crate::shapes::svg_document(drawn, (width, height), unit);
+    let Ok(overlay) = crate::vector::render_overlay(&svg, width, height) else {
+        return pixels.clone();
+    };
+    let mut out = pixels.clone();
+    for (destination, source) in out.pixels_mut().zip(overlay.pixels()) {
+        let alpha = u32::from(source[3]);
+        if alpha == 0 {
+            continue;
+        }
+        // `destination` is BGRA; the overlay is straight-alpha RGBA.
+        let mix = |below: u8, above: u8| -> u8 {
+            ((u32::from(above) * alpha + u32::from(below) * (255 - alpha) + 127) / 255) as u8
+        };
+        let coverage = alpha + u32::from(destination[3]) * (255 - alpha) / 255;
+        destination.0 = [
+            mix(destination[0], source[2]),
+            mix(destination[1], source[1]),
+            mix(destination[2], source[0]),
+            coverage.min(255) as u8,
+        ];
+    }
+    out
 }
 
 /// A same-directory temp path for `destination` that can never collide
@@ -340,6 +492,12 @@ pub fn unique_temp_path(destination: &Path) -> PathBuf {
 /// annotations, so a save that is interrupted (power loss, a full disk)
 /// never leaves `destination` half-written.
 pub fn save_image(pixels: &RgbaImage, kind: ImageKind, destination: &Path) -> Result<(), String> {
+    if !kind.is_writable() {
+        return Err(format!(
+            "{} can’t be saved in its own format; use File ▸ Save As… to write a PNG.",
+            kind.document_type()
+        ));
+    }
     let temporary = unique_temp_path(destination);
     let result = write_image(pixels, kind, &temporary)
         .and_then(|()| std::fs::rename(&temporary, destination).map_err(|error| error.to_string()));
@@ -718,7 +876,7 @@ mod edit_tests {
         let path = temp_path("roundtrip-png.png");
         let edited = rotate(&swatch(), Rotation::from_degrees(90));
         save_image(&edited, ImageKind::Png, &path).unwrap();
-        let reloaded = load_image(&path).unwrap();
+        let reloaded = load_image(&path, ImageKind::Png).unwrap();
         assert_eq!(reloaded.pixels.dimensions(), edited.dimensions());
         assert_eq!(*reloaded.pixels, edited);
         let _ = std::fs::remove_file(&path);
@@ -735,7 +893,7 @@ mod edit_tests {
             let path = temp_path(name);
             let edited = crop(&swatch(), 0, 0, 2, 1);
             save_image(&edited, kind, &path).unwrap();
-            let reloaded = load_image(&path).unwrap();
+            let reloaded = load_image(&path, kind).unwrap();
             assert_eq!(*reloaded.pixels, edited, "{name}");
             let _ = std::fs::remove_file(&path);
         }
@@ -751,7 +909,7 @@ mod edit_tests {
         // BGRA (this module's convention): blue 200, green/red 40.
         let solid = RgbaImage::from_pixel(4, 4, image::Rgba([200, 40, 40, 255]));
         save_image(&solid, ImageKind::Jpeg, &path).unwrap();
-        let reloaded = load_image(&path).unwrap();
+        let reloaded = load_image(&path, ImageKind::Jpeg).unwrap();
         assert_eq!(reloaded.pixels.dimensions(), (4, 4));
         let pixel = reloaded.pixels.get_pixel(0, 0).0;
         assert!((i32::from(pixel[0]) - 200).abs() < 10, "{pixel:?}");
@@ -833,5 +991,35 @@ mod password_tests {
         );
         forget_password(one);
         assert!(password_for(one).is_none());
+    }
+
+    #[test]
+    fn markup_is_drawn_into_the_pixels_and_the_rest_is_left_alone() {
+        use crate::layout::UnitRect;
+        use crate::markup::{Annotation, Tool};
+        // BGRA white 100 x 100.
+        let white = RgbaImage::from_pixel(100, 100, image::Rgba([255, 255, 255, 255]));
+        let mut rectangle = Annotation::new(
+            0,
+            Tool::Rectangle,
+            UnitRect {
+                x0: 0.2,
+                y0: 0.2,
+                x1: 0.8,
+                y1: 0.8,
+            },
+            0xff0000,
+            4.0,
+        );
+        rectangle.fill = None;
+        let drawn = bake_markup(&white, &[rectangle]);
+        // The outline is red (BGRA: blue and green low, red high) ...
+        let edge = drawn.get_pixel(50, 20).0;
+        assert!(edge[2] > 200 && edge[0] < 60 && edge[1] < 60, "{edge:?}");
+        // ... the inside and the corner are untouched.
+        assert_eq!(drawn.get_pixel(50, 50).0, [255, 255, 255, 255]);
+        assert_eq!(drawn.get_pixel(1, 1).0, [255, 255, 255, 255]);
+        // Nothing to draw returns the picture as it was.
+        assert_eq!(bake_markup(&white, &[]), white);
     }
 }

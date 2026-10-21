@@ -23,6 +23,9 @@ enum WindowAction {
     /// it has no recorded pre-zoom frame, or put it back if it does.
     Zoom,
     Tile(TileRegion),
+    /// Fill & Arrange: this window and the app's others side by side,
+    /// stacked, or in quarters (DESK-03).
+    Arrange(&'static str),
     Minimize,
 }
 
@@ -85,6 +88,7 @@ fn mission_control_command(action: WindowAction) -> Option<&'static str> {
         WindowAction::Tile(TileRegion::Right) => "tile-right",
         WindowAction::Tile(TileRegion::Top) => "tile-top",
         WindowAction::Tile(TileRegion::Bottom) => "tile-bottom",
+        WindowAction::Arrange(command) => command,
         WindowAction::Tile(_) | WindowAction::ToggleFullscreen | WindowAction::Minimize => {
             return None
         }
@@ -150,7 +154,10 @@ async fn perform_window_action(action: WindowAction) {
             }
             return;
         }
-        WindowAction::Fill | WindowAction::Zoom | WindowAction::Tile(_) => {
+        WindowAction::Fill
+        | WindowAction::Zoom
+        | WindowAction::Tile(_)
+        | WindowAction::Arrange(_) => {
             unreachable!("Fill, Zoom and Tile run through Mission Control; see send_window_action")
         }
     };
@@ -711,12 +718,18 @@ impl ZoomMenu {
 /// A Move & Resize icon: a 25 × 20 rounded outline holding the filled part
 /// of the screen the window will take.
 fn tile_icon(fill: (f32, f32, f32, f32)) -> gpui::Div {
+    tile_icon_parts(&[fill])
+}
+
+/// A tile icon with several filled parts, for the Arrange layouts.
+fn tile_icon_parts(fills: &[(f32, f32, f32, f32)]) -> gpui::Div {
     let metrics = rmac_design::Metrics::default();
     let (width, height) = (metrics.tile_icon_width, metrics.tile_icon_height);
-    let (x, y, w, h) = fill;
-    // The fill sits 3 pt inside the outline, as drawn by macOS.
+    // The fill sits 3 pt inside the outline, as drawn by macOS; parts of
+    // an arrangement keep a 1 pt gap between them.
     let inner_w = width - 6.0;
     let inner_h = height - 6.0;
+    let gap = if fills.len() > 1 { 0.5 } else { 0.0 };
     div()
         .relative()
         .w(px(width))
@@ -724,22 +737,21 @@ fn tile_icon(fill: (f32, f32, f32, f32)) -> gpui::Div {
         .rounded(px(4.0))
         .border(px(1.5))
         .border_color(mac::text())
-        .child(
+        .children(fills.iter().map(|(x, y, w, h)| {
             div()
                 .absolute()
-                .left(px(1.5 + x * inner_w))
-                .top(px(1.5 + y * inner_h))
-                .w(px(w * inner_w))
-                .h(px(h * inner_h))
+                .left(px(1.5 + x * inner_w + gap))
+                .top(px(1.5 + y * inner_h + gap))
+                .w(px(w * inner_w - 2.0 * gap))
+                .h(px(h * inner_h - 2.0 * gap))
                 .rounded(px(1.5))
-                .bg(mac::text()),
-        )
+                .bg(mac::text())
+        }))
 }
 
-/// The popover the green button shows on hover: Move & Resize halves, Fill,
-/// and Full Screen, each a compositor action on this window. The Mac's
-/// multi-window Arrange layouts and the Full Screen tiling submenu need a
-/// window arranger rmac does not have, so they are not drawn.
+/// The popover the green button shows on hover: Move & Resize halves, Fill
+/// and the Arrange layouts (this window and the app's others, through
+/// Mission Control's window service), and Full Screen.
 fn zoom_menu(menu: Entity<ZoomMenu>) -> impl IntoElement {
     let metrics = rmac_design::Metrics::default();
     let pitch = metrics.tile_icon_pitch;
@@ -813,13 +825,48 @@ fn zoom_menu(menu: Entity<ZoomMenu>) -> impl IntoElement {
         .child(row(halves))
         .child(div().pt(px(6.0)).child(separator()))
         .child(div().pt(px(11.0)).child(header("Fill & Arrange")))
-        .child(row(vec![item(
-            "tile-fill",
-            tile_icon((0.0, 0.0, 1.0, 1.0)),
-            WindowAction::Fill,
-            menu.clone(),
-        )
-        .into_any_element()]))
+        .child(row({
+            let mut fill_and_arrange = vec![
+                item(
+                    "tile-fill",
+                    tile_icon((0.0, 0.0, 1.0, 1.0)),
+                    WindowAction::Fill,
+                    menu.clone(),
+                )
+                .into_any_element(),
+                item(
+                    "tile-arrange-left-right",
+                    tile_icon_parts(&[(0.0, 0.0, 0.5, 1.0), (0.5, 0.0, 0.5, 1.0)]),
+                    WindowAction::Arrange("arrange-left-right"),
+                    menu.clone(),
+                )
+                .into_any_element(),
+                item(
+                    "tile-arrange-top-bottom",
+                    tile_icon_parts(&[(0.0, 0.0, 1.0, 0.5), (0.0, 0.5, 1.0, 0.5)]),
+                    WindowAction::Arrange("arrange-top-bottom"),
+                    menu.clone(),
+                )
+                .into_any_element(),
+                item(
+                    "tile-arrange-quarters",
+                    tile_icon_parts(&[
+                        (0.0, 0.0, 0.5, 0.5),
+                        (0.5, 0.0, 0.5, 0.5),
+                        (0.0, 0.5, 0.5, 0.5),
+                        (0.5, 0.5, 0.5, 0.5),
+                    ]),
+                    WindowAction::Arrange("arrange-quarters"),
+                    menu.clone(),
+                )
+                .into_any_element(),
+            ];
+            // Arranging several windows needs Lulo OS's window service.
+            if cfg!(windows) {
+                fill_and_arrange.truncate(1);
+            }
+            fill_and_arrange
+        }))
         .child(div().pt(px(6.0)).child(separator()))
         .child(
             div()
@@ -1187,6 +1234,9 @@ mod native {
             WindowAction::Fill | WindowAction::Zoom => window.zoom_window(),
             WindowAction::Tile(region) => {
                 eprintln!("tiling a window to {region:?} is not available on Windows yet");
+            }
+            WindowAction::Arrange(arrangement) => {
+                eprintln!("{arrangement} is not available on Windows yet");
             }
         });
     }

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    AssociationError, CatalogError, ItemError, ItemOperation, OpenWithError, RecentDocumentError,
+    AssociationError, CatalogError, DefaultApplicationError, ItemError, ItemOperation,
+    OpenWithError, RecentDocumentError,
 };
 
 /// Open one local item through the user-mediated desktop boundary.
@@ -97,6 +98,17 @@ pub async fn open_file_with(
     .map_err(|error| OpenWithError {
         default_changed: error.default_changed,
     })
+}
+
+/// Make an installed, compatible application the default for every document
+/// of `mime_type`, away from the UI executor (Get Info ▸ Change All…).
+pub async fn set_default_application(
+    mime_type: String,
+    application_id: String,
+) -> Result<(), DefaultApplicationError> {
+    blocking::unblock(move || rmac_apps::set_default_application(&mime_type, &application_id))
+        .await
+        .map_err(|_| DefaultApplicationError)
 }
 
 /// Record one successfully opened or saved local document.

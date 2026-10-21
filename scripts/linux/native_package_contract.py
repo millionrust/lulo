@@ -163,6 +163,11 @@ PACKAGE_SPECS = (
             "fonts-inter",
             "fonts-jetbrains-mono",
             "libglib2.0-bin",
+            # Preview opens (and saves) HEIC and AVIF through libheif,
+            # loaded at run time; the plugins carry the codecs.
+            "libheif-plugin-aomdec",
+            "libheif-plugin-libde265",
+            "libheif1",
             "libmpv2",
             "network-manager",
             "packagekit",
@@ -181,7 +186,13 @@ PACKAGE_SPECS = (
         # shows Microsoft 365 and Outlook.com calendars through it (CAL-9).
         # Only the -core package: `evolution-ews` itself pulls in the whole
         # Evolution mail client.
-        recommends=("evolution-ews-core",),
+        recommends=(
+            "evolution-ews-core",
+            # Preview: encoders to save HEIC / AVIF, and camera RAW files.
+            "libheif-plugin-aomenc",
+            "libheif-plugin-x265",
+            "libraw23t64 | libraw24t64 | libraw25t64 | libraw25",
+        ),
         summary="macOS-inspired applications for the rmac Linux desktop",
         description=(
             "Provides Files, Terminal, Notes, Text Editor, System Monitor, "

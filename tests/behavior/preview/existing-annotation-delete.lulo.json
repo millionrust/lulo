@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "preview/existing-annotation-delete",
+  "observations": {
+    "existing_deleted": {
+      "pdf_annotations": {
+        "rectangles": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "mail/new-rename-delete-mailbox",
+  "observations": {
+    "before": {"mail_mailboxes": {"names": ["All Inboxes", "Flagged", "Drafts", "Sent", "Inbox", "Drafts", "Sent", "Junk", "Bin", "Archive", "Receipts", "Inbox", "Sent", "Junk", "Bin"], "selected": "All Inboxes"}},
+    "created": {"mail_mailboxes": {"names": ["All Inboxes", "Flagged", "Drafts", "Sent", "Inbox", "Drafts", "Sent", "Junk", "Bin", "Archive", "Receipts", "Travel", "Inbox", "Sent", "Junk", "Bin"], "selected": "Travel"}},
+    "renamed": {"mail_mailboxes": {"names": ["All Inboxes", "Flagged", "Drafts", "Sent", "Inbox", "Drafts", "Sent", "Junk", "Bin", "Archive", "Receipts", "Trips", "Inbox", "Sent", "Junk", "Bin"], "selected": "Trips"}},
+    "deleted": {"mail_mailboxes": {"names": ["All Inboxes", "Flagged", "Drafts", "Sent", "Inbox", "Drafts", "Sent", "Junk", "Bin", "Archive", "Receipts", "Inbox", "Sent", "Junk", "Bin"], "selected": "All Inboxes"}}
+  }
+}

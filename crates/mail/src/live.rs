@@ -283,3 +283,62 @@ pub fn persist(change: Persist) {
     };
     let _ = storage.queue_change(change.row_id, journal_change);
 }
+
+/// Mailbox ▸ New, Rename or Delete Mailbox… on a live account: applied to
+/// its cache at once and queued for the server (`rmac-mail-storage`'s
+/// folder journal, replayed by the sync runtime). Returns the mailbox's id.
+/// Blocking: call off the GPUI thread.
+pub fn change_mailbox(
+    account: Uuid,
+    change: rmac_mail_storage::MailboxChange,
+) -> Result<i64, String> {
+    let root = data_root().ok_or("Mail could not find its data folder")?;
+    let mut storage =
+        MailStorage::open(&root, account).map_err(|_| "Mail cache unavailable".to_owned())?;
+    storage
+        .queue_mailbox_change(change)
+        .map_err(|error| match error {
+            rmac_mail_storage::Error::MailboxExists => {
+                "That name is already taken. Please choose a different name.".to_owned()
+            }
+            rmac_mail_storage::Error::InvalidMailboxName => {
+                "That name can’t be used for a mailbox.".to_owned()
+            }
+            rmac_mail_storage::Error::ProtectedMailbox => {
+                "This mailbox can’t be renamed or deleted.".to_owned()
+            }
+            _ => "Mail couldn’t change the mailbox.".to_owned(),
+        })
+}
+
+/// Mailbox ▸ Export Mailbox…: each message's original source, downloading
+/// any that are not cached yet, oldest first. A message the server no
+/// longer has is written from what Mail knows of it. Blocking.
+pub fn mailbox_sources(
+    runtime: Option<Arc<rmac_mail_runtime::Runtime>>,
+    account: Uuid,
+    account_path: &str,
+    mailbox_name: &str,
+    messages: &[Message],
+) -> Vec<Vec<u8>> {
+    let storage = data_root().and_then(|root| MailStorage::open(&root, account).ok());
+    let mut ordered: Vec<&Message> = messages.iter().collect();
+    ordered.sort_by_key(|message| message.received_at);
+    ordered
+        .into_iter()
+        .map(|message| {
+            let cached = message.row_id.and_then(|row_id| {
+                let storage = storage.as_ref()?;
+                let summary = storage.get_message(row_id).ok()??;
+                match summary.body_hash {
+                    Some(hash) => storage.read_blob(&hash).ok(),
+                    None => runtime
+                        .as_ref()?
+                        .fetch_body_now(account_path, mailbox_name, summary.uid)
+                        .ok()?,
+                }
+            });
+            cached.unwrap_or_else(|| rmac_mail::message_source(message).into_bytes())
+        })
+        .collect()
+}

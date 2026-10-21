@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "preview/flip-save",
+  "observations": {
+    "opened": {
+      "image_halves": {
+        "left": "red",
+        "right": "blue"
+      }
+    },
+    "flipped_saved": {
+      "image_halves": {
+        "left": "blue",
+        "right": "red"
+      }
+    }
+  }
+}

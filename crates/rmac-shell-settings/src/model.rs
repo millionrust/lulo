@@ -481,6 +481,17 @@ pub struct ShellSettings {
     /// Desktop & Dock › "Double-click a window's title bar to". Read live by
     /// every rmac app's shared title bar (SET-33).
     pub double_click_title_bar: DoubleClickTitleBarAction,
+    /// Control Centre's Edit Controls (CC-03).
+    pub control_centre: ControlCentreSettings,
+}
+
+/// What Control Centre's Edit Controls changed (CC-03).
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct ControlCentreSettings {
+    /// Round controls taken out of Control Centre, by name
+    /// (`low-power`, `screen-mirroring`, `dark-mode`, `screenshot`).
+    pub hidden_controls: Vec<String>,
 }
 
 impl Default for ShellSettings {
@@ -505,6 +516,7 @@ impl Default for ShellSettings {
             hot_corners: HotCornerSettings::default(),
             click_wallpaper_to_reveal: ClickWallpaperToReveal::Always,
             double_click_title_bar: DoubleClickTitleBarAction::Zoom,
+            control_centre: ControlCentreSettings::default(),
         }
     }
 }

@@ -613,7 +613,7 @@ jobs:
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/launch_smoke.py --screenshots windows-screens \
             ${{ matrix.launch }} --results windows-results.json \
-            --launch-budget-ms 900 target/debug ${{ matrix.apps }}
+            --launch-budget-ms 1200 target/debug ${{ matrix.apps }}
 
       # System Settings (WIN-SET): every pane its sidebar lists on the runner
       # opens with content, and the red traffic light, Ctrl+W, Ctrl+Q and

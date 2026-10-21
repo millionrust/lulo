@@ -372,6 +372,9 @@ pub struct ContextMenu {
     pub show_all_windows: Option<ContextAction>,
     pub hide: Option<ContextAction>,
     pub hide_others: Option<ContextAction>,
+    /// The app's recent documents, under its windows (DOCK-15): each opens
+    /// the document in the app.
+    pub recent_documents: Vec<ApplicationCommand>,
 }
 
 /// The Files tile's own Dock menu (DOCK-05), matching the Mac's Finder
@@ -476,4 +479,7 @@ pub struct Model {
     /// excluded from `items` so they never count as running applications.
     pub minimized: Vec<MinimizedItem>,
     pub(super) repeated_click: rmac_shell_settings::RepeatedClickBehavior,
+    /// Each app's own recent documents (DOCK-15), keyed by canonical app
+    /// ID, newest first: what its tile menu lists under its windows.
+    pub(super) documents: BTreeMap<String, Vec<PathBuf>>,
 }

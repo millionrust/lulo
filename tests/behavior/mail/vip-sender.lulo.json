@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "mail/vip-sender",
+  "observations": {
+    "before": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "only_vip": {"mail_messages": {"count": 1, "unread": 1, "flagged": 0}},
+    "everyone": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}}
+  }
+}

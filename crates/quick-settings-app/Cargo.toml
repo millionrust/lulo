@@ -32,6 +32,7 @@ rmac-quick-settings.workspace = true
 rmac-quick-settings-system.workspace = true
 rmac-shell-activation-runtime.workspace = true
 rmac-shell-runtime.workspace = true
+rmac-shell-settings.workspace = true
 rmac-shortcuts.workspace = true
 rmac-theme.workspace = true
 rmac-ui.workspace = true

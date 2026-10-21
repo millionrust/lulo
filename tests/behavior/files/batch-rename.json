@@ -1,0 +1,58 @@
+{
+  "title": "Rename 2 Items… removes text from every selected name as one batch",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {
+    "files": {
+      "apple 1.txt": "One\n",
+      "apple 2.txt": "Two\n",
+      "keep.txt": "Keep\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "apple 1.txt"
+    },
+    {
+      "select": "apple 2.txt",
+      "modifiers": [
+        "shift"
+      ],
+      "settle": 0.6
+    },
+    {
+      "context": "apple 1.txt",
+      "settle": 1.0
+    },
+    {
+      "select": "Rename 2 Items…",
+      "settle": 1.0
+    },
+    {
+      "observe": "asked",
+      "facts": [
+        "dialog"
+      ]
+    },
+    {
+      "type": "apple "
+    },
+    {
+      "select": "Rename",
+      "settle": 1.5
+    },
+    {
+      "observe": "renamed",
+      "facts": [
+        "dialog",
+        "files"
+      ]
+    }
+  ]
+}

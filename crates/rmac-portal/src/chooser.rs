@@ -106,7 +106,13 @@ pub async fn choose_preview_documents() -> Result<Vec<PathBuf>, Error> {
                     .mimetype("image/gif")
                     .mimetype("image/webp")
                     .mimetype("image/bmp")
-                    .mimetype("image/tiff"),
+                    .mimetype("image/tiff")
+                    .mimetype("image/heic")
+                    .mimetype("image/heif")
+                    .mimetype("image/avif")
+                    .mimetype("image/svg+xml")
+                    .mimetype("image/vnd.adobe.photoshop")
+                    .mimetype("image/x-dcraw"),
             )
             .send()
             .await

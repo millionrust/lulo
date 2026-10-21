@@ -31,6 +31,9 @@ pub struct Mailbox {
     pub name: String,
     pub kind: MailboxKind,
     pub selectable: bool,
+    /// The hierarchy delimiter LIST reports (`/` or `.`), `None` for a
+    /// flat namespace (`NIL`).
+    pub delimiter: Option<char>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,8 +137,13 @@ pub(crate) fn parse_list(responses: &[Response]) -> Vec<Mailbox> {
         let Some((flags, tail)) = rest.split_once(") ") else {
             continue;
         };
-        let Some((_, rest)) = read_token(tail) else {
+        let Some((delimiter, rest)) = read_token(tail) else {
             continue;
+        };
+        let delimiter = if delimiter.eq_ignore_ascii_case("NIL") {
+            None
+        } else {
+            delimiter.chars().next()
         };
         let encoded_name = if rest.trim_start().starts_with('{') {
             response
@@ -166,6 +174,7 @@ pub(crate) fn parse_list(responses: &[Response]) -> Vec<Mailbox> {
             name,
             kind,
             selectable: !has_flag(flags, "\\Noselect"),
+            delimiter,
         });
     }
     mailboxes
@@ -430,5 +439,8 @@ mod tests {
         assert_eq!(mailboxes[0].kind, MailboxKind::Sent);
         assert_eq!(mailboxes[1].name, "旅行");
         assert!(!mailboxes[1].selectable);
+        assert_eq!(mailboxes[0].delimiter, Some('/'));
+        let flat = Response::new(b"* LIST () NIL Notes\r\n".to_vec(), None).unwrap();
+        assert_eq!(parse_list(&[flat])[0].delimiter, None);
     }
 }

@@ -102,7 +102,12 @@ impl FinderView {
         cx.notify();
     }
 
-    fn set_connect_address(&mut self, uri: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn set_connect_address(
+        &mut self,
+        uri: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(sheet) = self.connect.as_ref() else {
             return;
         };
@@ -500,6 +505,18 @@ impl FinderView {
                 .flex()
                 .justify_end()
                 .gap(px(8.0))
+                // Browse shows the Network location: the computers GVFS
+                // finds, each of which connects when opened (FILES-07).
+                .when(cfg!(target_os = "linux"), |buttons| {
+                    buttons.child(div().flex_1().child(
+                        Button::new("connect-browse", "Browse").on_click(cx.listener(
+                            |this, _, window, cx| {
+                                this.close_connect_to_server(window, cx);
+                                this.network_click(cx);
+                            },
+                        )),
+                    ))
+                })
                 .child(Button::new("connect-cancel", "Cancel").on_click(
                     cx.listener(|this, _, window, cx| this.close_connect_to_server(window, cx)),
                 ))

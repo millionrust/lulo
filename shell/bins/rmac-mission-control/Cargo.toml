@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+# Mission Control's service and overlay are a library shared by Lulo OS's
+# `mission-control` binary and the Windows shell (`rmac-win-shell`); ADR
+# 0023, "Mission Control on Windows".
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "mission-control"
 path = "src/main.rs"
@@ -23,14 +29,27 @@ gpui_platform.workspace = true
 image.workspace = true
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
+rmac-compositor-system.workspace = true
 rmac-dock.workspace = true
 rmac-shell-layer.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shell-ui.workspace = true
 uuid.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rmac-compositor-niri.workspace = true
+
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
 wayland-client.workspace = true
 wayland-protocols-wlr.workspace = true
+
+# Window pictures (`PrintWindow`, DWM's frame bounds).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
+    "Win32_UI_WindowsAndMessaging",
+] }

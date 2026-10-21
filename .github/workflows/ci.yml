@@ -426,7 +426,7 @@ jobs:
             -p rmac-notifications -p rmac-notifications-linux --all-targets -- -D warnings
           (cd shell && cargo clippy --locked --keep-going \
             -p rmac-shell-layer -p rmac-shell-menubar -p rmac-shell-dock -p rmac-shell-wallpaper \
-            -p rmac-shell-app-switcher \
+            -p rmac-shell-app-switcher -p rmac-shell-mission-control \
             --lib --tests -- -D warnings)
 
   windows-tests:
@@ -457,7 +457,7 @@ jobs:
       - name: Run tests
         run: |
           cargo test --locked --no-fail-fast $RMAC_WINDOWS_PACKAGES -p gpui_windows
-          (cd shell && cargo test --locked --no-fail-fast -p rmac-shell-layer -p rmac-shell-app-switcher --lib)
+          (cd shell && cargo test --locked --no-fail-fast -p rmac-shell-layer -p rmac-shell-app-switcher -p rmac-shell-mission-control --lib)
           # The notification pipe's wire format (ADR 0023).
           cargo test --locked --no-fail-fast -p rmac-notifications --lib
           # The settings store's own tests assume Unix files; the Windows

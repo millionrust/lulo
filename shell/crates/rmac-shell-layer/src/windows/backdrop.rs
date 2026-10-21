@@ -42,6 +42,68 @@ struct Blurred {
 }
 
 static WALLPAPERS: RwLock<Vec<Arc<Blurred>>> = RwLock::new(Vec::new());
+/// The unblurred wallpaper Mission Control shows its windows over (on Lulo
+/// OS niri shows the bare wallpaper under its overlay), at half the
+/// screen's size (≈ 1 MB at 1366 × 768), by output.
+static SHARP: RwLock<Vec<(Uuid, Arc<RenderImage>)>> = RwLock::new(Vec::new());
+/// The sharp copy is kept at half the screen's pixels each way.
+const SHARP_SHRINK: u32 = 2;
+
+/// Average each `factor` × `factor` block of `bgra` (`width` × `height`).
+fn shrink(width: u32, height: u32, bgra: &[u8], factor: u32) -> Option<image::RgbaImage> {
+    if width == 0 || height == 0 || bgra.len() != (width as usize) * (height as usize) * 4 {
+        return None;
+    }
+    let (small_width, small_height) = (width.div_ceil(factor), height.div_ceil(factor));
+    let mut out = image::RgbaImage::new(small_width, small_height);
+    for (x, y, pixel) in out.enumerate_pixels_mut() {
+        let mut sum = [0u32; 3];
+        let mut count = 0u32;
+        for source_y in y * factor..((y + 1) * factor).min(height) {
+            for source_x in x * factor..((x + 1) * factor).min(width) {
+                let at = (source_y as usize * width as usize + source_x as usize) * 4;
+                for (total, value) in sum.iter_mut().zip(&bgra[at..at + 3]) {
+                    *total += u32::from(*value);
+                }
+                count += 1;
+            }
+        }
+        let count = count.max(1);
+        pixel.0 = [
+            (sum[0] / count) as u8,
+            (sum[1] / count) as u8,
+            (sum[2] / count) as u8,
+            255,
+        ];
+    }
+    Some(out)
+}
+
+/// The unblurred wallpaper filling `window` (a full-screen surface), as
+/// the bare wallpaper under Mission Control; `None` before the desktop has
+/// a wallpaper. A low-spec PC (Reduce Transparency) gets the solid
+/// material colour instead.
+pub fn wallpaper(window: &Window, cx: &App) -> Option<AnyElement> {
+    let display = window.display(cx)?;
+    let output = crate::display_uuid(&*display)?;
+    let sharp = SHARP
+        .read()
+        .ok()?
+        .iter()
+        .find(|(found, _)| *found == output)
+        .map(|(_, image)| image.clone());
+    match sharp {
+        Some(image) => Some(
+            img(image)
+                .absolute()
+                .inset_0()
+                .size_full()
+                .object_fit(gpui::ObjectFit::Fill)
+                .into_any_element(),
+        ),
+        None => element(window, cx, 0.0),
+    }
+}
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// The desktop view decoded `output`'s wallpaper: `bgra` is `width` ×
@@ -49,6 +111,16 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 /// new copy up on their next frame.
 pub fn set_wallpaper(output: Uuid, width: u32, height: u32, bgra: &[u8]) {
     let reduce = reduce_transparency();
+    let sharp = (!reduce)
+        .then(|| shrink(width, height, bgra, SHARP_SHRINK))
+        .flatten()
+        .map(|pixels| Arc::new(RenderImage::new(vec![image::Frame::new(pixels)])));
+    if let Ok(mut copies) = SHARP.write() {
+        copies.retain(|(found, _)| *found != output);
+        if let Some(sharp) = sharp {
+            copies.push((output, sharp));
+        }
+    }
     let pixels = if reduce {
         flat(width, height, bgra)
     } else {
@@ -298,6 +370,20 @@ mod tests {
     fn the_wrong_buffer_size_is_refused() {
         assert!(blur(4, 4, &[0; 10]).is_none());
         assert!(flat(4, 4, &[0; 10]).is_none());
+        assert!(shrink(4, 4, &[0; 10], 2).is_none());
+    }
+
+    #[test]
+    fn the_sharp_copy_averages_half_size_blocks() {
+        // 3 × 2 pixels: a black and a white column pair, then a grey one.
+        let bgra: Vec<u8> = [0u8, 255, 100, 0, 255, 100]
+            .iter()
+            .flat_map(|&value| [value, value, value, 255])
+            .collect();
+        let sharp = shrink(3, 2, &bgra, 2).expect("shrunk");
+        assert_eq!(sharp.dimensions(), (2, 1));
+        assert_eq!(sharp.get_pixel(0, 0).0, [127, 127, 127, 255]);
+        assert_eq!(sharp.get_pixel(1, 0).0, [100, 100, 100, 255]);
     }
 
     #[test]

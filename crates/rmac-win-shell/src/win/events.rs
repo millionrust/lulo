@@ -23,7 +23,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardLayoutList, RegisterHotKey, SendInput, UnregisterHotKey,
     HOT_KEY_MODIFIERS, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
     KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VIRTUAL_KEY, VK_CONTROL,
-    VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_SPACE,
+    VK_DOWN, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_SPACE, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetAncestor, GetMessageW, PostThreadMessageW,
@@ -45,9 +45,15 @@ pub enum DesktopEvent {
     WindowsChanged,
     /// Spotlight's hotkey.
     Hotkey,
+    /// Ctrl+Up: Mission Control (the Mac's ⌃↑).
+    MissionControl,
+    /// Ctrl+Down: App Exposé, the front app's windows (the Mac's ⌃↓).
+    AppWindows,
 }
 
 const HOTKEY_ID: i32 = 0x4C55;
+const MISSION_CONTROL_ID: i32 = 0x4C56;
+const APP_WINDOWS_ID: i32 = 0x4C57;
 /// Marks the keystroke Lulo itself sends, so its own hook lets it pass.
 const OWN_INPUT: usize = 0x4C55_4C4F;
 /// An unassigned virtual key: pressed between Win down and Win up, it
@@ -284,15 +290,28 @@ pub fn start(sender: async_channel::Sender<DesktopEvent>) -> Option<Hooks> {
                 })
                 .collect::<Vec<_>>();
             let claimed = claim_hotkey();
+            // Mission Control's ⌃↑ and ⌃↓ as on the Mac. Another app that
+            // holds either keeps it; nothing of theirs is touched.
+            // SAFETY: thread hotkeys; WM_HOTKEY arrives in this queue.
+            let expose_keys =
+                [(MISSION_CONTROL_ID, VK_UP), (APP_WINDOWS_ID, VK_DOWN)].map(|(id, key)| unsafe {
+                    RegisterHotKey(None, id, MOD_CONTROL | MOD_NOREPEAT, u32::from(key.0)).is_ok()
+                });
             // SAFETY: no arguments.
             let thread_id = unsafe { GetCurrentThreadId() };
             let _ = ready_tx.send((thread_id, claimed.hotkey, claimed.taken.clone()));
             let mut message = MSG::default();
             // SAFETY: the standard message loop; `message` is a valid MSG.
             while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
-                if message.message == WM_HOTKEY && message.wParam.0 == HOTKEY_ID as usize {
-                    if let Some(sender) = SENDER.get() {
-                        let _ = sender.try_send(DesktopEvent::Hotkey);
+                if message.message == WM_HOTKEY {
+                    let event = match message.wParam.0 as i32 {
+                        HOTKEY_ID => Some(DesktopEvent::Hotkey),
+                        MISSION_CONTROL_ID => Some(DesktopEvent::MissionControl),
+                        APP_WINDOWS_ID => Some(DesktopEvent::AppWindows),
+                        _ => None,
+                    };
+                    if let (Some(event), Some(sender)) = (event, SENDER.get()) {
+                        let _ = sender.try_send(event);
                     }
                     continue;
                 }
@@ -306,6 +325,14 @@ pub fn start(sender: async_channel::Sender<DesktopEvent>) -> Option<Hooks> {
             unsafe {
                 if claimed.registered {
                     let _ = UnregisterHotKey(None, HOTKEY_ID);
+                }
+                for (id, registered) in [MISSION_CONTROL_ID, APP_WINDOWS_ID]
+                    .into_iter()
+                    .zip(expose_keys)
+                {
+                    if registered {
+                        let _ = UnregisterHotKey(None, id);
+                    }
                 }
                 if let Some(hook) = claimed.keyboard_hook {
                     let _ = UnhookWindowsHookEx(hook);

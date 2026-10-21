@@ -252,13 +252,17 @@ fn start_hotkey(cx: &mut App) -> Option<Hooks> {
     }
     cx.spawn(async move |cx| {
         while let Ok(event) = receiver.recv().await {
-            if let DesktopEvent::Hotkey = event {
-                cx.update(|cx| {
-                    if !requests::run("launcher", cx) {
-                        trace(|| "spotlight is not available".into());
-                    }
-                });
-            }
+            let request = match event {
+                DesktopEvent::Hotkey => "launcher",
+                DesktopEvent::MissionControl => "mission-control",
+                DesktopEvent::AppWindows => "app-windows",
+                _ => continue,
+            };
+            cx.update(|cx| {
+                if !requests::run(request, cx) {
+                    trace(|| format!("{request} is not available"));
+                }
+            });
         }
     })
     .detach();
@@ -420,6 +424,11 @@ pub fn run() -> i32 {
             // menu bar's clock opens Notification Centre.
             if !skipped("switcher") {
                 rmac_shell_app_switcher::start(cx);
+            }
+            // Mission Control (Ctrl+Up), App Exposé (Ctrl+Down), Show
+            // Desktop and the hot corners Desktop & Dock sets.
+            if !skipped("mission-control") {
+                rmac_shell_mission_control::start(cx);
             }
             if !skipped("notifications") {
                 rmac_notification_center_app::start(cx);

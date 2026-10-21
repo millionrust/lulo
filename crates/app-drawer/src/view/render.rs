@@ -132,7 +132,6 @@ impl Render for AppDrawer {
                         &self.apps[index],
                         position,
                         self.selection_visible && position == selected,
-                        window,
                         cx,
                     )
                 })

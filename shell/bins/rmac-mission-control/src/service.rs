@@ -1918,6 +1918,16 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
             // The overlay covers the wallpaper; a click there is its own.
             if service.read(cx).overlay.is_none() {
                 let actions = service.update(cx, |service, _| service.wallpaper_click());
+                #[cfg(windows)]
+                {
+                    let (count, windows) =
+                        (actions.len(), service.read(cx).compositor.windows.len());
+                    rmac_shell_layer::windows::trace::trace(|| {
+                        format!(
+                            "mission control wallpaper click: {count} moves of {windows} windows"
+                        )
+                    });
+                }
                 run_actions(actions, cx);
             }
         }

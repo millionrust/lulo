@@ -959,7 +959,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Dock | Folder and Downloads stacks, Fan and Grid | shared |
 | Dock | Minimised windows as thumbnail tiles | works; tile names fixed (WIN-OS-106) |
 | Dock | Genie and Scale minimise animations (DOCK-11) | fixed (op/win-parity-2), with real pictures in minimised tiles; third-party windows also play Windows' own minimise |
-| Dock | Badges, progress and attention bounce (LauncherEntry) | missing: Lulo OS reads them from the session bus; Windows apps' flashing could come from a shell hook |
+| Dock | Badges, progress and attention bounce (LauncherEntry) | attention fixed (op/win-parity-2: a flashing window bounces its tile, through the shell hook); badges and progress missing: Windows keeps them in its own taskbar (ITaskbarList3), with no way for another app to read them |
 | Dock | Bounce while an app launches | shared |
 | Dock | Tile menus: windows, recent documents, Show All Windows, Hide, Hide Others, Quit, Files and Settings tiles' own items | works; Show All Windows fixed (WIN-OS-100) |
 | Dock | Options ▸ Open at Login | missing |

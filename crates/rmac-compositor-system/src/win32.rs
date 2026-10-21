@@ -49,8 +49,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WINEVENT_SKIPOWNPROCESS, WM_CLOSE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, RegisterClassW, SPI_SETWORKAREA, WM_DISPLAYCHANGE,
-    WM_SETTINGCHANGE, WNDCLASSW, WS_OVERLAPPED,
+    CreateWindowExW, DefWindowProcW, RegisterClassW, RegisterShellHookWindow,
+    RegisterWindowMessageW, SPI_SETWORKAREA, WM_DISPLAYCHANGE, WM_SETTINGCHANGE, WNDCLASSW,
+    WS_OVERLAPPED,
 };
 
 /// The workspace holding minimised windows (`rmac_compositor::PARKING_WORKSPACE`).
@@ -1116,7 +1117,7 @@ fn read_snapshot() -> domain::Snapshot {
             }),
             focused: hwnd == foreground,
             floating: true,
-            urgent: false,
+            urgent: urgent(hwnd),
             // Front-most is the most recently focused.
             focus_timestamp: Some(domain::Timestamp {
                 seconds: count - rank as u64,
@@ -1633,6 +1634,35 @@ unsafe extern "system" fn work_area_procedure(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    // An app asking for attention (`FlashWindowEx`, as a taskbar button
+    // flashes): its Dock tile bounces, as on the Mac and Lulo OS
+    // (`urgent`); its window coming to the front ends it.
+    let shell_hook = SHELL_HOOK_MESSAGE.load(Ordering::Acquire);
+    if shell_hook != 0 && message == shell_hook {
+        let code = wparam.0 as u32 & 0x7FFF;
+        let target = lparam.0;
+        let changed = match code {
+            HSHELL_FLASH => URGENT.lock().is_ok_and(|mut urgent| {
+                let added = !urgent.contains(&target);
+                if added {
+                    urgent.push(target);
+                }
+                added
+            }),
+            HSHELL_WINDOWACTIVATED | HSHELL_WINDOWDESTROYED => {
+                URGENT.lock().is_ok_and(|mut urgent| {
+                    let before = urgent.len();
+                    urgent.retain(|window| *window != target);
+                    urgent.len() != before
+                })
+            }
+            _ => false,
+        };
+        if changed {
+            notify_watchers();
+        }
+        return LRESULT(0);
+    }
     let changed = match message {
         WM_SETTINGCHANGE => wparam.0 as u32 == SPI_SETWORKAREA.0,
         WM_DISPLAYCHANGE => true,
@@ -1665,7 +1695,7 @@ fn watch_work_area() {
             ..Default::default()
         };
         let _ = RegisterClassW(&class);
-        let _ = CreateWindowExW(
+        let window = CreateWindowExW(
             WS_EX_TOOLWINDOW,
             w!("LuloWorkAreaWatch"),
             w!(""),
@@ -1679,7 +1709,30 @@ fn watch_work_area() {
             Some(instance),
             None,
         );
+        if let Ok(window) = window {
+            // Shell hooks: attention requests (see `work_area_procedure`).
+            let message = RegisterWindowMessageW(w!("SHELLHOOK"));
+            if message != 0 && RegisterShellHookWindow(window).as_bool() {
+                SHELL_HOOK_MESSAGE.store(message, Ordering::Release);
+            }
+        }
     }
+}
+
+/// The registered `SHELLHOOK` message, once this thread's window hears it.
+static SHELL_HOOK_MESSAGE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// Windows that asked for attention and have not come to the front since.
+static URGENT: Mutex<Vec<isize>> = Mutex::new(Vec::new());
+/// `HSHELL_FLASH`: a window flashed its taskbar button.
+const HSHELL_FLASH: u32 = 0x8006;
+const HSHELL_WINDOWACTIVATED: u32 = 4;
+const HSHELL_WINDOWDESTROYED: u32 = 2;
+
+/// Whether `hwnd` is asking for attention.
+fn urgent(hwnd: HWND) -> bool {
+    URGENT
+        .lock()
+        .is_ok_and(|urgent| urgent.contains(&(hwnd.0 as isize)))
 }
 
 /// Runs on the hook thread when a move or resize ends.

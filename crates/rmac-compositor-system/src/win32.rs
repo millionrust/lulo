@@ -1948,6 +1948,9 @@ pub async fn move_windows_animated(
                 std::thread::sleep(std::time::Duration::from_millis(16));
             }
         }
+        // Windows reports no event for a plain move, so read the list again:
+        // the windows' new places are where a restore measures from.
+        notify_watchers();
     })
     .await;
 }

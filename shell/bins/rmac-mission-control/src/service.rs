@@ -2265,11 +2265,16 @@ fn follow_compositor(service: &Entity<Service>, cx: &mut App) {
         .detach();
     let watched = service.clone();
     cx.spawn(async move |cx: &mut AsyncApp| {
+        // niri sends a whole snapshot only when it connects; the Win32 list
+        // sends one for every change, so only its first is a reconnection.
+        let mut connected = false;
         while let Ok(event) = compositor_rx.recv().await {
+            let snapshot = matches!(event, rmac_compositor::Event::Snapshot { .. });
+            let reconnected = snapshot && !(cfg!(windows) && connected);
+            connected |= snapshot;
             cx.update(|cx| {
                 #[cfg(target_os = "linux")]
                 let drag = rmac_compositor_niri::edge_drag(&event);
-                let reconnected = matches!(event, rmac_compositor::Event::Snapshot { .. });
                 let (topology, action) = watched.update(cx, |service, _| service.apply(event));
                 if let Some(action) = action {
                     run_actions(vec![action], cx);

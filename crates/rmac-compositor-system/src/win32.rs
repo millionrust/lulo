@@ -439,6 +439,11 @@ unsafe extern "system" fn on_event(
         {
             crate::thumbnails::keep(previous);
         }
+        // The window now in front may be minimised before it ever leaves
+        // the front (⌘M, its own button): picture it once it has drawn.
+        if !own && is_app_window(hwnd, own_pid) {
+            crate::thumbnails::keep_soon(hwnd.0 as isize);
+        }
     } else if event == EVENT_SYSTEM_MINIMIZESTART && !own && is_app_window(hwnd, own_pid) {
         crate::thumbnails::minimized(hwnd.0 as isize);
         return;

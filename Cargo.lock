@@ -6344,6 +6344,7 @@ dependencies = [
  "async-channel",
  "blocking",
  "futures-util",
+ "image",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
@@ -7665,7 +7666,6 @@ dependencies = [
  "uuid",
  "wayland-client",
  "wayland-protocols-wlr",
- "windows 0.61.3",
 ]
 
 [[package]]

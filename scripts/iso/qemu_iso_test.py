@@ -279,6 +279,7 @@ class Machine:
         self.process: subprocess.Popen | None = None
         self.qmp: Qmp | None = None
         self.last_periodic = 0.0
+        self.started_at = 0.0
 
     def command_line(self) -> list[str]:
         args = self.args
@@ -341,6 +342,7 @@ class Machine:
         command = self.command_line()
         (self.out / "qemu-command.txt").write_text(" ".join(command) + "\n")
         self.process = subprocess.Popen(command, stdout=open(self.out / "qemu.log", "w"), stderr=subprocess.STDOUT)
+        self.started_at = time.monotonic()
         self.qmp = Qmp(self.qmp_path)
         print(f"qemu started (pid {self.process.pid})", flush=True)
 
@@ -459,6 +461,9 @@ class Machine:
             self.poll_serial()
             for marker in self.markers[seen:]:
                 if marker.startswith(prefix):
+                    if prefix == "session-up" and self.started_at:
+                        elapsed = time.monotonic() - self.started_at
+                        print(f"BOOT-TO-DESKTOP {elapsed:.0f}s after power-on (marker seen within 2s)", flush=True)
                     return marker
                 if marker.startswith(fail_on):
                     self.screenshot("failure")

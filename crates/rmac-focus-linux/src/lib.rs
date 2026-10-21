@@ -8,6 +8,7 @@ use std::fmt;
 use async_channel::Sender;
 
 pub mod client;
+pub mod local;
 pub mod service;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

@@ -8232,6 +8232,8 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-system",
  "rmac-desktop",
+ "rmac-focus-linux",
+ "rmac-focus-store",
  "rmac-hardware",
  "rmac-launcher-app",
  "rmac-notification-center-app",

@@ -53,6 +53,9 @@ rmac-app-drawer.workspace = true
 # processes.
 rmac-notification-center-app.workspace = true
 rmac-notifications.workspace = true
+# Focus, run in lulo-shell (`rmac_focus_linux::local`).
+rmac-focus-linux.workspace = true
+rmac-focus-store.workspace = true
 rmac-shell-app-switcher.workspace = true
 # Mission Control, App Exposé, Show Desktop and the hot corners, the same
 # service Lulo OS runs as its own process.

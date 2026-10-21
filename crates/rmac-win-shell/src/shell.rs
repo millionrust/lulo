@@ -297,6 +297,16 @@ pub fn run() -> i32 {
         .run(move |cx: &mut App| {
             memory::report("GPUI started");
             rmac_ui::init_application(cx);
+            // Focus runs here, before Control Centre, the bar and
+            // Notification Centre ask it (ADR 0023, "Focus on Windows").
+            match rmac_focus_store::Store::from_environment() {
+                Ok(store) => {
+                    if let Err(error) = rmac_focus_linux::local::install(store) {
+                        eprintln!("Focus is not available: {error}");
+                    }
+                }
+                Err(error) => eprintln!("Focus is not available: {error}"),
+            }
             rmac_shell_ui::tokens::install_appearance_watch(cx);
             let Some(menu_host) = menu_host.take() else {
                 cx.quit();

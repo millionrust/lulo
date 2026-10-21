@@ -698,7 +698,11 @@ impl QuickSettingsView {
         };
         match target {
             Target::Switch => self.toggle_detail_switch(cx),
-            Target::Notice => self.open_settings(Some("wifi"), window, cx),
+            Target::Notice if panel.detail == Detail::Wifi => {
+                self.open_settings(Some("wifi"), window, cx)
+            }
+            // Focus's note on Windows says what it covers; it is not a link.
+            Target::Notice => {}
             Target::Slider => {}
             Target::Toggle(index) => match panel.toggles.get(index).map(|toggle| toggle.kind) {
                 Some(detail::DisplayToggle::DarkMode) => self.toggle_dark_mode(cx),

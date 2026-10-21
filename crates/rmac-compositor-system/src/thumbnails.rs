@@ -10,9 +10,9 @@
 //! the minimise. The Dock shows it as the tile and plays the Genie or Scale
 //! effect from it. Pictures are taken on one worker thread, only on those
 //! two events; nothing polls. Each kept picture is at most
-//! [`LONGEST_SIDE`] pixels, so a dozen windows cost a few megabytes.
+//! [`LONGEST_SIDE`] pixels and kept as PNG (some tens of kilobytes), for
+//! the [`KEPT`] windows most recently pictured.
 
-use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Mutex, OnceLock};
 
@@ -22,6 +22,8 @@ use crate::picture::{window_picture, Pixels};
 
 /// Longest side of a kept picture, in pixels: a magnified Dock tile at 2×.
 const LONGEST_SIDE: u32 = 320;
+/// How many windows' pictures are kept.
+const KEPT: usize = 12;
 
 enum Job {
     /// The window stopped being the foreground one: picture it.
@@ -39,25 +41,33 @@ fn send(job: Job) {
         let _ = std::thread::Builder::new()
             .name("lulo-window-thumbnails".into())
             .spawn(move || {
-                let mut kept: HashMap<isize, Pixels> = HashMap::new();
+                // Most recent last: (window, PNG bytes).
+                let mut kept: Vec<(isize, Vec<u8>)> = Vec::new();
+                let picture_of =
+                    |hwnd: isize| window_picture(window(hwnd)).and_then(shrink).and_then(png);
                 for job in jobs {
                     match job {
                         Job::Keep(hwnd) => {
-                            if let Some(picture) = window_picture(window(hwnd)).and_then(shrink) {
-                                kept.insert(hwnd, picture);
+                            if let Some(picture) = picture_of(hwnd) {
+                                kept.retain(|(known, _)| *known != hwnd);
+                                kept.push((hwnd, picture));
                             }
                         }
                         Job::Minimized(hwnd) => {
-                            let picture = kept
-                                .remove(&hwnd)
-                                .or_else(|| window_picture(window(hwnd)).and_then(shrink));
+                            let found = kept.iter().position(|(known, _)| *known == hwnd);
+                            let picture = found
+                                .map(|index| kept.remove(index).1)
+                                .or_else(|| picture_of(hwnd));
                             if let Some(picture) = picture {
-                                store(window(hwnd), picture);
+                                store(window(hwnd), &picture);
                             }
                             crate::win32::refresh();
                         }
                     }
-                    kept.retain(|hwnd, _| crate::win32::is_window(*hwnd));
+                    kept.retain(|(hwnd, _)| crate::win32::is_window(*hwnd));
+                    if kept.len() > KEPT {
+                        kept.drain(..kept.len() - KEPT);
+                    }
                 }
             });
         Mutex::new(sender)
@@ -117,20 +127,24 @@ pub(crate) fn shrink((width, height, bgra): Pixels) -> Option<Pixels> {
     Some((small_width, small_height, small.into_raw()))
 }
 
-/// Write the picture as the window's thumbnail (PNG, RGBA), replacing any
-/// earlier one.
-fn store(window: domain::WindowId, (width, height, bgra): Pixels) {
-    let Some(dir) = domain::ParkingStore::default_thumbnail_dir() else {
-        return;
-    };
-    domain::ParkingStore::remove_thumbnails_in(&dir, window);
+/// The picture as PNG (RGBA).
+fn png((width, height, bgra): Pixels) -> Option<Vec<u8>> {
     let mut rgba = bgra;
     for pixel in rgba.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }
-    let Some(image) = image::RgbaImage::from_raw(width, height, rgba) else {
+    let image = image::RgbaImage::from_raw(width, height, rgba)?;
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut bytes, image::ImageFormat::Png).ok()?;
+    Some(bytes.into_inner())
+}
+
+/// Write the picture as the window's thumbnail, replacing any earlier one.
+fn store(window: domain::WindowId, png: &[u8]) {
+    let Some(dir) = domain::ParkingStore::default_thumbnail_dir() else {
         return;
     };
+    domain::ParkingStore::remove_thumbnails_in(&dir, window);
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis())
@@ -139,7 +153,7 @@ fn store(window: domain::WindowId, (width, height, bgra): Pixels) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Err(error) = image.save_with_format(&path, image::ImageFormat::Png) {
+    if let Err(error) = std::fs::write(&path, png) {
         eprintln!("no minimised-window thumbnail: {error}");
     }
 }
@@ -155,5 +169,14 @@ mod tests {
         let small = shrink((100, 50, vec![0; 100 * 50 * 4])).unwrap();
         assert_eq!((small.0, small.1), (100, 50));
         assert!(shrink((10, 10, vec![0; 3])).is_none());
+    }
+
+    #[test]
+    fn kept_pictures_are_png() {
+        let bytes = png((2, 1, vec![0, 0, 255, 255, 255, 0, 0, 255])).unwrap();
+        assert_eq!(&bytes[1..4], b"PNG");
+        let decoded = image::load_from_memory(&bytes).unwrap().to_rgba8();
+        // BGRA blue-last became RGBA red-first.
+        assert_eq!(decoded.get_pixel(0, 0).0, [255, 0, 0, 255]);
     }
 }

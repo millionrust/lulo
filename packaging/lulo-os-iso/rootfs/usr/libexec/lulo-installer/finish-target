@@ -15,12 +15,14 @@ if [ -d /sys/firmware/efi ] && [ -f "$esp/ubuntu/shimx64.efi" ] \
     [ -f "$esp/ubuntu/mmx64.efi" ] && cp "$esp/ubuntu/mmx64.efi" "$esp/BOOT/mmx64.efi"
 fi
 
-# Calamares names the session with the X11-only key (XSession=rmac); Lulo
-# is a Wayland session, so name it the way GDM looks up Wayland sessions.
-for account in /var/lib/AccountsService/users/*; do
-    [ -f "$account" ] || continue
-    sed -i '/^XSession=/d; /^Session=/d' "$account"
-    sed -i 's/^\[User\]$/[User]\nSession=rmac/' "$account"
+# The login screen opens Lulo for the accounts Calamares created. Without
+# this record Ubuntu's GDM picks the GNOME session, which is not installed,
+# and the sign-in drops straight back to the login screen. New accounts get
+# the same from /etc/accountsservice/user-templates.
+mkdir -p /var/lib/AccountsService/users
+getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 { print $1 }' | while read -r name; do
+    printf '[User]\nSession=rmac\nSystemAccount=false\n' > "/var/lib/AccountsService/users/$name"
+    chmod 0600 "/var/lib/AccountsService/users/$name"
 done
 
 # The installer's own files.

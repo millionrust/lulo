@@ -1,0 +1,6 @@
+# Lulo OS (ADR 0031): every new account opens the Lulo session at the login
+# screen. Ubuntu's GDM otherwise falls back to the GNOME session, which the
+# image does not have.
+[User]
+Session=rmac
+SystemAccount=false

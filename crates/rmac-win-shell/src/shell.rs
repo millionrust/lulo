@@ -247,6 +247,7 @@ fn start_hotkey(cx: &mut App) -> Option<Hooks> {
             registry::set_dword(HOTKEY_NOTICE, hotkey.code());
             let (title, detail) = model_hotkey::notice(hotkey);
             trace(|| format!("notice shown: {title}: {detail}"));
+            rmac_notifications::pipe::post_notice(title, detail);
         }
     }
     cx.spawn(async move |cx| {

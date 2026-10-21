@@ -54,6 +54,10 @@ rmac-wallpaper-runtime.workspace = true
 trash.workspace = true
 uuid.workspace = true
 
+# Windows: notices go to the Notification Centre lulo-shell hosts.
+[target.'cfg(windows)'.dependencies]
+rmac-notifications.workspace = true
+
 # Lulo OS only: niri, XDG autostart, the session bus (LauncherEntry badges,
 # notices) and the Dock's own sockets.
 [target.'cfg(target_os = "linux")'.dependencies]

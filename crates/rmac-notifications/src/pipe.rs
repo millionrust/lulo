@@ -182,6 +182,35 @@ pub fn decode_answer(line: &str) -> Result<Answer, Error> {
     }
 }
 
+/// A transient system notice (the Lulo layer's own, as Lulo OS's bar and
+/// Dock post through the session bus), on a thread of its own so the
+/// caller never waits for the centre. Logged when no centre answers.
+#[cfg(windows)]
+pub fn post_notice(summary: String, body: String) {
+    let spawned = std::thread::Builder::new()
+        .name("lulo-notice".into())
+        .spawn(move || {
+            let notice = Post {
+                summary,
+                body,
+                urgency: 1,
+                transient: true,
+                ..Post::default()
+            };
+            // A notice from start-up may come before the centre serves its
+            // pipe: one more try a moment later, then it is only logged.
+            if post(&notice).is_none() {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                if post(&notice).is_none() {
+                    eprintln!("{}: {}", notice.summary, notice.body);
+                }
+            }
+        });
+    if let Err(error) = spawned {
+        eprintln!("could not post a notice: {error}");
+    }
+}
+
 /// Post `post` to the Notification Centre `lulo-shell` hosts. Returns the
 /// notification's id and the centre's later answers (the action chosen,
 /// then its closing), read on a thread of their own; `None` when no Lulo

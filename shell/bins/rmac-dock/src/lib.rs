@@ -2940,11 +2940,11 @@ mod dock {
 
     /// A transient notice through the session's notification server.
     fn post_notice(summary: String, body: String, cx: &mut Context<Dock>) {
-        // Windows: no notification server of Lulo's own yet; logged.
+        // Windows: the Notification Centre lulo-shell hosts (its pipe).
         #[cfg(windows)]
         {
             let _ = cx;
-            eprintln!("{summary}: {body}");
+            rmac_notifications::pipe::post_notice(summary, body);
         }
         #[cfg(target_os = "linux")]
         cx.background_executor()

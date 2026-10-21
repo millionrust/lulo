@@ -2228,6 +2228,30 @@ refuses a GPL-only library, and writes the licences and `SOURCES.txt`. `windows-
 runs it once per version of the script (cached); the installers put the DLLs beside
 `rmac-player.exe` and the licences in `licenses\libmpv`.
 
+## Lulo OS's shell behaviours on Windows (branch `op/win-parity-2`)
+
+docs/parity.md's "Lulo OS → Windows" table lists every shell behaviour Lulo OS gained and
+where Windows stands. Ported in this round:
+
+- **Click wallpaper to reveal the desktop**: the desktop view hands the click to Mission
+  Control in `lulo-shell`, which pushes the windows to the edges as on Lulo OS; the slide is
+  stepped by `rmac-compositor-system` (niri's 300 ms, ease-out), since Windows moves a window
+  at once, and the list is read again after it so a second click or a click on a sliver
+  brings them back exactly. Desktop & Dock shows the setting, Hot Corners and the title-bar
+  double-click again; Minimise and Do Nothing take the caption double-click from Windows.
+- **System shortcuts**: one hotkey table (Ctrl for ⌃, Ctrl+Alt for ⌥⌘): Ctrl+↑/↓, Ctrl+F2,
+  Ctrl+F3, Ctrl+F8, Ctrl+Alt+D, Ctrl+Alt+Esc, and Win+D for Show Desktop when Lulo is the
+  shell. A hotkey another app holds stays theirs.
+- **Force Quit Applications** is Lulo's own window (it ends processes through
+  `rmac-app-launch`, which gained Windows termination), following the window list while open.
+- **Minimised tiles and the Genie or Scale effect**: the window list keeps a picture of each
+  window shortly after it comes to the front and when it leaves the front (PNG, at most 12),
+  and stores it as the parking store's thumbnail when Windows reports the minimise.
+- **Attention**: a window that flashes its taskbar button (`HSHELL_FLASH`) bounces its tile.
+- **Battery ▸ Using Significant Energy** reads CPU time with `GetProcessTimes`; **Open at
+  Login** is the user's Run key; **Return to Previous Size** restores the frame recorded before
+  the first tile or centre; the switcher's ↑/↓ opens App Exposé.
+
 ## Phase plan
 
 The goal is "usable on Windows without Linux". Phases are ordered by how much value they

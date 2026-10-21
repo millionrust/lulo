@@ -943,7 +943,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Menu bar | Option in the Lulo menu skips the confirmations (BAR-04) | shared |
 | Menu bar | Front app's menus with submenus, ticks and live state; Lulo apps through the menu pipe | works; Windows apps get Lulo's standard menus only |
 | Menu bar | Wi-Fi, Battery, Sound, Bluetooth and Focus menus (BAR-03) | works (Focus fixed, WIN-OS-104) |
-| Menu bar | Battery ▸ Using Significant Energy (BAR-05) | missing |
+| Menu bar | Battery ▸ Using Significant Energy (BAR-05) | fixed (op/win-parity-2: GetProcessTimes) |
 | Menu bar | Clock Options… and Battery Options… sheets | shared |
 | Menu bar | ⌃F2 menu focus, ⌃F8 status-item focus, ⌃F3 Dock focus (ACC-05, CC-05) | fixed (op/win-parity-2: Ctrl+F2, Ctrl+F8, Ctrl+F3) |
 | Menu bar | Hides over full-screen windows, reveal strip at the top edge | works (WIN-OS-90) |
@@ -958,7 +958,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Dock | Recent apps and indicator switches (SET-32) | shared |
 | Dock | Folder and Downloads stacks, Fan and Grid | shared |
 | Dock | Minimised windows as thumbnail tiles | works; tile names fixed (WIN-OS-106) |
-| Dock | Genie and Scale minimise animations (DOCK-11) | missing |
+| Dock | Genie and Scale minimise animations (DOCK-11) | fixed (op/win-parity-2), with real pictures in minimised tiles; third-party windows also play Windows' own minimise |
 | Dock | Badges, progress and attention bounce (LauncherEntry) | missing: Lulo OS reads them from the session bus; Windows apps' flashing could come from a shell hook |
 | Dock | Bounce while an app launches | shared |
 | Dock | Tile menus: windows, recent documents, Show All Windows, Hide, Hide Others, Quit, Files and Settings tiles' own items | works; Show All Windows fixed (WIN-OS-100) |
@@ -971,7 +971,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Desktop | Click wallpaper to reveal the desktop, windows slide aside and back | fixed (op/win-parity-2) |
 | Desktop | Lock screen with Lulo's wallpaper and account picture (LOCK-01) | impossible: the Windows lock screen is LogonUI's |
 | Windows | Mission Control, App Exposé (with minimised row), hot corners | fixed (WIN-OS-100) |
-| Windows | Show Desktop key (F11) | missing: hot corner only |
+| Windows | Show Desktop key (F11) | fixed as Win+D when Lulo is the shell (Explorer keeps Win+D otherwise); hot corner always |
 | Windows | Spaces: add, remove, switch | impossible: no public virtual-desktop API (WIN-OS-100) |
 | Windows | Move & Resize halves, quarters, Fill & Arrange, Hide Others | fixed (WIN-OS-101) |
 | Windows | Return to Previous Size | partial: Windows' restore, not Lulo's saved frame |

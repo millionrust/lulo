@@ -22,8 +22,9 @@ use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVE
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardLayoutList, RegisterHotKey, SendInput, UnregisterHotKey,
     HOT_KEY_MODIFIERS, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-    KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VIRTUAL_KEY, VK_CONTROL, VK_D,
-    VK_DOWN, VK_ESCAPE, VK_F2, VK_F3, VK_F8, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_SPACE, VK_UP,
+    KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, VIRTUAL_KEY,
+    VK_CONTROL, VK_D, VK_DOWN, VK_ESCAPE, VK_F2, VK_F3, VK_F8, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    VK_SPACE, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetAncestor, GetMessageW, PostThreadMessageW,
@@ -52,7 +53,7 @@ pub enum DesktopEvent {
 /// Lulo OS's system shortcuts, with Ctrl for the Mac's ⌃ and Ctrl+Alt for
 /// ⌥⌘, as thread hotkeys: (id, modifiers, key, the shell request). Another
 /// app that holds one keeps it; nothing of theirs is touched.
-const SHORTCUTS: [(i32, HOT_KEY_MODIFIERS, VIRTUAL_KEY, &str); 7] = [
+const SHORTCUTS: [(i32, HOT_KEY_MODIFIERS, VIRTUAL_KEY, &str); 8] = [
     // ⌃↑ Mission Control, ⌃↓ App Exposé.
     (0x4C56, MOD_CONTROL, VK_UP, "mission-control"),
     (0x4C57, MOD_CONTROL, VK_DOWN, "app-windows"),
@@ -64,6 +65,9 @@ const SHORTCUTS: [(i32, HOT_KEY_MODIFIERS, VIRTUAL_KEY, &str); 7] = [
     (0x4C5B, CTRL_ALT, VK_D, "dock-toggle-hiding"),
     // ⌥⌘⎋ Force Quit Applications.
     (0x4C5C, CTRL_ALT, VK_ESCAPE, "force-quit"),
+    // Show Desktop (the Mac's F11): Win+D, which is free when Lulo is the
+    // shell; over Explorer, Explorer keeps it.
+    (0x4C5D, MOD_WIN, VK_D, "show-desktop"),
 ];
 
 /// Ctrl+Alt, the Windows keys for the Mac's ⌥⌘.

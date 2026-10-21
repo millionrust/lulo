@@ -27,9 +27,14 @@ Note 'explorer_shell_private_mb_before' (Private @('explorer', 'StartMenuExperie
 try {
     & (Join-Path $Installed 'lulo-session.exe') --stop 2>&1 | Out-Null
     Start-Sleep -Seconds 4
-    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 3
+    # Explorer's own clean exit (what Ctrl+Shift+right-click ▸ Exit Explorer
+    # sends its taskbar): Windows does not start it again, as it does after
+    # Explorer is ended.
+    [LuloRobot.Native]::PostMessage($R::Taskbar(), 0x5B4, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+    $wait = [Diagnostics.Stopwatch]::StartNew()
+    while ($wait.ElapsedMilliseconds -lt 10000 -and (Running 'explorer').Count) { Start-Sleep -Milliseconds 200 }
     Note 'explorer_after_stop' ((Running 'explorer').Count)
+    if ((Running 'explorer').Count) { throw 'Explorer did not exit; not testing' }
     $env:LULO_SHELL_TRACE = '1'
     $env:LULO_NO_STARTUP_APPS = '1'
     $watch = [Diagnostics.Stopwatch]::StartNew()

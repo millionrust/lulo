@@ -89,6 +89,11 @@ function Launch($exe) {
 function Close-App($p) {
     if ($p -and -not $p.HasExited) { $p.CloseMainWindow() | Out-Null; Start-Sleep -Milliseconds 800; if (-not $p.HasExited) { $p.Kill() } }
 }
+# Calculator (the robot's own app) to the front.
+function Front-Calc {
+    [void]$R::Activate((@($R::WindowsOf($calc.Id, $true)) | Select-Object -First 1))
+    Start-Sleep -Milliseconds 500
+}
 function Desktop-Point {
     $screen = $R::Screen()
     foreach ($y in 300, 450, 120) { foreach ($x in 200, 40, ($screen.Width / 2), ($screen.Width - 40)) {
@@ -119,7 +124,8 @@ try {
         Note 'menu bar: Lulo menu' ($ok -and -not $missing) "rows: $($rows -join ', '); missing: $($missing -join ', ')"
     }
     Check "menu bar: front app's menus" {
-        $title = Last-Trace '^bar title 1 '
+        Front-Calc
+        $title = Wait-Trace '^bar title 1 Calculator ' 0 3
         $m = Mark
         $ok = Click-Trace '^bar title 2 '
         Start-Sleep -Milliseconds 600
@@ -162,11 +168,17 @@ try {
         Note 'menu bar: battery mark and rows' ($mark -eq $wantMark -and $hasLine -and $menu -match 'Using Significant Energy') "Windows: $($status.PowerLineStatus), $($status.BatteryChargeStatus), $([int]($status.BatteryLifePercent * 100))%; bar: $item; menu: $menu"
     }
     Check 'menu bar: Ctrl+F2 menu focus' {
-        [void]$R::Activate((@($R::WindowsOf($calc.Id, $true)) | Select-Object -First 1)); Start-Sleep -Milliseconds 500
+        Front-Calc
         $m = Mark
+        # ⌃F2 puts the keyboard on the bar's first menu title, as on the
+        # Mac; ↓ then opens that menu.
         $sent = Keys @($VK.Ctrl, 0x71)
+        Start-Sleep -Milliseconds 600
+        $front = $R::ProcessName($R::PidOf($R::Foreground()))
+        [void](Keys @($VK.Down))
         $open = Wait-Trace '^menu \d+ row ' $m 3
-        Note 'menu bar: Ctrl+F2 menu focus' ($sent -and $open) "$open"
+        Shot 'ctrl-f2'
+        Note 'menu bar: Ctrl+F2 menu focus' ($sent -and $open) "front after Ctrl+F2: $front; $open"
     }
 
     # Dock ----------------------------------------------------------------
@@ -266,20 +278,22 @@ try {
 
     # Switcher, Spotlight, Apps, Control Centre, Notification Centre -----
     Check 'switcher: Alt+Tab' {
+        Front-Calc
         $editor = Launch 'rmac-text-editor.exe'
         $m = Mark
         if (Lulo-Front) { $R::KeyDown($VK.Alt); $R::Chord(@($VK.Tab)); Start-Sleep -Milliseconds 700; Shot 'switcher'; $R::KeyUp($VK.Alt) }
         $shown = Wait-Trace '^(switcher|layer rmac-app-switcher)' $m 2
         Start-Sleep -Milliseconds 600
         $front = $R::PidOf($R::Foreground())
-        Note 'switcher: Alt+Tab' ($shown -and $front -eq $calc.Id) "$shown; front is Calculator: $($front -eq $calc.Id)"
+        $title = $R::Title($R::Foreground())
+        Note 'switcher: Alt+Tab' ($shown -and $front -eq $calc.Id) "$shown; front after: $($R::ProcessName($front)) '$title'"
         Close-App $editor
     }
     Check 'spotlight: apps and answers' {
         [void]$R::Activate((@($R::WindowsOf($calc.Id, $true)) | Select-Object -First 1)); Start-Sleep -Milliseconds 400
         $m = Mark
-        $sent = Keys @($VK.Alt, $VK.Space)
-        Start-Sleep -Milliseconds 700
+        $sent = Click-Trace '^bar spotlight at \d+,1\d$'
+        Start-Sleep -Milliseconds 900
         if ($sent -and (Lulo-Front)) { $R::Type('100/4') }
         $rows = Wait-Trace '^spotlight "100/4": [1-9]' $m 4
         Start-Sleep -Milliseconds 500
@@ -287,11 +301,11 @@ try {
         Shot 'spotlight'
         Esc
         $m = Mark
-        $sent = Keys @($VK.Alt, $VK.Space)
-        Start-Sleep -Milliseconds 700
+        $sent = Click-Trace '^bar spotlight at \d+,1\d$'
+        Start-Sleep -Milliseconds 900
         if ($sent -and (Lulo-Front)) { $R::Type('calcul') }
         $apps = Wait-Trace '^spotlight "calcul": [1-9]' $m 4
-        $app = @(Shell-Names) -match '^Calculator'
+        $app = @(Wait-Trace '^spotlight "calcul": [1-9]' $m 4)
         Note 'spotlight: apps and answers' ($rows -and $answer -and $apps -and $app) "$rows; answer: $($answer -join ' / '); $apps; app: $($app -join ' / ')"
     }
     Check 'apps: grid' {

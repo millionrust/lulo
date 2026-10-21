@@ -1310,7 +1310,6 @@ def check_shell(
         # 6e1. The Dock's recent apps are the last three used that are not
         # kept; the bar's battery and its menu (macOS 26's bolt, "Charging").
         check_dock_recents(log, profile, failures)
-        check_battery(log, screenshots, failures)
 
         # 6e2. Control Centre inside the screen; the bar over a full-screen
         # window; the Window menu's Full-Screen Tile and the app menu's
@@ -1333,6 +1332,12 @@ def check_shell(
         print(f"shell: lulo-shell memory after the switcher and Notification Centre closed: {memory}")
         if memory is not None:
             measurements["lulo-shell"]["after_switcher_nc_private_mb"] = memory["private_mb"]
+
+        # 6f2. The bar's battery and its menu (after the memory readings:
+        # the menu's full power reading is not part of the idle shell).
+        check_battery(log, screenshots, failures)
+        memory = memory_mb(shell_pid)
+        print(f"shell: lulo-shell memory after the Battery menu: {memory}")
 
         # 6g. A third-party window that opens at 0,0 and 4000 × 4000 is put
         # inside the work area (macOS's visible frame); a full-screen one is

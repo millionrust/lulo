@@ -96,8 +96,12 @@ fn app_roots() -> Vec<PathBuf> {
 
 /// Every app Spotlight can open. Needs COM on the calling thread.
 pub fn load_apps() -> Vec<Entry> {
+    // Only the Lulo apps installed beside the shell (a partial build
+    // leaves some out).
+    let installed = crate::share::install_dir();
     let mut apps = LULO_APPS
         .iter()
+        .filter(|app| installed.join(app.exe).is_file())
         .map(|app| Entry::new(app.name, Target::Lulo(app.exe), "", Kind::Application))
         .collect::<Vec<_>>();
     let in_process = || {

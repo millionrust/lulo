@@ -200,6 +200,10 @@ class Run:
             self.real_audio.start()
             self.real_audio.set_sinks(REAL_SINKS[:1])
 
+        # Installed apps the Dock does not keep, for its recent apps
+        # (dock_recent_apps_follow_use), there before the Dock reads them.
+        write_recent_probes(Path(self.env["XDG_DATA_HOME"]) / "applications",
+                            shutil.which("foot", path=self.env.get("PATH")) or "foot")
         self.dock = self.spawn([str(bins / "dock")], "dock", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.top_bar = self.spawn([str(bins / "top-bar")], "top-bar", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.wallpaper = self.spawn([str(bins / "wallpaper")], "wallpaper", {"VK_ICD_FILENAMES": LAVAPIPE})
@@ -932,15 +936,7 @@ class Run:
         if foot is None:
             self.check("Dock recent apps: the last three used", False, "foot is required")
             return
-        applications = Path(self.env["XDG_DATA_HOME"]) / "applications"
-        applications.mkdir(parents=True, exist_ok=True)
-        ids = [f"org.rmac.RecentProbe{index}" for index in range(1, 5)]
-        for index, app_id in enumerate(ids, 1):
-            (applications / f"{app_id}.desktop").write_text(
-                "[Desktop Entry]\nType=Application\n"
-                f"Name=Recent Probe {index}\nExec={foot} --app-id={app_id}\n"
-            )
-        time.sleep(2.0)  # the Dock's catalogue reads the new entries
+        ids = RECENT_PROBES
         for app_id in ids:
             window = self.spawn([foot, f"--app-id={app_id}", "sleep", "60"], f"recent-{app_id}")
             shown = self.wait_for(lambda app_id=app_id: any(
@@ -968,8 +964,6 @@ class Run:
             for index in (2, 3, 4)
         ) and self.find_node(("push button", "button"), lambda name: name.startswith("Recent Probe 1")) is None, 10)
         self.check("Dock recent apps: their tiles show after the kept apps", bool(tiles))
-        for app_id in ids:
-            (applications / f"{app_id}.desktop").unlink(missing_ok=True)
 
     def set_upower(self, path: str, interface: str, name: str, kind: str, value: str) -> bool:
         """Change one property of fake_hardware.py's UPower mock; dbusmock
@@ -1989,6 +1983,18 @@ class Run:
         failed = [result for result in self.results if not result[1]]
         print(f"\n{len(self.results) - len(failed)}/{len(self.results)} checks passed", flush=True)
         return 1 if failed else 0
+
+
+RECENT_PROBES = [f"org.rmac.RecentProbe{index}" for index in range(1, 5)]
+
+
+def write_recent_probes(applications: Path, foot: str) -> None:
+    applications.mkdir(parents=True, exist_ok=True)
+    for index, app_id in enumerate(RECENT_PROBES, 1):
+        (applications / f"{app_id}.desktop").write_text(
+            "[Desktop Entry]\nType=Application\n"
+            f"Name=Recent Probe {index}\nExec={foot} --app-id={app_id}\n"
+        )
 
 
 def outer(args: argparse.Namespace, argv: list[str]) -> int:

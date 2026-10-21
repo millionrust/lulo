@@ -6030,6 +6030,7 @@ dependencies = [
  "rustix 1.1.4",
  "url",
  "walkdir",
+ "windows 0.61.3",
 ]
 
 [[package]]

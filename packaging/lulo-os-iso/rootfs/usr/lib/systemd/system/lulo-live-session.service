@@ -1,0 +1,14 @@
+[Unit]
+Description=Prepare the Lulo OS live session
+# Live medium only: casper boots with boot=casper. The installer deletes this
+# unit from the installed system as well.
+ConditionKernelCommandLine=boot=casper
+Before=display-manager.service gdm.service accounts-daemon.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/lulo-live/session-setup
+
+[Install]
+WantedBy=graphical.target

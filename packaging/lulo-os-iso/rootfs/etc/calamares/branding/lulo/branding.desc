@@ -1,0 +1,39 @@
+# Lulo OS installer branding (ADR 0031). Images are rendered at build time
+# from the original Lulo artwork (packaging/lulo-os-iso/make-branding.py).
+---
+componentName: lulo
+
+welcomeStyleCalamares: false
+welcomeExpandingLogo: true
+windowExpanding: normal
+windowSize: 960px,640px
+windowPlacement: center
+sidebar: widget
+navigation: widget
+
+strings:
+    productName: "Lulo OS"
+    shortProductName: "Lulo OS"
+    version: "@VERSION@"
+    shortVersion: "@VERSION@"
+    versionedName: "Lulo OS @VERSION@"
+    shortVersionedName: "Lulo OS @VERSION@"
+    bootloaderEntryName: "Lulo OS"
+    productUrl: "https://github.com/millionrust/lulo"
+    supportUrl: "https://github.com/millionrust/lulo/issues"
+    knownIssuesUrl: "https://github.com/millionrust/lulo/blob/dev/docs/known-limitations.md"
+    releaseNotesUrl: "https://github.com/millionrust/lulo/releases"
+
+images:
+    productLogo: "logo.png"
+    productIcon: "logo.png"
+    productWelcome: "welcome.png"
+
+slideshow:
+    - "slide-1.png"
+
+style:
+    SidebarBackground: "#10162f"
+    SidebarText: "#e6e9f5"
+    SidebarTextCurrent: "#ffffff"
+    SidebarBackgroundCurrent: "#3949ab"

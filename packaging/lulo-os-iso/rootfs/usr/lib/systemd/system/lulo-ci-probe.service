@@ -1,0 +1,14 @@
+[Unit]
+Description=Lulo OS image test probe (QEMU only)
+# Runs only in the CI's QEMU, which passes the opt/org.lulo.ci fw_cfg entry
+# (scripts/iso/qemu_iso_test.py). On a real PC the unit is skipped.
+ConditionVirtualization=vm
+
+[Service]
+Type=simple
+ExecCondition=/usr/libexec/lulo-ci-probe --check
+ExecStart=/usr/libexec/lulo-ci-probe
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target

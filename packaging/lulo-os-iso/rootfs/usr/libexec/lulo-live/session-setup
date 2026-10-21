@@ -1,0 +1,48 @@
+#!/bin/sh
+# lulo-live-session.service (ADR 0031): the live user starts in the Lulo
+# session with "Install Lulo OS" in the Dock and no setup assistant.
+set -eu
+
+user=lulo
+if [ -r /etc/casper.conf ]; then
+    # shellcheck disable=SC1091
+    . /etc/casper.conf
+    user=${USERNAME:-lulo}
+fi
+home=$(getent passwd "$user" | cut -d: -f6)
+[ -n "$home" ] && [ -d "$home" ] || exit 0
+group=$(id -gn "$user")
+
+# GDM opens the Lulo session (packaging/rmac-session/rmac.desktop). Casper
+# rewrites GDM's custom.conf for the autologin, so the default session goes
+# back in here, and the user's own AccountsService record names it too.
+mkdir -p /var/lib/AccountsService/users
+printf '[User]\nSession=rmac\nXSession=rmac\nSystemAccount=false\n' \
+    > "/var/lib/AccountsService/users/$user"
+conf=/etc/gdm3/custom.conf
+if [ -f "$conf" ] && ! grep -q '^DefaultSession=' "$conf"; then
+    if grep -q '^\[daemon\]' "$conf"; then
+        sed -i 's/^\[daemon\]$/[daemon]\nDefaultSession=rmac.desktop/' "$conf"
+    else
+        printf '[daemon]\nDefaultSession=rmac.desktop\n' >> "$conf"
+    fi
+fi
+
+config=$home/.config/rmac
+install -d -o "$user" -g "$group" "$home/.config" "$config"
+if [ ! -e "$config/shell.json" ]; then
+    install -o "$user" -g "$group" -m 0644 /usr/share/lulo-live/shell.json "$config/shell.json"
+fi
+# The live user has no password: never lock or suspend while idle (Lulo's
+# idle lock policy, crates/rmac-shortcuts/src/lock.rs).
+if [ ! -e "$config/lock-policy.json" ]; then
+    printf '{"version":1,"lock_after_seconds":null,"suspend_after_seconds":null}\n' \
+        > "$config/lock-policy.json"
+    chown "$user:$group" "$config/lock-policy.json"
+    chmod 0600 "$config/lock-policy.json"
+fi
+# The setup assistant is for the installed system's first login.
+if [ ! -e "$config/setup-assistant-complete" ]; then
+    printf 'skipped\n' > "$config/setup-assistant-complete"
+    chown "$user:$group" "$config/setup-assistant-complete"
+fi

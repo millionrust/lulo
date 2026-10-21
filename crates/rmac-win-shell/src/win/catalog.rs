@@ -100,7 +100,22 @@ pub fn load_apps() -> Vec<Entry> {
         .iter()
         .map(|app| Entry::new(app.name, Target::Lulo(app.exe), "", Kind::Application))
         .collect::<Vec<_>>();
-    match apps_folder_from_helper().or_else(apps_folder) {
+    let in_process = || {
+        apps_folder().map(|found| {
+            found
+                .into_iter()
+                .map(|app| {
+                    Entry::new(
+                        app.name,
+                        Target::Shell(format!("shell:AppsFolder\\{}", app.parsing)),
+                        "",
+                        Kind::Application,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    match apps_folder_from_helper().or_else(in_process) {
         Some(found) if !found.is_empty() => {
             super::trace(|| format!("catalog: {} apps in the Apps folder", found.len()));
             apps.extend(found);

@@ -151,6 +151,10 @@ jobs:
           # the installer lays it out.
           mkdir -p target/debug/wallpapers
           cp packaging/rmac-session/wallpapers/*.jpg target/debug/wallpapers/
+          # Only the apps this job builds, as on Lulo OS's side: the cache
+          # can bring back other apps' executables, which would add tiles
+          # to Apps that the Lulo OS scene does not have.
+          rm -f target/debug/rmac-calendar.exe target/debug/rmac-system-monitor.exe target/debug/rmac-player.exe
           python -m pip install --disable-pip-version-check Pillow==12.1.1
           python scripts/windows/shell_scene.py --bin-dir target/debug --output scenes/windows.png
           python scripts/windows/shell_scene.py --bin-dir target/debug \

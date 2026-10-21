@@ -1307,9 +1307,11 @@ def check_shell(
         # 6e. Every Lulo app opens inside the work area the bar and the
         # Dock leave (WIN-OS-50).
         check_app_placement(bin_dir, environment, screenshots, failures)
+        print(f"shell: lulo-shell memory after the apps' placement: {memory_mb(shell_pid)}")
         # 6e1. The Dock's recent apps are the last three used that are not
         # kept; the bar's battery and its menu (macOS 26's bolt, "Charging").
         check_dock_recents(log, profile, failures)
+        print(f"shell: lulo-shell memory after the recent apps: {memory_mb(shell_pid)}")
 
         # 6e2. Control Centre inside the screen; the bar over a full-screen
         # window; the Window menu's Full-Screen Tile and the app menu's
@@ -1317,6 +1319,7 @@ def check_shell(
         check_control_centre(log, shell_pid, screenshots, failures)
         check_full_screen_bar(log, bin_dir, environment, screenshots, failures)
         check_window_menu(log, bin_dir, environment, screenshots, failures)
+        print(f"shell: lulo-shell memory after Control Centre and the Window menu: {memory_mb(shell_pid)}")
 
         # 6f. ⌘Tab (Alt+Tab) and Notification Centre, the shared views
         # lulo-shell hosts; then their memory once they have closed.
@@ -1326,7 +1329,9 @@ def check_shell(
         # dragged across the separator, a reorder, a drag off to remove,
         # and an app dragged in from Apps.
         check_dock_drag(log, bin_dir, environment, screenshots, failures)
+        print(f"shell: lulo-shell memory after the Dock drags: {memory_mb(shell_pid)}")
         check_apps_open_speed(log, bin_dir, environment, failures)
+        print(f"shell: lulo-shell memory after Apps opened again and again: {memory_mb(shell_pid)}")
         time.sleep(5.0)
         memory = memory_mb(shell_pid)
         print(f"shell: lulo-shell memory after the switcher and Notification Centre closed: {memory}")

@@ -572,10 +572,10 @@ jobs:
             # and their icons grow the software renderer's atlas on the
             # runner by about 10 MB (it reads 62-63 MB there).
             gate: >-
-              --shell-memory-mb 64 --shell-idle-private-mb 60
+              --shell-memory-mb 60 --shell-idle-private-mb 60
               --shell-after-use-private-mb 60 --shell-after-use-growth-mb 4
               --shell-max-wakes 4
-              --shell-after-panels-private-mb 60
+              --shell-after-panels-private-mb 64
             expect: lulo-shell lulo-session
             installer: true
     defaults:

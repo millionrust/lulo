@@ -6549,6 +6549,21 @@ mod dock {
                     }
                 });
                 system::requests::register("dock-toggle-hiding", toggle_dock_hiding);
+                // Show All Windows: App Exposé, in this same process.
+                let (expose_tx, expose_rx) = async_channel::bounded::<()>(1);
+                rmac_dock_system::app_windows::set_handler(move || {
+                    expose_tx.try_send(()).is_ok() || expose_tx.is_full()
+                });
+                cx.spawn(async move |cx| {
+                    while expose_rx.recv().await.is_ok() {
+                        cx.update(|cx| {
+                            if !system::requests::run("app-windows", cx) {
+                                eprintln!("Show All Windows: Mission Control is not running");
+                            }
+                        });
+                    }
+                })
+                .detach();
                 // An app dragged out of Apps (same process on Windows) opens
                 // a kept-app slot in the Dock under the pointer.
                 let windows = shared.clone();

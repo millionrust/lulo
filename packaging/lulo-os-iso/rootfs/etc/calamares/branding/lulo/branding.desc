@@ -1,4 +1,4 @@
-# Lulo OS installer branding (ADR 0029). Images are rendered at build time
+# Lulo OS installer branding (ADR 0031). Images are rendered at build time
 # from the original Lulo artwork (packaging/lulo-os-iso/make-branding.py).
 ---
 componentName: lulo

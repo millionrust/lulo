@@ -1,4 +1,4 @@
-# ADR 0029 — Lulo OS bootable USB image: debootstrap + casper, Calamares installer
+# ADR 0031 — Lulo OS bootable USB image: debootstrap + casper, Calamares installer
 
 - Status: accepted
 - Date: 2026-10-20

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Boot the Lulo OS ISO in QEMU and prove it works (ADR 0029).
+"""Boot the Lulo OS ISO in QEMU and prove it works (ADR 0031).
 
 Modes:
 
@@ -602,25 +602,21 @@ def scenario_installed(machine: Machine) -> None:
     # GDM: the user tile has keyboard focus; Enter opens the password field.
     # The greeter can ignore input for a moment after it first draws, so try
     # again if no session follows.
-    session = None
-    for attempt in range(3):
-        match = machine.wait_text(CI_USER_NAME, timeout=600 if attempt == 0 else 60)
-        time.sleep(5)
-        machine.click(match.x, match.y)
-        try:
-            machine.wait_text("Password", timeout=30)
-        except TestFailure:
-            machine.key("ret")
-            machine.wait_text("Password", timeout=30)
-        time.sleep(1)
-        machine.type_text(CI_PASSWORD + "\n")
-        try:
-            session = parse_marker(machine.wait_marker("session-up", timeout=240))
-            break
-        except TestFailure as error:
-            print(f"note: sign-in attempt {attempt + 1}: {error}", flush=True)
-    expect(session is not None, "could not sign in at the login screen")
-    assert session is not None
+    match = machine.wait_text(CI_USER_NAME, timeout=600)
+    time.sleep(5)
+    machine.click(match.x, match.y)
+    try:
+        machine.wait_text("Password", timeout=30)
+    except TestFailure:
+        machine.key("ret")
+        machine.wait_text("Password", timeout=30)
+    time.sleep(1)
+    machine.type_text(CI_PASSWORD + "\n")
+    time.sleep(10)
+    machine.screenshot("signed-in")
+    # The probe gives up after about seven minutes and then writes the
+    # session's logs to the second serial port.
+    session = parse_marker(machine.wait_marker("session-up", timeout=600))
     time.sleep(30)
     machine.screenshot("installed-session")
     expect(session.get("installer-entry") == "0", "the installed system still has Install Lulo OS")

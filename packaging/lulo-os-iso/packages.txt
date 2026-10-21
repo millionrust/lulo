@@ -1,4 +1,4 @@
-# Packages installed into the Lulo OS image (ADR 0029), all with
+# Packages installed into the Lulo OS image (ADR 0031), all with
 # --no-install-recommends. One name per line; "?" before a name means "if the
 # archive has it" (a renamed or dropped package must not break the build).
 

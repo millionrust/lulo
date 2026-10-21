@@ -1,5 +1,5 @@
 #!/bin/sh
-# Calamares shellprocess@lulo_finish (ADR 0029), in the installed system.
+# Calamares shellprocess@lulo_finish (ADR 0031), in the installed system.
 set -eu
 
 # UEFI: some firmware forgets its boot entries (after a BIOS update, or a
@@ -14,6 +14,14 @@ if [ -d /sys/firmware/efi ] && [ -f "$esp/ubuntu/shimx64.efi" ] \
     cp "$esp/ubuntu/grubx64.efi" "$esp/BOOT/grubx64.efi"
     [ -f "$esp/ubuntu/mmx64.efi" ] && cp "$esp/ubuntu/mmx64.efi" "$esp/BOOT/mmx64.efi"
 fi
+
+# Calamares names the session with the X11-only key (XSession=rmac); Lulo
+# is a Wayland session, so name it the way GDM looks up Wayland sessions.
+for account in /var/lib/AccountsService/users/*; do
+    [ -f "$account" ] || continue
+    sed -i '/^XSession=/d; /^Session=/d' "$account"
+    sed -i 's/^\[User\]$/[User]\nSession=rmac/' "$account"
+done
 
 # The installer's own files.
 rm -rf /usr/share/lulo-installer /etc/calamares

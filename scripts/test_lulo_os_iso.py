@@ -1,4 +1,4 @@
-"""Checks for the Lulo OS image definition (ADR 0029) that need no build."""
+"""Checks for the Lulo OS image definition (ADR 0031) that need no build."""
 
 from __future__ import annotations
 

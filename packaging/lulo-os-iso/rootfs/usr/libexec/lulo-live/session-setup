@@ -1,5 +1,5 @@
 #!/bin/sh
-# lulo-live-session.service (ADR 0029): the live user starts in the Lulo
+# lulo-live-session.service (ADR 0031): the live user starts in the Lulo
 # session with "Install Lulo OS" in the Dock and no setup assistant.
 set -eu
 

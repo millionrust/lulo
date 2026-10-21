@@ -1,4 +1,4 @@
-# Build and test the Lulo OS bootable USB image (ADR 0029):
+# Build and test the Lulo OS bootable USB image (ADR 0031):
 # lulo-os-<version>-amd64.iso, a live session plus the Calamares installer,
 # made from the Ubuntu 26.04 archive and one GitHub Release's Lulo packages.
 #

@@ -1,5 +1,5 @@
 #!/bin/sh
-# "Install Lulo OS" in the live session's Dock (ADR 0029). Calamares needs
+# "Install Lulo OS" in the live session's Dock (ADR 0031). Calamares needs
 # root; casper leaves the live user's sudo passwordless. The Wayland socket is
 # passed by absolute path so the root process can reach the live session.
 set -eu

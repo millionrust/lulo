@@ -1,4 +1,4 @@
-# Lulo OS boot splash (ADR 0029): the lockup centred on night blue, three
+# Lulo OS boot splash (ADR 0031): the lockup centred on night blue, three
 # softly pulsing seeds under it, and a password prompt for encrypted disks.
 
 Window.SetBackgroundTopColor(0.063, 0.086, 0.184);

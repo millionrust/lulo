@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs inside the image chroot (build-iso.sh step 3). Installs the packages,
-# the Lulo release, the branding, and prepares the live system (ADR 0029).
+# the Lulo release, the branding, and prepares the live system (ADR 0031).
 set -euo pipefail
 build=/tmp/lulo-build
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Calamares shellprocess@lulo_cleanup (ADR 0029): runs in the installed
+# Calamares shellprocess@lulo_cleanup (ADR 0031): runs in the installed
 # system's chroot before the first user exists. Removes what only the live
 # medium needs.
 set -eu

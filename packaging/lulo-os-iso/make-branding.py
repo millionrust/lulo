@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the Lulo OS image branding from the original Lulo artwork (ADR 0029).
+"""Render the Lulo OS image branding from the original Lulo artwork (ADR 0031).
 
 Every input is original Lulo OS artwork in this repository (docs/brand.md):
 the Segment mark and lockup in assets/brand, the app tile in assets/icons and

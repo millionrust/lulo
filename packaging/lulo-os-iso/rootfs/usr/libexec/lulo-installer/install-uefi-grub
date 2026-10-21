@@ -1,6 +1,6 @@
 #!/bin/sh
 # Calamares contextualprocess@lulo_bootloader_packages on a UEFI PC (ADR
-# 0029): replace the image's grub-pc with grub-efi-amd64 from the .deb kept
+# 0031): replace the image's grub-pc with grub-efi-amd64 from the .deb kept
 # in the image, so the install needs no network. The signed shim and GRUB
 # are already installed.
 set -eu

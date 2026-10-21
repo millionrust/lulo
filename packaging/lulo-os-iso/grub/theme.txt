@@ -1,4 +1,4 @@
-# Lulo OS GRUB theme (ADR 0029). Original Lulo artwork only (docs/brand.md).
+# Lulo OS GRUB theme (ADR 0031). Original Lulo artwork only (docs/brand.md).
 title-text: ""
 desktop-image: "background.png"
 desktop-color: "#10162f"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the Lulo OS live/installer ISO (ADR 0029).
+# Build the Lulo OS live/installer ISO (ADR 0031).
 #
 #   sudo packaging/lulo-os-iso/build-iso.sh \
 #       --version 0.9.0-beta.2 --debs /path/to/release-debs --out /path/to/out

@@ -1,4 +1,4 @@
-# ADR 0031 — Carry a third niri patch so Window ▸ Always on Top is real
+# ADR 0032 — Carry a third niri patch so Window ▸ Always on Top is real
 
 - **Status:** accepted 2026-10-20.
 - **Amends:** ADR 0021 (the niri patch series), ADR 0007.

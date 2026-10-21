@@ -8,6 +8,8 @@
 mod genie;
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod ipc;
+#[cfg(windows)]
+mod login_windows;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 pub use dock::run;
@@ -2206,12 +2208,11 @@ mod dock {
             };
             let invoker = rmac_dock::presentation::EntryId::Application(app_id.to_owned());
             let lookup = id.clone();
-            // Windows: Options shows no Open at Login row yet.
+            // Windows: the user's Run key (`login_windows`).
             #[cfg(windows)]
-            let task = cx.background_executor().spawn(async move {
-                let _ = lookup;
-                None::<bool>
-            });
+            let task = cx
+                .background_executor()
+                .spawn(async move { Some(crate::login_windows::enabled(&lookup)) });
             #[cfg(target_os = "linux")]
             let task = cx.background_executor().spawn(async move {
                 rmac_login_items_linux::snapshot().ok().map(|snapshot| {
@@ -2248,7 +2249,21 @@ mod dock {
             self.input_region = None;
             cx.notify();
             #[cfg(windows)]
-            let _ = login;
+            cx.background_executor()
+                .spawn(async move {
+                    let program = if login.enabled {
+                        None
+                    } else {
+                        rmac_apps::windows_apps::desktop_entry_program(&login.desktop_entry)
+                    };
+                    if (login.enabled || program.is_some())
+                        && crate::login_windows::set(&login.id, program.as_deref())
+                    {
+                        return;
+                    }
+                    eprintln!("could not change Open at Login");
+                })
+                .detach();
             #[cfg(target_os = "linux")]
             cx.background_executor()
                 .spawn(async move {

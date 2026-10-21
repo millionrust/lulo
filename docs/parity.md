@@ -962,7 +962,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Dock | Badges, progress and attention bounce (LauncherEntry) | attention fixed (op/win-parity-2: a flashing window bounces its tile, through the shell hook); badges and progress missing: Windows keeps them in its own taskbar (ITaskbarList3), with no way for another app to read them |
 | Dock | Bounce while an app launches | shared |
 | Dock | Tile menus: windows, recent documents, Show All Windows, Hide, Hide Others, Quit, Files and Settings tiles' own items | works; Show All Windows fixed (WIN-OS-100) |
-| Dock | Options ▸ Open at Login | missing |
+| Dock | Options ▸ Open at Login | fixed (op/win-parity-2: the user's Run key) |
 | Dock | Separator menu and drag-to-resize (DOCK-02/03) | shared |
 | Desktop | Icon grid, Stacks, widgets, Sort By, Clean Up | works |
 | Desktop | Right-click menu (New Folder … Show View Options) | works (WIN-OS-94) |

@@ -57,6 +57,8 @@ uuid.workspace = true
 # Windows: notices go to the Notification Centre lulo-shell hosts.
 [target.'cfg(windows)'.dependencies]
 rmac-notifications.workspace = true
+# Options ▸ Open at Login writes the user's Run key (`login_windows`).
+windows = { workspace = true, features = ["Win32_Foundation", "Win32_System_Registry"] }
 
 # Lulo OS only: niri, XDG autostart, the session bus (LauncherEntry badges,
 # notices) and the Dock's own sockets.

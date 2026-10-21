@@ -2620,7 +2620,8 @@ mod bar {
                     // whether it charges: the menu shows them the moment it
                     // opens, as on the Mac, and the full reading (time left,
                     // energy modes) fills in when it arrives.
-                    if let Some(live) = self.update.snapshot.status.battery {
+                    let live = self.status.read(cx).update.snapshot.status.battery;
+                    if let Some(live) = live {
                         let snapshot = self.battery_menu.get_or_insert_with(Default::default);
                         match snapshot.battery.as_mut() {
                             Some(battery) => {

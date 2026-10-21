@@ -422,8 +422,24 @@ unsafe extern "system" fn on_event(
     // Dock's keyboard surface) are not apps' windows; only the foreground
     // coming to the shell matters.
     // SAFETY: no arguments.
-    let own = process_id(hwnd) == unsafe { GetCurrentProcessId() };
+    let own_pid = unsafe { GetCurrentProcessId() };
+    let own = process_id(hwnd) == own_pid;
     if own && event != EVENT_SYSTEM_FOREGROUND {
+        return;
+    }
+    // Minimised windows' Dock tiles (`thumbnails`): picture the window that
+    // stops being the foreground one, and hand a minimised window's picture
+    // to the Dock; that path wakes the watchers once the picture is stored.
+    if event == EVENT_SYSTEM_FOREGROUND {
+        let previous = LAST_FOREGROUND.swap(hwnd.0 as isize, Ordering::AcqRel);
+        if previous != 0
+            && previous != hwnd.0 as isize
+            && is_app_window(handle_raw(previous), own_pid)
+        {
+            crate::thumbnails::keep(previous);
+        }
+    } else if event == EVENT_SYSTEM_MINIMIZESTART && !own && is_app_window(hwnd, own_pid) {
+        crate::thumbnails::minimized(hwnd.0 as isize);
         return;
     }
     // A Lulo app window's shadow (gpui_windows' `rmac_window_frame.rs`)
@@ -1934,4 +1950,18 @@ pub async fn move_windows_animated(
         }
     })
     .await;
+}
+
+/// The window that was in front last (`thumbnails` pictures it when
+/// another takes its place).
+static LAST_FOREGROUND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+fn handle_raw(raw: isize) -> HWND {
+    HWND(raw as *mut core::ffi::c_void)
+}
+
+/// Whether `raw` still names a window.
+pub(crate) fn is_window(raw: isize) -> bool {
+    // SAFETY: asks whether a handle names a window; no pointers.
+    unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(handle_raw(raw))) }.as_bool()
 }

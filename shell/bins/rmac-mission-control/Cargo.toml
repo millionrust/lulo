@@ -43,13 +43,3 @@ rmac-compositor-niri.workspace = true
 libc.workspace = true
 wayland-client.workspace = true
 wayland-protocols-wlr.workspace = true
-
-# Window pictures (`PrintWindow`, DWM's frame bounds).
-[target.'cfg(windows)'.dependencies]
-windows = { workspace = true, features = [
-    "Win32_Foundation",
-    "Win32_Graphics_Dwm",
-    "Win32_Graphics_Gdi",
-    "Win32_Storage_Xps",
-    "Win32_UI_WindowsAndMessaging",
-] }

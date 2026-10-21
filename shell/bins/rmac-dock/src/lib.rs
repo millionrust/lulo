@@ -4,7 +4,7 @@
 //! `lulo-shell`, each through `rmac-shell-layer`'s surfaces and
 //! `rmac-compositor-system`'s window list.
 
-#[cfg(all(target_os = "linux", feature = "wayland"))]
+#[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
 mod genie;
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod ipc;
@@ -172,7 +172,6 @@ mod dock {
     /// pours into it with Desktop & Dock's effect (Genie or Scale), from its
     /// last frame on screen to the new tile. Reduced motion skips it, and so
     /// does a window minimised before its picture was taken.
-    #[cfg(target_os = "linux")]
     fn play_minimize_effects(
         previous: &rmac_dock_runtime::Snapshot,
         next: &rmac_dock_runtime::Snapshot,
@@ -305,7 +304,6 @@ mod dock {
                                 );
                             }
                             this.outputs = outputs;
-                            #[cfg(target_os = "linux")]
                             if let Some(previous) = &this.snapshot {
                                 play_minimize_effects(previous, &update.snapshot, cx);
                             }

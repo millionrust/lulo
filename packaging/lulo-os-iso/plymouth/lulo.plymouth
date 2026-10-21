@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Lulo OS
+Description=Lulo OS boot splash: the Lulo lockup on night blue
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/lulo
+ScriptFile=/usr/share/plymouth/themes/lulo/lulo.script

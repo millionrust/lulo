@@ -1,0 +1,82 @@
+# Packages installed into the Lulo OS image (ADR 0031), all with
+# --no-install-recommends. One name per line; "?" before a name means "if the
+# archive has it" (a renamed or dropped package must not break the build).
+
+# Base system, kernel, firmware
+ubuntu-minimal
+linux-image-generic
+linux-firmware
+intel-microcode
+amd64-microcode
+?firmware-sof-signed
+initramfs-tools
+casper
+sudo
+locales
+tzdata
+dbus-user-session
+systemd-resolved
+bash-completion
+
+# Boot: BIOS GRUB in the image, UEFI GRUB swapped in by the installer
+grub-pc
+grub-pc-bin
+grub-efi-amd64-bin
+efibootmgr
+mokutil
+os-prober
+plymouth
+?plymouth-label
+
+# Disks and the installer
+calamares
+qt6-wayland
+rsync
+squashfs-tools
+ntfs-3g
+dosfstools
+exfatprogs
+e2fsprogs
+cryptsetup
+cryptsetup-initramfs
+parted
+?kpmcore
+
+# Hardware: networking, Bluetooth, sound, graphics
+network-manager
+wpasupplicant
+wireless-regdb
+iw
+bluez
+pipewire
+pipewire-pulse
+wireplumber
+alsa-ucm-conf
+libgl1-mesa-dri
+libegl-mesa0
+mesa-vulkan-drivers
+mesa-va-drivers
+?intel-media-va-driver
+?va-driver-all
+xwayland
+ubuntu-drivers-common
+upower
+power-profiles-daemon
+fprintd
+libpam-fprintd
+iio-sensor-proxy
+?libinput-tools
+
+# Login screen and fonts
+gdm3
+fonts-inter
+fonts-jetbrains-mono
+fonts-dejavu-core
+fonts-noto-color-emoji
+
+# rmac-session and rmac-apps recommends (installed on a normal Lulo OS too)
+keyd
+pkexec
+qt6-gtk-platformtheme
+?libonnxruntime1.23
+?evolution-ews-core

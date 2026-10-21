@@ -12,14 +12,16 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use rmac_compositor::WindowId;
-use windows::Win32::Foundation::{HWND, RECT};
-use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Graphics::Dwm::{
+    DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_NCRENDERING_ENABLED,
+};
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HGDIOBJ,
+    ClientToScreen, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC,
+    SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HGDIOBJ,
 };
 use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic};
+use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect, IsIconic};
 
 use super::{Captured, Pixels};
 use crate::model::Scene;
@@ -37,6 +39,41 @@ fn handle(window: WindowId) -> HWND {
     HWND(window.0 as isize as *mut core::ffi::c_void)
 }
 
+/// Whether DWM draws the window's frame. Lulo's own windows turn it off
+/// and draw their frame themselves (`gpui_windows`' `rmac_window_frame`):
+/// for them DWM's frame bounds still include the invisible resize borders,
+/// which print black, and their client area is the whole visible window.
+fn dwm_draws_frame(hwnd: HWND) -> bool {
+    let mut enabled = 1i32;
+    // SAFETY: reads a BOOL property of a window into an i32.
+    let read = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_NCRENDERING_ENABLED,
+            &mut enabled as *mut i32 as *mut core::ffi::c_void,
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
+    read.is_err() || enabled != 0
+}
+
+/// The client area in screen coordinates.
+fn client_on_screen(hwnd: HWND) -> Option<RECT> {
+    let mut client = RECT::default();
+    let mut origin = POINT::default();
+    // SAFETY: reads a window's client rectangle and maps its origin.
+    unsafe {
+        GetClientRect(hwnd, &mut client).ok()?;
+        ClientToScreen(hwnd, &mut origin).ok().ok()?;
+    }
+    Some(RECT {
+        left: origin.x,
+        top: origin.y,
+        right: origin.x + client.right,
+        bottom: origin.y + client.bottom,
+    })
+}
+
 /// The visible frame (without the invisible resize borders Windows adds
 /// round a window) as a rectangle inside the window's own rectangle.
 fn frame_in_window(hwnd: HWND, outer: RECT) -> RECT {
@@ -52,6 +89,11 @@ fn frame_in_window(hwnd: HWND, outer: RECT) -> RECT {
     };
     if read.is_err() || frame.right <= frame.left || frame.bottom <= frame.top {
         frame = outer;
+    }
+    if !dwm_draws_frame(hwnd) {
+        if let Some(client) = client_on_screen(hwnd) {
+            frame = client;
+        }
     }
     let width = outer.right - outer.left;
     let height = outer.bottom - outer.top;

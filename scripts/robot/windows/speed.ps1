@@ -139,6 +139,7 @@ if (-not $result['interactive'] -and (Shell-Pid)) {
                 param($w) $f = $R::WindowRect($w); $f.Width -ge $screen.Width -and $f.Height -ge $screen.Height
             }
             Start-Sleep -Milliseconds 600
+            if ($i -eq 0) { $R::Shot((Join-Path $out "mission-control.jpg")) }
             Escape
         }
         $result['mission_control_open_ms'] = Median $times

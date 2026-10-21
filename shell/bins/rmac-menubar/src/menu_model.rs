@@ -1559,15 +1559,7 @@ pub fn battery_menu_rows(
             }
             .into(),
         ));
-        // `battery.seconds_remaining` (UPower TimeToEmpty/TimeToFull) is read
-        // by the backend and already shown in System Settings' Battery pane
-        // (`system-settings/src/power.rs::format_duration`). It is
-        // deliberately not repeated here: the reference capture of the real
-        // Tahoe menu-bar Battery dropdown at 38%/discharging
-        // (target/evidence/mac-2026-09-23/ax/status-Battery.png) shows only
-        // the percentage and power source, no time estimate — inventing a
-        // row macOS doesn't draw here would violate "measure, never invent
-        // numbers." Re-check a charging capture before adding one.
+        rows.extend(battery_state_line(battery).map(StatusRow::Info));
     }
     if let Some(profiles) = snapshot
         .map(|snapshot| &snapshot.profiles)
@@ -1605,6 +1597,52 @@ pub fn battery_menu_rows(
         action: StatusAction::OpenSettings("battery"),
     });
     rows
+}
+
+/// A status menu row's text, as a person reads it: the title with its
+/// value, information lines, headers and commands.
+pub fn status_row_text(row: &StatusRow) -> Option<String> {
+    match row {
+        StatusRow::Title { label, value, .. } => Some(match value {
+            Some(value) => format!("{label} {value}"),
+            None => label.clone(),
+        }),
+        StatusRow::Info(label)
+        | StatusRow::Header(label)
+        | StatusRow::Detail(label)
+        | StatusRow::Item { label, .. }
+        | StatusRow::Badge { label, .. }
+        | StatusRow::Disclosure { label, .. }
+        | StatusRow::Check { label, .. } => Some(label.clone()),
+        StatusRow::Separator | StatusRow::GroupEnd | StatusRow::Slider { .. } => None,
+    }
+}
+
+/// The Battery menu's line under Power Source: the charge state, with the
+/// time to full or to empty when the backend (UPower's TimeToFull and
+/// TimeToEmpty, Windows' battery driver) knows it. The reference capture on
+/// battery with no estimate yet shows no line, so none is drawn then.
+pub fn battery_state_line(battery: &rmac_power::Battery) -> Option<String> {
+    use rmac_power::BatteryState;
+    let time = battery
+        .seconds_remaining
+        .filter(|seconds| *seconds > 0)
+        .map(|seconds| {
+            let minutes = seconds.div_ceil(60);
+            format!("{}:{:02}", minutes / 60, minutes % 60)
+        });
+    match battery.state {
+        BatteryState::Charging => Some(match time {
+            Some(time) => format!("Charging: {time} until full"),
+            None => "Charging".into(),
+        }),
+        BatteryState::FullyCharged => Some("Fully Charged".into()),
+        BatteryState::PendingCharge => Some("Battery Is Not Charging".into()),
+        BatteryState::Discharging | BatteryState::PendingDischarge => {
+            time.map(|time| format!("{time} remaining"))
+        }
+        BatteryState::Empty | BatteryState::Unknown => None,
+    }
 }
 
 pub struct SoundMenuInput<'a> {
@@ -3385,6 +3423,61 @@ mod tests {
         );
         let busy = battery_menu_rows(Some(&snapshot), None, Some(&["Terminal".to_owned()]));
         assert_eq!(labels(&busy)[8], "info:Terminal");
+    }
+
+    #[test]
+    fn battery_menu_says_whether_it_charges_and_how_long_is_left() {
+        let battery = |state, on_battery, seconds_remaining| rmac_power::Battery {
+            percentage: 80,
+            state,
+            on_battery,
+            seconds_remaining,
+            capacity: None,
+            charge_cycles: None,
+            energy_rate_watts: None,
+            model: None,
+            charge_threshold: Default::default(),
+            history: Default::default(),
+        };
+        use rmac_power::BatteryState::*;
+        let line =
+            |state, on_battery, seconds| battery_state_line(&battery(state, on_battery, seconds));
+        assert_eq!(
+            line(Charging, false, Some(3900)).as_deref(),
+            Some("Charging: 1:05 until full")
+        );
+        assert_eq!(line(Charging, false, None).as_deref(), Some("Charging"));
+        assert_eq!(
+            line(FullyCharged, false, None).as_deref(),
+            Some("Fully Charged")
+        );
+        assert_eq!(
+            line(PendingCharge, false, None).as_deref(),
+            Some("Battery Is Not Charging")
+        );
+        assert_eq!(
+            line(Discharging, true, Some(7_170)).as_deref(),
+            Some("2:00 remaining")
+        );
+        assert_eq!(line(Discharging, true, None), None);
+        let snapshot = rmac_power::Snapshot {
+            battery: Some(battery(FullyCharged, false, None)),
+            profiles: rmac_power::Profiles::default(),
+        };
+        let rows = battery_menu_rows(Some(&snapshot), None, None);
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Battery",
+                "info:Power Source: Power Adapter",
+                "info:Fully Charged",
+                "---",
+                "item:Battery Settings…"
+            ]
+        );
+        assert!(
+            matches!(rows[0], StatusRow::Title { value: Some(ref value), .. } if value == "80%")
+        );
     }
 
     #[test]

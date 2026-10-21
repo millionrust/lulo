@@ -862,6 +862,7 @@ class Run:
             ("push button", "button", "label"), lambda name: name.startswith("Battery 80%")), 10)
         self.check("Top bar: battery indicator shows the fake 80%, discharging battery",
                    battery is not None)
+        self.battery_states_follow_upower()
 
         self.dispatch("quick-settings")
         opened = self.wait_for(lambda: self.has_layer("rmac-quick-settings"), 10)
@@ -921,6 +922,76 @@ class Run:
                 toggled = False
         self.check("Control Centre: the Wi-Fi toggle switches without crashing", toggled)
         self.close_everything()
+
+    def set_upower(self, path: str, interface: str, name: str, kind: str, value: str) -> bool:
+        """Change one property of fake_hardware.py's UPower mock; dbusmock
+        emits PropertiesChanged, as the real UPower does."""
+        address = os.environ.get("DBUS_SYSTEM_BUS_ADDRESS", "")
+        if not address:
+            return False
+        return subprocess.run(
+            ["busctl", f"--address={address}", "set-property", "org.freedesktop.UPower",
+             path, interface, name, kind, value],
+            capture_output=True, timeout=10,
+        ).returncode == 0
+
+    def battery_states_follow_upower(self) -> None:
+        """macOS 26's battery item and menu for each power state, live from
+        UPower's signals: a bolt and "Charging: 1:05 until full" while it
+        charges, the plug and "Fully Charged" on power when full, and back
+        to the plain body on battery. The bar's accessible name carries the
+        state; the menu's rows are read from its tree."""
+        device = "/org/freedesktop/UPower/devices/DisplayDevice"
+        upower_device = "org.freedesktop.UPower.Device"
+
+        def set_state(on_battery: bool, state: int, percentage: float, to_full: int) -> bool:
+            return all([
+                self.set_upower("/org/freedesktop/UPower", "org.freedesktop.UPower",
+                                "OnBattery", "b", "true" if on_battery else "false"),
+                self.set_upower(device, upower_device, "TimeToFull", "x", str(to_full)),
+                self.set_upower(device, upower_device, "Percentage", "d", str(percentage)),
+                self.set_upower(device, upower_device, "State", "u", str(state)),
+            ])
+
+        def battery_item(prefix: str):
+            return self.wait_for(lambda: self.find_node(
+                ("push button", "button", "label"), lambda name: name.startswith(prefix)), 10)
+
+        def menu_rows(item, *rows: str) -> bool:
+            if item is None:
+                return False
+            opened = self.retry_until(lambda: self.click_node(item),
+                                      lambda: self.find_menu("Battery") is not None)
+            found = opened and all(
+                self.wait_for(lambda row=row: self.find_node(
+                    ("label", "text", "static", "menu item", "push button"),
+                    lambda name: name == row), 5) is not None
+                for row in rows
+            )
+            self.keys.key("escape")
+            self.wait_for(lambda: self.find_menu("Battery") is None, 5)
+            return found
+
+        changed = set_state(False, 1, 85.0, 3900)
+        self.check("Battery: the fake UPower changes to charging", changed)
+        if not changed:
+            return
+        charging = battery_item("Battery 85%, Charging")
+        self.check("Top bar: battery indicator follows UPower to 85%, charging", charging is not None)
+        self.check("Battery menu: Power Adapter, Charging: 1:05 until full",
+                   menu_rows(charging, "85%", "Power Source: Power Adapter",
+                             "Charging: 1:05 until full"))
+
+        set_state(False, 4, 100.0, 0)
+        full = battery_item("Battery 100%, Fully Charged")
+        self.check("Top bar: battery indicator follows UPower to fully charged", full is not None)
+        self.check("Battery menu: Power Adapter, Fully Charged",
+                   menu_rows(full, "100%", "Power Source: Power Adapter", "Fully Charged"))
+
+        # Back to fake_hardware.py's 80%, discharging battery.
+        set_state(True, 2, 80.0, 0)
+        self.check("Top bar: battery indicator follows UPower back to discharging",
+                   battery_item("Battery 80%, Discharging") is not None)
 
     def control_centre_detail_panels(self) -> None:
         """Display and Sound expand into detail views inside Control

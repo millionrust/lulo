@@ -884,6 +884,9 @@ def check_shell(
     # Closed panels let go of their windows after 3 s instead of 30, so the
     # memory they give back can be measured here.
     environment["LULO_PANEL_RELEASE_SECONDS"] = "3"
+    # CI runners have no battery: a stand-in charging one for the battery
+    # check (crates/rmac-power/src/win.rs).
+    environment["LULO_FAKE_BATTERY"] = FAKE_BATTERY
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
     # Lulo OS's default Dock (Files, Notes, Text Editor, Terminal, System
@@ -1304,6 +1307,10 @@ def check_shell(
         # 6e. Every Lulo app opens inside the work area the bar and the
         # Dock leave (WIN-OS-50).
         check_app_placement(bin_dir, environment, screenshots, failures)
+        # 6e1. The Dock's recent apps are the last three used that are not
+        # kept; the bar's battery and its menu (macOS 26's bolt, "Charging").
+        check_dock_recents(log, profile, failures)
+        check_battery(log, screenshots, failures)
 
         # 6e2. Control Centre inside the screen; the bar over a full-screen
         # window; the Window menu's Full-Screen Tile and the app menu's
@@ -2172,6 +2179,77 @@ def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | No
         except subprocess.TimeoutExpired:
             process.kill()
         time.sleep(0.5)
+
+
+#: The stand-in battery: 85%, charging, 1:05 until full.
+FAKE_BATTERY = "85,charging,3900"
+
+#: The Lulo apps check_app_placement opens that the smoke Dock does not
+#: keep, in the order it opens them: the Dock's recent apps afterwards.
+RECENT_APPS = ("org.rmac.Preview.desktop", "org.rmac.Clock.desktop", "org.rmac.Weather.desktop")
+
+
+def check_dock_recents(log: Log, profile: Path, failures: list[str]) -> None:
+    """After check_app_placement opened and quit every Lulo app, the Dock's
+    recent apps (as on the Mac and Lulo OS) are the last three it opened
+    that the Dock does not keep, oldest first, kept in the Dock's state
+    file and shown as tiles after the kept apps. Windows' own apps listed
+    by an AppUserModelID (Edge's `MSEdge`) get an entry by their program,
+    so they join the recent apps too."""
+    state = profile / "Local" / "Lulo" / "State" / "rmac" / "dock-recents"
+
+    def recents() -> list[str]:
+        try:
+            return [line.strip() for line in state.read_text(encoding="utf-8").splitlines() if line.strip()]
+        except OSError:
+            return []
+
+    # Apps still open from earlier checks stay too (running apps are never
+    # dropped), before these.
+    saved = wait_until(lambda: recents()[-len(RECENT_APPS):] == list(RECENT_APPS), 10.0)
+    print(f"shell: the Dock's recent apps after opening the Lulo apps: {recents()}")
+    if saved is None:
+        failures.append(f"the Dock's recent apps are {recents()}, not the last three used {list(RECENT_APPS)}")
+    _, running = dock_groups(log)
+    shown = [app_id for app_id, _, _ in running if app_id != "trash"]
+    wanted = [dock_app_id(app_id) for app_id in RECENT_APPS]
+    print(f"shell: Dock tiles after the separator: {shown}")
+    if [app_id for app_id in shown if app_id in wanted] != wanted:
+        failures.append(f"the Dock shows {shown} after its kept apps, not the recent apps {wanted}")
+    applications = profile / "Roaming" / "Lulo" / "Data" / "applications"
+    edge = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+    if edge.is_file():
+        entry = wait_until(lambda: (applications / "msedge.exe.desktop").is_file(), 30.0)
+        print(f"shell: Microsoft Edge (listed as MSEdge) has an entry by its program: {entry is not None}")
+        if entry is None:
+            failures.append("Microsoft Edge has no msedge.exe entry, so it can never be a recent app")
+
+
+def check_battery(log: Log, screenshots: Path | None, failures: list[str]) -> None:
+    """The bar's battery while it charges, as macOS 26 draws it: the bolt,
+    "Battery 85%, Charging" to a screen reader, and its menu: the
+    percentage, Power Source: Power Adapter and "Charging: 1:05 until
+    full" (the stand-in FAKE_BATTERY)."""
+    item = log.wait_for(r"^battery item Battery 85%, Charging, mark Some\(Charging\)", 10.0)
+    print(f"shell: the bar's battery: {item.group(0) if item else log.last(r'^battery item .*')}")
+    if item is None:
+        failures.append("the bar's battery does not show the charging bolt for a charging battery")
+        return
+    spot = log.last(r"^battery status at (-?\d+),(-?\d+)")
+    if spot is None:
+        failures.append("the bar did not say where its battery is")
+        return
+    before = len(log.lines())
+    click(int(spot.group(1)), int(spot.group(2)))
+    menu = log.wait_for(r"^status menu Battery: (.+)$", 5.0, after=before)
+    save(screenshots, "battery-menu")
+    text = menu.group(1) if menu else ""
+    print(f"shell: the Battery menu: {text}")
+    for row in ("Battery 85%", "Power Source: Power Adapter", "Charging: 1:05 until full", "Battery Settings…"):
+        if row not in text.split(" | "):
+            failures.append(f"the Battery menu has no \"{row}\" row: {text!r}")
+    tap(VK_ESCAPE)
+    time.sleep(0.5)
 
 
 VK_TAB = 0x09

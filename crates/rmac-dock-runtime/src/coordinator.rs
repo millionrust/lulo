@@ -170,6 +170,12 @@ impl Coordinator {
                 // upgrade, not on every render.
                 self.superseded = rmac_apps::superseded_desktop_ids();
                 self.health.catalog = SourceHealth::Healthy;
+                // An app already running when its entry first appears (a
+                // Windows app's entry is written after the shell starts)
+                // joins the recent apps now, not at the next window change.
+                if self.ready() {
+                    self.advance_recents();
+                }
             }
             Err(detail) => self.health.catalog = SourceHealth::Unavailable { detail },
         }

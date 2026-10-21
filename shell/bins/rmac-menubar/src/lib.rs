@@ -121,9 +121,10 @@ mod bar {
     const READY_FILE_ENV: &str = "RMAC_TOP_BAR_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_TOP_BAR_RENDER_COUNT_DIR";
 
-    const STATUS_ASSET_NAMES: [&str; 11] = [
+    const STATUS_ASSET_NAMES: [&str; 12] = [
         "status/battery.svg",
         "status/battery-bolt.svg",
+        "status/battery-plug.svg",
         "status/bluetooth.svg",
         "status/control-center.svg",
         "status/focus.svg",
@@ -243,6 +244,9 @@ mod bar {
                 "status/battery.svg" => Some(include_bytes!("../../../assets/status/battery.svg")),
                 "status/battery-bolt.svg" => {
                     Some(include_bytes!("../../../assets/status/battery-bolt.svg"))
+                }
+                "status/battery-plug.svg" => {
+                    Some(include_bytes!("../../../assets/status/battery-plug.svg"))
                 }
                 "status/bluetooth.svg" => {
                     Some(include_bytes!("../../../assets/status/bluetooth.svg"))
@@ -4543,6 +4547,16 @@ mod bar {
             // The Wi-Fi or Battery menu opens under its own status item.
             let status_panel = self.status_menu.map(|kind| {
                 let rows = self.status_rows(kind);
+                // The open status menu's text, for shell_smoke's battery check.
+                #[cfg(windows)]
+                rmac_shell_layer::windows::trace::trace_changed("status menu", || {
+                    let text = rows
+                        .iter()
+                        .filter_map(menu_model::status_row_text)
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+                    format!("status menu {kind:?}: {text}")
+                });
                 let width = menu_model::STATUS_MENU_WIDTH;
                 let left = self
                     .status_slots
@@ -5247,7 +5261,7 @@ mod bar {
                                     let mut item = div()
                                         .id(format!("status-{}-{index}", self.display_id))
                                         .role(Role::Button)
-                                        .aria_label(indicator.accessible)
+                                        .aria_label(indicator.accessible.clone())
                                         .relative()
                                         .h(px(SLOT_HEIGHT + 2.0 * reach))
                                         .my(px(-reach))
@@ -5302,7 +5316,20 @@ mod bar {
                                         item = item.child(indicator.visible);
                                     }
                                     if is_battery {
-                                        item.child(battery_glyph(snapshot.battery))
+                                        // What the bar shows, for shell_smoke.
+                                        #[cfg(windows)]
+                                        rmac_shell_layer::windows::trace::trace_changed(
+                                            "battery item",
+                                            || {
+                                                format!(
+                                                    "battery item {}, mark {:?}",
+                                                    indicator.accessible,
+                                                    snapshot.battery.map(|battery| battery.mark())
+                                                )
+                                            },
+                                        );
+                                        item.children(trace_probe("battery status"))
+                                            .child(battery_glyph(snapshot.battery))
                                     } else if indicator.kind == TopBarIndicatorKind::Microphone {
                                         // BAR-09: the Mac's orange privacy dot.
                                         item.child(
@@ -5690,9 +5717,10 @@ mod bar {
 
     /// The battery is drawn rather than loaded so its fill tracks the level,
     /// turning red at 10% or below while discharging, as on macOS. While the
-    /// battery charges, a bolt sits over the body, as macOS shows it: a
-    /// knocked-out outline in the opposite colour keeps it readable over the
-    /// fill. Like the
+    /// battery charges, a bolt sits over the body, and a plug while it is
+    /// on power but not charging (fully charged, or held), as macOS 26 shows
+    /// them (`BatteryIndicator::mark`): a knocked-out outline in the
+    /// opposite colour keeps the mark readable over the fill. Like the
     /// other status glyphs it takes the bar's label colour, so it is dark on
     /// the Light bar and white on the Dark one; the outline and nub are that
     /// colour at 55% opacity.
@@ -5711,12 +5739,14 @@ mod bar {
             })
             .unwrap_or((100, false));
         let fill_width = ((WIDTH - 2.0 * INSET - 2.4) * f32::from(percentage) / 100.0).max(1.5);
-        let charging = battery.is_some_and(|battery| {
-            matches!(
-                battery.state,
-                rmac_power::BatteryState::Charging | rmac_power::BatteryState::PendingCharge
-            )
+        let mark = battery.map_or(rmac_shell_status::BatteryMark::None, |battery| {
+            battery.mark()
         });
+        let mark_path = match mark {
+            rmac_shell_status::BatteryMark::None => None,
+            rmac_shell_status::BatteryMark::Charging => Some("status/battery-bolt.svg"),
+            rmac_shell_status::BatteryMark::PluggedIn => Some("status/battery-plug.svg"),
+        };
         // The bolt's knockout is the opposite of the label colour: dark on
         // the Dark bar's white fill, light on the Light bar's dark fill.
         let knockout = if tokens::is_dark() {
@@ -5724,9 +5754,9 @@ mod bar {
         } else {
             0xFFFFFFD9
         };
-        let bolt = |size: f32, color: u32| {
+        let bolt = |path: &'static str, size: f32, color: u32| {
             svg()
-                .path("status/battery-bolt.svg")
+                .path(path)
                 .absolute()
                 .w(px(size * 10.0 / 14.0))
                 .h(px(size))
@@ -5755,8 +5785,9 @@ mod bar {
                             .rounded(px(1.8))
                             .bg(rgba(if low { 0xFF453AFF } else { label })),
                     )
-                    .when(charging, |body| {
-                        body.child(bolt(13.0, knockout)).child(bolt(10.0, label))
+                    .when_some(mark_path, |body, path| {
+                        body.child(bolt(path, 13.0, knockout))
+                            .child(bolt(path, 10.0, label))
                     }),
             )
             .child(

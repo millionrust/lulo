@@ -26,20 +26,26 @@ pub struct App {
     pub name: String,
     /// Its parsing name below `shell:AppsFolder`.
     pub parsing: String,
+    /// The program a desktop app's shortcut starts, when its parsing name
+    /// is an AppUserModelID rather than a path (Edge's `MSEdge`, Chrome's
+    /// `Chrome`, VS Code's `Microsoft.VisualStudioCode`).
+    pub target: Option<String>,
 }
 
 /// The id the window list gives `app`'s windows, if it can tell: a Store
-/// app's AUMID (`Package!App`), or a desktop app's executable file name.
-/// Shortcuts to documents, folders and websites have none.
+/// app's AUMID (`Package!App`), or a desktop app's executable file name,
+/// from its parsing name or else its shortcut's target. Shortcuts to
+/// documents, folders and websites have none.
 pub fn window_app_id(app: &App) -> Option<String> {
     let parsing = app.parsing.trim();
     if parsing.contains('!') && !parsing.contains('\\') {
         return Some(parsing.to_owned());
     }
-    let file = parsing.rsplit(['\\', '/']).next()?;
-    file.to_ascii_lowercase()
-        .ends_with(".exe")
-        .then(|| file.to_ascii_lowercase())
+    let program = |path: &str| {
+        let file = path.trim().rsplit(['\\', '/']).next()?.to_ascii_lowercase();
+        file.ends_with(".exe").then_some(file)
+    };
+    program(parsing).or_else(|| app.target.as_deref().and_then(program))
 }
 
 /// Whether `app` is one of Lulo's own (they have their own entries).
@@ -303,6 +309,7 @@ mod tests {
         App {
             name: name.into(),
             parsing: parsing.into(),
+            target: None,
         }
     }
 
@@ -328,6 +335,15 @@ mod tests {
             window_app_id(&app("Help", "https://example.com/help")),
             None
         );
+        // Edge, Chrome and VS Code are listed by an AppUserModelID; their
+        // shortcuts' programs name their windows (and so their Dock tiles
+        // and recent apps).
+        let edge = App {
+            target: Some(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe".into()),
+            ..app("Microsoft Edge", "MSEdge")
+        };
+        assert_eq!(window_app_id(&edge).as_deref(), Some("msedge.exe"));
+        assert_eq!(window_app_id(&app("Microsoft Edge", "MSEdge")), None);
     }
 
     #[test]

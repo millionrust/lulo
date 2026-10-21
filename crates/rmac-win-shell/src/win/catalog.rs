@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use windows::core::{GUID, PWSTR};
+use windows::core::{Interface as _, GUID, PWSTR};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::{
     FindFirstChangeNotificationW, FindNextChangeNotification, FILE_NOTIFY_CHANGE_DIR_NAME,
@@ -20,8 +20,8 @@ use windows::Win32::System::Threading::{WaitForMultipleObjects, INFINITE};
 use windows::Win32::UI::Shell::{
     BHID_EnumItems, FOLDERID_AppsFolder, FOLDERID_CommonPrograms, FOLDERID_Desktop,
     FOLDERID_Documents, FOLDERID_Downloads, FOLDERID_Music, FOLDERID_Pictures, FOLDERID_Programs,
-    FOLDERID_Videos, IEnumShellItems, IShellItem, SHGetKnownFolderItem, SHGetKnownFolderPath,
-    KF_FLAG_DEFAULT, SIGDN_NORMALDISPLAY, SIGDN_PARENTRELATIVEPARSING,
+    FOLDERID_Videos, IEnumShellItems, IShellItem, IShellItem2, SHGetKnownFolderItem,
+    SHGetKnownFolderPath, KF_FLAG_DEFAULT, SIGDN_NORMALDISPLAY, SIGDN_PARENTRELATIVEPARSING,
 };
 
 use crate::model::apps::LULO_APPS;
@@ -167,18 +167,27 @@ pub fn apps_folder_apps(icons: &Path) -> Option<Vec<super::app_entries::App>> {
             .lines()
             .filter_map(|line| line.split_once('\t'))
             .filter(|(name, parsing)| !name.is_empty() && !parsing.is_empty())
-            .map(|(name, parsing)| super::app_entries::App {
-                name: name.to_owned(),
-                parsing: parsing.split('\t').next().unwrap_or(parsing).to_owned(),
+            .map(|(name, rest)| {
+                let mut columns = rest.split('\t');
+                super::app_entries::App {
+                    name: name.to_owned(),
+                    parsing: columns.next().unwrap_or(rest).to_owned(),
+                    target: columns
+                        .next()
+                        .filter(|target| !target.is_empty())
+                        .map(str::to_owned),
+                }
             })
             .collect(),
     )
 }
 
-/// The helper's lines, `<name>\t<parsing name>`, as Spotlight entries.
+/// The helper's lines, `<name>\t<parsing name>[\t<shortcut target>]`, as
+/// Spotlight entries.
 fn parse_helper_apps(text: &str) -> Vec<Entry> {
     text.lines()
         .filter_map(|line| line.split_once('\t'))
+        .map(|(name, rest)| (name, rest.split('\t').next().unwrap_or(rest)))
         .filter(|(name, parsing)| !name.is_empty() && !parsing.is_empty())
         .map(|(name, parsing)| {
             Entry::new(
@@ -192,7 +201,8 @@ fn parse_helper_apps(text: &str) -> Vec<Entry> {
 }
 
 /// `lulo-shell --apps-helper [<icons folder>]`: print the Apps folder, one
-/// `<name>\t<parsing name>` line per app, and exit. With a folder, also
+/// `<name>\t<parsing name>\t<shortcut target>` line per app (the target
+/// empty when the parsing name already names the program), and exit. With a folder, also
 /// keep each app's icon there as `<window app id>.png` (the shell's
 /// desktop entries for Windows apps), so the shell itself never holds the
 /// pixels or loads the shell libraries that read them (WIN-OS-53).
@@ -203,28 +213,20 @@ pub fn run_apps_helper() -> i32 {
         return 1;
     };
     if let Some(icons) = std::env::args_os().nth(2).map(PathBuf::from) {
-        let apps = found
-            .iter()
-            .filter_map(|entry| {
-                let Target::Shell(target) = &entry.target else {
-                    return None;
-                };
-                Some(super::app_entries::App {
-                    name: entry.name.clone(),
-                    parsing: target.trim_start_matches("shell:AppsFolder\\").to_owned(),
-                })
-            })
-            .collect::<Vec<_>>();
-        super::app_entries::save_icons(&icons, &apps);
+        super::app_entries::save_icons(&icons, &found);
     }
     let clean = |text: &str| text.replace(['\t', '\r', '\n'], " ");
     let mut output = std::io::BufWriter::new(std::io::stdout().lock());
-    for entry in found {
-        let Target::Shell(target) = &entry.target else {
-            continue;
-        };
-        let parsing = target.trim_start_matches("shell:AppsFolder\\");
-        if writeln!(output, "{}\t{}", clean(&entry.name), clean(parsing)).is_err() {
+    for app in found {
+        if writeln!(
+            output,
+            "{}\t{}\t{}",
+            clean(&app.name),
+            clean(&app.parsing),
+            clean(app.target.as_deref().unwrap_or_default())
+        )
+        .is_err()
+        {
             return 1;
         }
     }
@@ -234,9 +236,16 @@ pub fn run_apps_helper() -> i32 {
     0
 }
 
+/// `System.Link.TargetParsingPath`: the program a shortcut starts.
+const LINK_TARGET: windows::Win32::Foundation::PROPERTYKEY =
+    windows::Win32::Foundation::PROPERTYKEY {
+        fmtid: GUID::from_u128(0xb9b4b3fc_2b51_4a42_b5d8_324146afcf25),
+        pid: 2,
+    };
+
 /// Windows' Apps folder: the Start menu's shortcuts and the Store apps,
 /// each opened through `shell:AppsFolder\<its parsing name>`.
-fn apps_folder() -> Option<Vec<Entry>> {
+fn apps_folder() -> Option<Vec<super::app_entries::App>> {
     // SAFETY: COM calls on interfaces this function owns.
     unsafe {
         let folder: IShellItem =
@@ -265,12 +274,21 @@ fn apps_folder() -> Option<Vec<Entry>> {
             if name.is_empty() || parsing.is_empty() {
                 continue;
             }
-            found.push(Entry::new(
+            // A desktop app listed by its AppUserModelID: its shortcut's
+            // program names its windows.
+            let named_by_id =
+                !parsing.contains('!') && !parsing.to_ascii_lowercase().ends_with(".exe");
+            let target = named_by_id
+                .then(|| item.cast::<IShellItem2>().ok())
+                .flatten()
+                .and_then(|item| item.GetString(&LINK_TARGET).ok())
+                .map(take_string)
+                .filter(|target| !target.is_empty());
+            found.push(super::app_entries::App {
                 name,
-                Target::Shell(format!("shell:AppsFolder\\{parsing}")),
-                "",
-                Kind::Application,
-            ));
+                parsing,
+                target,
+            });
         }
         Some(found)
     }
@@ -444,9 +462,14 @@ mod tests {
     #[test]
     fn the_apps_helpers_lines_become_apps_folder_entries() {
         let entries = super::parse_helper_apps(
-            "Calculator\tMicrosoft.WindowsCalculator_8wekyb3d8bbwe!App\nbroken line\n\t\n",
+            "Calculator\tMicrosoft.WindowsCalculator_8wekyb3d8bbwe!App\t\nbroken line\n\t\n\
+             Microsoft Edge\tMSEdge\tC:\\Edge\\msedge.exe\n",
         );
-        assert_eq!(entries.len(), 1);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[1].target,
+            super::Target::Shell("shell:AppsFolder\\MSEdge".into())
+        );
         assert_eq!(entries[0].name, "Calculator");
         assert_eq!(
             entries[0].target,

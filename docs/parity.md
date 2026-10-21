@@ -933,6 +933,71 @@ Lulo's apps running directly on Windows 10/11, without Lulo OS. Mac reference as
 | WIN-SET-06 | P2 | M | Partial `op/win-settings-2` | Mac: every control in these panes works. / Windows limits: Bluetooth has no "discoverable" switch (apps cannot make the PC discoverable) and connects only audio devices whose endpoint Windows has present (WIN-SET-07); enterprise Wi-Fi opens Windows' network list for its sign-in; display scale is read-only; "Set time and date automatically" and setting the clock need an administrator (time zone works); trackpad changes on Windows before 11 24H2 apply after the next sign-in; the Wallpaper and Dock panes offer no per-display choice (Settings has no compositor output list on Windows, though the shell honours a per-display setting); Windows keeps no battery history and has no charge limit; mouse natural scrolling, middle-click emulation and Num Lock have no per-user Windows setting, so those rows are hidden. | `crates/system-settings/src/controller` |
 | WIN-SET-07 | P1 | M | Fixed `op/win-bluetooth` | Mac: the Bluetooth pane, Control Centre pill and menu-bar item show whenever the Mac has Bluetooth, on or off. / Windows (owner, Ruban's laptop: "why is there no bluetooth?"): with the Realtek radio switched off, `BluetoothFindFirstRadio` found no radio, so Settings hid the pane, and the bar and Control Centre read an empty Bluetooth snapshot. Settings now takes its hardware panes from `rmac-hardware` (the adapter by presence in the device tree), the bar and Control Centre read and watch `rmac-bluetooth`'s WinRT backend, and the backend finds the radio through `Radio::GetRadiosAsync` when no adapter object is returned. On the laptop: the pane shows switched off with pTron BT and ZEB-SOUND BOMB 5 under My Devices once on; Settings' switch and the Control Centre pill each turned the radio on and off (restored to off). Connect/Disconnect now works for Bluetooth audio (Core Audio's KSPROPSETID_BtAudio one-shot reconnect/disconnect) when Windows has the device's audio endpoint; other devices (and audio devices out of range, whose endpoint Windows removes) show Forget only. A connected device's battery level shows when Windows reports one (`DEVPKEY_Bluetooth_Battery`; BlueZ's Battery1 on Lulo OS). | `crates/rmac-bluetooth/src/win.rs`, `crates/system-settings/src/hardware_windows.rs`, `crates/rmac-shell-runtime/src/windows.rs` |
 
+## Lulo OS → Windows
+
+Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` over `shell/`, the Dock, Spotlight, Apps, Control Centre, Notification Centre and the session package, plus the shell code's Linux-only paths), and how the Windows Lulo layer stands. **works**: the shared view runs it on Windows and a robot or CI check saw it; **shared**: the same view code runs it, not yet seen working on the test PC; **fixed**: on `op/win-parity` / `op/win-parity-2`; **missing**; **impossible**, with the reason. Linked rows hold the detail.
+
+| Area | Lulo OS behaviour | Windows |
+| --- | --- | --- |
+| Menu bar | Lulo menu: About, Settings, Software Center, Recent Items, Force Quit, Sleep, Restart, Shut Down, Lock, Log Out, with confirmations | works (robot); Force Quit opens Task Manager, not Lulo's Force Quit window: missing |
+| Menu bar | Option in the Lulo menu skips the confirmations (BAR-04) | shared |
+| Menu bar | Front app's menus with submenus, ticks and live state; Lulo apps through the menu pipe | works; Windows apps get Lulo's standard menus only |
+| Menu bar | Wi-Fi, Battery, Sound, Bluetooth and Focus menus (BAR-03) | works (Focus fixed, WIN-OS-104) |
+| Menu bar | Battery ▸ Using Significant Energy (BAR-05) | missing |
+| Menu bar | Clock Options… and Battery Options… sheets | shared |
+| Menu bar | ⌃F2 menu focus, ⌃F8 status-item focus (ACC-05, CC-05) | missing: no Windows binding for the shortcuts (WIN-OS-21) |
+| Menu bar | Hides over full-screen windows, reveal strip at the top edge | works (WIN-OS-90) |
+| Menu bar | ⌘Q/⌘W close third-party apps' windows | missing: Windows apps keep their own keys; needs a keyboard hook |
+| Menu bar | Other apps' status icons (menu extras) | fixed when Lulo is the shell (WIN-OS-103); over Explorer they stay in Explorer's hidden tray |
+| Menu bar | Battery warnings at 10 % and 5 % | shared |
+| Dock | Pinned and running apps, dots, click brings every window forward | works |
+| Dock | Magnification, auto-hide with the Mac's timing | shared |
+| Dock | ⌥⌘D turns hiding on and off (DOCK-04) | missing: request exists, no Windows key binding |
+| Dock | Drag to reorder, drag off to remove, keep apps dropped from Apps | works |
+| Dock | Drop files on an app or the Trash | works |
+| Dock | Recent apps and indicator switches (SET-32) | shared |
+| Dock | Folder and Downloads stacks, Fan and Grid | shared |
+| Dock | Minimised windows as thumbnail tiles | works; tile names fixed (WIN-OS-106) |
+| Dock | Genie and Scale minimise animations (DOCK-11) | missing |
+| Dock | Badges, progress and attention bounce (LauncherEntry) | missing: Lulo OS reads them from the session bus; Windows apps' flashing could come from a shell hook |
+| Dock | Bounce while an app launches | shared |
+| Dock | Tile menus: windows, recent documents, Show All Windows, Hide, Hide Others, Quit, Files and Settings tiles' own items | works; Show All Windows fixed (WIN-OS-100) |
+| Dock | Options ▸ Open at Login | missing |
+| Dock | Separator menu and drag-to-resize (DOCK-02/03) | shared |
+| Desktop | Icon grid, Stacks, widgets, Sort By, Clean Up | works |
+| Desktop | Right-click menu (New Folder … Show View Options) | works (WIN-OS-94) |
+| Desktop | Rename in place, arrow keys and type-select (DESK-09) | shared |
+| Desktop | Drag icons out to other apps | missing: GPUI on Windows has no outgoing file drag |
+| Desktop | Click wallpaper to reveal the desktop, windows slide aside and back | fixed (op/win-parity-2) |
+| Desktop | Lock screen with Lulo's wallpaper and account picture (LOCK-01) | impossible: the Windows lock screen is LogonUI's |
+| Windows | Mission Control, App Exposé (with minimised row), hot corners | fixed (WIN-OS-100) |
+| Windows | Show Desktop key (F11) | missing: hot corner only |
+| Windows | Spaces: add, remove, switch | impossible: no public virtual-desktop API (WIN-OS-100) |
+| Windows | Move & Resize halves, quarters, Fill & Arrange, Hide Others | fixed (WIN-OS-101) |
+| Windows | Return to Previous Size | partial: Windows' restore, not Lulo's saved frame |
+| Windows | Edge-drag tiling preview | partial: Windows' Snap draws its own |
+| Windows | Title-bar double-click follows Desktop & Dock | fixed (op/win-parity-2) |
+| Windows | New windows kept between the bar and the Dock | works |
+| Windows | Window move and resize animations | impossible: DWM animates windows itself |
+| Switcher | ⌘Tab (Alt+Tab) switcher, quick switch, ⌘Q/⌘H on the selection | works |
+| Switcher | ↑/↓ on the selected app opens its App Exposé (MC-07) | fixed (op/win-parity-2) |
+| Spotlight | Apps, files, settings panes, answers (sums, units, currency, clocks, definitions) | works; file names from the Windows index (WIN-OS-102); definitions need a dictionary |
+| Spotlight | File results grouped by kind (SPOT-03) | shared |
+| Spotlight | Actions and Clipboard views | shared |
+| Spotlight | Spotlight and Apps close each other (SPOT-04) | shared |
+| Apps | Grid, categories, search, recents row, drag to Dock | works |
+| Control Centre | Wi-Fi, Bluetooth, Focus, Now Playing, Display, Sound modules and detail views | works (Bluetooth WIN-OS-63, Focus WIN-OS-104) |
+| Control Centre | Round controls: Low Power, Screen Mirroring, Dark Mode, Screenshot (CC-06/07) | shared; Screen Mirroring needs GNOME Network Displays on Lulo OS, none on Windows |
+| Control Centre | Edit Controls (CC-03) | shared |
+| Notification Centre | Cards with app icons, stacking, right-click mute and Turn Off, Clear All (NC-08/09) | works for Lulo apps |
+| Notification Centre | Banners with Options ▾ actions (NC-10), held while locked | works for Lulo apps; other apps' toasts are Windows' (no listener without package identity) |
+| Notification Centre | Slides in from the right edge (NC-11) | shared |
+| Notification Centre | System notices (Wi-Fi, Dock launch failures, hotkey) | fixed (WIN-OS-62) |
+| Session | Shut Down / Restart / Log Out ask apps to quit first; power button menu | works for the menu; the power button is Windows' |
+| Session | Screenshots ⇧⌘3/4/5 with Lulo's tools (SHOT-02) | missing: Windows' Snipping Tool keeps its keys |
+| Session | Volume, brightness and keyboard-backlight OSDs (KB-04) | partial: brightness helper exists; keys stay Windows' own OSD |
+| Session | Lulo without Explorer (the session is Lulo) | fixed in code, real sign-in not yet tested (WIN-OS-103) |
+
 ## Other
 
 | ID | Sev | Size | Status | Gap | Where |

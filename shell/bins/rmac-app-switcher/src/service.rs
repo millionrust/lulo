@@ -1275,8 +1275,24 @@ fn open_app_expose(after: Option<async_channel::Receiver<()>>, cx: &mut Context<
     .detach();
 }
 
+/// Windows: Mission Control runs in this same process (`lulo-shell`).
 #[cfg(windows)]
-fn open_app_expose(_after: Option<async_channel::Receiver<()>>, _cx: &mut Context<SwitcherView>) {}
+fn open_app_expose(after: Option<async_channel::Receiver<()>>, cx: &mut Context<SwitcherView>) {
+    cx.spawn(async move |_, cx: &mut AsyncApp| {
+        if let Some(done) = after {
+            let _ = done.recv().await;
+        }
+        cx.background_executor()
+            .timer(Duration::from_millis(150))
+            .await;
+        cx.update(|cx| {
+            if !rmac_shell_layer::system::requests::run("app-windows", cx) {
+                eprintln!("switcher: Mission Control is not running");
+            }
+        });
+    })
+    .detach();
+}
 
 /// ⌥⌘⎋ and the logo menu's Force Quit…: bring the open window forward,
 /// or open it on the app that was frontmost.

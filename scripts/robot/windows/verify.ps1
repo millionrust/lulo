@@ -130,9 +130,19 @@ try {
     foreach ($item in 'Wi-Fi', 'Battery', 'Sound', 'Bluetooth', 'Focus') {
         Check "menu bar: $item menu" {
             $node = Shell-Node "^$item"
+            if (-not $node) {
+                # Sound, Bluetooth and Focus are not in the bar by default,
+                # as on the Mac; Control Centre has them (checked below).
+                $result["menu bar: $item menu"] = 'n/a: not in the bar by default'
+                return
+            }
             $m = Mark
             $ok = Click-Node $node
-            $menu = Wait-Trace '^status menu ' $m 4
+            $first = Wait-Trace '^status menu ' $m 4
+            # The full reading arrives after the menu opens.
+            Start-Sleep -Seconds 3
+            $menu = Last-Trace '^status menu '
+            if ($item -eq 'Battery') { $result['battery menu at once'] = "$first" }
             Shot "status-$item"
             if ($item -eq 'Battery') {
                 $result['battery reading'] = "$(Last-Trace '^battery item ')"
@@ -152,6 +162,7 @@ try {
         Note 'menu bar: battery mark and rows' ($mark -eq $wantMark -and $hasLine -and $menu -match 'Using Significant Energy') "Windows: $($status.PowerLineStatus), $($status.BatteryChargeStatus), $([int]($status.BatteryLifePercent * 100))%; bar: $item; menu: $menu"
     }
     Check 'menu bar: Ctrl+F2 menu focus' {
+        [void]$R::Activate((@($R::WindowsOf($calc.Id, $true)) | Select-Object -First 1)); Start-Sleep -Milliseconds 500
         $m = Mark
         $sent = Keys @($VK.Ctrl, 0x71)
         $open = Wait-Trace '^menu \d+ row ' $m 3
@@ -166,19 +177,21 @@ try {
     }
     Check 'dock: tile menu' {
         $p = Point-Of (Last-Trace '^dock tile org\.rmac\.Calculator')
+        $m = Mark
         if ($p -and (Ours ($R::PidAt($p[0], $p[1])))) { $R::RightClick($p[0], $p[1]) }
-        Start-Sleep -Milliseconds 800
-        $names = Shell-Names
+        $menu = Wait-Trace '^dock menu: ' $m 3
+        Start-Sleep -Milliseconds 400
         Shot 'dock-menu'
+        $rows = if ($menu) { @($menu.Substring(11) -split ' \| ') } else { @() }
         $want = 'Show All Windows', 'Hide', 'Quit'
-        $missing = @($want | Where-Object { $names -notcontains $_ })
-        Note 'dock: tile menu' (-not $missing) "missing: $($missing -join ', ')"
+        $missing = @($want | Where-Object { $rows -notcontains $_ })
+        Note 'dock: tile menu' ($menu -and -not $missing) "$menu; missing: $($missing -join ', ')"
     }
     Check 'dock: recent apps' {
         # Three Lulo apps a fresh profile's Dock does not keep, opened and
         # quit in turn: the recent apps are those three, oldest first.
         $kept = 'files', 'notes', 'text-editor', 'terminal', 'system-settings', 'weather', 'calculator', 'mail', 'app-drawer'
-        $ids = @{ 'preview' = 'Preview'; 'clock' = 'Clock'; 'player' = 'Player'; 'system-monitor' = 'SystemMonitor'; 'calendar' = 'Calendar' }
+        $ids = @{ 'preview' = 'Preview'; 'clock' = 'Clock'; 'system-monitor' = 'SystemMonitor'; 'calendar' = 'Calendar' }
         $apps = @(Get-ChildItem $Bin -Filter 'rmac-*.exe' | ForEach-Object { $_.BaseName.Substring(5) } | Where-Object { $kept -notcontains $_ -and $ids.ContainsKey($_) }) | Select-Object -First 3
         foreach ($app in $apps) { $p = Launch "rmac-$app.exe"; Close-App $p; Start-Sleep -Milliseconds 600 }
         Start-Sleep -Seconds 2
@@ -267,10 +280,10 @@ try {
         $m = Mark
         $sent = Keys @($VK.Alt, $VK.Space)
         Start-Sleep -Milliseconds 700
-        if ($sent -and (Lulo-Front)) { $R::Type('12*12') }
-        $rows = Wait-Trace '^spotlight "12\*12": [1-9]' $m 4
+        if ($sent -and (Lulo-Front)) { $R::Type('100/4') }
+        $rows = Wait-Trace '^spotlight "100/4": [1-9]' $m 4
         Start-Sleep -Milliseconds 500
-        $answer = @(Shell-Names) -match '144'
+        $answer = @(Shell-Names) -match '\b25\b'
         Shot 'spotlight'
         Esc
         $m = Mark

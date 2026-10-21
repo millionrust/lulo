@@ -2234,9 +2234,14 @@ def check_battery(log: Log, screenshots: Path | None, failures: list[str]) -> No
         return
     before = len(log.lines())
     click(int(spot.group(1)), int(spot.group(2)))
-    menu = log.wait_for(r"^status menu Battery: (.+)$", 5.0, after=before)
+    # The charge and power source show at once (from the bar); the time to
+    # full arrives with the full reading.
+    first = log.wait_for(r"^status menu Battery: (.+)$", 5.0, after=before)
+    menu = log.wait_for(r"^status menu Battery: (.*until full.*)$", 5.0, after=before)
     save(screenshots, "battery-menu")
-    text = menu.group(1) if menu else ""
+    text = (menu or first).group(1) if (menu or first) else ""
+    if first is not None and "Battery 85%" not in first.group(1).split(" | "):
+        failures.append(f"the Battery menu opened without its charge: {first.group(1)!r}")
     print(f"shell: the Battery menu: {text}")
     for row in ("Battery 85%", "Power Source: Power Adapter", "Charging: 1:05 until full", "Battery Settings…"):
         if row not in text.split(" | "):

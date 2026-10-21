@@ -2616,6 +2616,37 @@ mod bar {
                     .detach();
                 }
                 StatusMenuKind::Battery => {
+                    // The bar already knows the charge, the power source and
+                    // whether it charges: the menu shows them the moment it
+                    // opens, as on the Mac, and the full reading (time left,
+                    // energy modes) fills in when it arrives.
+                    if let Some(live) = self.update.snapshot.status.battery {
+                        let snapshot = self.battery_menu.get_or_insert_with(Default::default);
+                        match snapshot.battery.as_mut() {
+                            Some(battery) => {
+                                if battery.state != live.state {
+                                    battery.seconds_remaining = None;
+                                }
+                                battery.percentage = live.percentage;
+                                battery.state = live.state;
+                                battery.on_battery = live.on_battery;
+                            }
+                            None => {
+                                snapshot.battery = Some(rmac_power::Battery {
+                                    percentage: live.percentage,
+                                    state: live.state,
+                                    on_battery: live.on_battery,
+                                    seconds_remaining: None,
+                                    capacity: None,
+                                    charge_cycles: None,
+                                    energy_rate_watts: None,
+                                    model: None,
+                                    charge_threshold: Default::default(),
+                                    history: Default::default(),
+                                })
+                            }
+                        }
+                    }
                     cx.spawn(async move |this, cx| {
                         let snapshot = cx
                             .background_executor()
@@ -2626,6 +2657,7 @@ mod bar {
                         let _ = this.update(cx, |this, cx| {
                             if this.status_generation == generation
                                 && this.status_menu == Some(StatusMenuKind::Battery)
+                                && snapshot.is_some()
                             {
                                 this.battery_menu = snapshot;
                                 cx.notify();

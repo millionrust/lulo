@@ -1,6 +1,7 @@
 //! Apps catalog, selection, and launch controller.
 
 mod lifecycle;
+mod name_wrap;
 mod render;
 
 use std::time::Duration;

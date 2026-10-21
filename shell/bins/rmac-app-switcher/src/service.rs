@@ -1215,8 +1215,19 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
     }
     if command == Command::ForceQuit {
         // Lulo's own window on both systems.
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(target_os = "linux")]
         open_force_quit(service, cx);
+        // Windows reads the window list only while it is needed: follow it
+        // while Force Quit is open, so a quit app leaves the list.
+        #[cfg(windows)]
+        {
+            let already_open = service.read(cx).force_quit.is_some();
+            if already_open {
+                open_force_quit(service, cx);
+            } else {
+                follow_while_force_quit_open(service, cx);
+            }
+        }
         return;
     }
     let open = service.read(cx).open;
@@ -1290,6 +1301,46 @@ fn open_app_expose(after: Option<async_channel::Receiver<()>>, cx: &mut Context<
                 eprintln!("switcher: Mission Control is not running");
             }
         });
+    })
+    .detach();
+}
+
+/// Windows: open Force Quit on a fresh window list and keep the list
+/// following the windows until Force Quit closes.
+#[cfg(windows)]
+fn follow_while_force_quit_open(service: &Entity<Service>, cx: &mut App) {
+    let (events_tx, events) = async_channel::bounded(64);
+    cx.background_executor()
+        .spawn(async move {
+            let _ = rmac_compositor_system::watch(events_tx).await;
+        })
+        .detach();
+    let service = service.clone();
+    cx.spawn(async move |cx: &mut AsyncApp| {
+        let mut opened = false;
+        while let Ok(event) = events.recv().await {
+            let snapshot = matches!(event, rmac_compositor::Event::Snapshot { .. });
+            let keep = cx.update(|cx| {
+                service.update(cx, |service, _| service.apply(event));
+                if !opened {
+                    if !snapshot {
+                        return true;
+                    }
+                    opened = true;
+                    open_force_quit(&service, cx);
+                    return service.read(cx).force_quit.is_some();
+                }
+                let open = service.read(cx).force_quit.is_some();
+                if open {
+                    service.update(cx, |service, cx| service.refresh_force_quit(cx));
+                }
+                open
+            });
+            if !keep {
+                // Dropping the receiver ends the watch.
+                return;
+            }
+        }
     })
     .detach();
 }

@@ -16,7 +16,7 @@ const SAMPLE: Duration = Duration::from_millis(400);
 const THRESHOLD: f64 = 0.25;
 /// Linux's user-visible clock tick (`sysconf(_SC_CLK_TCK)`), 100 on every
 /// supported kernel configuration.
-#[cfg(any(not(windows), test))]
+#[cfg(not(windows))]
 const CLOCK_TICKS: f64 = 100.0;
 /// The Mac lists a handful of apps at most.
 const MAX_APPS: usize = 5;

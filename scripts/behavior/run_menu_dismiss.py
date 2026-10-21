@@ -923,6 +923,54 @@ class Run:
         self.check("Control Centre: the Wi-Fi toggle switches without crashing", toggled)
         self.close_everything()
 
+    def dock_recent_apps_follow_use(self) -> None:
+        """The Dock's recent apps, as on macOS 26: four installed apps the
+        Dock does not keep are opened and quit in turn; the section then
+        holds the last three, oldest first, as tiles after the kept apps
+        and in the Dock's state file, and the first one has left."""
+        foot = shutil.which("foot", path=self.env.get("PATH"))
+        if foot is None:
+            self.check("Dock recent apps: the last three used", False, "foot is required")
+            return
+        applications = Path(self.env["XDG_DATA_HOME"]) / "applications"
+        applications.mkdir(parents=True, exist_ok=True)
+        ids = [f"org.rmac.RecentProbe{index}" for index in range(1, 5)]
+        for index, app_id in enumerate(ids, 1):
+            (applications / f"{app_id}.desktop").write_text(
+                "[Desktop Entry]\nType=Application\n"
+                f"Name=Recent Probe {index}\nExec={foot} --app-id={app_id}\n"
+            )
+        time.sleep(2.0)  # the Dock's catalogue reads the new entries
+        for app_id in ids:
+            window = self.spawn([foot, f"--app-id={app_id}", "sleep", "60"], f"recent-{app_id}")
+            shown = self.wait_for(lambda app_id=app_id: any(
+                item.get("app_id") == app_id for item in self.niri("windows") or []), 10)
+            time.sleep(0.8)
+            window.terminate()
+            window.wait(timeout=5)
+            self.wait_for(lambda app_id=app_id: not any(
+                item.get("app_id") == app_id for item in self.niri("windows") or []), 10)
+            self.check(f"Dock recent apps: {app_id} opened", bool(shown))
+        state = Path(self.env["XDG_STATE_HOME"]) / "rmac" / "dock-recents"
+        wanted = [f"{app_id}.desktop" for app_id in ids[1:]]
+
+        def recents() -> list[str]:
+            try:
+                return [line.strip() for line in state.read_text().splitlines() if line.strip()]
+            except OSError:
+                return []
+
+        saved = self.wait_for(lambda: [entry for entry in recents() if "RecentProbe" in entry] == wanted, 10)
+        self.check("Dock recent apps: the last three used, oldest first, and the first has left",
+                   bool(saved), f"state={recents()}")
+        tiles = self.wait_for(lambda: all(
+            self.find_node(("push button", "button"), lambda name, label=f"Recent Probe {index}": name.startswith(label))
+            for index in (2, 3, 4)
+        ) and self.find_node(("push button", "button"), lambda name: name.startswith("Recent Probe 1")) is None, 10)
+        self.check("Dock recent apps: their tiles show after the kept apps", bool(tiles))
+        for app_id in ids:
+            (applications / f"{app_id}.desktop").unlink(missing_ok=True)
+
     def set_upower(self, path: str, interface: str, name: str, kind: str, value: str) -> bool:
         """Change one property of fake_hardware.py's UPower mock; dbusmock
         emits PropertiesChanged, as the real UPower does."""
@@ -1866,6 +1914,8 @@ class Run:
                 self.desktop_menu_appearance()
             elif self.args.only == "fake-hardware":
                 self.fake_hardware_shows_real_data()
+            elif self.args.only == "dock-recents":
+                self.dock_recent_apps_follow_use()
             elif self.args.only == "focus-return":
                 self.escape_returns_focus_to_window()
             elif self.args.only == "option-alternate":
@@ -1911,6 +1961,7 @@ class Run:
         self.control_centre_sound_outputs()
         self.desktop_menu_appearance()
         self.fake_hardware_shows_real_data()
+        self.dock_recent_apps_follow_use()
         self.clock_popover_dismissal()
         self.notification_center_shrunk_wallpaper_click()
         self.launcher_expanded_row_press()
@@ -2023,7 +2074,7 @@ def main() -> int:
                                            "combined", "control-centre-list",
                                            "control-centre-detail", "control-centre-sound",
                                            "control-centre-grow",
-                                           "appearance", "fake-hardware",
+                                           "appearance", "fake-hardware", "dock-recents",
                                            "focus-return", "option-alternate",
                                            "notification-center-shrink", "launcher-expanded"))
     parser.add_argument(

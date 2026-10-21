@@ -31,7 +31,7 @@ impl Edge {
         }
     }
 
-    fn fit(self, rc: &mut RECT, thickness: i32) {
+    pub(crate) fn fit(self, rc: &mut RECT, thickness: i32) {
         match self {
             Edge::Top => rc.bottom = rc.top + thickness,
             Edge::Bottom => rc.top = rc.bottom - thickness,
@@ -54,6 +54,9 @@ fn data(hwnd: HWND) -> APPBARDATA {
 
 /// Make `hwnd` an AppBar. False when Windows refused (it is one already).
 pub fn register(hwnd: HWND) -> bool {
+    if super::work_area::is_shell() {
+        return true;
+    }
     let mut data = data(hwnd);
     // SAFETY: `data` is a valid, sized APPBARDATA for the call.
     unsafe { SHAppBarMessage(ABM_NEW, &mut data) != 0 }
@@ -64,6 +67,15 @@ pub fn register(hwnd: HWND) -> bool {
 /// the strip already held (`current`), nothing is sent: setting a position
 /// notifies every other AppBar, which must not echo back and forth.
 pub fn reserve(hwnd: HWND, edge: Edge, thickness: i32, monitor: RECT, current: RECT) -> RECT {
+    // Lulo is the shell: no taskbar answers AppBar messages.
+    if super::work_area::is_shell() {
+        let mut wanted = monitor;
+        edge.fit(&mut wanted, thickness);
+        if wanted == current {
+            return current;
+        }
+        return super::work_area::reserve(hwnd, edge, thickness, monitor);
+    }
     let mut data = data(hwnd);
     data.uEdge = edge.code();
     data.rc = monitor;
@@ -84,6 +96,9 @@ pub fn reserve(hwnd: HWND, edge: Edge, thickness: i32, monitor: RECT, current: R
 /// Tell Windows the AppBar moved or changed, as the documentation asks
 /// after every `WM_WINDOWPOSCHANGED`.
 pub fn moved(hwnd: HWND) {
+    if super::work_area::is_shell() {
+        return;
+    }
     let mut data = data(hwnd);
     // SAFETY: as above.
     unsafe { SHAppBarMessage(ABM_WINDOWPOSCHANGED, &mut data) };
@@ -91,6 +106,10 @@ pub fn moved(hwnd: HWND) {
 
 /// Give the strip back to the work area.
 pub fn remove(hwnd: HWND) {
+    if super::work_area::is_shell() {
+        super::work_area::remove(hwnd);
+        return;
+    }
     let mut data = data(hwnd);
     // SAFETY: as above; removing an unknown AppBar does nothing.
     unsafe { SHAppBarMessage(ABM_REMOVE, &mut data) };

@@ -33,7 +33,9 @@ pub mod material;
 pub mod power;
 pub mod surface;
 pub mod trace;
+pub mod tray;
 pub mod wallpaper_layer;
+pub mod work_area;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

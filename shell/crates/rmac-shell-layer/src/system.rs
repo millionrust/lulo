@@ -143,6 +143,46 @@ pub mod requests {
     }
 }
 
+/// Other apps' status icons in the menu bar, as the Mac shows third-party
+/// menu extras: on Windows the notification-area icons `lulo-shell` keeps
+/// when it is the user's shell (`windows::tray`). Elsewhere there are none.
+pub mod tray {
+    use std::sync::Arc;
+
+    /// One icon: its identity, its tooltip and its picture.
+    #[derive(Clone)]
+    pub struct Item {
+        pub key: u64,
+        pub tip: String,
+        pub image: Option<Arc<gpui::RenderImage>>,
+    }
+
+    /// The icons to show now, in the order their apps added them.
+    pub fn items() -> Vec<Item> {
+        #[cfg(windows)]
+        return crate::windows::tray::items();
+        #[cfg(not(windows))]
+        Vec::new()
+    }
+
+    /// A channel told whenever the icons change; `None` where there are
+    /// never any.
+    pub fn subscribe() -> Option<async_channel::Receiver<()>> {
+        #[cfg(windows)]
+        return Some(crate::windows::tray::subscribe());
+        #[cfg(not(windows))]
+        None
+    }
+
+    /// The icon `key` was clicked (`secondary`: with the right button).
+    pub fn activate(key: u64, secondary: bool) {
+        #[cfg(windows)]
+        crate::windows::tray::activate(key, secondary);
+        #[cfg(not(windows))]
+        let _ = (key, secondary);
+    }
+}
+
 /// Lulo menu rows only one platform has (Windows: Start Lulo at Sign-In,
 /// Use Files for Folders, Turn Off Lulo). Each row's action is a
 /// [`requests`] name; `checked` asks whether its checkmark shows.

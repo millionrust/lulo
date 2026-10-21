@@ -945,14 +945,14 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Menu bar | Wi-Fi, Battery, Sound, Bluetooth and Focus menus (BAR-03) | works (Focus fixed, WIN-OS-104) |
 | Menu bar | Battery ▸ Using Significant Energy (BAR-05) | missing |
 | Menu bar | Clock Options… and Battery Options… sheets | shared |
-| Menu bar | ⌃F2 menu focus, ⌃F8 status-item focus (ACC-05, CC-05) | missing: no Windows binding for the shortcuts (WIN-OS-21) |
+| Menu bar | ⌃F2 menu focus, ⌃F8 status-item focus, ⌃F3 Dock focus (ACC-05, CC-05) | fixed (op/win-parity-2: Ctrl+F2, Ctrl+F8, Ctrl+F3) |
 | Menu bar | Hides over full-screen windows, reveal strip at the top edge | works (WIN-OS-90) |
 | Menu bar | ⌘Q/⌘W close third-party apps' windows | missing: Windows apps keep their own keys; needs a keyboard hook |
 | Menu bar | Other apps' status icons (menu extras) | fixed when Lulo is the shell (WIN-OS-103); over Explorer they stay in Explorer's hidden tray |
 | Menu bar | Battery warnings at 10 % and 5 % | shared |
 | Dock | Pinned and running apps, dots, click brings every window forward | works |
 | Dock | Magnification, auto-hide with the Mac's timing | shared |
-| Dock | ⌥⌘D turns hiding on and off (DOCK-04) | missing: request exists, no Windows key binding |
+| Dock | ⌥⌘D turns hiding on and off (DOCK-04) | fixed (op/win-parity-2: Ctrl+Alt+D) |
 | Dock | Drag to reorder, drag off to remove, keep apps dropped from Apps | works |
 | Dock | Drop files on an app or the Trash | works |
 | Dock | Recent apps and indicator switches (SET-32) | shared |

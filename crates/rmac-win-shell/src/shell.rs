@@ -254,8 +254,7 @@ fn start_hotkey(cx: &mut App) -> Option<Hooks> {
         while let Ok(event) = receiver.recv().await {
             let request = match event {
                 DesktopEvent::Hotkey => "launcher",
-                DesktopEvent::MissionControl => "mission-control",
-                DesktopEvent::AppWindows => "app-windows",
+                DesktopEvent::Request(request) => request,
                 _ => continue,
             };
             cx.update(|cx| {

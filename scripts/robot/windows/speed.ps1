@@ -130,6 +130,29 @@ if (-not $result['interactive'] -and (Shell-Pid)) {
         $result['spotlight_open_ms'] = Median $times
         $result['spotlight_open_runs'] = $times -join ','
 
+        $cpu0 = $R::CpuMs((Shell-Pid))
+        # A file search: typing a folder every profile has ("Documents")
+        # until a row names it. Only the timing is kept.
+        $times = @()
+        for ($i = 0; $i -lt $Runs; $i++) {
+            if (-not (Front-Lulo)) { break }
+            [void](Keys-ToLulo $hotkey); Start-Sleep -Milliseconds 600
+            $panel = @(Shell-Windows | Where-Object { $R::Title($_) -eq 'Spotlight' }) | Select-Object -First 1
+            if (-not $panel -or $R::PidOf($R::Foreground()) -ne (Shell-Pid)) { Escape; break }
+            $watch = [Diagnostics.Stopwatch]::StartNew()
+            $R::Type('Documents'); Mark
+            $found = -1
+            while ($watch.ElapsedMilliseconds -lt 15000) {
+                if (@($R::Tree($panel, 8, 300) | Where-Object { $_.Name -match '^Documents\b' -and $_.Type -ne 'Edit' }).Count) { $found = [double]$watch.ElapsedMilliseconds; break }
+                Start-Sleep -Milliseconds 20
+            }
+            $times += $found
+            Escape
+        }
+        $result['spotlight_file_ms'] = Median $times
+        $result['spotlight_file_runs'] = $times -join ','
+        $result['spotlight_file_shell_cpu_ms'] = [math]::Round($R::CpuMs((Shell-Pid)) - $cpu0)
+
         # Mission Control (Ctrl+Up): a new full-screen shell window.
         $screen = $R::Screen()
         $times = @()

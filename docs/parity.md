@@ -974,7 +974,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Windows | Show Desktop key (F11) | fixed as Win+D when Lulo is the shell (Explorer keeps Win+D otherwise); hot corner always |
 | Windows | Spaces: add, remove, switch | impossible: no public virtual-desktop API (WIN-OS-100) |
 | Windows | Move & Resize halves, quarters, Fill & Arrange, Hide Others | fixed (WIN-OS-101) |
-| Windows | Return to Previous Size | partial: Windows' restore, not Lulo's saved frame |
+| Windows | Return to Previous Size | fixed (op/win-parity-2: the frame recorded before the first tile or centre, this session) |
 | Windows | Edge-drag tiling preview | partial: Windows' Snap draws its own |
 | Windows | Title-bar double-click follows Desktop & Dock | fixed (op/win-parity-2) |
 | Windows | New windows kept between the bar and the Dock | works |

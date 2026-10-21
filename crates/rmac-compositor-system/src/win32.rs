@@ -1339,6 +1339,7 @@ fn run_action(action: &domain::Action) -> Result<(), domain::ActionError> {
             Ok(())
         }
         domain::Action::CenterWindow { window } => {
+            remember_frame(handle(*window));
             let hwnd = handle(*window);
             let (work, _) = work_area(hwnd).ok_or_else(|| rejected("no monitor"))?;
             let frame = frame_bounds(hwnd).ok_or_else(|| rejected("no frame"))?;
@@ -1357,6 +1358,7 @@ fn run_action(action: &domain::Action) -> Result<(), domain::ActionError> {
             Ok(())
         }
         domain::Action::TileWindow { window, region } => {
+            remember_frame(handle(*window));
             let (x, y, width, height) = region.frame_percent();
             frame_percent(handle(*window), x, y, width, height)
         }
@@ -2020,4 +2022,38 @@ fn handle_raw(raw: isize) -> HWND {
 pub(crate) fn is_window(raw: isize) -> bool {
     // SAFETY: asks whether a handle names a window; no pointers.
     unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(handle_raw(raw))) }.as_bool()
+}
+
+/// The frame each window had before Move & Resize first placed it, for
+/// Return to Previous Size (WIN-01, as Mission Control's tile history on
+/// Lulo OS). Kept for this session only.
+static PREVIOUS_FRAMES: Mutex<Option<HashMap<isize, RECT>>> = Mutex::new(None);
+
+fn remember_frame(hwnd: HWND) {
+    let Some(frame) = frame_bounds(hwnd) else {
+        return;
+    };
+    if let Ok(mut frames) = PREVIOUS_FRAMES.lock() {
+        let frames = frames.get_or_insert_with(HashMap::new);
+        frames.retain(|window, _| is_window(*window));
+        frames.entry(hwnd.0 as isize).or_insert(frame);
+    }
+}
+
+/// Return to Previous Size: put `window` back where it was before Move &
+/// Resize first placed it. False when nothing is recorded (it does
+/// nothing, as on the Mac).
+pub fn restore_window_size(window: domain::WindowId) -> bool {
+    let hwnd = handle(window);
+    let frame = PREVIOUS_FRAMES
+        .lock()
+        .ok()
+        .and_then(|mut frames| frames.as_mut()?.remove(&(hwnd.0 as isize)));
+    match frame {
+        Some(frame) => {
+            place_frame(hwnd, frame);
+            true
+        }
+        None => false,
+    }
 }

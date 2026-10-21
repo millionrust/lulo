@@ -6197,6 +6197,12 @@ mod bar {
                 #[cfg(windows)]
                 {
                     let _ = &cx;
+                    // Return to Previous Size: the frame recorded before the
+                    // window was first tiled or centred.
+                    if word == "restore-size" {
+                        let _ = rmac_compositor_system::restore_window_size(window);
+                        return;
+                    }
                     if let Some(action) = window_sizing_action(word, window) {
                         if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                             eprintln!("could not {word} the window: {error:?}");
@@ -6339,7 +6345,6 @@ mod bar {
             // Windows' maximise toggles back to the restored frame.
             "fill" | "zoom" => Action::FillWindow { window },
             "centre" => Action::CenterWindow { window },
-            "restore-size" => Action::FullscreenWindow { window, on: false },
             "tile-left" => tile(TileRegion::Left),
             "tile-right" => tile(TileRegion::Right),
             "tile-top" => tile(TileRegion::Top),

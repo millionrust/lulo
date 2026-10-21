@@ -48,7 +48,10 @@ fn send(job: Job) {
                 for job in jobs {
                     match job {
                         Job::Keep(hwnd) => {
-                            if let Some(picture) = picture_of(hwnd) {
+                            let picture = picture_of(hwnd);
+                            let bytes = picture.as_ref().map_or(0, Vec::len);
+                            trace(|| format!("keep {hwnd}: {bytes} bytes"));
+                            if let Some(picture) = picture {
                                 kept.retain(|(known, _)| *known != hwnd);
                                 kept.push((hwnd, picture));
                             }
@@ -58,6 +61,9 @@ fn send(job: Job) {
                             let picture = found
                                 .map(|index| kept.remove(index).1)
                                 .or_else(|| picture_of(hwnd));
+                            let bytes = picture.as_ref().map_or(0, Vec::len);
+                            let was_kept = found.is_some();
+                            trace(|| format!("minimised {hwnd}: kept {was_kept}, {bytes} bytes"));
                             if let Some(picture) = picture {
                                 store(window(hwnd), &picture);
                             }
@@ -74,6 +80,13 @@ fn send(job: Job) {
     });
     if let Ok(sender) = worker.lock() {
         let _ = sender.send(job);
+    }
+}
+
+/// A line on the shell trace (`LULO_SHELL_TRACE=1`), read by the robot.
+fn trace(message: impl FnOnce() -> String) {
+    if std::env::var_os("LULO_SHELL_TRACE").is_some_and(|value| value == "1") {
+        eprintln!("lulo-shell: thumbnail {}", message());
     }
 }
 
@@ -142,6 +155,7 @@ fn png((width, height, bgra): Pixels) -> Option<Vec<u8>> {
 /// Write the picture as the window's thumbnail, replacing any earlier one.
 fn store(window: domain::WindowId, png: &[u8]) {
     let Some(dir) = domain::ParkingStore::default_thumbnail_dir() else {
+        trace(|| "has no folder".into());
         return;
     };
     domain::ParkingStore::remove_thumbnails_in(&dir, window);
@@ -153,8 +167,9 @@ fn store(window: domain::WindowId, png: &[u8]) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Err(error) = std::fs::write(&path, png) {
-        eprintln!("no minimised-window thumbnail: {error}");
+    match std::fs::write(&path, png) {
+        Ok(()) => trace(|| format!("stored {}", path.display())),
+        Err(error) => eprintln!("no minimised-window thumbnail: {error}"),
     }
 }
 

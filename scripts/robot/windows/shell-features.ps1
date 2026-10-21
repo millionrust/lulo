@@ -6,7 +6,9 @@
 # only to Lulo, every window it opens is closed. Run it through invoke.ps1.
 param(
     [string]$Bin = "$env:LOCALAPPDATA\Programs\Lulo",
-    [string]$Scratch = 'E:\lulo\robot-scratch'
+    [string]$Scratch = 'E:\lulo\robot-scratch',
+    # The running shell's trace (run-mine.ps1's), if any.
+    [string]$Trace = ''
 )
 $ErrorActionPreference = 'Continue'
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'common.ps1')
@@ -41,6 +43,9 @@ try {
     $runtime = Join-Path $env:USERPROFILE 'AppData\Local\Temp\Lulo'
     $thumbs = Get-ChildItem -Recurse -Filter '*.png' -Path $runtime -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'thumbnails' -and $_.LastWriteTime -gt (Get-Date).AddMinutes(-1) }
     $result['thumbnails'] = @($thumbs | ForEach-Object { $_.Name }) -join ', '
+    if ($Trace -and (Test-Path $Trace)) {
+        $result['thumbnail_trace'] = @(Select-String -Path $Trace -Pattern 'thumbnail' | Select-Object -Last 6 | ForEach-Object { $_.Line }) -join ' / '
+    }
     # Force Quit Applications.
     $before = @($R::ZOrder())
     if (-not (Lulo-Front) -and $R::PidAt(40, 120) -eq (Shell-Pid)) { $R::Click(40, 120); Start-Sleep -Milliseconds 300 }

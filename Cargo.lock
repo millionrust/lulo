@@ -7642,6 +7642,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "windows 0.61.3",
  "zbus",
 ]
 

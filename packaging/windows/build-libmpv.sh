@@ -69,11 +69,18 @@ mapfile -t packages < <(printf '%s\n' "${packages[@]}" | sort -u)
 # Every library's licence must allow shipping it beside an MIT app: no
 # GPL-only package (a GPL-or-other dual licence, such as FreeType's, and
 # GCC's runtime with its library exception, are fine).
+# Packages whose GPL part is not what is shipped, reviewed by hand:
+declare -A reviewed=(
+  # Little CMS: the library (src/, liblcms2-2.dll) is MIT; GPL-3.0 covers
+  # only its command-line utilities, which are not bundled.
+  [mingw-w64-ucrt-x86_64-lcms2]="liblcms2 is MIT; its GPL utilities are not shipped"
+)
+refused=()
 for package in "${packages[@]}"; do
   licence=$(pacman -Qi "$package" | sed -n 's/^Licenses *: //p')
-  if grep -q 'GPL' <<<"$licence" && ! grep -qE 'LGPL|OR|FTL|custom|exception' <<<"$licence"; then
-    echo "build-libmpv.sh: $package is licensed '$licence'; refusing to bundle it" >&2
-    exit 1
+  if grep -q 'GPL' <<<"$licence" && ! grep -qE 'LGPL|OR|FTL|custom|exception' <<<"$licence" \
+    && [ -z "${reviewed[$package]:-}" ]; then
+    refused+=("$package ($licence)")
   fi
   name=${package#mingw-w64-ucrt-x86_64-}
   if [ -d "/ucrt64/share/licenses/$name" ]; then
@@ -84,6 +91,10 @@ for package in "${packages[@]}"; do
     done < <(find "/ucrt64/share/licenses/$name" -type f)
   fi
 done
+if [ "${#refused[@]}" -gt 0 ]; then
+  printf 'build-libmpv.sh: refusing to bundle %s\n' "${refused[@]}" >&2
+  exit 1
+fi
 cp "$work/ffmpeg/COPYING.LGPLv2.1" "$out/licenses/libmpv/ffmpeg-COPYING.LGPLv2.1"
 cp "$work/mpv/LICENSE.LGPL" "$out/licenses/libmpv/mpv-LICENSE.LGPL"
 
@@ -99,6 +110,11 @@ cp "$work/mpv/LICENSE.LGPL" "$out/licenses/libmpv/mpv-LICENSE.LGPL"
   echo "Libraries from MSYS2 (sources: https://github.com/msys2/MINGW-packages):"
   for package in "${packages[@]}"; do
     pacman -Q "$package"
+  done
+  echo
+  echo "Reviewed licences:"
+  for package in "${!reviewed[@]}"; do
+    echo "  $package: ${reviewed[$package]}"
   done
   echo
   echo "To use a changed version, rebuild these libraries from those sources"

@@ -76,6 +76,18 @@ impl SearchProvider for SystemSearchProvider {
         query: &str,
         options: Options<'_>,
     ) -> Result<Vec<PathBuf>, Error> {
+        #[cfg(windows)]
+        if options.limit > 0 {
+            check_cancelled(options.cancel)?;
+            if let Some(paths) = crate::windows_index::filenames(root, query, options.limit * 2) {
+                check_cancelled(options.cancel)?;
+                return Ok(paths
+                    .into_iter()
+                    .filter(|path| indexed_path_allowed(root, path, options))
+                    .take(options.limit)
+                    .collect());
+            }
+        }
         filesystem_search(root, query, options)
     }
 
@@ -114,6 +126,24 @@ impl SearchProvider for SystemSearchProvider {
     fn tagged(&self, tag: &str, options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
         crate::tag_index::query(tag, options)
     }
+}
+
+/// What the walk below would also have left out of an index answer: the
+/// excluded folders, and (unless asked for) hidden ones, which on Windows
+/// are the dot-named folders and the profile's own `AppData`.
+#[cfg(any(windows, test))]
+pub(super) fn indexed_path_allowed(root: &Path, path: &Path, options: Options<'_>) -> bool {
+    let Ok(relative) = path.strip_prefix(root) else {
+        return false;
+    };
+    if is_lexically_excluded(path, options.excluded_roots) {
+        return false;
+    }
+    options.include_hidden
+        || !relative.components().enumerate().any(|(depth, component)| {
+            let name = component.as_os_str().to_string_lossy();
+            name.starts_with('.') || (depth == 0 && name.eq_ignore_ascii_case("AppData"))
+        })
 }
 
 #[cfg(any(not(target_os = "macos"), test))]

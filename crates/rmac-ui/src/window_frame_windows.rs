@@ -104,7 +104,7 @@ fn style() -> WindowFrameStyle {
     }
 }
 
-fn hwnd(window: &Window) -> Option<HWND> {
+pub(crate) fn hwnd(window: &Window) -> Option<HWND> {
     let handle = HasWindowHandle::window_handle(window).ok()?;
     match handle.as_raw() {
         RawWindowHandle::Win32(handle) => Some(HWND(handle.hwnd.get() as *mut core::ffi::c_void)),

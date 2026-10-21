@@ -316,3 +316,22 @@ fn temporary_directory(label: &str) -> PathBuf {
             .as_nanos()
     ))
 }
+
+#[test]
+fn index_answers_skip_hidden_and_excluded_folders_like_the_walk() {
+    let cancel = AtomicBool::new(false);
+    let root = Path::new("/home/user");
+    let excluded = [PathBuf::from("/home/user/Private")];
+    let mut options = Options::new(&cancel);
+    options.excluded_roots = &excluded;
+    let allowed = |path: &str, options| indexed_path_allowed(root, Path::new(path), options);
+    assert!(allowed("/home/user/Documents/report.txt", options));
+    assert!(!allowed("/home/user/AppData/Local/report.txt", options));
+    assert!(!allowed("/home/user/appdata/report.txt", options));
+    assert!(allowed("/home/user/Documents/AppData/report.txt", options));
+    assert!(!allowed("/home/user/.cache/report.txt", options));
+    assert!(!allowed("/home/user/Private/report.txt", options));
+    assert!(!allowed("/elsewhere/report.txt", options));
+    options.include_hidden = true;
+    assert!(allowed("/home/user/AppData/report.txt", options));
+}

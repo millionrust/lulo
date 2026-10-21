@@ -50,6 +50,7 @@ rmac-dock-system = { version = "=0.9.0-beta.2", path = "../crates/rmac-dock-syst
 rmac-hardware = { version = "=0.9.0-beta.2", path = "../crates/rmac-hardware" }
 rmac-locale = { version = "=0.9.0-beta.2", path = "../crates/rmac-locale" }
 rmac-network = { version = "=0.9.0-beta.2", path = "../crates/rmac-network" }
+rmac-notifications = { version = "=0.9.0-beta.2", path = "../crates/rmac-notifications" }
 rmac-pasteboard = { version = "=0.9.0-beta.2", path = "../crates/rmac-pasteboard" }
 rmac-places = { version = "=0.9.0-beta.2", path = "../crates/rmac-places" }
 rmac-places-system = { version = "=0.9.0-beta.2", path = "../crates/rmac-places-system" }

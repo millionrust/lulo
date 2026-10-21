@@ -52,7 +52,11 @@ rmac-app-drawer.workspace = true
 # ⌘Tab and Notification Centre, the same views Lulo OS runs as their own
 # processes.
 rmac-notification-center-app.workspace = true
+rmac-notifications.workspace = true
 rmac-shell-app-switcher.workspace = true
+# Mission Control, App Exposé, Show Desktop and the hot corners, the same
+# service Lulo OS runs as its own process.
+rmac-shell-mission-control.workspace = true
 rmac-shell-settings.workspace = true
 # The shell's live design tokens (light or dark, accent), as each Lulo OS
 # shell process installs them.

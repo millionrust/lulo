@@ -7427,6 +7427,7 @@ dependencies = [
  "rustix 1.1.4",
  "url",
  "walkdir",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -7534,6 +7535,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-locale",
  "rmac-login-items-linux",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-places",
  "rmac-places-system",
@@ -7618,6 +7620,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-locale",
  "rmac-network",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-places",
  "rmac-power",
@@ -7638,6 +7641,30 @@ dependencies = [
  "trash",
  "uuid",
  "zbus",
+]
+
+[[package]]
+name = "rmac-shell-mission-control"
+version = "0.9.0-beta.2"
+dependencies = [
+ "async-channel",
+ "blocking",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "libc",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-compositor-system",
+ "rmac-dock",
+ "rmac-shell-layer",
+ "rmac-shell-settings",
+ "rmac-shell-ui",
+ "uuid",
+ "wayland-client",
+ "wayland-protocols-wlr",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -8052,6 +8079,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-design",
  "rmac-dock",
  "rmac-recent-documents",
@@ -8207,12 +8235,14 @@ dependencies = [
  "rmac-hardware",
  "rmac-launcher-app",
  "rmac-notification-center-app",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-quick-settings-app",
  "rmac-shell-app-switcher",
  "rmac-shell-dock",
  "rmac-shell-layer",
  "rmac-shell-menubar",
+ "rmac-shell-mission-control",
  "rmac-shell-settings",
  "rmac-shell-ui",
  "rmac-shell-wallpaper",

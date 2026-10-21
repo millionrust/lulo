@@ -826,7 +826,7 @@ fn zoom_menu(menu: Entity<ZoomMenu>) -> impl IntoElement {
         .child(div().pt(px(6.0)).child(separator()))
         .child(div().pt(px(11.0)).child(header("Fill & Arrange")))
         .child(row({
-            let mut fill_and_arrange = vec![
+            let fill_and_arrange = vec![
                 item(
                     "tile-fill",
                     tile_icon((0.0, 0.0, 1.0, 1.0)),
@@ -861,10 +861,6 @@ fn zoom_menu(menu: Entity<ZoomMenu>) -> impl IntoElement {
                 )
                 .into_any_element(),
             ];
-            // Arranging several windows needs Lulo OS's window service.
-            if cfg!(windows) {
-                fill_and_arrange.truncate(1);
-            }
             fill_and_arrange
         }))
         .child(div().pt(px(6.0)).child(separator()))
@@ -1215,17 +1211,53 @@ pub fn toolbar_group(children: impl IntoElement) -> impl IntoElement {
 }
 
 /// Windows: GPUI's own window calls, which Windows' window manager carries
-/// out (ADR 0023). There is no Mission Control or parking workspace there yet.
+/// out, and the Win32 window list (`rmac-compositor-system`) for what needs
+/// a frame or other apps' windows (ADR 0023).
 #[cfg(not(unix))]
 mod native {
     use gpui::App;
+    use rmac_compositor::{Action, TileRegion, WindowId};
 
     use super::WindowAction;
+
+    /// This window as the Win32 window list names it (its HWND).
+    fn window_id(window: &gpui::Window) -> Option<WindowId> {
+        crate::window_frame_windows::hwnd(window).map(|hwnd| WindowId(hwnd.0 as isize as u64))
+    }
+
+    /// Run `actions` in order off the UI thread.
+    fn run(actions: Vec<Action>, cx: &mut App) {
+        if actions.is_empty() {
+            return;
+        }
+        cx.background_executor()
+            .spawn(async move {
+                for action in &actions {
+                    if let Err(error) = rmac_compositor_system::execute_action(action).await {
+                        eprintln!("could not perform window action: {error:?}");
+                    }
+                }
+            })
+            .detach();
+    }
+
+    /// The regions an Arrange command fills, the front window first
+    /// (Mission Control's `Command::arrangement` on Lulo OS).
+    fn arrangement(command: &str) -> &'static [TileRegion] {
+        use TileRegion::*;
+        match command {
+            "arrange-left-right" => &[Left, Right],
+            "arrange-top-bottom" => &[Top, Bottom],
+            "arrange-quarters" => &[TopLeft, TopRight, BottomLeft, BottomRight],
+            _ => &[],
+        }
+    }
 
     pub(super) fn perform(action: WindowAction, cx: &mut App) {
         let Some(handle) = cx.active_window() else {
             return;
         };
+        let mut tiles: Vec<(WindowId, TileRegion)> = Vec::new();
         let _ = handle.update(cx, |_, window, _| match action {
             WindowAction::Minimize => window.minimize_window(),
             WindowAction::ToggleFullscreen => window.toggle_fullscreen(),
@@ -1233,19 +1265,61 @@ mod native {
             // caption restores the window.
             WindowAction::Fill | WindowAction::Zoom => window.zoom_window(),
             WindowAction::Tile(region) => {
-                eprintln!("tiling a window to {region:?} is not available on Windows yet");
+                if let Some(id) = window_id(window) {
+                    tiles.push((id, region));
+                }
             }
-            WindowAction::Arrange(arrangement) => {
-                eprintln!("{arrangement} is not available on Windows yet");
-            }
+            WindowAction::Arrange(_) => {}
         });
+        if let WindowAction::Arrange(command) = action {
+            // Fill & Arrange (DESK-03): the front window takes the first
+            // region and the app's other windows the rest, as on Lulo OS.
+            let mut windows = cx.windows();
+            windows.sort_by_key(|other| (*other != handle, other.window_id()));
+            for (other, region) in windows
+                .into_iter()
+                .zip(arrangement(command).iter().copied())
+            {
+                if let Ok(Some(id)) = other.update(cx, |_, window, _| window_id(window)) {
+                    tiles.push((id, region));
+                }
+            }
+        }
+        run(
+            tiles
+                .into_iter()
+                .map(|(window, region)| Action::TileWindow { window, region })
+                .collect(),
+            cx,
+        );
     }
 
-    /// ⌘H minimises this app's windows. ⌥⌘H needs other apps' windows,
-    /// which only a Win32 window backend can reach.
+    /// ⌘H minimises this app's windows; ⌥⌘H minimises every other app's
+    /// visible windows through the Win32 window list (which leaves this
+    /// process's own windows out).
     pub(super) fn hide_application(others: bool, cx: &mut App) {
         if others {
-            eprintln!("hiding other applications is not available on Windows yet");
+            cx.background_executor()
+                .spawn(async move {
+                    let snapshot = match rmac_compositor_system::snapshot().await {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            eprintln!("could not read windows to hide others: {error}");
+                            return;
+                        }
+                    };
+                    for window in snapshot
+                        .windows
+                        .iter()
+                        .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
+                    {
+                        let action = Action::MinimizeWindow { window: window.id };
+                        if let Err(error) = rmac_compositor_system::execute_action(&action).await {
+                            eprintln!("could not hide a window: {error:?}");
+                        }
+                    }
+                })
+                .detach();
             return;
         }
         for handle in cx.windows() {

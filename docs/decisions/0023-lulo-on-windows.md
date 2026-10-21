@@ -2163,6 +2163,35 @@ Centre's right edge; the bar over a full-screen Text Editor, revealed at the top
 Full-Screen Tile; Hide Others and Show All) and `launch_smoke.py` (Notes at 683 px wide:
 nothing outside the window under UI Automation, and the » menu is there).
 
+## Mission Control on Windows (branch `op/win-parity`)
+
+Mission Control, App Exposé, Show Desktop and the hot corners were the largest Lulo OS
+surface missing on Windows: Ctrl+Up, Ctrl+Down and every hot corner did nothing. They now
+run in `lulo-shell` from the same code as Lulo OS, as the app switcher does: the
+`rmac-shell-mission-control` crate is a library (`service.rs`) that Lulo OS's
+`mission-control` binary and `lulo-shell` both run. What differs underneath:
+
+| | Lulo OS | Windows |
+| --- | --- | --- |
+| Window list and actions | niri IPC | `rmac-compositor-system`'s Win32 backend |
+| Window pictures | one screencopy of the output, cut per uncovered window; covered windows keep their last picture | `PrintWindow` with `PW_RENDERFULLCONTENT` per window, in parallel, 400 ms at most; covered windows get their real picture, and nothing is kept between opens |
+| Overlay and hot corners | layer surfaces, the overlay kept unmapped between opens | `rmac-shell-layer` windows, opened per showing |
+| Wallpaper under the overlay | niri's layer-rule xray | a half-size unblurred copy of the desktop's wallpaper (≈ 1 MB), fading in with the windows |
+| Commands | niri binds and a datagram socket | Ctrl+Up and Ctrl+Down (`RegisterHotKey`, left alone when another app holds them), the Dock's Show All Windows and the hot corners, through `requests` |
+| Spaces | niri workspaces: +, ×, switching | the current Desktop only |
+
+Windows' virtual desktops cannot be created, removed or switched through a public API
+(`IVirtualDesktopManager` only tells whether a window is on the current desktop; the
+interfaces that manage desktops are undocumented and change between Windows builds), so
+the Spaces bar shows the current Desktop without + or ×, and windows on other virtual
+desktops (DWM cloaks them) are not shown. Edge-drag tiling's preview stays Lulo OS's:
+Windows' own Snap draws its preview.
+
+The in-window Move & Resize popover and Window menu (`rmac-ui`'s `native`) tile through the
+same Win32 list: the halves and quarters, Fill & Arrange's three layouts (the front window
+first, then the app's others) and ⌥⌘H Hide Others, which before printed "not available on
+Windows yet".
+
 ## Phase plan
 
 The goal is "usable on Windows without Linux". Phases are ordered by how much value they

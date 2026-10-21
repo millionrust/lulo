@@ -6030,6 +6030,7 @@ dependencies = [
  "rustix 1.1.4",
  "url",
  "walkdir",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6084,6 +6085,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-locale",
  "rmac-login-items-linux",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-places",
  "rmac-places-system",
@@ -6182,6 +6184,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-locale",
  "rmac-network",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-places",
  "rmac-power",
@@ -6218,6 +6221,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-dock",
  "rmac-shell-layer",
  "rmac-shell-settings",
@@ -6225,6 +6229,7 @@ dependencies = [
  "uuid",
  "wayland-client",
  "wayland-protocols-wlr",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6517,6 +6522,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-design",
  "rmac-dock",
  "rmac-recent-documents",

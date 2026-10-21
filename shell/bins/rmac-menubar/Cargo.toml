@@ -49,6 +49,10 @@ rmac-updates.workspace = true
 rmac-ui.workspace = true
 uuid.workspace = true
 
+# Windows: notices go to the Notification Centre lulo-shell hosts.
+[target.'cfg(windows)'.dependencies]
+rmac-notifications.workspace = true
+
 # Lulo OS only: the session's notification server, the shortcut dispatch
 # sockets, and what the `top-bar` binary has always linked.
 [target.'cfg(target_os = "linux")'.dependencies]

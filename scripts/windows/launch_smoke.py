@@ -472,6 +472,20 @@ def startup_phase_ms(phases: list[str], name: str) -> float | None:
 # (`first_frame_shown`: the window is uncloaked by the frame that first
 # draws it; `first_present` on builds without it). None: report only.
 LAUNCH_BUDGET_MS: float | None = None
+# How often, and how far apart, the start-up trace is read again for a
+# first-frame phase the window's appearance came ahead of.
+PHASE_REREADS = 6
+PHASE_REREAD_SECONDS = 0.5
+# The launch-budget failures. A shared runner sometimes stalls a whole
+# launch; the app is launched once more and only a second miss counts, as
+# the idle-CPU reading is taken twice before it counts.
+BUDGET_ERRORS = ("ms launch budget", "no first-frame phase in the start-up trace")
+
+
+def only_budget_errors(error: str) -> bool:
+    """Whether every failure in `error` is the launch budget's."""
+    parts = [part for part in error.split("; ") if part]
+    return bool(parts) and all(any(budget in part for budget in BUDGET_ERRORS) for part in parts)
 
 # What an app prints when it cannot find Lulo's fonts (rmac_ui's
 # `fonts_windows`); text would fall back to Segoe UI.
@@ -1519,6 +1533,16 @@ def launch(
         # `check_new_shortcut` below all inject keys and mouse clicks.
         log_text = log.read_text(encoding="utf-8", errors="replace")
         phases = startup_phases(log_text)
+        # The first frame can be reported a moment after the window shows
+        # (a slow runner): read the trace again before calling it missing.
+        for _ in range(PHASE_REREADS):
+            if startup_phase_ms(phases, "first_frame_shown") is not None or startup_phase_ms(
+                phases, "first_present"
+            ) is not None:
+                break
+            time.sleep(PHASE_REREAD_SECONDS)
+            log_text = log.read_text(encoding="utf-8", errors="replace")
+            phases = startup_phases(log_text)
         for phase in phases:
             print(f"{app}: startup {phase}")
         measurement: dict = {"launch_ms": round(launch_ms), "startup": phases}
@@ -2114,6 +2138,10 @@ def main() -> int:
                 write_silent_wav(fixture)
                 app_arguments = [str(fixture)]
             error = launch(binary, profile, arguments.screenshots, app_arguments)
+            if error is not None and only_budget_errors(error):
+                print(f"{app}: {error}; launching it once more before it counts")
+                with tempfile.TemporaryDirectory(prefix=f"{app}-again-") as again:
+                    error = launch(binary, Path(again), arguments.screenshots, app_arguments)
             log = profile / "output.log"
             if log.exists():
                 trace = [

@@ -566,8 +566,13 @@ jobs:
             # and 59.0 MB after use, ADR 0023). Idle, from its `settled`
             # mark and over a window without a minute boundary, lulo-shell
             # wakes at most 4 times (ADR 0023 "Idle from the settled mark").
+            # After the switcher and Notification Centre (and the Dock drags
+            # and Apps before them), 64 MB: Apps shows three more Lulo apps
+            # since op/win-parity-3 (Calendar, System Monitor, Media Player),
+            # and their icons grow the software renderer's atlas on the
+            # runner by about 10 MB (it reads 62-63 MB there).
             gate: >-
-              --shell-memory-mb 60 --shell-idle-private-mb 60
+              --shell-memory-mb 64 --shell-idle-private-mb 60
               --shell-after-use-private-mb 60 --shell-after-use-growth-mb 4
               --shell-max-wakes 4
               --shell-after-panels-private-mb 60

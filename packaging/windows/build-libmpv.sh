@@ -77,9 +77,11 @@ for package in "${packages[@]}"; do
   fi
   name=${package#mingw-w64-ucrt-x86_64-}
   if [ -d "/ucrt64/share/licenses/$name" ]; then
-    for file in "/ucrt64/share/licenses/$name"/*; do
-      cp "$file" "$out/licenses/libmpv/$name-$(basename "$file")"
-    done
+    # Every file, nested ones too, flattened as name-path-file.
+    while read -r file; do
+      relative=${file#"/ucrt64/share/licenses/$name/"}
+      cp "$file" "$out/licenses/libmpv/$name-${relative//\//-}"
+    done < <(find "/ucrt64/share/licenses/$name" -type f)
   fi
 done
 cp "$work/ffmpeg/COPYING.LGPLv2.1" "$out/licenses/libmpv/ffmpeg-COPYING.LGPLv2.1"

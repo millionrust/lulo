@@ -188,6 +188,11 @@ pub fn signal_ready() {
 /// As the shell: start the startup apps once the layer is on screen (or
 /// after a minute at most), on a thread of their own.
 fn start_startup_apps_when_ready() {
+    // A test of shell mode inside a session that already started them
+    // (`LULO_NO_STARTUP_APPS=1`) must not start them twice.
+    if std::env::var_os("LULO_NO_STARTUP_APPS").is_some_and(|value| value == "1") {
+        return;
+    }
     // SAFETY: a manual-reset named event, waited on by the thread below.
     let Ok(event) = (unsafe { CreateEventW(None, true, false, &ready_event_name()) }) else {
         return;

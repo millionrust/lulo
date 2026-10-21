@@ -1652,6 +1652,12 @@ impl Render for CornerView {
         div()
             .id("hot-corner")
             .size_full()
+            // A click in the corner still reaches what is under it (the
+            // Lulo menu at the top left), as the Apple menu does on the Mac.
+            .on_mouse_down(MouseButton::Left, |_, _window, _| {
+                #[cfg(windows)]
+                rmac_shell_layer::windows::click_through::click_through(_window);
+            })
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                 if !*hovered {
                     this.armed = true;

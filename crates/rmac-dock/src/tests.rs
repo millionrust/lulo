@@ -1345,3 +1345,14 @@ fn an_apps_tile_menu_lists_its_recent_documents_under_its_windows() {
         .recent_documents
         .is_empty());
 }
+
+#[test]
+fn minimized_tiles_name_their_application_not_its_id() {
+    rmac_apps::windows_apps::register_display_name("windowsterminal.exe", "Windows Terminal");
+    assert_eq!(
+        presentation::application_name("windowsterminal.exe"),
+        "Windows Terminal"
+    );
+    assert_eq!(presentation::application_name("org.rmac.Notes"), "Notes");
+    assert_eq!(presentation::application_name("unknown.exe"), "unknown.exe");
+}

@@ -6220,6 +6220,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-dock",
  "rmac-shell-layer",
  "rmac-shell-settings",
@@ -6227,6 +6228,7 @@ dependencies = [
  "uuid",
  "wayland-client",
  "wayland-protocols-wlr",
+ "windows 0.61.3",
 ]
 
 [[package]]

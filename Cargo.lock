@@ -7643,6 +7643,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-mission-control"
+version = "0.9.0-beta.2"
+dependencies = [
+ "async-channel",
+ "blocking",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "libc",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-compositor-system",
+ "rmac-dock",
+ "rmac-shell-layer",
+ "rmac-shell-settings",
+ "rmac-shell-ui",
+ "uuid",
+ "wayland-client",
+ "wayland-protocols-wlr",
+ "windows 0.61.3",
+]
+
+[[package]]
 name = "rmac-shell-runtime"
 version = "0.9.0-beta.2"
 dependencies = [
@@ -8217,6 +8241,7 @@ dependencies = [
  "rmac-shell-dock",
  "rmac-shell-layer",
  "rmac-shell-menubar",
+ "rmac-shell-mission-control",
  "rmac-shell-settings",
  "rmac-shell-ui",
  "rmac-shell-wallpaper",

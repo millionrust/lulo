@@ -1,5 +1,5 @@
 {
-  "title": "Notes: a #tag typed in the body appears in the sidebar's Tags browser and filters the note list",
+  "title": "Notes: a #tag typed in the body appears in the sidebar's Tags browser and filters the note list until a folder is chosen",
   "app": "notes",
   "launch": {},
   "lulo_only": true,
@@ -12,7 +12,7 @@
     {"wait": 1.5},
     {"select": "#work", "settle": 0.7},
     {"observe": "filtered", "facts": ["windows"]},
-    {"select": "#work", "settle": 0.7},
+    {"select": "All Notes, 1 note", "settle": 0.7},
     {"observe": "unfiltered", "facts": ["windows"]}
   ],
   "omit": [

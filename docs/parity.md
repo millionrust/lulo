@@ -961,7 +961,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Dock | Folder and Downloads stacks, Fan and Grid | shared |
 | Dock | Minimised windows as thumbnail tiles | fixed (op/win-parity-2): each window is pictured (PrintWindow) shortly after it comes to the front and when it leaves it, kept as PNG for the 12 latest, and stored when Windows minimises it; seen on the test PC with Calculator. Tile names fixed (WIN-OS-106) |
 | Dock | Genie and Scale minimise animations (DOCK-11) | fixed (op/win-parity-2), with real pictures in minimised tiles; third-party windows also play Windows' own minimise |
-| Dock | Badges, progress and attention bounce (LauncherEntry) | attention fixed (op/win-parity-2: a flashing window bounces its tile, through the shell hook); badges and progress missing: Windows keeps them in its own taskbar (ITaskbarList3), with no way for another app to read them |
+| Dock | Badges, progress and attention bounce (LauncherEntry) | fixed (op/win-still-open): attention through the shell hook; Lulo apps set a badge and progress over the Lulo layer's notification pipe (who set it from the pipe itself) and the Dock draws them as on Lulo OS; Mail shows its unread count. Third-party apps' taskbar badges and progress (ITaskbarList3) have no public reader, so they stay on the taskbar |
 | Dock | Bounce while an app launches | shared |
 | Dock | Tile menus: windows, recent documents, Show All Windows, Hide, Hide Others, Quit, Files and Settings tiles' own items | works; Show All Windows fixed (WIN-OS-100) |
 | Dock | Options ▸ Open at Login | fixed (op/win-parity-2: the user's Run key) |
@@ -969,7 +969,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Desktop | Icon grid, Stacks, widgets, Sort By, Clean Up | works |
 | Desktop | Right-click menu (New Folder … Show View Options) | works (WIN-OS-94) |
 | Desktop | Rename in place, arrow keys and type-select (DESK-09) | shared |
-| Desktop | Drag icons out to other apps | missing: GPUI on Windows has no outgoing file drag |
+| Desktop | Drag icons out to other apps | fixed (op/win-still-open): near another window or the Dock, the desktop hands its selection to Windows' OLE drag with the shell's data object, so any app that takes Explorer's drops takes them; CI-built, not yet driven live (the test PC's Desktop is its owner's) |
 | Desktop | Click wallpaper to reveal the desktop, windows slide aside and back | fixed (op/win-parity-2) |
 | Desktop | Lock screen with Lulo's wallpaper and account picture (LOCK-01) | impossible: the Windows lock screen is LogonUI's |
 | Windows | Mission Control, App Exposé (with minimised row), hot corners | fixed (WIN-OS-100) |
@@ -996,8 +996,8 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Notification Centre | Slides in from the right edge (NC-11) | shared |
 | Notification Centre | System notices (Wi-Fi, Dock launch failures, hotkey) | fixed (WIN-OS-62) |
 | Session | Shut Down / Restart / Log Out ask apps to quit first; power button menu | works for the menu; the power button is Windows' |
-| Session | Screenshots ⇧⌘3/4/5 with Lulo's tools (SHOT-02) | missing: Windows' Snipping Tool keeps its keys |
-| Session | Volume, brightness and keyboard-backlight OSDs (KB-04) | partial: brightness helper exists; keys stay Windows' own OSD |
+| Session | Screenshots ⇧⌘3/4/5 with Lulo's tools (SHOT-02) | fixed (op/win-still-open): Ctrl+Shift+3 the screen under the pointer, Ctrl+Shift+4 an area with the crosshair and its size readout, saved to the Desktop as "Screenshot … at ….png" with the shutter sound; Ctrl+Shift+5 opens the area crosshair (Lulo OS's toolbar and floating thumbnail not drawn yet); smoke check and live robot |
+| Session | Volume, brightness and keyboard-backlight OSDs (KB-04) | volume fixed (op/win-still-open): the volume keys step or mute the output and show Lulo's Sound panel, one view shared with Lulo OS (`rmac_osd::view`), verified live; brightness keys are the PC firmware's and never reach a hook, so Windows' own flyout shows them; keyboard backlight is the PC maker's |
 | Session | Lulo without Explorer (the session is Lulo) | fixed in code, real sign-in not yet tested (WIN-OS-103) |
 
 ## Other

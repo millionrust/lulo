@@ -164,7 +164,19 @@ fn serve(connection: File, service: ServiceHandle) {
         Ok(0) | Err(_) => return,
         Ok(_) => {}
     }
-    let Ok(post) = pipe::decode_post(line.trim_end_matches(['\r', '\n'])) else {
+    let line = line.trim_end_matches(['\r', '\n']);
+    if let Ok(badge) = pipe::decode_badge(line) {
+        // Who set it comes from the pipe, as for a notification.
+        let app_id = poster(pid).app_id;
+        rmac_shell_layer::windows::trace::trace(|| format!("badge {app_id} {}", badge.count));
+        rmac_shell_layer::windows::badges::publish(rmac_shell_layer::windows::badges::Badge {
+            app_id,
+            count: badge.count,
+            progress: badge.progress,
+        });
+        return;
+    }
+    let Ok(post) = pipe::decode_post(line) else {
         return;
     };
     let (answers_tx, answers) = std::sync::mpsc::channel();

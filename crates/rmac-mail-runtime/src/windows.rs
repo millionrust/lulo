@@ -112,7 +112,7 @@ impl ToastSink {
         }
     }
 
-    /// Unread messages across every account, for a future badge.
+    /// Unread messages across every account: Mail's Dock badge.
     pub fn unread_total(&self) -> i64 {
         self.unread
             .lock()
@@ -122,12 +122,26 @@ impl ToastSink {
     }
 }
 
+/// Mail's unread count on its Dock tile, as on the Mac and Lulo OS (where
+/// it is a LauncherEntry signal), off the caller's thread.
+fn publish_badge(count: i64) {
+    let _ = std::thread::Builder::new()
+        .name("mail-badge".into())
+        .spawn(move || {
+            rmac_notifications::pipe::post_badge(&rmac_notifications::pipe::Badge {
+                count,
+                progress: None,
+            })
+        });
+}
+
 impl EventSink for ToastSink {
     fn removed(&self, account: Uuid) {
         self.unread
             .lock()
             .expect("mail unread lock poisoned")
             .remove(&account);
+        publish_badge(self.unread_total());
         if let Some(ui) = &self.ui {
             let _ = ui.send(UiEvent::AccountRemoved(account));
         }
@@ -147,6 +161,7 @@ impl EventSink for ToastSink {
             .lock()
             .expect("mail unread lock poisoned")
             .insert(value.account, value.unread_inbox);
+        publish_badge(self.unread_total());
         if let Some(ui) = &self.ui {
             let _ = ui.send(UiEvent::Snapshot(value));
         }

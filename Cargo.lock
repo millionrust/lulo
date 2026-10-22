@@ -6922,6 +6922,7 @@ dependencies = [
  "rmac-mail-imap",
  "rmac-mail-mime",
  "rmac-mail-storage",
+ "rmac-notifications",
  "rmac-win-toast",
  "rustls",
  "sha2 0.10.9",
@@ -7142,6 +7143,7 @@ dependencies = [
 name = "rmac-osd"
 version = "0.9.0-beta.2"
 dependencies = [
+ "gpui",
  "libc",
  "rmac-audio",
  "rmac-sound",
@@ -7595,6 +7597,7 @@ dependencies = [
  "rmac-hardware",
  "uuid",
  "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -8251,6 +8254,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-ui",
  "rmac-shell-wallpaper",
+ "rmac-sound",
  "rmac-ui",
  "rmac-wallpaper",
  "rmac-wallpaper-image",

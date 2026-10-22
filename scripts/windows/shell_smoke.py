@@ -1370,6 +1370,7 @@ def check_shell(
         # 6f2. The bar's battery and its menu (after the memory readings:
         # the menu's full power reading is not part of the idle shell).
         check_battery(log, screenshots, failures)
+        check_screenshot(log, failures)
         memory = memory_mb(shell_pid)
         print(f"shell: lulo-shell memory after the Battery menu: {memory}")
 
@@ -2275,6 +2276,28 @@ def check_dock_recents(log: Log, profile: Path, failures: list[str]) -> None:
     print(f"shell: Dock tiles after the separator: {shown}")
     if [app_id for app_id in shown if app_id in wanted] != wanted:
         failures.append(f"the Dock shows {shown} after its kept apps, not the recent apps {wanted}")
+
+
+def check_screenshot(log: Log, failures: list[str]) -> None:
+    """⇧⌘3 (Ctrl+Shift+3) saves the screen to the Desktop as
+    "Screenshot <date> at <time>.png", as on the Mac; the file is removed
+    again."""
+    mark = len(log.lines())
+    key(VK_CONTROL)
+    key(VK_SHIFT)
+    tap(0x33)
+    key(VK_SHIFT, up=True)
+    key(VK_CONTROL, up=True)
+    saved = log.wait_for(r"^screenshot saved (.+\.png)$", 10.0, after=mark)
+    path = Path(saved.group(1)) if saved else None
+    print(f"shell: Ctrl+Shift+3 saved {path.name if path else 'nothing'}")
+    if path is None or not path.is_file() or not path.name.startswith("Screenshot "):
+        failures.append("Ctrl+Shift+3 (⇧⌘3) saved no screenshot to the Desktop")
+        return
+    try:
+        path.unlink()
+    except OSError:
+        pass
 
 
 def check_battery(log: Log, screenshots: Path | None, failures: list[str]) -> None:

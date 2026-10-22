@@ -6,7 +6,12 @@ license.workspace = true
 authors.workspace = true
 publish = false
 
+[features]
+# The OSD panel (`view`), for the shell processes that draw it.
+view = ["dep:gpui"]
+
 [dependencies]
+gpui = { workspace = true, optional = true }
 libc.workspace = true
 rmac-audio.workspace = true
 rmac-sound.workspace = true

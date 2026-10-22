@@ -32,7 +32,7 @@ rmac-desktop.workspace = true
 rmac-dock.workspace = true
 rmac-dock-runtime.workspace = true
 rmac-dock-system.workspace = true
-rmac-osd.workspace = true
+rmac-osd = { workspace = true, features = ["view"] }
 rmac-places.workspace = true
 rmac-recent-documents.workspace = true
 rmac-screen-reader.workspace = true

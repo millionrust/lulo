@@ -1013,7 +1013,7 @@ impl Wallpaper {
         }) = &mut self.desk.drag
         {
             // Dragging icons out to another app is Wayland's own drag on
-            // Lulo OS; Windows has none in GPUI yet.
+            // Lulo OS and Windows' OLE drag on Windows.
             #[cfg(target_os = "linux")]
             if !*external_started && near_target {
                 *external_started = gpui_linux::begin_external_file_drag(
@@ -1021,7 +1021,29 @@ impl Wallpaper {
                 );
             }
             #[cfg(windows)]
-            let _ = (external_started, near_target);
+            if !*external_started && near_target {
+                *external_started = true;
+                let paths: Vec<std::path::PathBuf> = self.desk.selection.iter().cloned().collect();
+                // Windows runs the drag's own loop until the drop: from a
+                // task, outside this update, so the windows it pumps (the
+                // Dock taking the drop) can update too.
+                cx.spawn(async move |this, cx| {
+                    let dropped = rmac_shell_layer::windows::file_drag::drag_files(&paths);
+                    rmac_shell_layer::windows::trace::trace(|| {
+                        format!(
+                            "desktop drag out of {} files: dropped {dropped}",
+                            paths.len()
+                        )
+                    });
+                    // The drag took the button's release: the desktop's own
+                    // drag ends here.
+                    let _ = this.update(cx, |this, cx| {
+                        this.desk.drag = None;
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
         }
         cx.notify();
     }

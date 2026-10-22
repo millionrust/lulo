@@ -14,6 +14,14 @@
 //! centre → app   closed <TAB> reason       (last)
 //! ```
 //!
+//! An app's Dock badge (Mail's unread count) rides the same pipe, one line
+//! per connection and no answer, as Lulo OS's LauncherEntry signal does on
+//! the session bus:
+//!
+//! ```text
+//! app → centre   badge <TAB> count <TAB> progress   (progress 0..1, or empty)
+//! ```
+//!
 //! `actions` is the freedesktop list (key, label, key, label …) joined by
 //! U+001F; `flags` is a set of letters: `r` resident, `t` transient, `s`
 //! suppress sound. Fields carry no control characters. The app writes only
@@ -121,6 +129,39 @@ pub fn encode_post(post: &Post) -> Result<String, Error> {
     Ok(line)
 }
 
+/// An app's Dock badge: its count (none at 0) and progress bar (if any).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Badge {
+    pub count: i64,
+    pub progress: Option<f64>,
+}
+
+pub fn encode_badge(badge: &Badge) -> String {
+    let progress = badge
+        .progress
+        .filter(|progress| progress.is_finite())
+        .map(|progress| format!("{:.3}", progress.clamp(0.0, 1.0)))
+        .unwrap_or_default();
+    format!("badge{FIELD}{}{FIELD}{progress}\n", badge.count.max(0))
+}
+
+pub fn decode_badge(line: &str) -> Result<Badge, Error> {
+    let fields = line.split(FIELD).collect::<Vec<_>>();
+    let ["badge", count, progress] = fields.as_slice() else {
+        return Err(Error::Malformed);
+    };
+    let count = count.parse::<i64>().map_err(|_| Error::Malformed)?;
+    let progress = if progress.is_empty() {
+        None
+    } else {
+        Some(progress.parse::<f64>().map_err(|_| Error::Malformed)?)
+    };
+    if count < 0 || progress.is_some_and(|progress| !(0.0..=1.0).contains(&progress)) {
+        return Err(Error::Malformed);
+    }
+    Ok(Badge { count, progress })
+}
+
 pub fn decode_post(line: &str) -> Result<Post, Error> {
     if line.len() > MAX_LINE_BYTES {
         return Err(Error::TooLong);
@@ -211,6 +252,22 @@ pub fn post_notice(summary: String, body: String) {
     }
 }
 
+/// Set this app's Dock badge in the Lulo layer (Windows), as Lulo OS apps
+/// do with a LauncherEntry signal. Blocking and best effort: without a Lulo
+/// layer there is no Dock to show it.
+#[cfg(windows)]
+pub fn post_badge(badge: &Badge) {
+    use std::io::Write as _;
+
+    let user = std::env::var("USERNAME").unwrap_or_default();
+    if let Ok(mut pipe) = std::fs::OpenOptions::new()
+        .write(true)
+        .open(pipe_name(&user))
+    {
+        let _ = pipe.write_all(encode_badge(badge).as_bytes());
+    }
+}
+
 /// Post `post` to the Notification Centre `lulo-shell` hosts. Returns the
 /// notification's id and the centre's later answers (the action chosen,
 /// then its closing), read on a thread of their own; `None` when no Lulo
@@ -258,6 +315,31 @@ pub fn post(post: &Post) -> Option<(u32, std::sync::mpsc::Receiver<Answer>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_badge_line_round_trips_and_bad_ones_are_refused() {
+        let badge = Badge {
+            count: 12,
+            progress: Some(0.25),
+        };
+        let line = encode_badge(&badge);
+        assert_eq!(line, "badge\t12\t0.250\n");
+        assert_eq!(decode_badge(line.trim_end_matches('\n')), Ok(badge));
+        let none = encode_badge(&Badge {
+            count: 0,
+            progress: None,
+        });
+        assert_eq!(
+            decode_badge(none.trim_end_matches('\n')),
+            Ok(Badge {
+                count: 0,
+                progress: None
+            })
+        );
+        assert!(decode_badge("badge\t-1\t").is_err());
+        assert!(decode_badge("badge\t3\t2").is_err());
+        assert!(decode_post("badge\t3\t").is_err());
+    }
 
     fn alarm() -> Post {
         Post {

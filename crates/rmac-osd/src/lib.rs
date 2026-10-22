@@ -3,8 +3,12 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[cfg(any(target_os = "linux", windows))]
+mod audio;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(feature = "view")]
+pub mod view;
 #[cfg(windows)]
 pub mod windows;
 
@@ -170,7 +174,34 @@ pub fn execute(command: Command) -> Result<Presentation, Error> {
     {
         linux::execute(command)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        match command {
+            Command::VolumeUp
+            | Command::VolumeDown
+            | Command::ToggleOutputMute
+            | Command::ToggleInputMute
+            | Command::ShowVolume => audio::execute_audio(command),
+            Command::BrightnessUp | Command::BrightnessDown | Command::ShowBrightness => {
+                let before = brightness()?;
+                let level = match command {
+                    Command::BrightnessUp => before.saturating_add(audio::AUDIO_STEP).min(100),
+                    Command::BrightnessDown => before.saturating_sub(audio::AUDIO_STEP),
+                    _ => before,
+                };
+                let level = if level == before {
+                    level
+                } else {
+                    set_brightness(level)?
+                };
+                Presentation::new(Kind::Display, "Display", level, false)
+            }
+            Command::KeyboardBrightnessUp | Command::KeyboardBrightnessDown => {
+                Err(Error::new(Operation::ParseCommand))
+            }
+        }
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = command;
         Err(Error::new(Operation::ParseCommand))

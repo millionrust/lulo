@@ -315,7 +315,7 @@ fn lock(runtime: &Arc<Mutex<Runtime>>) -> fdo::Result<MutexGuard<'_, Runtime>> {
         .map_err(|_| fdo::Error::Failed("Focus runtime state is unavailable".into()))
 }
 
-fn wire_state(runtime: &Runtime) -> WireState {
+pub(crate) fn wire_state(runtime: &Runtime) -> WireState {
     encode_status(
         runtime.status(),
         runtime.persistence_health() != PersistenceHealth::SaveFailed,
@@ -343,7 +343,7 @@ fn encode_status(status: &Status, persistence_healthy: bool) -> WireState {
     )
 }
 
-fn wire_update(runtime: &Runtime, update: &Update) -> WireState {
+pub(crate) fn wire_update(runtime: &Runtime, update: &Update) -> WireState {
     encode_status(
         &update.evaluation.status,
         runtime.persistence_health() != PersistenceHealth::SaveFailed,

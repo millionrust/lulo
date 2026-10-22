@@ -19,6 +19,11 @@
 //! - Alt going up commits; Return commits too. Esc cancels.
 //! - Q and H quit or hide the selected app, as ⌘Q and ⌘H do on the Mac.
 //!
+//! Outside a switch it takes one more chord: Ctrl+Q (⌘Q) with an app in
+//! front that is not Lulo's and does not use Ctrl+Q itself quits that app,
+//! as on the Mac (Windows apps otherwise have no such key). Lulo's own apps
+//! quit from their own menus.
+//!
 //! At the first Tab it presses an unassigned key tagged as Lulo's own
 //! input, so Windows treats Alt as part of a chord: releasing Alt then
 //! never opens the front app's menu bar. Alt's own presses and releases
@@ -125,6 +130,85 @@ struct Held {
 
 /// The hook's rule for one key event (see the module documentation).
 /// Returns the decision and whether a switch is under way afterwards.
+/// Ctrl+Q, and only Ctrl: the Mac's ⌘Q.
+fn is_quit_chord(key: u32, down: bool, held: Held) -> bool {
+    down && key == u32::from(VK_Q.0) && held.ctrl && !held.alt && !held.shift && !held.win
+}
+
+/// Apps whose own Ctrl+Q does something else, so it passes to them:
+/// Office (Outlook's Mark as Read, Word's paragraph reset), editors and
+/// IDEs (Quick Open, Quick Documentation), terminals (resume output) and
+/// Firefox (which quits on it itself).
+const OWN_CTRL_Q: [&str; 17] = [
+    "winword.exe",
+    "excel.exe",
+    "outlook.exe",
+    "olk.exe",
+    "powerpnt.exe",
+    "onenote.exe",
+    "msaccess.exe",
+    "code.exe",
+    "idea64.exe",
+    "pycharm64.exe",
+    "rider64.exe",
+    "devenv.exe",
+    "windowsterminal.exe",
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "firefox.exe",
+];
+
+/// Whether Ctrl+Q in front of `exe` (its file name) quits it: not a Lulo
+/// app (they quit from their own menus) and not one that uses the key.
+fn quits_on_ctrl_q(exe: &str) -> bool {
+    let exe = exe.to_ascii_lowercase();
+    !exe.is_empty()
+        && rmac_apps::windows_apps::app_for_exe(&exe).is_none()
+        && !matches!(
+            exe.as_str(),
+            "lulo-shell.exe" | "lulo-session.exe" | "explorer.exe"
+        )
+        && !OWN_CTRL_Q.contains(&exe.as_str())
+}
+
+/// The executable file name of the app in front.
+fn front_exe() -> String {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    let mut pid = 0u32;
+    // SAFETY: reads the foreground window's process id into a local.
+    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid)) };
+    if pid == 0 {
+        return String::new();
+    }
+    // SAFETY: a query-only handle, closed below; the name is written into
+    // a local buffer of the size passed.
+    unsafe {
+        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return String::new();
+        };
+        let mut buffer = [0u16; 512];
+        let mut length = buffer.len() as u32;
+        let read = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_FORMAT(0),
+            windows::core::PWSTR(buffer.as_mut_ptr()),
+            &mut length,
+        );
+        let _ = CloseHandle(process);
+        if read.is_err() {
+            return String::new();
+        }
+        let path = String::from_utf16_lossy(&buffer[..length as usize]);
+        rmac_apps::windows_apps::exe_key(&path)
+    }
+}
+
 fn decide(key: u32, down: bool, held: Held, switching: bool) -> (Decision, bool) {
     let is = |vk: VIRTUAL_KEY| key == u32::from(vk.0);
     if is(VK_LMENU) || is(VK_RMENU) || is(VK_MENU) {
@@ -192,6 +276,13 @@ unsafe extern "system" fn on_key(code: i32, wparam: WPARAM, lparam: LPARAM) -> L
                 win: key_down(VK_LWIN) || key_down(VK_RWIN),
             };
             let switching = SWITCHING.load(Ordering::Acquire);
+            // ⌘Q in a Windows app: the front app's name is read only for
+            // this one chord.
+            if !switching && is_quit_chord(key, down, held) && quits_on_ctrl_q(&front_exe()) {
+                mark_swallowed(key, true);
+                send(Command::QuitFront);
+                return LRESULT(1);
+            }
             let (decision, now) = decide(key, down, held, switching);
             SWITCHING.store(now, Ordering::Release);
             if switching && !now && matches!(decision, Decision::Pass) {
@@ -269,6 +360,29 @@ mod tests {
 
     fn vk(key: VIRTUAL_KEY) -> u32 {
         u32::from(key.0)
+    }
+
+    #[test]
+    fn ctrl_q_quits_windows_apps_but_not_lulo_apps_or_apps_that_use_it() {
+        let ctrl = Held {
+            ctrl: true,
+            ..Held::default()
+        };
+        assert!(is_quit_chord(vk(VK_Q), true, ctrl));
+        assert!(!is_quit_chord(vk(VK_Q), false, ctrl));
+        let ctrl_shift = Held {
+            shift: true,
+            ..ctrl
+        };
+        assert!(!is_quit_chord(vk(VK_Q), true, ctrl_shift));
+        assert!(!is_quit_chord(vk(VK_Q), true, Held::default()));
+        assert!(quits_on_ctrl_q("notepad.exe"));
+        assert!(quits_on_ctrl_q("Chrome.exe"));
+        assert!(!quits_on_ctrl_q("rmac-calculator.exe"));
+        assert!(!quits_on_ctrl_q("OUTLOOK.EXE"));
+        assert!(!quits_on_ctrl_q("code.exe"));
+        assert!(!quits_on_ctrl_q("explorer.exe"));
+        assert!(!quits_on_ctrl_q(""));
     }
 
     #[test]

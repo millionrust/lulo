@@ -95,6 +95,12 @@ fn overlay_api() -> &'static OverlayApi {
 }
 
 pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
+    if let Some(battery) = fake_battery() {
+        return Ok(Snapshot {
+            battery: Some(battery),
+            profiles: read_profiles(),
+        });
+    }
     let mut status = SYSTEM_POWER_STATUS::default();
     // SAFETY: plain out-parameter.
     unsafe { GetSystemPowerStatus(&mut status) }
@@ -226,6 +232,39 @@ fn read_battery(status: &SYSTEM_POWER_STATUS, details: Option<BatteryDetails>) -
         charge_cycles: details.cycle_count,
         energy_rate_watts,
         model: details.model,
+        charge_threshold: ChargeThreshold::default(),
+        history: BatteryHistory::default(),
+    })
+}
+
+/// A stand-in battery for the Windows shell checks on CI runners, which
+/// have none (`scripts/windows/shell_smoke.py`):
+/// `LULO_FAKE_BATTERY=<percent>,<charging|charged|not-charging|discharging>[,<seconds>]`,
+/// the seconds being the time to full or to empty.
+fn fake_battery() -> Option<Battery> {
+    parse_fake_battery(&std::env::var("LULO_FAKE_BATTERY").ok()?)
+}
+
+fn parse_fake_battery(value: &str) -> Option<Battery> {
+    let mut parts = value.split(',').map(str::trim);
+    let percentage = parts.next()?.parse::<u8>().ok()?.min(100);
+    let state = match parts.next()? {
+        "charging" => BatteryState::Charging,
+        "charged" => BatteryState::FullyCharged,
+        "not-charging" => BatteryState::PendingCharge,
+        "discharging" => BatteryState::Discharging,
+        _ => return None,
+    };
+    let seconds_remaining = parts.next().and_then(|seconds| seconds.parse().ok());
+    Some(Battery {
+        percentage,
+        state,
+        on_battery: state == BatteryState::Discharging,
+        seconds_remaining,
+        capacity: None,
+        charge_cycles: None,
+        energy_rate_watts: None,
+        model: None,
         charge_threshold: ChargeThreshold::default(),
         history: BatteryHistory::default(),
     })
@@ -661,6 +700,19 @@ mod tests {
             Some(PowerProfile::Balanced)
         );
         assert_eq!(profile_for_overlay(GUID::from_u128(1)), None);
+    }
+
+    #[test]
+    fn the_checks_stand_in_battery_reads_its_state() {
+        let battery = parse_fake_battery("85, charging, 3900").unwrap();
+        assert_eq!(
+            (battery.percentage, battery.state, battery.on_battery),
+            (85, BatteryState::Charging, false)
+        );
+        assert_eq!(battery.seconds_remaining, Some(3900));
+        let battery = parse_fake_battery("40,discharging").unwrap();
+        assert!(battery.on_battery && battery.seconds_remaining.is_none());
+        assert!(parse_fake_battery("40,sideways").is_none());
     }
 
     #[test]

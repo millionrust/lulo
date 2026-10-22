@@ -36,8 +36,9 @@ pub struct HistoryAuthority {
     store: rmac_notifications_store::Store,
     focus_connection: Option<Connection>,
     /// Whether the Focus service decides delivery (Lulo OS). Without it
-    /// (Windows, which has no Focus service yet) the Center's own policy
-    /// alone does, instead of failing closed.
+    /// (Windows, which has no session bus) the Center's own policy and the
+    /// in-process Focus (`rmac_focus_linux::local`) decide, instead of
+    /// failing closed.
     focus_enforced: bool,
     origins: crate::origin::Origins,
 }
@@ -89,7 +90,12 @@ impl HistoryAuthority {
             .policy(app_id)
             .delivery_at(false, crate::origin::unix_ms_now() / 1000);
         if !self.focus_enforced {
-            return base;
+            // Windows: Focus runs in this same process (`lulo-shell`), when
+            // it has started there.
+            return match rmac_focus_linux::local::get() {
+                Some(focus) => focus.enforce(app_id, base),
+                None => base,
+            };
         }
         let lookup = async {
             match &self.focus_connection {

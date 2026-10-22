@@ -22,6 +22,7 @@ rmac-dock-system.workspace = true
 rmac-display.workspace = true
 rmac-places.workspace = true
 rmac-places-system.workspace = true
+rmac-recent-documents.workspace = true
 rmac-shell-settings.workspace = true
 rmac-storage.workspace = true
 rmac-theme.workspace = true

@@ -41,6 +41,8 @@ rmac-top-bar.workspace = true
 # with the version and features GPUI's Windows backend already builds.
 [target.'cfg(windows)'.dependencies]
 raw-window-handle.workspace = true
+# Tiling, Fill & Arrange and Hide Others act on the Win32 window list.
+rmac-compositor-system.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",

@@ -1,0 +1,57 @@
+name: Windows libmpv (LGPL)
+
+# Media Player's libmpv and FFmpeg for Windows, built under the LGPL from
+# their release tags (packaging/windows/build-libmpv.sh; WIN-OS-88), once
+# per version of that script, cached. The installer workflows call this and
+# bundle the `lulo-windows-libmpv` artifact beside rmac-player.exe.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  libmpv:
+    name: Media Player's libmpv (LGPL)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Restore a built libmpv
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: libmpv
+          key: libmpv-${{ hashFiles('packaging/windows/build-libmpv.sh') }}
+
+      - name: Set up MSYS2 (UCRT64)
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git make diffutils
+            mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-ntldd
+            mingw-w64-ucrt-x86_64-dav1d mingw-w64-ucrt-x86_64-libass
+            mingw-w64-ucrt-x86_64-libplacebo mingw-w64-ucrt-x86_64-lcms2
+            mingw-w64-ucrt-x86_64-shaderc mingw-w64-ucrt-x86_64-spirv-cross
+            mingw-w64-ucrt-x86_64-libiconv mingw-w64-ucrt-x86_64-zlib
+
+      - name: Build libmpv and FFmpeg (LGPL)
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: bash packaging/windows/build-libmpv.sh libmpv
+
+      - name: Upload libmpv
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lulo-windows-libmpv
+          path: libmpv
+          retention-days: 7
+

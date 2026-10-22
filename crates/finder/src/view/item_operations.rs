@@ -6,7 +6,8 @@ const FILE_TAG_XATTR: &str = "com.rmac.tag";
 #[cfg(not(any(target_os = "macos", windows)))]
 const FILE_TAG_XATTR: &str = "user.rmac.tag";
 
-const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
+pub(super) const FILE_TAGS: [&str; 7] =
+    ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
 
 impl FinderView {
     pub(super) fn add_paths_to_dock(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
@@ -126,6 +127,17 @@ impl FinderView {
                 // without waiting for this folder to be listed again.
                 #[cfg(any(target_os = "linux", all(test, unix)))]
                 rmac_search::tag_index::record(&path, (!remove_tag).then_some(tag));
+                // The Tags column, gallery inspector and sort see it now.
+                let label = (!remove_tag).then(|| SharedString::from(tag));
+                for entry in self
+                    .entries
+                    .iter_mut()
+                    .chain(self.root_entries.iter_mut())
+                    .chain(self.child_entries.values_mut().flatten())
+                    .filter(|entry| entry.path == path)
+                {
+                    entry.tag = label.clone();
+                }
             }
         }
         if failures.is_empty() {
@@ -522,7 +534,7 @@ fn shortcut_target(path: &Path) -> std::io::Result<std::path::PathBuf> {
 }
 
 #[cfg(not(windows))]
-fn write_file_tag(path: &Path, tag: &str) -> Result<(), rustix::io::Errno> {
+pub(super) fn write_file_tag(path: &Path, tag: &str) -> Result<(), rustix::io::Errno> {
     rustix::fs::setxattr(
         path,
         FILE_TAG_XATTR,
@@ -532,12 +544,12 @@ fn write_file_tag(path: &Path, tag: &str) -> Result<(), rustix::io::Errno> {
 }
 
 #[cfg(not(windows))]
-fn clear_file_tag(path: &Path) -> Result<(), rustix::io::Errno> {
+pub(super) fn clear_file_tag(path: &Path) -> Result<(), rustix::io::Errno> {
     rustix::fs::removexattr(path, FILE_TAG_XATTR)
 }
 
 #[cfg(not(windows))]
-fn read_file_tag(path: &Path) -> Result<Vec<u8>, rustix::io::Errno> {
+pub(super) fn read_file_tag(path: &Path) -> Result<Vec<u8>, rustix::io::Errno> {
     let mut buffer = [0u8; 32];
     let length = rustix::fs::getxattr(path, FILE_TAG_XATTR, &mut buffer)?;
     Ok(buffer[..length].to_vec())
@@ -559,17 +571,17 @@ fn tag_stream_path(path: &Path) -> std::path::PathBuf {
 }
 
 #[cfg(windows)]
-fn write_file_tag(path: &Path, tag: &str) -> std::io::Result<()> {
+pub(super) fn write_file_tag(path: &Path, tag: &str) -> std::io::Result<()> {
     std::fs::write(tag_stream_path(path), tag.as_bytes())
 }
 
 #[cfg(windows)]
-fn clear_file_tag(path: &Path) -> std::io::Result<()> {
+pub(super) fn clear_file_tag(path: &Path) -> std::io::Result<()> {
     std::fs::remove_file(tag_stream_path(path))
 }
 
 #[cfg(windows)]
-fn read_file_tag(path: &Path) -> std::io::Result<Vec<u8>> {
+pub(super) fn read_file_tag(path: &Path) -> std::io::Result<Vec<u8>> {
     std::fs::read(tag_stream_path(path))
 }
 

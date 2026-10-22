@@ -1,0 +1,20 @@
+#!/bin/sh
+# Calamares shellprocess@lulo_cleanup (ADR 0031): runs in the installed
+# system's chroot before the first user exists. Removes what only the live
+# medium needs.
+set -eu
+
+rm -f /usr/share/applications/org.lulo.Installer.desktop
+rm -f /usr/share/icons/hicolor/scalable/apps/lulo-installer.svg
+rm -rf /usr/share/lulo-live
+systemctl disable lulo-live-session.service >/dev/null 2>&1 || true
+rm -f /usr/lib/systemd/system/lulo-live-session.service
+rm -f /usr/libexec/lulo-live/session-setup
+rmdir /usr/libexec/lulo-live 2>/dev/null || true
+rm -f /etc/casper.conf
+# Casper's live-session files, if any reached the target.
+rm -f /etc/sudoers.d/casper /etc/gdm3/custom.conf.casper
+if [ -f /etc/gdm3/custom.conf ]; then
+    sed -i '/^AutomaticLogin/d' /etc/gdm3/custom.conf
+fi
+gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true

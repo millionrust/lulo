@@ -143,6 +143,11 @@ impl Backend for SystemBackend {
             .result
             .map_err(|error| BackendError::new(action_error_kind(error.kind), error.message))?;
             // App Exposé shows the focused application's windows.
+            #[cfg(windows)]
+            return crate::app_windows::request().then_some(()).ok_or_else(|| {
+                BackendError::new(FailureKind::Unavailable, "Mission Control is not running")
+            });
+            #[cfg(not(windows))]
             blocking::unblock(|| {
                 std::process::Command::new("/usr/libexec/rmac/rmac-mission-control")
                     .arg("app-windows")

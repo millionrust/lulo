@@ -81,6 +81,7 @@ fn placed_for_ready(surface: Placed) {
     if before != 7 && after == 7 {
         trace(|| format!("ready at {:.0} ms", crate::win::process_millis()));
         memory::report("ready");
+        crate::win::session::signal_ready();
         // Windows' own apps for Spotlight and the Dock, read by a helper
         // process off the UI thread (not in the fixed scene: the runner's
         // apps are not Lulo OS's).
@@ -206,8 +207,7 @@ fn add_menu_rows() {
     requests::register(SIGN_IN_ACTION, |_| {
         let on = !registry::starts_at_sign_in();
         let session = share::install_dir().join("lulo-session.exe");
-        let command = format!("\"{}\"", session.display());
-        registry::set_starts_at_sign_in(on.then_some(command.as_str()));
+        registry::set_starts_at_sign_in(on.then_some(session.as_path()));
         trace(|| format!("start at sign-in {}", if on { "on" } else { "off" }));
     });
     requests::register(FILES_FOR_FOLDERS_ACTION, |_| {
@@ -247,17 +247,21 @@ fn start_hotkey(cx: &mut App) -> Option<Hooks> {
             registry::set_dword(HOTKEY_NOTICE, hotkey.code());
             let (title, detail) = model_hotkey::notice(hotkey);
             trace(|| format!("notice shown: {title}: {detail}"));
+            rmac_notifications::pipe::post_notice(title, detail);
         }
     }
     cx.spawn(async move |cx| {
         while let Ok(event) = receiver.recv().await {
-            if let DesktopEvent::Hotkey = event {
-                cx.update(|cx| {
-                    if !requests::run("launcher", cx) {
-                        trace(|| "spotlight is not available".into());
-                    }
-                });
-            }
+            let request = match event {
+                DesktopEvent::Hotkey => "launcher",
+                DesktopEvent::Request(request) => request,
+                _ => continue,
+            };
+            cx.update(|cx| {
+                if !requests::run(request, cx) {
+                    trace(|| format!("{request} is not available"));
+                }
+            });
         }
     })
     .detach();
@@ -284,7 +288,14 @@ pub fn run() -> i32 {
     if std::env::var_os("RMAC_SHELL_SCENE").is_none_or(|scene| scene != "1") {
         rmac_hardware::start();
     }
-    let took_taskbar = std::env::var_os("LULO_KEEP_TASKBAR").is_none();
+    // Lulo is the user's shell (`lulo-session --as-shell`): no Explorer
+    // taskbar to put away, and the work area and the tray are Lulo's own.
+    let as_shell =
+        std::env::var_os(crate::win::session::AS_SHELL_ENV).is_some_and(|value| value == "1");
+    if as_shell {
+        rmac_shell_layer::windows::work_area::set_shell(true);
+    }
+    let took_taskbar = !as_shell && std::env::var_os("LULO_KEEP_TASKBAR").is_none();
     let mut menu_host = Some(menu_host);
 
     rmac_ui::application()
@@ -292,6 +303,25 @@ pub fn run() -> i32 {
         .run(move |cx: &mut App| {
             memory::report("GPUI started");
             rmac_ui::init_application(cx);
+            if as_shell {
+                let tray = rmac_shell_layer::windows::tray::start();
+                trace(|| {
+                    format!(
+                        "as the shell; tray {}",
+                        if tray { "open" } else { "refused" }
+                    )
+                });
+            }
+            // Focus runs here, before Control Centre, the bar and
+            // Notification Centre ask it (ADR 0023, "Focus on Windows").
+            match rmac_focus_store::Store::from_environment() {
+                Ok(store) => {
+                    if let Err(error) = rmac_focus_linux::local::install(store) {
+                        eprintln!("Focus is not available: {error}");
+                    }
+                }
+                Err(error) => eprintln!("Focus is not available: {error}"),
+            }
             rmac_shell_ui::tokens::install_appearance_watch(cx);
             let Some(menu_host) = menu_host.take() else {
                 cx.quit();
@@ -408,7 +438,23 @@ pub fn run() -> i32 {
                 crate::win::shell_icons::watch_running(cx);
             }
             rmac_quick_settings_app::start(cx);
+            // The volume keys and Lulo's volume panel (KB-04).
+            let volume_keys = crate::osd::start(cx);
+            trace(|| {
+                format!(
+                    "volume keys: {}",
+                    if volume_keys {
+                        "Lulo's panel"
+                    } else {
+                        "Windows' flyout"
+                    }
+                )
+            });
             requests::register("launcher", rmac_launcher_app::toggle);
+            requests::register("screenshot-screen", |_| crate::win::screenshot::screen());
+            requests::register("screenshot-selection", |_| {
+                crate::win::screenshot::selection()
+            });
             requests::register("quick-settings", rmac_quick_settings_app::toggle);
             // Apps, from the Dock's tile and from its desktop entry
             // (`lulo-shell --app-drawer`, from Spotlight or a shortcut).
@@ -419,6 +465,11 @@ pub fn run() -> i32 {
             // menu bar's clock opens Notification Centre.
             if !skipped("switcher") {
                 rmac_shell_app_switcher::start(cx);
+            }
+            // Mission Control (Ctrl+Up), App Exposé (Ctrl+Down), Show
+            // Desktop and the hot corners Desktop & Dock sets.
+            if !skipped("mission-control") {
+                rmac_shell_mission_control::start(cx);
             }
             if !skipped("notifications") {
                 rmac_notification_center_app::start(cx);

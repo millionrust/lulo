@@ -1,0 +1,4 @@
+# Let NetworkManager manage every device (Wi-Fi, Ethernet, mobile broadband).
+network:
+  version: 2
+  renderer: NetworkManager

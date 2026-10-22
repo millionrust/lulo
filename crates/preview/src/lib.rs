@@ -2,17 +2,23 @@
 //! identity and navigation, poppler output parsing, and the blocking
 //! decode/render work — shared by the binary, its tests and Quick Look.
 
+pub mod adjust;
 pub mod bounded;
 pub mod document;
+pub mod heif;
 pub mod layout;
+pub mod libraw;
 pub mod markup;
 pub mod metrics;
 pub mod pdfwriter;
 pub mod poppler;
+pub mod psd;
 pub mod redact;
 pub mod render;
 pub mod selection;
 pub mod settings_store;
+pub mod shapes;
+pub mod vector;
 pub mod versions;
 #[cfg(windows)]
 pub mod winpdf;

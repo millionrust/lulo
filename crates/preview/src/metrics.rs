@@ -200,6 +200,15 @@ pub fn image_window_size(pixels: (f32, f32)) -> (f32, f32) {
     )
 }
 
+/// The colours Markup's Colour and Fill buttons step through: macOS's own
+/// system colours (red, orange, yellow, green, blue, purple, black, white).
+pub const MARKUP_COLOURS: [u32; 8] = [
+    0xFF3B30, 0xFF9500, 0xFFCC00, 0x34C759, 0x007AFF, 0xAF52DE, 0x000000, 0xFFFFFF,
+];
+
+/// Type sizes (points) the Text size button steps through.
+pub const MARKUP_FONT_SIZES: [f32; 6] = [12.0, 16.0, 24.0, 36.0, 48.0, 72.0];
+
 /// Size (width, height) of Go ▸ Go to Page…'s sheet, measured on macOS 26
 /// (PREV-14).
 pub const GO_TO_PAGE_SHEET: (f32, f32) = (184.0, 92.0);

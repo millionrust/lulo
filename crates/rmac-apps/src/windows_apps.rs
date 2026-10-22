@@ -17,7 +17,7 @@ pub struct WindowsApp {
 
 /// Every Lulo app that builds for Windows, in the Dock's order: Files first,
 /// where the Mac's Dock has the Finder.
-pub const WINDOWS_APPS: [WindowsApp; 10] = [
+pub const WINDOWS_APPS: [WindowsApp; 13] = [
     WindowsApp {
         app_id: identity::FILES,
         name: "Files",
@@ -67,6 +67,21 @@ pub const WINDOWS_APPS: [WindowsApp; 10] = [
         app_id: identity::PREVIEW,
         name: "Preview",
         exe: "rmac-preview.exe",
+    },
+    WindowsApp {
+        app_id: identity::CALENDAR,
+        name: "Calendar",
+        exe: "rmac-calendar.exe",
+    },
+    WindowsApp {
+        app_id: identity::SYSTEM_MONITOR,
+        name: "System Monitor",
+        exe: "rmac-system-monitor.exe",
+    },
+    WindowsApp {
+        app_id: identity::PLAYER,
+        name: "Media Player",
+        exe: "rmac-player.exe",
     },
 ];
 

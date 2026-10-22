@@ -26,7 +26,15 @@ pub fn is_unavailable(error: &Error) -> bool {
 mod win32;
 
 #[cfg(windows)]
+mod picture;
+#[cfg(windows)]
+pub use picture::{window_picture, Pixels};
+#[cfg(windows)]
+mod thumbnails;
+
+#[cfg(windows)]
 pub use win32::{
     action_capabilities, execute, execute_action, full_screen_tile, is_unavailable,
-    minimize_request, minimize_window_in, refresh, snapshot, watch, Error, MinimizeError,
+    minimize_request, minimize_window_in, move_windows_animated, refresh, restore_window_size,
+    snapshot, watch, Error, MinimizeError,
 };

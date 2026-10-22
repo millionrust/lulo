@@ -242,6 +242,47 @@ pub fn open_file_with(
     }
 }
 
+/// Make one installed, compatible application the XDG default for
+/// `mime_type` without opening anything: Finder's Get Info ▸ Open with ▸
+/// Change All….
+pub fn set_default_application(mime_type: &str, application_id: &str) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let compatible = discover()?.into_iter().any(|application| {
+            application.id == application_id
+                && application
+                    .mime_types
+                    .iter()
+                    .any(|candidate| candidate == mime_type)
+        });
+        if !compatible {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "the selected application is no longer installed or compatible",
+            ));
+        }
+        run_xdg_mime(&[
+            std::ffi::OsStr::new("default"),
+            std::ffi::OsStr::new(application_id),
+            std::ffi::OsStr::new(mime_type),
+        ])?;
+        if query_default_application(mime_type)?.as_deref() != Some(application_id) {
+            return Err(io::Error::other(
+                "the desktop did not retain the new default application",
+            ));
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (mime_type, application_id);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Default applications are set in the supported Linux session",
+        ))
+    }
+}
+
 /// Resolve a trusted desktop-entry application ID without fuzzy matching.
 ///
 /// Portal notification IDs normally omit the `.desktop` suffix while the XDG

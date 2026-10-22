@@ -25,7 +25,8 @@ use windows::Win32::System::Pipes::{
     PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
 use windows::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION,
 };
 
 fn create_instance(name: &HSTRING, first: bool) -> Option<File> {
@@ -121,6 +122,17 @@ fn process_path(pid: u32) -> Option<String> {
 /// app the window list names it as.
 fn poster(pid: u32) -> Poster {
     let executable = process_path(pid);
+    // The Lulo layer's own notices (the bar's, the Dock's), which Lulo OS
+    // posts as "Lulo OS" on the session bus.
+    // SAFETY: no arguments.
+    if pid == unsafe { GetCurrentProcessId() } {
+        return Poster {
+            app_id: "lulo-os".to_owned(),
+            desktop_id: None,
+            executable,
+            app_name: Some("Lulo OS".to_owned()),
+        };
+    }
     let path = executable.clone().unwrap_or_default();
     let file = path.rsplit(['\\', '/']).next().unwrap_or_default();
     match rmac_apps::windows_apps::app_for_exe(file) {
@@ -152,7 +164,19 @@ fn serve(connection: File, service: ServiceHandle) {
         Ok(0) | Err(_) => return,
         Ok(_) => {}
     }
-    let Ok(post) = pipe::decode_post(line.trim_end_matches(['\r', '\n'])) else {
+    let line = line.trim_end_matches(['\r', '\n']);
+    if let Ok(badge) = pipe::decode_badge(line) {
+        // Who set it comes from the pipe, as for a notification.
+        let app_id = poster(pid).app_id;
+        rmac_shell_layer::windows::trace::trace(|| format!("badge {app_id} {}", badge.count));
+        rmac_shell_layer::windows::badges::publish(rmac_shell_layer::windows::badges::Badge {
+            app_id,
+            count: badge.count,
+            progress: badge.progress,
+        });
+        return;
+    }
+    let Ok(post) = pipe::decode_post(line) else {
         return;
     };
     let (answers_tx, answers) = std::sync::mpsc::channel();

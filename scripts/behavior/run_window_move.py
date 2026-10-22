@@ -690,8 +690,39 @@ class Run:
         self.check(f"A second double-click restores {title}'s previous size", back,
                    f"{(width, height)} -> {restored_geometry[2:]}")
 
+    def assert_edge_tile(self) -> None:
+        """DESK-03 (ADR 0029): a window dragged to the left screen edge
+        takes the left half once it is let go. Needs Lulo's niri with
+        patch 0003 (--niri) and Mission Control from --bin-dir."""
+
+        app_id = "org.example.WindowMoveTest"
+        process = self.spawn([sys.executable, str(Path(__file__).resolve()), "--gtk-window"], "edge-tile")
+        window = self.wait_for(lambda: self.window(app_id), 40)
+        self.check("edge-tile window mapped", bool(window))
+        if not window:
+            return
+        time.sleep(1)
+        x, y, width, height = self.geometry(window)
+        # Grab the title bar and bring the pointer to the left edge (inside
+        # the 2 px edge zone), resting there as a hand does.
+        self.pointer.drag(self.parent_point(x + width * .5, y + 18),
+                          self.parent_point(1, y + 18 + 60), self.parent_width,
+                          self.parent_height, steps=16, step_delay=0.05, grab_delay=0.15,
+                          hold=0.4)
+        def tiled(candidate) -> bool:
+            nx, _, nwidth, nheight = self.geometry(candidate)
+            return nx < 6 and abs(nwidth - width) > 30 and nheight > height + 30
+        settled = self.wait_for(lambda: self.window_matching(app_id, tiled), 10)
+        self.check("a window dropped at the left edge takes the left half", bool(settled),
+                   str(self.geometry(self.window(app_id) or window)))
+        process.terminate()
+        process.wait(10)
+
     def run(self) -> int:
         self.start()
+        if self.args.edge_tiling:
+            self.assert_edge_tile()
+            return self.finish()
         if self.args.frame_only or self.args.geometry_only:
             if self.args.frame_only:
                 self.assert_repaint_without_input()
@@ -759,7 +790,8 @@ def outer(args: argparse.Namespace) -> int:
                                 "--inner", str(work), "--niri", args.niri, "--bin-dir", args.bin_dir,
                                 *(["--extra-zoom"] if args.extra_zoom else []),
                                 *(["--frame-only"] if args.frame_only else []),
-                                *(["--geometry-only"] if args.geometry_only else [])], env=env)
+                                *(["--geometry-only"] if args.geometry_only else []),
+                                *(["--edge-tiling"] if args.edge_tiling else [])], env=env)
     finally:
         runtime = Path(env["XDG_RUNTIME_DIR"])
         if run_lulo.reap(runtime):
@@ -781,6 +813,8 @@ def main() -> int:
     parser.add_argument("--extra-zoom", action="store_true", help="also check Calculator and Files double-click Zoom")
     parser.add_argument("--frame-only", action="store_true", help="check idle repaint and first-map geometry")
     parser.add_argument("--geometry-only", action="store_true", help="capture Settings before and after its screen-fit resize")
+    parser.add_argument("--edge-tiling", action="store_true",
+                        help="drag a window to the left edge and expect the left half (needs Lulo's niri)")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--gtk-window", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()

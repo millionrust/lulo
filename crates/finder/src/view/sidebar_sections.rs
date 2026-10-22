@@ -120,6 +120,17 @@ pub(super) fn build_sections(
             ));
         }
     }
+    // Network: connected servers and the computers GVFS finds (FILES-07).
+    // Finder lists it whether or not Bonjour computers are shown too.
+    if cfg!(target_os = "linux") {
+        locations.push(p(
+            "Network",
+            PathBuf::new(),
+            "icons/globe.svg",
+            drive_gray(),
+            PlaceKind::Network,
+        ));
+    }
     if cfg!(target_os = "linux") && sidebar.show_bin {
         locations.push(p(
             file_words.bin(),

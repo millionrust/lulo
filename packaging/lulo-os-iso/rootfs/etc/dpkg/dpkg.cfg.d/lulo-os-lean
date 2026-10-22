@@ -1,0 +1,15 @@
+# Lulo OS image (ADR 0031): leave out files no Lulo OS PC uses, so the image
+# stays small and boots fast on low-spec PCs. dpkg keeps leaving them out on
+# every update.
+#
+# Manuals and package documentation (the licence files stay).
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/doc/*
+path-include=/usr/share/doc/*/copyright
+path-exclude=/usr/share/info/*
+# Firmware for data-centre network switches (Mellanox Spectrum, Marvell
+# Prestera) and for Qualcomm Snapdragon (Arm) SoCs. Qualcomm Wi-Fi and
+# Bluetooth firmware (ath*, qca) stays.
+path-exclude=/usr/lib/firmware/mellanox/*
+path-exclude=/usr/lib/firmware/mrvl/prestera/*
+path-exclude=/usr/lib/firmware/qcom/*

@@ -16,3 +16,7 @@ walkdir.workspace = true
 # Extended attributes hold Files' colour tags on Linux.
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
+
+# Spotlight's file names from the Windows Search index (`windows_index`).
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Foundation", "Storage", "Storage_Search"] }

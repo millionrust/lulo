@@ -27,20 +27,27 @@ image.workspace = true
 raw-window-handle.workspace = true
 # A low-spec PC gets solid materials instead of the blur (ADR 0027).
 rmac-hardware.workspace = true
+# `#[implement]` (`file_drag`'s drop source) names `windows_core` directly.
+windows-core.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_Security",
     "Win32_Security_Authentication_Identity",
+    "Win32_System_DataExchange",
+    "Win32_System_Com",
     "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
     "Win32_System_Power",
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",
     "Win32_System_Shutdown",
+    "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ] }

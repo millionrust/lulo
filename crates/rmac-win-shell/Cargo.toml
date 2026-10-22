@@ -52,13 +52,22 @@ rmac-app-drawer.workspace = true
 # ⌘Tab and Notification Centre, the same views Lulo OS runs as their own
 # processes.
 rmac-notification-center-app.workspace = true
+rmac-notifications.workspace = true
+# Focus, run in lulo-shell (`rmac_focus_linux::local`).
+rmac-focus-linux.workspace = true
+rmac-focus-store.workspace = true
 rmac-shell-app-switcher.workspace = true
+# Mission Control, App Exposé, Show Desktop and the hot corners, the same
+# service Lulo OS runs as its own process.
+rmac-shell-mission-control.workspace = true
 rmac-shell-settings.workspace = true
+# Screenshots' shutter sound (`win::screenshot`).
+rmac-sound.workspace = true
 # The shell's live design tokens (light or dark, accent), as each Lulo OS
 # shell process installs them.
 rmac-shell-ui.workspace = true
 # Control Centre's brightness, whose WMI calls run in a helper process.
-rmac-osd.workspace = true
+rmac-osd = { workspace = true, features = ["view"] }
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true
 rmac-wallpaper-system.workspace = true
@@ -74,6 +83,7 @@ windows = { workspace = true, features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
+    "Win32_System_Environment",
     "Win32_System_IO",
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",

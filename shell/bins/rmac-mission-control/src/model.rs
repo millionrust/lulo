@@ -7,8 +7,8 @@
 //! platform.
 
 use rmac_compositor::{
-    window_is_parked, Action, OutputId, Snapshot, Timestamp, Window, WindowId, Workspace,
-    WorkspaceId, PARKING_WORKSPACE,
+    window_is_parked, Action, OutputId, Snapshot, TileRegion, Timestamp, Window, WindowId,
+    Workspace, WorkspaceId, PARKING_WORKSPACE,
 };
 use rmac_shell_settings::{HotCornerAction, HotCornerSettings};
 
@@ -56,6 +56,12 @@ pub enum Command {
     /// ⌘M: minimize the focused window of any application into the Dock,
     /// the same way the yellow traffic light does.
     Minimize,
+    /// The green button's Fill & Arrange row (DESK-03): the focused window
+    /// and the app's next most recent ones side by side, one above the
+    /// other, or in quarters.
+    ArrangeLeftRight,
+    ArrangeTopBottom,
+    ArrangeQuarters,
 }
 
 impl Command {
@@ -81,6 +87,9 @@ impl Command {
             "restore-size" => Self::RestoreSize,
             "zoom" => Self::Zoom,
             "minimize" => Self::Minimize,
+            "arrange-left-right" => Self::ArrangeLeftRight,
+            "arrange-top-bottom" => Self::ArrangeTopBottom,
+            "arrange-quarters" => Self::ArrangeQuarters,
             _ => return None,
         })
     }
@@ -107,8 +116,49 @@ impl Command {
             Self::RestoreSize => "restore-size",
             Self::Zoom => "zoom",
             Self::Minimize => "minimize",
+            Self::ArrangeLeftRight => "arrange-left-right",
+            Self::ArrangeTopBottom => "arrange-top-bottom",
+            Self::ArrangeQuarters => "arrange-quarters",
         }
     }
+
+    /// The regions an Arrange command fills, the focused window first.
+    pub fn arrangement(self) -> &'static [TileRegion] {
+        use TileRegion::*;
+        match self {
+            Self::ArrangeLeftRight => &[Left, Right],
+            Self::ArrangeTopBottom => &[Top, Bottom],
+            Self::ArrangeQuarters => &[TopLeft, TopRight, BottomLeft, BottomRight],
+            _ => &[],
+        }
+    }
+}
+
+/// Fill & Arrange (DESK-03): the focused window takes the first region and
+/// the same app's other windows on its Space take the rest, most recently
+/// used first. Parked (minimised) windows stay where they are.
+pub fn arrange(snapshot: &Snapshot, command: Command) -> Vec<(WindowId, TileRegion)> {
+    let regions = command.arrangement();
+    let Some(focused) = snapshot
+        .focus
+        .window
+        .and_then(|id| snapshot.windows.iter().find(|window| window.id == id))
+    else {
+        return Vec::new();
+    };
+    let mut others: Vec<&Window> = snapshot
+        .windows
+        .iter()
+        .filter(|window| window.id != focused.id)
+        .filter(|window| window.app_id == focused.app_id && window.workspace == focused.workspace)
+        .filter(|window| !window_is_parked(snapshot, window))
+        .collect();
+    others.sort_by_key(|window| std::cmp::Reverse(stamp(window.focus_timestamp)));
+    std::iter::once(focused)
+        .chain(others)
+        .zip(regions.iter().copied())
+        .map(|(window, region)| (window.id, region))
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -990,6 +1040,37 @@ mod tests {
     }
 
     #[test]
+    fn arrange_puts_the_focused_window_first_and_the_apps_recent_ones_next() {
+        let frame = Rect::new(100.0, 100.0, 600.0, 400.0);
+        let snapshot = snapshot(
+            vec![
+                window(1, "org.rmac.Terminal", 1, frame, 9),
+                window(2, "org.rmac.Terminal", 1, frame, 3),
+                window(3, "org.rmac.Terminal", 1, frame, 5),
+                window(4, "org.rmac.Files", 1, frame, 8),
+                // Minimised: left alone.
+                window(5, "org.rmac.Terminal", 2, frame, 7),
+            ],
+            Some(2),
+        );
+        assert_eq!(
+            arrange(&snapshot, Command::ArrangeLeftRight),
+            [
+                (WindowId(2), TileRegion::Left),
+                (WindowId(1), TileRegion::Right)
+            ]
+        );
+        assert_eq!(
+            arrange(&snapshot, Command::ArrangeQuarters)
+                .into_iter()
+                .map(|(window, _)| window.0)
+                .collect::<Vec<_>>(),
+            [2, 1, 3]
+        );
+        assert!(arrange(&snapshot, Command::Fill).is_empty());
+    }
+
+    #[test]
     fn app_expose_lists_the_apps_minimised_windows_after_its_open_ones() {
         let frame = Rect::new(100.0, 100.0, 600.0, 400.0);
         let snapshot = snapshot(
@@ -1042,6 +1123,9 @@ mod tests {
             Command::RestoreSize,
             Command::Zoom,
             Command::Minimize,
+            Command::ArrangeLeftRight,
+            Command::ArrangeTopBottom,
+            Command::ArrangeQuarters,
         ] {
             assert_eq!(Command::parse(command.as_str()), Some(command));
             assert!(command.as_str().len() <= 24);

@@ -248,3 +248,24 @@ fn wifi_bars_bucket_a_drifting_signal_stably() {
     assert_eq!(State::wifi_bars_for(66), 3);
     assert_eq!(State::wifi_bars_for(100), 3);
 }
+
+#[test]
+fn the_battery_shows_a_bolt_while_charging_and_a_plug_on_power_otherwise() {
+    use rmac_power::BatteryState::*;
+    let indicator = |state, on_battery| BatteryIndicator {
+        percentage: 100,
+        state,
+        on_battery,
+    };
+    assert_eq!(indicator(Charging, false).mark(), BatteryMark::Charging);
+    assert_eq!(
+        indicator(FullyCharged, false).mark(),
+        BatteryMark::PluggedIn
+    );
+    assert_eq!(
+        indicator(PendingCharge, false).mark(),
+        BatteryMark::PluggedIn
+    );
+    assert_eq!(indicator(Unknown, false).mark(), BatteryMark::PluggedIn);
+    assert_eq!(indicator(Discharging, true).mark(), BatteryMark::None);
+}

@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "mail/apply-rules",
+  "observations": {
+    "before": {"mail_messages": {"count": 8, "unread": 3, "flagged": 2}},
+    "after": {"mail_messages": {"count": 8, "unread": 2, "flagged": 3}}
+  }
+}

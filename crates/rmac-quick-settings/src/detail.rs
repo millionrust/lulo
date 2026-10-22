@@ -417,6 +417,15 @@ pub fn display_panel(dark_mode: Option<bool>) -> Panel {
     }
 }
 
+/// The line under Focus's title saying what Focus silences: on Windows
+/// only Lulo's own notifications (Windows' Do Not Disturb, which apps
+/// cannot set, covers the others); on Lulo OS every notification.
+pub const FOCUS_SCOPE: Option<&str> = if cfg!(windows) {
+    Some("Silences Lulo notifications")
+} else {
+    None
+};
+
 /// One configured Focus mode, as the Focus service lists it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FocusMode {
@@ -448,6 +457,9 @@ pub fn focus_panel(
         panel.empty = Some("Focus Unavailable");
         return panel;
     }
+    // Windows: Lulo's Focus governs Lulo's notifications; Windows' own
+    // Do Not Disturb, which no app may set, governs the rest.
+    panel.notice = FOCUS_SCOPE;
     if modes.is_empty() {
         panel.empty = Some("No Focus Modes");
         return panel;
@@ -724,11 +736,38 @@ pub enum Module {
     LowPower,
     Screenshot,
     Focus,
+    /// Screen Mirroring (CC-06), when a Miracast sender is installed.
+    ScreenMirroring,
+    /// The appearance circle (CC-07): Light or Dark.
+    DarkMode,
     Display,
     Sound,
 }
 
 impl Module {
+    /// The name Edit Controls stores a removable round control under
+    /// (CC-03); `None` for the fixed modules.
+    pub fn control_name(self) -> Option<&'static str> {
+        Some(match self {
+            Self::LowPower => "low-power",
+            Self::ScreenMirroring => "screen-mirroring",
+            Self::DarkMode => "dark-mode",
+            Self::Screenshot => "screenshot",
+            _ => return None,
+        })
+    }
+
+    /// The label Edit Controls shows for a removable control.
+    pub fn control_label(self) -> &'static str {
+        match self {
+            Self::LowPower => "Low Power Mode",
+            Self::ScreenMirroring => "Screen Mirroring",
+            Self::DarkMode => "Dark Mode",
+            Self::Screenshot => "Screenshot",
+            _ => "",
+        }
+    }
+
     /// The detail view Return opens, for the modules that have one.
     pub fn detail(self) -> Option<Detail> {
         match self {
@@ -1110,7 +1149,8 @@ mod tests {
             .collect::<Vec<_>>();
         networks.extend((0..8).map(|index| network(&format!("Other {index}"), WPA, false, false)));
         let mut panel = wifi_panel(&wifi(networks), true);
-        let max = crate::layout::MAX_SURFACE_HEIGHT as f32;
+        // A short output: the tallest surface it can fit.
+        let max = 420.0;
         assert!(panel.layout().1 > max);
         panel.fit(max);
         assert!(panel.layout().1 <= max);

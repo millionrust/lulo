@@ -101,6 +101,8 @@ mod bar {
     const STATUS_PAD: f32 = 10.0;
     const CLOCK_DATE_TIME_GAP: f32 = 7.0;
     const SLOT_HEIGHT: f32 = 22.0;
+    /// Other apps' status icons, as the Mac draws a menu extra's template.
+    const TRAY_ICON_SIZE: f32 = 16.0;
     /// On touch, status items reach to the bar's edges (ADR 0028); the
     /// footprint stays the same, so nothing moves.
     fn touch_reach() -> f32 {
@@ -119,9 +121,10 @@ mod bar {
     const READY_FILE_ENV: &str = "RMAC_TOP_BAR_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_TOP_BAR_RENDER_COUNT_DIR";
 
-    const STATUS_ASSET_NAMES: [&str; 11] = [
+    const STATUS_ASSET_NAMES: [&str; 12] = [
         "status/battery.svg",
         "status/battery-bolt.svg",
+        "status/battery-plug.svg",
         "status/bluetooth.svg",
         "status/control-center.svg",
         "status/focus.svg",
@@ -241,6 +244,9 @@ mod bar {
                 "status/battery.svg" => Some(include_bytes!("../../../assets/status/battery.svg")),
                 "status/battery-bolt.svg" => {
                     Some(include_bytes!("../../../assets/status/battery-bolt.svg"))
+                }
+                "status/battery-plug.svg" => {
+                    Some(include_bytes!("../../../assets/status/battery-plug.svg"))
                 }
                 "status/bluetooth.svg" => {
                     Some(include_bytes!("../../../assets/status/bluetooth.svg"))
@@ -646,6 +652,19 @@ mod bar {
         /// still holds the title a later Esc (backing fully out of the
         /// menu) should return the highlight to.
         title: Option<usize>,
+        /// ⌃F8 (CC-05): the highlighted status item instead of a title,
+        /// in the bar's order (status icons, Spotlight, Control Centre, the
+        /// clock).
+        status: Option<usize>,
+    }
+
+    /// One status item ⌃F8 can reach: its own menu, or the surface its
+    /// click opens.
+    #[derive(Clone)]
+    struct StatusTarget {
+        menu: Option<StatusMenuKind>,
+        shortcut: &'static str,
+        accessible_label: SharedString,
     }
 
     /// What the ⌃F2 focus surface exposes as the focused accessible node.
@@ -657,6 +676,8 @@ mod bar {
     }
 
     const KEYBOARD_MENU_ANNOUNCEMENT_KEY: usize = 1 << 20;
+    /// ⌃F8's status items announce under their own keys (CC-05).
+    const STATUS_ANNOUNCEMENT_KEY: usize = 1 << 19;
 
     /// Never keep an invisible exclusive surface that never got the keyboard.
     const KEYBOARD_ACTIVATION_TIMEOUT: Duration = Duration::from_millis(1_000);
@@ -1133,6 +1154,8 @@ mod bar {
         /// fresh mutation starts.
         wifi_error: Option<String>,
         battery_menu: Option<rmac_power::Snapshot>,
+        /// The bar's battery reading the open Battery menu last followed.
+        battery_menu_live: Option<(u8, rmac_power::BatteryState, bool)>,
         /// Apps using significant energy, sampled when the Battery menu
         /// opens (BAR-05).
         battery_energy: Option<Vec<String>>,
@@ -1236,6 +1259,66 @@ mod bar {
         .detach();
     }
 
+    /// Other apps' status icons (Windows' tray when Lulo is the shell):
+    /// draw the bar again whenever they change.
+    fn watch_tray_changes(cx: &mut Context<TopBar>) {
+        let Some(changes) = rmac_shell_layer::system::tray::subscribe() else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            while changes.recv().await.is_ok() {
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Other apps' status icons, left of Lulo's own as the Mac puts
+    /// third-party menu extras: a click goes to the app, the right button
+    /// asks for its menu.
+    fn tray_items(display_id: u64) -> Vec<AnyElement> {
+        rmac_shell_layer::system::tray::items()
+            .into_iter()
+            .map(|item| {
+                let key = item.key;
+                let reach = touch_reach();
+                div()
+                    .id(format!("tray-{display_id}-{key}"))
+                    .role(Role::Button)
+                    .aria_label(if item.tip.is_empty() {
+                        "Status item".to_owned()
+                    } else {
+                        item.tip.clone()
+                    })
+                    .h(px(SLOT_HEIGHT + 2.0 * reach))
+                    .my(px(-reach))
+                    .px(px(STATUS_PAD))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(tokens::menu_item_radius()))
+                    .cursor_pointer()
+                    .hover(|style| style.bg(rgba(tokens::light_hover())))
+                    .on_click(move |_, _, cx| {
+                        cx.stop_propagation();
+                        rmac_shell_layer::system::tray::activate(key, false);
+                    })
+                    .on_mouse_down(MouseButton::Right, move |_, _, cx| {
+                        cx.stop_propagation();
+                        rmac_shell_layer::system::tray::activate(key, true);
+                    })
+                    .children(
+                        item.image.map(|image| {
+                            gpui::img(image).w(px(TRAY_ICON_SIZE)).h(px(TRAY_ICON_SIZE))
+                        }),
+                    )
+                    .into_any_element()
+            })
+            .collect()
+    }
+
     impl TopBar {
         fn new(
             display_id: DisplayId,
@@ -1255,6 +1338,7 @@ mod bar {
             });
             watch_sound_changes(cx);
             watch_bluetooth_changes(cx);
+            watch_tray_changes(cx);
             Self {
                 display_id,
                 output_uuid,
@@ -1295,6 +1379,7 @@ mod bar {
                 wifi_joining: None,
                 wifi_error: None,
                 battery_menu: None,
+                battery_menu_live: None,
                 battery_energy: None,
                 battery_error: None,
                 sound_menu: None,
@@ -2534,6 +2619,40 @@ mod bar {
                     .detach();
                 }
                 StatusMenuKind::Battery => {
+                    // The bar already knows the charge, the power source and
+                    // whether it charges: the menu shows them the moment it
+                    // opens, as on the Mac, and the full reading (time left,
+                    // energy modes) fills in when it arrives.
+                    let live = self.status.read(cx).update.snapshot.status.battery;
+                    self.battery_menu_live =
+                        live.map(|live| (live.percentage, live.state, live.on_battery));
+                    if let Some(live) = live {
+                        let snapshot = self.battery_menu.get_or_insert_with(Default::default);
+                        match snapshot.battery.as_mut() {
+                            Some(battery) => {
+                                if battery.state != live.state {
+                                    battery.seconds_remaining = None;
+                                }
+                                battery.percentage = live.percentage;
+                                battery.state = live.state;
+                                battery.on_battery = live.on_battery;
+                            }
+                            None => {
+                                snapshot.battery = Some(rmac_power::Battery {
+                                    percentage: live.percentage,
+                                    state: live.state,
+                                    on_battery: live.on_battery,
+                                    seconds_remaining: None,
+                                    capacity: None,
+                                    charge_cycles: None,
+                                    energy_rate_watts: None,
+                                    model: None,
+                                    charge_threshold: Default::default(),
+                                    history: Default::default(),
+                                })
+                            }
+                        }
+                    }
                     cx.spawn(async move |this, cx| {
                         let snapshot = cx
                             .background_executor()
@@ -2544,6 +2663,7 @@ mod bar {
                         let _ = this.update(cx, |this, cx| {
                             if this.status_generation == generation
                                 && this.status_menu == Some(StatusMenuKind::Battery)
+                                && snapshot.is_some()
                             {
                                 this.battery_menu = snapshot;
                                 cx.notify();
@@ -3798,6 +3918,52 @@ mod bar {
                 .collect()
         }
 
+        /// Every status item ⌃F8 can reach, in the bar's order: the same
+        /// icons the bar draws (`top_bar_indicator_labels`), then Spotlight,
+        /// Control Centre and the clock.
+        fn status_targets(&self, cx: &App) -> Vec<StatusTarget> {
+            let snapshot = &self.status.read(cx).update.snapshot.status;
+            let mut targets: Vec<StatusTarget> = top_bar_indicator_labels(snapshot)
+                .into_iter()
+                .filter(|indicator| indicator.kind != TopBarIndicatorKind::Notifications)
+                .map(|indicator| StatusTarget {
+                    menu: match indicator.kind {
+                        TopBarIndicatorKind::Network => Some(StatusMenuKind::Wifi),
+                        TopBarIndicatorKind::Battery => Some(StatusMenuKind::Battery),
+                        TopBarIndicatorKind::Sound => Some(StatusMenuKind::Sound),
+                        TopBarIndicatorKind::Bluetooth => Some(StatusMenuKind::Bluetooth),
+                        TopBarIndicatorKind::Focus => Some(StatusMenuKind::Focus),
+                        _ => None,
+                    },
+                    shortcut: "quick-settings",
+                    accessible_label: indicator.accessible.into(),
+                })
+                .collect();
+            targets.extend([
+                StatusTarget {
+                    menu: None,
+                    shortcut: "launcher",
+                    accessible_label: "Spotlight".into(),
+                },
+                StatusTarget {
+                    menu: None,
+                    shortcut: "quick-settings",
+                    accessible_label: "Control Centre".into(),
+                },
+                StatusTarget {
+                    menu: None,
+                    shortcut: "notification-center",
+                    accessible_label: "Notification Centre".into(),
+                },
+            ]);
+            targets
+        }
+
+        /// The status item ⌃F8 highlights, by its place in `status_targets`.
+        fn status_keyboard_index(&self) -> Option<usize> {
+            self.keyboard.as_ref().and_then(|mode| mode.status)
+        }
+
         fn set_keyboard_title(&mut self, index: usize) {
             if let Some(mode) = self.keyboard.as_mut() {
                 mode.title = Some(index);
@@ -3811,6 +3977,16 @@ mod bar {
         /// bar's own layer surface only takes keyboard on a click, so a
         /// bare key bind can't reach it directly.
         fn begin_menu_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.begin_keyboard(false, window, cx);
+        }
+
+        /// ⌃F8 (CC-05): the same keyboard mode, starting on the status
+        /// items, as macOS's "Move focus to status menus".
+        fn begin_status_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.begin_keyboard(true, window, cx);
+        }
+
+        fn begin_keyboard(&mut self, status: bool, window: &mut Window, cx: &mut Context<Self>) {
             if self.keyboard.is_some() || self.open_menu.is_some() || self.status_menu.is_some() {
                 return;
             }
@@ -3818,6 +3994,14 @@ mod bar {
             if titles.is_empty() {
                 return;
             }
+            let first_label = if status {
+                match self.status_targets(cx).first() {
+                    Some(target) => target.accessible_label.clone(),
+                    None => return,
+                }
+            } else {
+                titles[0].accessible_label.clone()
+            };
             let Some(top_bar) = window.window_handle().downcast::<TopBar>() else {
                 return;
             };
@@ -3831,8 +4015,8 @@ mod bar {
                 .window_id;
             let announcement = KeyboardAnnouncement {
                 role: Role::MenuItem,
-                label: titles[0].accessible_label.clone(),
-                key: 0,
+                label: first_label,
+                key: if status { STATUS_ANNOUNCEMENT_KEY } else { 0 },
             };
             let options = WindowOptions {
                 titlebar: None,
@@ -3869,7 +4053,8 @@ mod bar {
             self.keyboard = Some(KeyboardMode {
                 surface,
                 previous_window,
-                title: Some(0),
+                title: (!status).then_some(0),
+                status: status.then_some(0),
             });
             cx.notify();
         }
@@ -3952,6 +4137,43 @@ mod bar {
                 }
                 return self.keyboard_announcement(cx);
             }
+            if let Some(current) = self.status_keyboard_index() {
+                let targets = self.status_targets(cx);
+                if targets.is_empty() {
+                    self.leave_menu_keyboard(true, cx);
+                    return None;
+                }
+                let current = current.min(targets.len() - 1);
+                let set = |this: &mut Self, index: usize| {
+                    if let Some(mode) = this.keyboard.as_mut() {
+                        mode.status = Some(index);
+                    }
+                };
+                match event.keystroke.key.as_str() {
+                    "left" => set(self, current.checked_sub(1).unwrap_or(targets.len() - 1)),
+                    "right" => set(self, (current + 1) % targets.len()),
+                    "escape" => {
+                        self.leave_menu_keyboard(true, cx);
+                        return None;
+                    }
+                    "down" | "enter" | "space" => {
+                        let target = targets[current].clone();
+                        match target.menu {
+                            // Its menu opens under the keyboard, as a
+                            // title's does; the arrows then move in it.
+                            Some(kind) => self.open_status_menu(kind, false, window, cx),
+                            None => {
+                                self.leave_menu_keyboard(false, cx);
+                                dispatch_shortcut(target.shortcut, cx);
+                                return None;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                cx.notify();
+                return self.keyboard_announcement(cx);
+            }
             let titles = self.keyboard_titles(cx);
             if titles.is_empty() {
                 self.leave_menu_keyboard(true, cx);
@@ -4025,6 +4247,14 @@ mod bar {
                         label: menu.label.clone().into(),
                         key: KEYBOARD_MENU_ANNOUNCEMENT_KEY + menu_index,
                     },
+                });
+            }
+            if let Some(index) = self.status_keyboard_index() {
+                let targets = self.status_targets(cx);
+                return targets.get(index).map(|target| KeyboardAnnouncement {
+                    role: Role::Button,
+                    label: target.accessible_label.clone(),
+                    key: STATUS_ANNOUNCEMENT_KEY + index,
                 });
             }
             let titles = self.keyboard_titles(cx);
@@ -4114,6 +4344,23 @@ mod bar {
                         .collect();
                 }
             }
+            // An open Battery menu follows the battery as the bar does
+            // (charger in or out, a percent gone, charged), as on the Mac:
+            // the bar's reading at once, then a full one for the time left.
+            if self.status_menu == Some(StatusMenuKind::Battery) {
+                let live = self
+                    .status
+                    .read(cx)
+                    .update
+                    .snapshot
+                    .status
+                    .battery
+                    .map(|live| (live.percentage, live.state, live.on_battery));
+                if live != self.battery_menu_live {
+                    self.battery_menu_live = live;
+                    self.load_status_menu(StatusMenuKind::Battery, false, cx);
+                }
+            }
             let now = clock_now();
             let status = self.status.read(cx);
             let snapshot = &status.update.snapshot.status;
@@ -4127,6 +4374,13 @@ mod bar {
             };
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
+            // ⌃F8's highlight (CC-05): `status_targets`' order, so the icons
+            // come first and Spotlight, Control Centre and the clock follow.
+            let keyboard_status = self.status_keyboard_index();
+            let status_count = indicators
+                .iter()
+                .filter(|indicator| indicator.kind != TopBarIndicatorKind::Notifications)
+                .count();
             // The window the menus act on: remembered as the menu opened.
             let focused_window_id = self.menu_window.or(snapshot.focused.window_id);
 
@@ -4348,6 +4602,16 @@ mod bar {
             // The Wi-Fi or Battery menu opens under its own status item.
             let status_panel = self.status_menu.map(|kind| {
                 let rows = self.status_rows(kind);
+                // The open status menu's text, for shell_smoke's battery check.
+                #[cfg(windows)]
+                rmac_shell_layer::windows::trace::trace_changed("status menu", || {
+                    let text = rows
+                        .iter()
+                        .filter_map(menu_model::status_row_text)
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+                    format!("status menu {kind:?}: {text}")
+                });
                 let width = menu_model::STATUS_MENU_WIDTH;
                 let left = self
                     .status_slots
@@ -5020,6 +5284,7 @@ mod bar {
                         .flex()
                         .items_center()
                         .justify_end()
+                        .children(tray_items(self.display_id))
                         .children(
                             indicators
                                 .into_iter()
@@ -5051,7 +5316,7 @@ mod bar {
                                     let mut item = div()
                                         .id(format!("status-{}-{index}", self.display_id))
                                         .role(Role::Button)
-                                        .aria_label(indicator.accessible)
+                                        .aria_label(indicator.accessible.clone())
                                         .relative()
                                         .h(px(SLOT_HEIGHT + 2.0 * reach))
                                         .my(px(-reach))
@@ -5062,7 +5327,9 @@ mod bar {
                                         .rounded(px(tokens::menu_item_radius()))
                                         .cursor_pointer()
                                         .when(
-                                            menu_kind.is_some() && self.status_menu == menu_kind,
+                                            (menu_kind.is_some() && self.status_menu == menu_kind)
+                                                || (self.status_menu.is_none()
+                                                    && keyboard_status == Some(index)),
                                             |style| style.bg(rgba(tokens::light_selection())),
                                         )
                                         .hover(|style| style.bg(rgba(tokens::light_hover())))
@@ -5104,7 +5371,20 @@ mod bar {
                                         item = item.child(indicator.visible);
                                     }
                                     if is_battery {
-                                        item.child(battery_glyph(snapshot.battery))
+                                        // What the bar shows, for shell_smoke.
+                                        #[cfg(windows)]
+                                        rmac_shell_layer::windows::trace::trace_changed(
+                                            "battery item",
+                                            || {
+                                                format!(
+                                                    "battery item {}, mark {:?}",
+                                                    indicator.accessible,
+                                                    snapshot.battery.map(|battery| battery.mark())
+                                                )
+                                            },
+                                        );
+                                        item.children(trace_probe("battery status"))
+                                            .child(battery_glyph(snapshot.battery))
                                     } else if indicator.kind == TopBarIndicatorKind::Microphone {
                                         // BAR-09: the Mac's orange privacy dot.
                                         item.child(
@@ -5130,6 +5410,9 @@ mod bar {
                                 .id(format!("spotlight-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("Spotlight")
+                                .when(keyboard_status == Some(status_count), |style| {
+                                    style.bg(rgba(tokens::light_selection()))
+                                })
                                 .h(px(SLOT_HEIGHT + 2.0 * touch_reach()))
                                 .my(px(-touch_reach()))
                                 .px(px(STATUS_PAD))
@@ -5154,6 +5437,9 @@ mod bar {
                                 .id(format!("control-center-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("Control Centre")
+                                .when(keyboard_status == Some(status_count + 1), |style| {
+                                    style.bg(rgba(tokens::light_selection()))
+                                })
                                 .h(px(SLOT_HEIGHT))
                                 .px(px(STATUS_PAD))
                                 .flex()
@@ -5179,6 +5465,9 @@ mod bar {
                                 .aria_label(format!(
                                     "Date and time: {clock_label}. Open Notification Center"
                                 ))
+                                .when(keyboard_status == Some(status_count + 2), |style| {
+                                    style.bg(rgba(tokens::light_selection()))
+                                })
                                 .px(px(TITLE_PAD))
                                 .h(px(SLOT_HEIGHT))
                                 .flex()
@@ -5483,9 +5772,10 @@ mod bar {
 
     /// The battery is drawn rather than loaded so its fill tracks the level,
     /// turning red at 10% or below while discharging, as on macOS. While the
-    /// battery charges, a bolt sits over the body, as macOS shows it: a
-    /// knocked-out outline in the opposite colour keeps it readable over the
-    /// fill. Like the
+    /// battery charges, a bolt sits over the body, and a plug while it is
+    /// on power but not charging (fully charged, or held), as macOS 26 shows
+    /// them (`BatteryIndicator::mark`): a knocked-out outline in the
+    /// opposite colour keeps the mark readable over the fill. Like the
     /// other status glyphs it takes the bar's label colour, so it is dark on
     /// the Light bar and white on the Dark one; the outline and nub are that
     /// colour at 55% opacity.
@@ -5504,12 +5794,14 @@ mod bar {
             })
             .unwrap_or((100, false));
         let fill_width = ((WIDTH - 2.0 * INSET - 2.4) * f32::from(percentage) / 100.0).max(1.5);
-        let charging = battery.is_some_and(|battery| {
-            matches!(
-                battery.state,
-                rmac_power::BatteryState::Charging | rmac_power::BatteryState::PendingCharge
-            )
+        let mark = battery.map_or(rmac_shell_status::BatteryMark::None, |battery| {
+            battery.mark()
         });
+        let mark_path = match mark {
+            rmac_shell_status::BatteryMark::None => None,
+            rmac_shell_status::BatteryMark::Charging => Some("status/battery-bolt.svg"),
+            rmac_shell_status::BatteryMark::PluggedIn => Some("status/battery-plug.svg"),
+        };
         // The bolt's knockout is the opposite of the label colour: dark on
         // the Dark bar's white fill, light on the Light bar's dark fill.
         let knockout = if tokens::is_dark() {
@@ -5517,9 +5809,9 @@ mod bar {
         } else {
             0xFFFFFFD9
         };
-        let bolt = |size: f32, color: u32| {
+        let bolt = |path: &'static str, size: f32, color: u32| {
             svg()
-                .path("status/battery-bolt.svg")
+                .path(path)
                 .absolute()
                 .w(px(size * 10.0 / 14.0))
                 .h(px(size))
@@ -5548,8 +5840,9 @@ mod bar {
                             .rounded(px(1.8))
                             .bg(rgba(if low { 0xFF453AFF } else { label })),
                     )
-                    .when(charging, |body| {
-                        body.child(bolt(13.0, knockout)).child(bolt(10.0, label))
+                    .when_some(mark_path, |body, path| {
+                        body.child(bolt(path, 13.0, knockout))
+                            .child(bolt(path, 10.0, label))
                     }),
             )
             .child(
@@ -5990,6 +6283,12 @@ mod bar {
                 #[cfg(windows)]
                 {
                     let _ = &cx;
+                    // Return to Previous Size: the frame recorded before the
+                    // window was first tiled or centred.
+                    if word == "restore-size" {
+                        let _ = rmac_compositor_system::restore_window_size(window);
+                        return;
+                    }
                     if let Some(action) = window_sizing_action(word, window) {
                         if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                             eprintln!("could not {word} the window: {error:?}");
@@ -6132,7 +6431,6 @@ mod bar {
             // Windows' maximise toggles back to the restored frame.
             "fill" | "zoom" => Action::FillWindow { window },
             "centre" => Action::CenterWindow { window },
-            "restore-size" => Action::FullscreenWindow { window, on: false },
             "tile-left" => tile(TileRegion::Left),
             "tile-right" => tile(TileRegion::Right),
             "tile-top" => tile(TileRegion::Top),
@@ -6248,6 +6546,11 @@ mod bar {
                 }
                 other => eprintln!("unknown app menu action: {other}"),
             }
+            // Recorded before the windows move: a menu opened while they are
+            // still being hidden already offers Show All for them.
+            if let Err(error) = store.save_default() {
+                eprintln!("could not save the parking set: {error}");
+            }
             for action in &actions {
                 if let Err(error) = rmac_compositor_system::execute_action(action).await {
                     eprintln!("could not run app menu action: {error:?}");
@@ -6335,11 +6638,14 @@ mod bar {
             "system::force-quit" => {
                 spawn_command("/usr/libexec/rmac/rmac-app-switcher", &["force-quit"], cx)
             }
-            // Windows' Task Manager ends apps that stopped answering.
+            // Lulo's Force Quit Applications, in this same process; Task
+            // Manager only if the switcher is not running.
             #[cfg(windows)]
             "system::force-quit" => {
-                if let Err(error) = Command::new("taskmgr.exe").spawn() {
-                    eprintln!("could not open Task Manager: {error}");
+                if !system::requests::run("force-quit", cx) {
+                    if let Err(error) = Command::new("taskmgr.exe").spawn() {
+                        eprintln!("could not open Task Manager: {error}");
+                    }
                 }
             }
             #[cfg(target_os = "linux")]
@@ -6539,12 +6845,11 @@ mod bar {
     }
 
     fn post_system_notice(summary: String, body: String, cx: &mut App) {
-        // Windows: no notification server of Lulo's own yet; the notice is
-        // logged (ADR 0023, "Phase 3 revised", what is left).
+        // Windows: the Notification Centre lulo-shell hosts (its pipe).
         #[cfg(windows)]
         {
             let _ = cx;
-            eprintln!("{summary}: {body}");
+            rmac_notifications::pipe::post_notice(summary, body);
         }
         #[cfg(target_os = "linux")]
         cx.background_executor()
@@ -6976,6 +7281,7 @@ mod bar {
             watch_power_dialog_requests(cx);
             watch_restart_to_update_requests(cx);
             watch_menu_focus_requests(cx);
+            watch_status_focus_requests(cx);
             watch_log_out_requests(cx);
             start(cx);
         });
@@ -6989,6 +7295,7 @@ mod bar {
         #[cfg(windows)]
         {
             system::requests::register("menu-bar-focus", begin_menu_keyboard_on_first_bar);
+            system::requests::register("status-menus-focus", begin_status_keyboard_on_first_bar);
             system::requests::register("shutdown-dialog", show_power_dialog);
             system::requests::register("log-out-dialog", show_log_out_dialog);
         }
@@ -7268,6 +7575,45 @@ mod bar {
             }
         })
         .detach();
+    }
+
+    /// `Ctrl+F8` (CC-05): niri's bind spawns `rmac-shortcut-dispatch
+    /// status-menus-focus`; the watch waits on the socket, nothing polls.
+    #[cfg(target_os = "linux")]
+    fn watch_status_focus_requests(cx: &mut App) {
+        let (sender, requests) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let id = rmac_shortcuts::ShortcutId("status-menus-focus".to_owned());
+                if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                    eprintln!("Ctrl+F8 cannot move keyboard focus to the status menus: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = requests.recv().await {
+                if matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                    cx.update(begin_status_keyboard_on_first_bar);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Starts ⌃F8 keyboard mode on the first menu bar that can take it.
+    fn begin_status_keyboard_on_first_bar(cx: &mut App) {
+        for handle in cx.windows() {
+            let Some(bar) = handle.downcast::<TopBar>() else {
+                continue;
+            };
+            if bar
+                .update(cx, |bar, window, cx| bar.begin_status_keyboard(window, cx))
+                .is_ok()
+            {
+                return;
+            }
+        }
+        eprintln!("Ctrl+F8 has no menu bar to move keyboard focus to");
     }
 
     /// Starts ⌃F2 keyboard mode on the first menu bar that can take it (see

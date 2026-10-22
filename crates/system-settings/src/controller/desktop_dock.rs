@@ -101,9 +101,9 @@ impl Settings {
                 enabled,
             ),
         ];
-        // The title-bar double-click is Lulo OS's window manager (niri);
-        // Windows keeps its own title bars.
-        if cfg!(not(windows)) {
+        // Lulo's own title bars follow it on both systems (on Windows,
+        // Zoom and Fill are Windows' maximise toggle).
+        {
             let double_click = snapshot.settings.double_click_title_bar;
             let double_click_choices = rmac_shell_settings::DoubleClickTitleBarAction::ALL
                 .into_iter()
@@ -269,10 +269,9 @@ impl Settings {
         // macOS 26.2 puts this pop-up, with the Mac's own wording, under
         // "Desktop & Stage Manager". rmac has no Stage Manager, so its
         // choices are Always and Never (design-lab/reveal-desktop.html).
-        // Click-to-reveal, the title-bar double-click and hot corners are
-        // Lulo OS's window manager (niri and Mission Control); Windows keeps
-        // its own title bars and corners, so those sections are left out.
-        if cfg!(not(windows)) {
+        // Click-to-reveal and hot corners are Mission Control's, which runs
+        // on Lulo OS and in lulo-shell on Windows alike.
+        {
             cards.push(section_header("Desktop & Stage Manager"));
             let reveal = snapshot.settings.click_wallpaper_to_reveal;
             let reveal_choices = rmac_shell_settings::ClickWallpaperToReveal::ALL

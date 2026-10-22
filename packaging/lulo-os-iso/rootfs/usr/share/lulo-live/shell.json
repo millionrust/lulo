@@ -1,0 +1,17 @@
+{
+  "version": 4,
+  "settings": {
+    "pinned_apps": [
+      "org.rmac.Files",
+      "org.lulo.Installer",
+      "org.rmac.AppDrawer",
+      "org.rmac.Notes",
+      "org.rmac.TextEditor",
+      "org.rmac.Terminal",
+      "org.rmac.SystemSettings",
+      "org.rmac.Weather",
+      "org.rmac.Calculator",
+      "org.rmac.Mail"
+    ]
+  }
+}

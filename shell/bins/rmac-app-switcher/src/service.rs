@@ -1173,6 +1173,10 @@ fn activate(
 }
 
 fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
+    if command == Command::QuitFront {
+        quit_front(cx);
+        return;
+    }
     // Windows reads the window list when a switch starts instead of
     // following every window event (its z-order is the activation order),
     // so an idle shell does no work for the switcher.
@@ -1245,7 +1249,7 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
                 Command::Commit => view.commit(window, cx),
                 Command::QuitSelected => view.quit_selected(window, cx),
                 Command::HideSelected => view.hide_selected(cx),
-                Command::Cancel | Command::ForceQuit => view.close(window, cx),
+                Command::Cancel | Command::ForceQuit | Command::QuitFront => view.close(window, cx),
             })
             .is_ok();
         if handled {
@@ -1260,8 +1264,35 @@ fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
         | Command::ForceQuit
         | Command::Commit
         | Command::QuitSelected
-        | Command::HideSelected => {}
+        | Command::HideSelected
+        | Command::QuitFront => {}
     }
+}
+
+/// ⌘Q in an app in front that is not Lulo's: close each of its windows,
+/// as Quit does on the Mac. Each app is asked, as its own close button
+/// asks it, so one with unsaved work can still ask to save.
+fn quit_front(cx: &mut App) {
+    cx.spawn(async move |_| {
+        let Ok(snapshot) = rmac_compositor_system::snapshot().await else {
+            return;
+        };
+        let Some(app_id) = snapshot
+            .windows
+            .iter()
+            .find(|window| window.focused)
+            .and_then(|window| window.app_id.clone())
+        else {
+            return;
+        };
+        for window in rmac_compositor::windows_of_application(&snapshot, &app_id) {
+            let action = Action::CloseWindow { window };
+            if let Err(error) = rmac_compositor_system::execute_action(&action).await {
+                eprintln!("could not quit {app_id}: {error:?}");
+            }
+        }
+    })
+    .detach();
 }
 
 /// App Exposé shows the focused application's windows, so wait for the

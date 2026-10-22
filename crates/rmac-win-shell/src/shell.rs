@@ -117,7 +117,7 @@ impl AssetSource for ShellAssets {
             .or_else(|| rmac_quick_settings_app::asset(path))
             .or_else(|| rmac_app_drawer::asset(path))
             .or_else(|| rmac_notification_center_app::asset(path))
-            .or_else(|| rmac_shell_screenshot::service::asset(path)))
+            .or_else(|| rmac_shell_screenshot::service::asset(path).map(Cow::Borrowed)))
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {

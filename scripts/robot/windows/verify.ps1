@@ -357,6 +357,36 @@ try {
         Note 'quit: Ctrl+Q quits a Windows app' ($front -and $gone) "Notepad in front: $front; quit: $gone"
         if (-not $gone) { Stop-Process -Id $note.Id -ErrorAction SilentlyContinue }
     }
+    Check 'screenshots: Ctrl+Shift+3 and Ctrl+Shift+4' {
+        Front-Calc
+        $m = Mark
+        [void](Keys @($VK.Ctrl, $VK.Shift, 0x33))
+        $screen = Wait-Trace '^screenshot saved (.+)$' $m 8
+        # Ctrl+Shift+4: drag an area over Calculator's own window.
+        $m2 = Mark
+        $f = $R::Frame((@($R::WindowsOf($calc.Id, $true)) | Select-Object -First 1))
+        Front-Calc
+        if (Keys @($VK.Ctrl, $VK.Shift, 0x34)) {
+            Start-Sleep -Milliseconds 900
+            Shot 'screenshot-area'
+            $R::Drag($f.X + 20, $f.Y + 40, $f.X + 160, $f.Y + 200)
+        }
+        $area = Wait-Trace '^screenshot saved (.+)$' $m2 8
+        # The robot's own files on the Desktop go at once.
+        foreach ($line in @($screen, $area)) { if ($line -match '^screenshot saved (.+)$') { Remove-Item -LiteralPath $Matches[1] -ErrorAction SilentlyContinue } }
+        Note 'screenshots: Ctrl+Shift+3 and Ctrl+Shift+4' ($screen -and $area) "screen: $screen; area: $area"
+    }
+    Check 'volume: the mute key shows the Sound panel' {
+        # Mute twice: the level ends as it was.
+        $m = Mark
+        $R::Chord(@(0xAD))
+        $panel = Wait-Trace '^layer rmac-osd at ' $m 4
+        Start-Sleep -Milliseconds 300
+        Shot 'volume-osd'
+        $R::Chord(@(0xAD))
+        Start-Sleep -Milliseconds 600
+        Note 'volume: the mute key shows the Sound panel' ($panel) "$panel"
+    }
     Check 'force quit: Ctrl+Alt+Esc' {
         [void]$R::Activate((@($R::WindowsOf($calc.Id, $true)) | Select-Object -First 1)); Start-Sleep -Milliseconds 400
         $before = @($R::ZOrder())

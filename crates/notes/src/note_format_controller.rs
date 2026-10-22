@@ -76,6 +76,7 @@ pub(super) fn new_body_editor(window: &mut Window, cx: &mut App) -> Entity<RichT
         editor.set_list_metrics(NOTES_LIST_METRICS, cx);
         editor.set_column(px(EDITOR_INSET), None, cx);
         editor.set_smart_lists(true);
+        editor.set_tab_navigates(true);
         editor.set_document(body_document(""), cx);
         editor
     })

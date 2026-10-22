@@ -7,7 +7,7 @@
 
 use gpui::{
     div, px, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-    KeyDownEvent, ParentElement as _, Render, Role, StatefulInteractiveElement as _, Styled as _,
+    ParentElement as _, Render, Role, Styled as _,
     Window,
 };
 use rmac_editor::rich::{ListKind, ParagraphRole, RichTextEditor, RichTextEvent};
@@ -344,22 +344,6 @@ impl Render for NotePane {
                 .role(Role::TextInput)
                 .aria_label("Title")
                 .accessible_text_input(&self.title, cx)
-                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                    let modifiers = event.keystroke.modifiers;
-                    if event.keystroke.key != "tab"
-                        || modifiers.shift
-                        || modifiers.control
-                        || modifiers.alt
-                        || modifiers.platform
-                        || !this.title.read(cx).focus_handle(cx).is_focused(window)
-                    {
-                        return;
-                    }
-                    window.prevent_default();
-                    cx.stop_propagation();
-                    let focus = gpui::Focusable::focus_handle(this.body.read(cx), cx);
-                    window.focus(&focus, cx);
-                }))
                 .flex_none()
                 .px(px(EDITOR_INSET))
                 .pt(px(TITLE_TOP))
@@ -387,22 +371,6 @@ impl Render for NotePane {
                         rich.update(cx, |editor, cx| editor.select_range(range, cx));
                     },
                 )
-                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                    let modifiers = event.keystroke.modifiers;
-                    if event.keystroke.key != "tab"
-                        || modifiers.shift
-                        || modifiers.control
-                        || modifiers.alt
-                        || modifiers.platform
-                        || !this.body.read(cx).is_focused(window)
-                        || this.body.read(cx).at_list_item_start()
-                    {
-                        return;
-                    }
-                    window.prevent_default();
-                    cx.stop_propagation();
-                    window.focus(&this.tags.read(cx).focus_handle(cx), cx);
-                }))
                 .flex_1()
                 .min_h(px(0.0))
                 .pb_2()

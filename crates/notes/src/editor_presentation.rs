@@ -244,39 +244,27 @@ impl NotesView {
                         rich.update(cx, |editor, cx| editor.select_range(range, cx));
                     },
                 )
-                // Tab at a list item's start nests it, as in Notes; anywhere
-                // else it moves on to the Tags field after the body. Return
-                // or Tab takes a result Suggest Results offers.
-                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                    let modifiers = event.keystroke.modifiers;
-                    if modifiers.shift
-                        || modifiers.control
-                        || modifiers.alt
-                        || modifiers.platform
-                        || !this.body_focused(window, cx)
-                    {
-                        return;
-                    }
-                    let key = event.keystroke.key.as_str();
-                    if matches!(key, "enter" | "tab") && this.maths_suggestion.is_some() {
-                        if this.accept_maths_suggestion(cx) {
-                            window.prevent_default();
+                // Return or Tab takes a result Suggest Results offers
+                // (before the editor's own Return or Tab); Escape withdraws
+                // it. Tab otherwise nests a list item or moves on to Tags.
+                .capture_action(cx.listener(
+                    |this, _: &rmac_ui::input_actions::Enter, _window, cx| {
+                        if this.maths_suggestion.is_some() && this.accept_maths_suggestion(cx) {
                             cx.stop_propagation();
                         }
-                        return;
-                    }
-                    if key == "escape" && this.maths_suggestion.take().is_some() {
-                        window.prevent_default();
-                        cx.stop_propagation();
+                    },
+                ))
+                .capture_action(cx.listener(
+                    |this, _: &rmac_ui::input_actions::IndentInline, _window, cx| {
+                        if this.maths_suggestion.is_some() && this.accept_maths_suggestion(cx) {
+                            cx.stop_propagation();
+                        }
+                    },
+                ))
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
+                    if event.keystroke.key == "escape" && this.maths_suggestion.take().is_some() {
                         cx.notify();
-                        return;
                     }
-                    if key != "tab" || this.body.read(cx).at_list_item_start() {
-                        return;
-                    }
-                    window.prevent_default();
-                    cx.stop_propagation();
-                    window.focus(&this.tags.read(cx).focus_handle(cx), cx);
                 }))
                 .on_a11y_action(AccessibleAction::SetValue, self.assistive_body_listener(cx))
                 .on_a11y_action(
@@ -321,23 +309,6 @@ impl NotesView {
                     .role(Role::TextInput)
                     .aria_label("Title")
                     .accessible_text_input(&self.title, cx)
-                    // Tab in the title goes on into the body, as the Mac's
-                    // single text view does.
-                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        let modifiers = event.keystroke.modifiers;
-                        if event.keystroke.key != "tab"
-                            || modifiers.shift
-                            || modifiers.control
-                            || modifiers.alt
-                            || modifiers.platform
-                            || !this.title.read(cx).focus_handle(cx).is_focused(window)
-                        {
-                            return;
-                        }
-                        window.prevent_default();
-                        cx.stop_propagation();
-                        this.focus_body(window, cx);
-                    }))
                     .on_a11y_action(
                         AccessibleAction::SetValue,
                         self.assistive_title_listener(cx),

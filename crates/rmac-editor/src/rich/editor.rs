@@ -139,6 +139,8 @@ pub struct RichTextEditor {
     checkbox_fill: Hsla,
     quote_bar_color: Hsla,
     show_highlights: bool,
+    /// Tab outside a list item moves focus on instead of typing a tab.
+    tab_navigates: bool,
     /// Check Spelling While Typing: misspelled ranges, valid for the
     /// document revision they were found in.
     misspelled: (u64, Vec<Range<usize>>),
@@ -175,7 +177,8 @@ impl Focusable for RichTextEditor {
 impl RichTextEditor {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let default_style = CharStyle::default();
-        let focus = cx.focus_handle();
+        // A tab stop, so Tab and ⇧Tab reach it like any field.
+        let focus = cx.focus_handle().tab_stop(true);
         let focus_subscriptions = vec![
             cx.on_focus(&focus, window, |this, _window, cx| this.restart_blink(cx)),
             cx.on_blur(&focus, window, |this, _window, cx| this.stop_blink(cx)),
@@ -210,6 +213,7 @@ impl RichTextEditor {
             checkbox_fill: rmac_ui::mac::system_orange(),
             quote_bar_color: rmac_ui::mac::separator(),
             show_highlights: true,
+            tab_navigates: false,
             misspelled: (0, Vec::new()),
             scroll: rmac_ui::ScrollPosition::default(),
             params: None,
@@ -401,6 +405,12 @@ impl RichTextEditor {
     /// apply.
     pub fn set_role_typography(&mut self, typography: RoleTypography) {
         self.typography = Some(typography);
+    }
+
+    /// Tab outside a list item moves focus to the next field (Notes'
+    /// body, followed by its Tags field) rather than typing a tab.
+    pub fn set_tab_navigates(&mut self, navigates: bool) {
+        self.tab_navigates = navigates;
     }
 
     /// Edit ▸ Substitutions ▸ Smart Lists.
@@ -1768,6 +1778,11 @@ impl RichTextEditor {
         }
         if self.at_list_item_start() {
             self.change_list_level(1, cx);
+            return;
+        }
+        if self.tab_navigates {
+            // Notes: Tab moves on to the next field (the window's Tab).
+            cx.propagate();
             return;
         }
         self.insert(self.selection.clone(), "\t", EditKind::Typing, cx);

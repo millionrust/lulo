@@ -1615,17 +1615,26 @@ pub fn run() -> Result<(), String> {
 
 /// The Windows Lulo layer: the service in its own process, driven by its
 /// requests (Ctrl+Shift+3, 4 and 5: `screenshot-screen`,
-/// `screenshot-selection`, `screenshot-toolbar`).
+/// `screenshot-selection`, `screenshot-toolbar`). Nothing is made until the
+/// first one: an idle layer holds no screenshot state.
 #[cfg(windows)]
-pub fn start(cx: &mut App) {
+pub fn start(_cx: &mut App) {
     use rmac_shell_layer::system::requests;
-    let service = cx.new(Service::new);
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let service: Rc<RefCell<Option<Entity<Service>>>> = Rc::new(RefCell::new(None));
     for (request, command) in [
         ("screenshot-screen", Command::Screen),
         ("screenshot-selection", Command::Selection),
         ("screenshot-toolbar", Command::Toolbar),
     ] {
         let service = service.clone();
-        requests::register(request, move |cx| handle_command(&service, command, cx));
+        requests::register(request, move |cx| {
+            let entity = service
+                .borrow_mut()
+                .get_or_insert_with(|| cx.new(Service::new))
+                .clone();
+            handle_command(&entity, command, cx);
+        });
     }
 }

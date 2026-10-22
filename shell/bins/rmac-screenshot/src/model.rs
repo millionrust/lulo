@@ -932,7 +932,7 @@ mod tests {
 
         let settings = Settings {
             destination: Destination::Downloads,
-            timer_seconds: 3,
+            timer_seconds: 5,
             ..Settings::default()
         };
         settings.save_to(&path).unwrap();

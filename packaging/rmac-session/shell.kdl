@@ -136,6 +136,10 @@ workspace "Desktop"
 // Spaces bar, Mission Control, the app switcher, and Dock running counts (§2.2).
 workspace "rmac-parking"
 
+// Stage Manager (ADR 0030) keeps the other apps' sets here while one set is
+// on the stage; the shell hides it like the parking workspace.
+workspace "rmac-stage"
+
 // macOS uses freely movable, overlapping application windows. Keep niri as
 // the Wayland compositor, but make its normal presentation floating instead
 // of exposing the scrolling-tiler layout as the product experience.
@@ -298,9 +302,6 @@ binds {
     Mod+Shift+4 repeat=false hotkey-overlay-title="Capture Selection" { spawn "/usr/libexec/rmac/rmac-screenshot" "selection"; }
     Mod+Ctrl+Shift+4 repeat=false hotkey-overlay-title="Copy Selection to Clipboard" { spawn "/usr/libexec/rmac/rmac-screenshot" "selection-to-clipboard"; }
     Mod+Shift+5 repeat=false hotkey-overlay-title="Screenshot and Recording Options" { spawn "/usr/libexec/rmac/rmac-screenshot" "toolbar"; }
-    // ⌃⌘⎋ stops a screen recording, as on macOS (SHOT-01); so does the stop
-    // button the menu bar shows while one runs.
-    Mod+Ctrl+Escape repeat=false hotkey-overlay-title="Stop Recording" { spawn "/usr/libexec/rmac/rmac-screenshot" "stop-recording"; }
     Print repeat=false hotkey-overlay-title="Capture Screen" { spawn "/usr/libexec/rmac/rmac-screenshot" "screen"; }
     XF86AudioRaiseVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-up"; }
     XF86AudioLowerVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-down"; }

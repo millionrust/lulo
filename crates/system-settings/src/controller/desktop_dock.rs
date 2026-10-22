@@ -267,10 +267,10 @@ impl Settings {
         }
 
         // macOS 26.2 puts this pop-up, with the Mac's own wording, under
-        // "Desktop & Stage Manager". rmac has no Stage Manager, so its
-        // choices are Always and Never (design-lab/reveal-desktop.html).
-        // Click-to-reveal and hot corners are Mission Control's, which runs
-        // on Lulo OS and in lulo-shell on Windows alike.
+        // "Desktop & Stage Manager", then Stage Manager's switches (ADR
+        // 0030). Click-to-reveal and hot corners are Mission Control's,
+        // which runs on Lulo OS and in lulo-shell on Windows alike; Stage
+        // Manager is Lulo OS's alone.
         {
             cards.push(section_header("Desktop & Stage Manager"));
             let reveal = snapshot.settings.click_wallpaper_to_reveal;
@@ -297,6 +297,53 @@ impl Settings {
             reveal_choices,
             enabled,
         )]));
+
+            if cfg!(target_os = "linux") {
+                let stage = snapshot.settings.stage_manager;
+                let enabled_view = view.clone();
+                let recent_view = view.clone();
+                cards.push(card(vec![
+                    switch_row(
+                        "stage-manager",
+                        "Stage Manager",
+                        Some(
+                            "Stage Manager arranges your recent windows into a single strip for reduced clutter and quick access."
+                                .into(),
+                        ),
+                        stage.enabled,
+                        enabled,
+                        move |on, _, cx| {
+                            enabled_view.update(cx, |settings, cx| {
+                                settings.apply_stage_manager(
+                                    rmac_shell_settings::StageManagerSettings {
+                                        enabled: on,
+                                        ..stage
+                                    },
+                                    cx,
+                                )
+                            });
+                        },
+                    ),
+                    switch_row(
+                        "stage-manager-recent-apps",
+                        "Show recent apps in Stage Manager",
+                        None,
+                        stage.show_recent_apps,
+                        enabled,
+                        move |on, _, cx| {
+                            recent_view.update(cx, |settings, cx| {
+                                settings.apply_stage_manager(
+                                    rmac_shell_settings::StageManagerSettings {
+                                        show_recent_apps: on,
+                                        ..stage
+                                    },
+                                    cx,
+                                )
+                            });
+                        },
+                    ),
+                ]));
+            }
 
             // macOS 26 keeps the corners behind "Hot Corners…" at the foot
             // of the pane.

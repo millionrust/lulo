@@ -320,6 +320,7 @@ impl MailView {
         }
         self.publish_dynamic_rows(syncing, cx);
         self.sync_tools_menu(cx);
+        self.sync_remind_menu(cx);
         self.sync_mailbox_menu(cx);
         self.sync_people_menu(cx);
     }

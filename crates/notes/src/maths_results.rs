@@ -1,5 +1,14 @@
 //! Format ▸ Maths Results: typing `2+3=` at the end of a line inserts the
-//! result, like the Mac's Insert Results mode (docs/parity.md NOTES-22).
+//! result (Insert Results) or offers it in a small inline pop-up that
+//! Return or Tab accepts (Suggest Results), as on the Mac (NOTES-22).
+
+/// A result Suggest Results offers: `result`, to go at byte `at` of the
+/// body (just after the `=`).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Suggestion {
+    pub(super) at: usize,
+    pub(super) result: String,
+}
 
 /// Result text for a line that ends with `=` after an arithmetic
 /// expression, or `None` when there is nothing to compute.

@@ -2288,7 +2288,8 @@ def check_screenshot(log: Log, failures: list[str]) -> None:
     tap(0x33)
     key(VK_SHIFT, up=True)
     key(VK_CONTROL, up=True)
-    saved = log.wait_for(r"^screenshot saved (.+\.png)$", 10.0, after=mark)
+    # Saved once the floating thumbnail slides away (5 s, as on the Mac).
+    saved = log.wait_for(r"^screenshot saved (.+\.png)$", 15.0, after=mark)
     path = Path(saved.group(1)) if saved else None
     print(f"shell: Ctrl+Shift+3 saved {path.name if path else 'nothing'}")
     if path is None or not path.is_file() or not path.name.startswith("Screenshot "):

@@ -593,7 +593,11 @@ class Driver:
             if issues:
                 result.update(status="failed", issues=issues)
         except Exception as error:  # noqa: BLE001 - any crash must fail the journey, never pass it
-            result.update(status="failed", error=f"{type(error).__name__}: {error}")
+            import traceback
+            frame = traceback.extract_tb(error.__traceback__)[-1]
+            traceback.print_exc()
+            result.update(status="failed", error=f"{type(error).__name__}: {error} "
+                          f"({Path(frame.filename).name}:{frame.lineno} {frame.line})")
         finally:
             if hasattr(self.session, "pointer"):
                 self.session.finish()

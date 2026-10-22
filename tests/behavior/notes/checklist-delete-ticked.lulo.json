@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "notes/checklist-delete-ticked",
+  "observations": {
+    "ticked": {"note_body": {"value": "MilkEggs"}},
+    "deleted": {"note_body": {"value": "Milk"}}
+  }
+}

@@ -333,26 +333,48 @@ pub struct HotCornerSettings {
     pub bottom_right: HotCornerAction,
 }
 
-/// Desktop & Dock › "Click wallpaper to reveal desktop". macOS offers
-/// Always and Only in Stage Manager. rmac has no Stage Manager, so the
-/// second choice is Never. Always is the Mac's default.
+/// Desktop & Dock › "Click wallpaper to reveal desktop": macOS's Always
+/// and Only in Stage Manager. Always is the Mac's default. Before Stage
+/// Manager existed (ADR 0030) the second choice was "never", which reads
+/// as Only in Stage Manager: with Stage Manager off, both leave the
+/// windows where they are.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ClickWallpaperToReveal {
     #[default]
     Always,
-    Never,
+    #[serde(alias = "never")]
+    OnlyInStageManager,
 }
 
 impl ClickWallpaperToReveal {
     /// Every choice in the order System Settings lists them.
-    pub const ALL: [Self; 2] = [Self::Always, Self::Never];
+    pub const ALL: [Self; 2] = [Self::Always, Self::OnlyInStageManager];
 
     /// The pop-up title System Settings shows for this choice.
     pub fn title(self) -> &'static str {
         match self {
             Self::Always => "Always",
-            Self::Never => "Never",
+            Self::OnlyInStageManager => "Only in Stage Manager",
+        }
+    }
+}
+
+/// Stage Manager (ADR 0030): the focused app's windows on the Space, the
+/// other recent apps as sets in a strip down the left edge. Off by default.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct StageManagerSettings {
+    pub enabled: bool,
+    /// "Show recent apps in Stage Manager": the strip of sets.
+    pub show_recent_apps: bool,
+}
+
+impl Default for StageManagerSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            show_recent_apps: true,
         }
     }
 }
@@ -483,6 +505,8 @@ pub struct ShellSettings {
     pub double_click_title_bar: DoubleClickTitleBarAction,
     /// Control Centre's Edit Controls (CC-03).
     pub control_centre: ControlCentreSettings,
+    /// Stage Manager (ADR 0030).
+    pub stage_manager: StageManagerSettings,
 }
 
 /// What Control Centre's Edit Controls changed (CC-03).
@@ -517,6 +541,7 @@ impl Default for ShellSettings {
             click_wallpaper_to_reveal: ClickWallpaperToReveal::Always,
             double_click_title_bar: DoubleClickTitleBarAction::Zoom,
             control_centre: ControlCentreSettings::default(),
+            stage_manager: StageManagerSettings::default(),
         }
     }
 }

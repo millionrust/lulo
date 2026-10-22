@@ -32,7 +32,7 @@ use rmac_compositor::{
     WindowId, WorkspaceId,
 };
 use rmac_shell_layer::layer::*;
-use rmac_shell_settings::{ClickWallpaperToReveal, HotCornerSettings};
+use rmac_shell_settings::{ClickWallpaperToReveal, HotCornerSettings, StageManagerSettings};
 use rmac_shell_ui::tokens;
 use uuid::Uuid;
 
@@ -104,6 +104,32 @@ const EDGE_PREVIEW_NAMESPACE: &str = "rmac-tile-preview";
 const DIVIDER: u32 = 0xFFFF_FF40;
 /// rmac's window corner radius (shell.kdl geometry-corner-radius).
 const WINDOW_RADIUS: f32 = 16.0;
+/// Stage Manager's strip down the left edge (ADR 0030), sized from
+/// macOS 26's: sets about 124 x 84 pt, a little apart, centred between the
+/// menu bar and the Dock, each with its app's icon over the corner.
+#[cfg(target_os = "linux")]
+const STRIP_NAMESPACE: &str = "rmac-stage-strip";
+#[cfg(target_os = "linux")]
+const STRIP_WIDTH: f32 = 164.0;
+#[cfg(target_os = "linux")]
+const STRIP_PADDING: f32 = 16.0;
+#[cfg(target_os = "linux")]
+const STRIP_CARD_WIDTH: f32 = 124.0;
+#[cfg(target_os = "linux")]
+const STRIP_CARD_HEIGHT: f32 = 84.0;
+#[cfg(target_os = "linux")]
+const STRIP_GAP: f32 = 22.0;
+#[cfg(target_os = "linux")]
+const STRIP_ICON: f32 = 34.0;
+/// Each window behind a set's front one shows this much of its edge.
+#[cfg(target_os = "linux")]
+const STRIP_STACK_OFFSET: f32 = 5.0;
+#[cfg(target_os = "linux")]
+const STRIP_RADIUS: f32 = 9.0;
+#[cfg(target_os = "linux")]
+const STRIP_STACK_FILL: u32 = 0x3A38_3DE6;
+#[cfg(target_os = "linux")]
+const STRIP_HOVER_RING: u32 = 0xFFFF_FF59;
 
 /// Name and icon of one application.
 #[derive(Clone)]
@@ -158,6 +184,13 @@ struct Service {
     /// reports the drag; Windows' own Snap shows its own preview.
     #[cfg(target_os = "linux")]
     edge_preview: Option<(WindowHandle<EdgePreview>, rmac_compositor_niri::EdgeTile)>,
+    /// Stage Manager (ADR 0030): Desktop & Dock's and Control Centre's
+    /// switch, and the sets it keeps.
+    stage_manager: StageManagerSettings,
+    stage: crate::stage::Stage,
+    /// The strip, with the output and the number of sets it was sized for.
+    #[cfg(target_os = "linux")]
+    strip: Option<(WindowHandle<StageStrip>, StripKey)>,
 }
 
 /// Edge-drag tiling's preview: a frosted outline of the tile the window
@@ -217,6 +250,10 @@ impl Service {
             },
             #[cfg(target_os = "linux")]
             edge_preview: None,
+            stage_manager: StageManagerSettings::default(),
+            stage: crate::stage::Stage::default(),
+            #[cfg(target_os = "linux")]
+            strip: None,
         };
         service.refresh_catalog(cx);
         service
@@ -302,10 +339,82 @@ impl Service {
         if self.revealed.is_some() {
             return self.bring_back();
         }
-        if self.click_to_reveal == ClickWallpaperToReveal::Never {
+        // With Stage Manager on, the set on the stage joins the strip
+        // whichever choice is made, as on macOS.
+        if self.stage.enabled {
+            let snapshot = self.compositor.snapshot();
+            return self.stage.clear(&snapshot);
+        }
+        if self.click_to_reveal == ClickWallpaperToReveal::OnlyInStageManager {
             return Vec::new();
         }
         self.push_to_edges()
+    }
+
+    /// Stage Manager turned on or off, or its strip shown or hidden.
+    fn set_stage_manager(&mut self, settings: StageManagerSettings) -> Vec<Action> {
+        let was = self.stage.enabled;
+        self.stage_manager = settings;
+        self.stage.enabled = settings.enabled;
+        let snapshot = self.compositor.snapshot();
+        match (was, settings.enabled) {
+            (true, false) => self.stage.release(&snapshot),
+            (false, true) => self.stage.step(&snapshot),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The window moves that keep Stage Manager's stage after a
+    /// compositor event. Off, it only brings back sets an earlier run left
+    /// waiting when niri (re)connects.
+    fn follow_stage(&mut self, reconnected: bool) -> Vec<Action> {
+        if self.stage.enabled {
+            let snapshot = self.compositor.snapshot();
+            self.stage.step(&snapshot)
+        } else if reconnected {
+            let snapshot = self.compositor.snapshot();
+            self.stage.release(&snapshot)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// What the strip shows: nothing unless Stage Manager is on with
+    /// "Show recent apps", and the output it goes on.
+    #[cfg(target_os = "linux")]
+    fn strip_cards(&self) -> (Vec<StripCard>, Option<OutputId>) {
+        if !self.stage.enabled || !self.stage_manager.show_recent_apps {
+            return (Vec::new(), None);
+        }
+        let snapshot = self.compositor.snapshot();
+        let output = snapshot
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.focused)
+            .and_then(|workspace| workspace.output.clone());
+        let cards = self
+            .stage
+            .sets(&snapshot)
+            .into_iter()
+            .map(|set| {
+                let item = set.app_id.as_deref().map(|app_id| self.item(app_id));
+                let picture = set
+                    .windows
+                    .first()
+                    .and_then(|window| self.window_pictures.get(window))
+                    .cloned();
+                StripCard {
+                    name: item
+                        .as_ref()
+                        .map(|item| item.name.clone())
+                        .unwrap_or_default(),
+                    icon: item.and_then(|item| item.icon),
+                    picture,
+                    set,
+                }
+            })
+            .collect();
+        (cards, output)
     }
 
     /// F11: push every window aside like a wallpaper click, leaving Mac
@@ -1797,6 +1906,259 @@ fn open_edge_preview(
     }
 }
 
+// ---------------------------------------------------------------------
+// Stage Manager's strip (ADR 0030)
+
+/// The output and the number of sets a strip surface was sized for.
+#[cfg(target_os = "linux")]
+type StripKey = (Option<OutputId>, usize);
+
+/// One set in the strip.
+#[cfg(target_os = "linux")]
+#[derive(Clone)]
+struct StripCard {
+    set: crate::stage::Set,
+    name: String,
+    icon: Option<PathBuf>,
+    picture: Option<Arc<RenderImage>>,
+}
+
+#[cfg(target_os = "linux")]
+impl PartialEq for StripCard {
+    fn eq(&self, other: &Self) -> bool {
+        self.set == other.set
+            && self.name == other.name
+            && self.icon == other.icon
+            && match (&self.picture, &other.picture) {
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+/// The strip down the left edge: the sets waiting off the stage, the
+/// most recent at the top. Choosing one brings it to the stage.
+#[cfg(target_os = "linux")]
+struct StageStrip {
+    service: WeakEntity<Service>,
+    cards: Vec<StripCard>,
+    hovered: Option<usize>,
+}
+
+#[cfg(target_os = "linux")]
+impl StageStrip {
+    fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
+        let (Some(card), Some(service)) = (self.cards.get(index), self.service.upgrade()) else {
+            return;
+        };
+        let set = card.set.clone();
+        let actions = service.update(cx, |service, _| {
+            let snapshot = service.compositor.snapshot();
+            service.stage.choose(&snapshot, &set)
+        });
+        run_actions(actions, cx);
+    }
+
+    fn card(
+        &self,
+        index: usize,
+        card: &StripCard,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let behind = card.set.windows.len().saturating_sub(1).min(2);
+        let reach = STRIP_STACK_OFFSET * behind as f32;
+        let mut element = div()
+            .id(("stage-set", index))
+            .role(Role::Button)
+            .aria_label(card.name.clone())
+            .relative()
+            .w(px(STRIP_CARD_WIDTH + reach))
+            .h(px(STRIP_CARD_HEIGHT + reach))
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                if *hovered {
+                    this.hovered = Some(index);
+                } else if this.hovered == Some(index) {
+                    this.hovered = None;
+                }
+                cx.notify();
+            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.choose(index, cx);
+                }),
+            );
+        // The set's other windows peek out behind its front one.
+        for layer in (1..=behind).rev() {
+            let offset = STRIP_STACK_OFFSET * layer as f32;
+            element = element.child(
+                div()
+                    .absolute()
+                    .left(px(offset))
+                    .top(px(reach - offset))
+                    .w(px(STRIP_CARD_WIDTH))
+                    .h(px(STRIP_CARD_HEIGHT))
+                    .rounded(px(STRIP_RADIUS))
+                    .bg(rgba(STRIP_STACK_FILL)),
+            );
+        }
+        let mut front = div()
+            .absolute()
+            .left_0()
+            .top(px(reach))
+            .w(px(STRIP_CARD_WIDTH))
+            .h(px(STRIP_CARD_HEIGHT))
+            .rounded(px(STRIP_RADIUS))
+            .bg(rgba(CARD_FILL))
+            .flex()
+            .items_center()
+            .justify_center();
+        if self.hovered == Some(index) {
+            front = front.border_2().border_color(rgba(STRIP_HOVER_RING));
+        }
+        front = match (&card.picture, &card.icon) {
+            (Some(picture), _) => front.child(
+                img(picture.clone())
+                    .size_full()
+                    .rounded(px(STRIP_RADIUS))
+                    .object_fit(ObjectFit::Contain),
+            ),
+            (None, Some(icon)) => front.child(
+                rmac_shell_ui::svg_icon(icon.clone(), STRIP_ICON * 1.4, window.scale_factor(), cx)
+                    .size(px(STRIP_ICON * 1.4)),
+            ),
+            (None, None) => front,
+        };
+        element = element.child(front);
+        // The app's icon over the bottom-left corner, as macOS draws it.
+        if let (Some(_), Some(icon)) = (&card.picture, &card.icon) {
+            element = element.child(
+                div()
+                    .absolute()
+                    .left(px(-STRIP_ICON / 4.0))
+                    .bottom(px(-STRIP_ICON / 4.0))
+                    .child(
+                        rmac_shell_ui::svg_icon(
+                            icon.clone(),
+                            STRIP_ICON,
+                            window.scale_factor(),
+                            cx,
+                        )
+                        .size(px(STRIP_ICON)),
+                    ),
+            );
+        }
+        element.into_any_element()
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Render for StageStrip {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let cards: Vec<AnyElement> = self
+            .cards
+            .clone()
+            .iter()
+            .enumerate()
+            .map(|(index, card)| self.card(index, card, window, cx))
+            .collect();
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(STRIP_GAP))
+            .children(cards)
+    }
+}
+
+/// The strip's height for `cards` sets.
+#[cfg(target_os = "linux")]
+fn strip_height(cards: &[StripCard]) -> f32 {
+    let sets: f32 = cards
+        .iter()
+        .map(|card| {
+            let behind = card.set.windows.len().saturating_sub(1).min(2);
+            STRIP_CARD_HEIGHT + STRIP_STACK_OFFSET * behind as f32
+        })
+        .sum();
+    sets + STRIP_GAP * cards.len().saturating_sub(1) as f32 + 2.0 * STRIP_PADDING
+}
+
+/// Show, update or take down the strip to match the sets. A new surface
+/// is made only when the output or the number of sets changes.
+#[cfg(target_os = "linux")]
+fn refresh_strip(service: &Entity<Service>, cx: &mut App) {
+    let (cards, output) = service.read(cx).strip_cards();
+    let key = (output.clone(), cards.len());
+    let height = strip_height(&cards);
+    let current = service
+        .read(cx)
+        .strip
+        .as_ref()
+        .map(|(handle, key)| (*handle, key.clone()));
+    if let Some((handle, shown)) = current {
+        if shown == key && !cards.is_empty() {
+            let _ = handle.update(cx, |view, _, cx| {
+                if view.cards != cards {
+                    view.cards = cards;
+                    cx.notify();
+                }
+            });
+            return;
+        }
+        service.update(cx, |service, _| service.strip = None);
+        let _ = handle.update(cx, |_, window, _| window.remove_window());
+    }
+    if cards.is_empty() {
+        return;
+    }
+    let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
+    let display = output
+        .as_ref()
+        .and_then(|output| displays.get(&rmac_shell_layer::stable_output_uuid(output)))
+        .cloned();
+    let options = WindowOptions {
+        titlebar: None,
+        focus: false,
+        show: true,
+        window_bounds: Some(WindowBounds::Windowed(Bounds {
+            origin: point(px(0.0), px(0.0)),
+            size: Size::new(px(STRIP_WIDTH), px(height)),
+        })),
+        display_id: display.as_ref().map(|display| display.id()),
+        app_id: Some("dev.rmac.StageStrip".to_owned()),
+        window_background: WindowBackgroundAppearance::Transparent,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        ..Default::default()
+    };
+    let layer = LayerShellOptions {
+        namespace: STRIP_NAMESPACE.to_owned(),
+        layer: Layer::Top,
+        // Centred down the left edge, between the menu bar and the Dock.
+        anchor: Anchor::LEFT,
+        keyboard_interactivity: KeyboardInteractivity::None,
+        ..Default::default()
+    };
+    let weak = service.downgrade();
+    match rmac_shell_layer::open_layer_window(cx, options, layer, move |_, cx| {
+        cx.new(|_| StageStrip {
+            service: weak,
+            cards,
+            hovered: None,
+        })
+    }) {
+        Ok(handle) => service.update(cx, |service, _| service.strip = Some((handle, key))),
+        Err(error) => eprintln!("could not show Stage Manager's strip: {error}"),
+    }
+}
+
 /// Keep one 1 × 1 surface in each configured corner of every display.
 fn reconcile_corners(service: &Entity<Service>, cx: &mut App) {
     let corners = model::active_corners(&service.read(cx).corners);
@@ -2281,6 +2643,10 @@ fn follow_compositor(service: &Entity<Service>, cx: &mut App) {
                 }
                 let follow = watched.update(cx, |service, _| service.follow_reveal(reconnected));
                 run_actions(follow, cx);
+                let staged = watched.update(cx, |service, _| service.follow_stage(reconnected));
+                run_actions(staged, cx);
+                #[cfg(target_os = "linux")]
+                refresh_strip(&watched, cx);
                 if topology {
                     reconcile_corners(&watched, cx);
                 }
@@ -2322,6 +2688,7 @@ fn follow_settings(
                 Ok(snapshot) => {
                     let corners = snapshot.settings.hot_corners;
                     let click_to_reveal = snapshot.settings.click_wallpaper_to_reveal;
+                    let stage_manager = snapshot.settings.stage_manager;
                     let reservation =
                         rmac_dock::work_area_reservation(&snapshot.settings.dock, MENU_BAR_HEIGHT);
                     #[cfg(target_os = "linux")]
@@ -2329,12 +2696,16 @@ fn follow_settings(
                         .send(crate::placement::Input::Dock(reservation.clone()))
                         .await;
                     cx.update(|cx| {
-                        configured.update(cx, |service, _| {
+                        let staged = configured.update(cx, |service, _| {
                             service.corners = corners;
                             service.click_to_reveal = click_to_reveal;
                             service.reservation = reservation.clone();
+                            service.set_stage_manager(stage_manager)
                         });
+                        run_actions(staged, cx);
                         reconcile_corners(&configured, cx);
+                        #[cfg(target_os = "linux")]
+                        refresh_strip(&configured, cx);
                     });
                 }
                 Err(error) => {

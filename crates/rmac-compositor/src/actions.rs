@@ -82,6 +82,17 @@ impl Eq for Distance {}
 /// The hidden workspace that holds minimized windows.
 pub const PARKING_WORKSPACE: &str = "rmac-parking";
 
+/// The hidden workspace Stage Manager keeps the other apps' sets on while
+/// one set is on the stage (ADR 0030). Its windows are not minimised: they
+/// are running windows the strip shows.
+pub const STAGE_WORKSPACE: &str = "rmac-stage";
+
+/// Whether a workspace named `name` is one of the shell's hidden ones,
+/// never a Space of its own.
+pub fn is_hidden_workspace(name: Option<&str>) -> bool {
+    matches!(name, Some(PARKING_WORKSPACE | STAGE_WORKSPACE))
+}
+
 pub(crate) const MAX_SPAWN_ARGUMENTS: usize = 256;
 const MAX_SPAWN_ARGUMENT_BYTES: usize = 32 * 1024;
 const MAX_SPAWN_COMMAND_BYTES: usize = 128 * 1024;

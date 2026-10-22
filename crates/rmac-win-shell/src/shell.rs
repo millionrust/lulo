@@ -116,7 +116,8 @@ impl AssetSource for ShellAssets {
             .or_else(|| rmac_launcher_app::asset(path))
             .or_else(|| rmac_quick_settings_app::asset(path))
             .or_else(|| rmac_app_drawer::asset(path))
-            .or_else(|| rmac_notification_center_app::asset(path)))
+            .or_else(|| rmac_notification_center_app::asset(path))
+            .or_else(|| rmac_shell_screenshot::service::asset(path).map(Cow::Borrowed)))
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
@@ -451,10 +452,9 @@ pub fn run() -> i32 {
                 )
             });
             requests::register("launcher", rmac_launcher_app::toggle);
-            requests::register("screenshot-screen", |_| crate::win::screenshot::screen());
-            requests::register("screenshot-selection", |_| {
-                crate::win::screenshot::selection()
-            });
+            // ⇧⌘3, ⇧⌘4 and ⇧⌘5: Lulo OS's screenshot service, with its
+            // crosshair, toolbar and floating thumbnail.
+            rmac_shell_screenshot::service::start(cx);
             requests::register("quick-settings", rmac_quick_settings_app::toggle);
             // Apps, from the Dock's tile and from its desktop entry
             // (`lulo-shell --app-drawer`, from Spotlight or a shortcut).

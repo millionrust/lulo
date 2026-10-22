@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "notes/maths-suggest",
+  "observations": {
+    "offered": {"note_body": {"value": "12+30="}},
+    "accepted": {"note_body": {"value": "12+30=42"}}
+  }
+}

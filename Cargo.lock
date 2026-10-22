@@ -6477,6 +6477,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "rmac-ui",
+ "unicode-bidi",
  "unicode-segmentation",
 ]
 
@@ -7702,7 +7703,6 @@ dependencies = [
  "async-io",
  "blocking",
  "futures-util",
- "notify",
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-compositor",
@@ -7721,6 +7721,27 @@ dependencies = [
  "rmac-sound",
  "windows 0.61.3",
  "windows-core 0.61.2",
+]
+
+[[package]]
+name = "rmac-shell-screenshot"
+version = "0.9.0-beta.2"
+dependencies = [
+ "async-channel",
+ "blocking",
+ "chrono",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-compositor-system",
+ "rmac-shell-layer",
+ "rmac-shell-ui",
+ "rmac-sound",
+ "rmac-storage",
+ "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -8273,10 +8294,10 @@ dependencies = [
  "rmac-shell-layer",
  "rmac-shell-menubar",
  "rmac-shell-mission-control",
+ "rmac-shell-screenshot",
  "rmac-shell-settings",
  "rmac-shell-ui",
  "rmac-shell-wallpaper",
- "rmac-sound",
  "rmac-ui",
  "rmac-wallpaper",
  "rmac-wallpaper-image",

@@ -17,6 +17,7 @@ mod placement;
 mod screencopy;
 #[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
 mod service;
+pub mod stage;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 pub use service::run;

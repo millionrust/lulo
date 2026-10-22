@@ -99,6 +99,9 @@ impl NotesView {
         let notes_help_dialog = self.render_notes_help_dialog(cx);
         let customise_toolbar_dialog = self.render_customise_toolbar_dialog(cx);
         let context_menu = self.render_context_menu(cx);
+        let body_menu = self.render_body_menu(cx);
+        let format_panels = self.render_format_panels(cx);
+        let maths_suggestion = self.render_maths_suggestion(cx);
 
         let root = div()
             .key_context("Notes")
@@ -122,12 +125,14 @@ impl NotesView {
                     &this.folder_name_input,
                     &this.title,
                     &this.tags,
-                    &this.body,
                     &this.note_find_input,
                     &this.note_replace_input,
+                    &this.link_input,
+                    &this.font_size_input,
                 ]
                 .iter()
-                .any(|input| input.read(cx).focus_handle(cx).is_focused(window));
+                .any(|input| input.read(cx).focus_handle(cx).is_focused(window))
+                    || this.body_focused(window, cx);
                 if !text_field_focused {
                     window.toggle_fullscreen();
                     cx.stop_propagation();
@@ -247,6 +252,7 @@ impl NotesView {
                 cx.listener(|this, _: &ToggleCheckSpellingWhileTyping, _, cx| {
                     this.text_assist.check_spelling_while_typing =
                         !this.text_assist.check_spelling_while_typing;
+                    this.schedule_spell_check(cx);
                     rmac_ui::set_menu_checked(
                         "notes::ToggleCheckSpellingWhileTyping",
                         this.text_assist.check_spelling_while_typing,
@@ -379,28 +385,28 @@ impl NotesView {
                 this.toggle_strikethrough(window, cx)
             }))
             .on_action(cx.listener(|this, _: &SetStyleTitle, window, cx| {
-                this.set_paragraph_style(ParagraphStyle::Title, window, cx)
+                this.set_paragraph_role(ParagraphRole::Title, window, cx)
             }))
             .on_action(cx.listener(|this, _: &SetStyleHeading, window, cx| {
-                this.set_paragraph_style(ParagraphStyle::Heading, window, cx)
+                this.set_paragraph_role(ParagraphRole::Heading, window, cx)
             }))
             .on_action(cx.listener(|this, _: &SetStyleSubheading, window, cx| {
-                this.set_paragraph_style(ParagraphStyle::Subheading, window, cx)
+                this.set_paragraph_role(ParagraphRole::Subheading, window, cx)
             }))
             .on_action(cx.listener(|this, _: &SetStyleBody, window, cx| {
-                this.set_paragraph_style(ParagraphStyle::Body, window, cx)
+                this.set_paragraph_role(ParagraphRole::Body, window, cx)
             }))
             .on_action(cx.listener(|this, _: &SetStyleMonospaced, window, cx| {
-                this.set_paragraph_style(ParagraphStyle::Monospaced, window, cx)
+                this.set_paragraph_role(ParagraphRole::Monostyled, window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertBulletedList, window, cx| {
-                this.insert_list_marker(ListMarker::Bulleted, window, cx)
+                this.toggle_list(ListKind::Bullet, window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertNumberedList, window, cx| {
-                this.insert_list_marker(ListMarker::Numbered, window, cx)
+                this.toggle_list(ListKind::Numbered, window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertDashedList, window, cx| {
-                this.insert_list_marker(ListMarker::Dashed, window, cx)
+                this.toggle_list(ListKind::Hyphen, window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertBlockQuote, window, cx| {
                 this.insert_block_quote(window, cx)
@@ -522,14 +528,18 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &ToggleHighlight, window, cx| {
                 this.toggle_highlight(window, cx)
             }))
-            .on_action(cx.listener(|this, _: &FontBigger, _, cx| {
-                this.note_zoom = (this.note_zoom + 1).min(12);
-                cx.notify();
+            .on_action(cx.listener(|this, _: &FontBigger, window, cx| {
+                this.change_font_size(1.0, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &FontSmaller, _, cx| {
-                this.note_zoom = (this.note_zoom - 1).max(-5);
-                cx.notify();
+            .on_action(cx.listener(|this, _: &FontSmaller, window, cx| {
+                this.change_font_size(-1.0, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &ShowFonts, window, cx| this.show_fonts(window, cx)))
+            .on_action(cx.listener(|this, _: &ShowColours, _, cx| this.show_colours(cx)))
+            .on_action(
+                cx.listener(|this, _: &ConfirmLink, window, cx| this.confirm_link(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &CancelLink, window, cx| this.cancel_link(window, cx)))
             .on_action(cx.listener(|this, _: &CopyStyle, _, cx| this.copy_style(cx)))
             .on_action(cx.listener(|this, _: &PasteStyle, window, cx| this.paste_style(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleSuperscript, window, cx| {
@@ -545,14 +555,47 @@ impl NotesView {
                 cx.listener(|this, _: &RemoveStyle, window, cx| this.remove_style(window, cx)),
             )
             .on_action(cx.listener(|this, _: &AlignLeft, window, cx| {
-                this.set_text_alignment(rmac_notes_storage::TextAlign::Left, window, cx)
+                this.set_text_alignment(Alignment::Left, window, cx)
             }))
             .on_action(cx.listener(|this, _: &AlignCentre, window, cx| {
-                this.set_text_alignment(rmac_notes_storage::TextAlign::Center, window, cx)
+                this.set_text_alignment(Alignment::Center, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &AlignJustify, window, cx| {
+                this.set_text_alignment(Alignment::Justified, window, cx)
             }))
             .on_action(cx.listener(|this, _: &AlignRight, window, cx| {
-                this.set_text_alignment(rmac_notes_storage::TextAlign::Right, window, cx)
+                this.set_text_alignment(Alignment::Right, window, cx)
             }))
+            .on_action(
+                cx.listener(|this, _: &ParagraphDirectionDefault, window, cx| {
+                    this.set_paragraph_direction(WritingDirection::Default, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ParagraphDirectionLeftToRight, window, cx| {
+                    this.set_paragraph_direction(WritingDirection::LeftToRight, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ParagraphDirectionRightToLeft, window, cx| {
+                    this.set_paragraph_direction(WritingDirection::RightToLeft, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectionDirectionDefault, window, cx| {
+                    this.set_selection_direction(WritingDirection::Default, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectionDirectionLeftToRight, window, cx| {
+                    this.set_selection_direction(WritingDirection::LeftToRight, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectionDirectionRightToLeft, window, cx| {
+                    this.set_selection_direction(WritingDirection::RightToLeft, window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &MathsResultsOff, _, cx| {
                 this.set_maths_results_mode(MathsResultsMode::Off, cx)
             }))
@@ -600,7 +643,7 @@ impl NotesView {
                 }),
             )
             .on_action(cx.listener(|this, _: &PasteAndRetainStyle, window, cx| {
-                this.paste_plain_text(window, cx)
+                this.paste_retaining_style(window, cx)
             }))
             .on_action(cx.listener(|this, _: &AttachFile, _, cx| this.choose_file_attachment(cx)))
             .on_action(cx.listener(|this, _: &RenameAttachment, window, cx| {
@@ -616,7 +659,9 @@ impl NotesView {
                 this.move_selected_note_to(action.folder_id, cx)
             }))
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
-                if rmac_ui::ContextMenuState::dismiss(&mut this.context_menu, window, cx) {
+                let list = rmac_ui::ContextMenuState::dismiss(&mut this.context_menu, window, cx);
+                let body = rmac_ui::ContextMenuState::dismiss(&mut this.body_menu, window, cx);
+                if list || body {
                     cx.notify();
                 }
             }))
@@ -646,6 +691,9 @@ impl NotesView {
                 element.child(dialog)
             })
             .when_some(context_menu, |element, menu| element.child(menu))
+            .when_some(body_menu, |element, menu| element.child(menu))
+            .when_some(format_panels, |element, panel| element.child(panel))
+            .when_some(maths_suggestion, |element, popup| element.child(popup))
             .child(self.writing_tools.clone());
         // Edit ▸ Writing Tools and the body's context menu work on the note
         // body: its selection, or all of it.

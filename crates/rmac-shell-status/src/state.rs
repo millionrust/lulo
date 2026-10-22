@@ -3,7 +3,7 @@ use rmac_compositor::FocusTarget;
 use crate::{
     BatteryIndicator, BluetoothIndicator, Change, Event, FocusIndicator, FocusedContext,
     MicrophoneIndicator, NetworkIndicator, NetworkState, NotificationIndicator, OutputContext,
-    ScreenRecordingIndicator, Snapshot, SoundIndicator, VpnIndicator,
+    Snapshot, SoundIndicator, VpnIndicator,
 };
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -18,7 +18,6 @@ pub struct State {
     settings: rmac_shell_settings::ShellSettings,
     notifications: NotificationIndicator,
     focus: Option<FocusIndicator>,
-    screen_recording: Option<ScreenRecordingIndicator>,
 }
 
 impl State {
@@ -59,7 +58,6 @@ impl State {
             microphone: (!self.audio.recording.is_empty()).then(|| MicrophoneIndicator {
                 apps: self.audio.recording.clone(),
             }),
-            screen_recording: self.screen_recording,
             clock: self.settings.clock.clone(),
         }
     }
@@ -103,7 +101,6 @@ impl State {
             Event::Settings(settings) => self.settings = settings,
             Event::Notifications(notifications) => self.notifications = notifications,
             Event::Focus(focus) => self.focus = focus,
-            Event::ScreenRecording(recording) => self.screen_recording = recording,
         }
         Change {
             visible: before != self.snapshot(),

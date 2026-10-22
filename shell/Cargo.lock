@@ -6284,7 +6284,6 @@ dependencies = [
  "async-io",
  "blocking",
  "futures-util",
- "notify",
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-compositor",
@@ -6314,15 +6313,16 @@ dependencies = [
  "chrono",
  "gpui",
  "gpui_platform",
- "libc",
+ "image",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-shell-layer",
  "rmac-shell-ui",
  "rmac-sound",
  "rmac-storage",
  "uuid",
- "zbus",
+ "windows 0.61.3",
 ]
 
 [[package]]

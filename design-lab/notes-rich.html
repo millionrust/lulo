@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Notes rich text study</title>
+<!--
+  macOS 26 Notes, dark, from the 2026-10 captures (window_main, menu_Format*,
+  toolbar_More): the styled note canvas (NOTES-01/02/03/24), the sidebar's
+  Tags browser (NOTES-11) and Suggest Results' offer (NOTES-22). The Rust
+  port: crates/rmac-editor/src/rich/{editor,layout}.rs and
+  crates/notes/src/{note_format_controller,tag_browser,format_panels}.rs.
+-->
+<style>
+  @import url("tokens.css");
+  :root { color-scheme: dark; font: 13px system-ui, sans-serif; --notes-accent: #e2a841; --ring: #8a8a8a; }
+  body { margin: 30px; background: var(--grouped-bg); color: var(--label); display: flex; gap: 24px; align-items: flex-start; }
+  .sidebar { width: 205px; padding: 8px 11px; border-radius: 19px; background: #262626; border: 1px solid #3a3a3a; }
+  .section { font-size: 11px; font-weight: 700; color: #8c8c8c; padding: 12px 5.5px 4px; }
+  .row { height: 32px; display: flex; align-items: center; padding-left: 29.5px; border-radius: 8px; }
+  .row.selected { background: #464646; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 5.5px; }
+  .tag { height: 22px; padding: 0 8px; border-radius: 11px; display: flex; align-items: center; font-size: 12px; background: var(--fill-control); }
+  .tag.selected { background: #464646; color: #fff; }
+  .note { width: 460px; padding: 8px 22px 22px; background: #1e1e1e; color: #dcdcdc; border-radius: 10px; position: relative; }
+  .date { text-align: center; color: #808080; font-size: 12px; line-height: 15px; }
+  .title { font: 700 20px/24px system-ui; margin: 9px 0 4px; }
+  .heading { font: 700 17px/21px system-ui; margin: 6px 0 2px; }
+  .sub { font: 700 15px/19px system-ui; }
+  p { margin: 0; line-height: 17px; }
+  .check { display: flex; align-items: center; gap: 0; padding-left: 0; }
+  .box { width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid var(--ring); box-sizing: border-box; margin: 0 5px 0 -2.5px; flex: none; }
+  .box.ticked { background: var(--notes-accent); border-color: var(--notes-accent); color: #fff; font: 700 12px/15px system-ui; text-align: center; }
+  .list { display: flex; } .list span:first-child { width: 22px; flex: none; padding-left: 6px; box-sizing: border-box; }
+  .quote { border-left: 3px solid #3a3a3a; padding-left: 11px; color: #c8c8c8; }
+  .mono { font: 12px/16px ui-monospace, Menlo, monospace; }
+  a { color: var(--notes-accent); }
+  mark { background: #f5db6b; color: #000; }
+  .rtl { direction: rtl; text-align: right; }
+  .offer { position: absolute; left: 92px; top: 337px; display: flex; gap: 8px; align-items: center; padding: 3px 8px; background: var(--window); border: 1px solid var(--separator); border-radius: 6px; box-shadow: 0 4px 12px #0008; }
+  .offer b { color: var(--notes-accent); } .offer small { color: #8c8c8c; font-size: 11px; }
+  .misspelt { text-decoration: underline dotted #ff453a 2px; text-underline-offset: 3px; }
+</style>
+<div class="sidebar">
+  <div class="section">On My Computer</div>
+  <div class="row">All Notes</div>
+  <div class="row">Notes</div>
+  <div class="row">Recently Deleted</div>
+  <div class="section">Tags</div>
+  <div class="tags"><span class="tag">All Tags</span><span class="tag selected">#home</span><span class="tag">#work</span></div>
+</div>
+<div class="note">
+  <div class="date">20 October 2026 at 10:42</div>
+  <div class="title">Weekend</div>
+  <div class="heading">Shopping</div>
+  <div class="check"><span class="box"></span>Milk</div>
+  <div class="check"><span class="box ticked">✓</span>Eggs</div>
+  <div class="sub">Notes</div>
+  <div class="list"><span>•</span>Ask about the <b>boiler</b> <i>today</i></div>
+  <div class="list"><span>–</span>Garden <mark>fence</mark> #home</div>
+  <p class="quote">The best time to plant a tree was twenty years ago.</p>
+  <p class="mono">ssh jacob@192.168.18.52</p>
+  <p>See <a href="#">https://example.com</a> and a <span class="misspelt">mispelled</span> word</p>
+  <p class="rtl">שלום עולם and English</p>
+  <p>12+30=</p>
+  <div class="offer"><b>42</b><small>Return to insert</small></div>
+</div>
+</html>

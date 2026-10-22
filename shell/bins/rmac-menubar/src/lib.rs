@@ -5296,8 +5296,6 @@ mod bar {
                                 .map(|(index, indicator)| {
                                     let icon = indicator_icon_path(indicator.kind);
                                     let is_battery = indicator.kind == TopBarIndicatorKind::Battery;
-                                    let is_recording =
-                                        indicator.kind == TopBarIndicatorKind::ScreenRecording;
                                     // Every indicator but VPN and
                                     // Notifications opens its own menu under
                                     // the icon; VPN still falls through to
@@ -5339,16 +5337,6 @@ mod bar {
                                         .on_click(cx.listener(
                                             move |this, event: &ClickEvent, window, cx| {
                                                 cx.stop_propagation();
-                                                if is_recording {
-                                                    // The Mac's stop button: ends the recording.
-                                                    #[cfg(target_os = "linux")]
-                                                    spawn_command(
-                                                        "/usr/libexec/rmac/rmac-screenshot",
-                                                        &["stop-recording"],
-                                                        cx,
-                                                    );
-                                                    return;
-                                                }
                                                 let Some(kind) = menu_kind else {
                                                     dispatch_shortcut("quick-settings", cx);
                                                     return;
@@ -5398,25 +5386,6 @@ mod bar {
                                         );
                                         item.children(trace_probe("battery status"))
                                             .child(battery_glyph(snapshot.battery))
-                                    } else if is_recording {
-                                        // The stop button: a red ring around a
-                                        // red square.
-                                        item.child(
-                                            div()
-                                                .size(px(14.0))
-                                                .rounded_full()
-                                                .border_1()
-                                                .border_color(rgba(tokens::system_red()))
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .child(
-                                                    div()
-                                                        .size(px(5.5))
-                                                        .rounded(px(1.0))
-                                                        .bg(rgba(tokens::system_red())),
-                                                ),
-                                        )
                                     } else if indicator.kind == TopBarIndicatorKind::Microphone {
                                         // BAR-09: the Mac's orange privacy dot.
                                         item.child(
@@ -6106,8 +6075,6 @@ mod bar {
             TopBarIndicatorKind::Notifications => "notifications.svg",
             // Drawn as a dot, not a glyph; it opens Control Centre.
             TopBarIndicatorKind::Microphone => "control-center.svg",
-            // Drawn as the stop button, not a glyph.
-            TopBarIndicatorKind::ScreenRecording => "control-center.svg",
         };
         shell_icon_path(file)
     }

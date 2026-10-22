@@ -133,8 +133,6 @@ pub enum TopBarIndicatorKind {
     /// An app is recording from the microphone (BAR-09): the Mac's orange
     /// privacy dot.
     Microphone,
-    /// A screen recording is running (SHOT-01): the stop button.
-    ScreenRecording,
     Notifications,
 }
 
@@ -239,13 +237,6 @@ pub fn top_bar_indicator_labels(
             accessible: format!("Microphone in use by {}", microphone.apps.join(", ")),
         });
     }
-    if snapshot.screen_recording.is_some() {
-        labels.push(TopBarIndicatorLabel {
-            kind: TopBarIndicatorKind::ScreenRecording,
-            visible: String::new(),
-            accessible: "Stop screen recording".into(),
-        });
-    }
     if let Some(notifications) = snapshot
         .notifications
         .filter(|notifications| notifications.unread_count > 0)
@@ -294,17 +285,6 @@ mod tests {
         assert_eq!(labels[0].kind, TopBarIndicatorKind::Microphone);
         assert_eq!(labels[0].accessible, "Microphone in use by Lulo Voice");
         assert!(labels[0].visible.is_empty());
-    }
-
-    #[test]
-    fn a_running_screen_recording_shows_the_stop_button() {
-        let mut snapshot = rmac_shell_status::Snapshot::default();
-        snapshot.screen_recording =
-            Some(rmac_shell_status::ScreenRecordingIndicator { started_unix_ms: 1 });
-        let labels = top_bar_indicator_labels(&snapshot);
-        assert_eq!(labels.len(), 1);
-        assert_eq!(labels[0].kind, TopBarIndicatorKind::ScreenRecording);
-        assert_eq!(labels[0].accessible, "Stop screen recording");
     }
 
     #[test]

@@ -38,7 +38,7 @@
       "shot": "checklist-typed",
       "expect_text": {
         "label": "Body",
-        "contains": "- [ ] Buy milk"
+        "contains": "Buy milk"
       }
     },
     {
@@ -48,13 +48,13 @@
       "shot": "more-menu-open"
     },
     {
-      "click": "Show Markdown Preview"
+      "key": "escape"
     },
     {
-      "shot": "checklist-preview"
+      "shot": "more-menu-closed"
     },
     {
-      "click": "Not done"
+      "key": "shift-cmd-u"
     },
     {
       "shot": "checklist-ticked"

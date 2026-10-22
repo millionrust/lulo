@@ -2,8 +2,6 @@
 
 mod coordinator;
 mod model;
-#[cfg(not(windows))]
-mod recording;
 mod runtime;
 pub mod scene;
 #[cfg(windows)]

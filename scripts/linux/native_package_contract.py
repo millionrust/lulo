@@ -230,11 +230,6 @@ PACKAGE_SPECS = (
             "gawk | mawk",
             "gir1.2-packagekitglib-1.0",
             "grim",
-            # Screen recording (⇧⌘5 Record): gst-launch-1.0 reading niri's
-            # PipeWire stream and writing the movie.
-            "gstreamer1.0-pipewire",
-            "gstreamer1.0-plugins-good",
-            "gstreamer1.0-tools",
             _third_party_floor("niri"),
             "packagekit",
             "pipewire-bin",
@@ -264,9 +259,6 @@ PACKAGE_SPECS = (
             # Startup Disk (through pkexec).
             "efibootmgr",
             "gdm3",
-            # H.264 movies for screen recording; without it recordings are
-            # VP8 .webm.
-            "gstreamer1.0-plugins-ugly",
             "keyd",
             "libonnxruntime1.23",
             "pkexec",

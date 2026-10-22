@@ -736,6 +736,8 @@ pub enum Module {
     LowPower,
     Screenshot,
     Focus,
+    /// Stage Manager (CC-07, ADR 0030): white while it is on.
+    StageManager,
     /// Screen Mirroring (CC-06), when a Miracast sender is installed.
     ScreenMirroring,
     /// The appearance circle (CC-07): Light or Dark.
@@ -750,6 +752,7 @@ impl Module {
     pub fn control_name(self) -> Option<&'static str> {
         Some(match self {
             Self::LowPower => "low-power",
+            Self::StageManager => "stage-manager",
             Self::ScreenMirroring => "screen-mirroring",
             Self::DarkMode => "dark-mode",
             Self::Screenshot => "screenshot",
@@ -761,6 +764,7 @@ impl Module {
     pub fn control_label(self) -> &'static str {
         match self {
             Self::LowPower => "Low Power Mode",
+            Self::StageManager => "Stage Manager",
             Self::ScreenMirroring => "Screen Mirroring",
             Self::DarkMode => "Dark Mode",
             Self::Screenshot => "Screenshot",

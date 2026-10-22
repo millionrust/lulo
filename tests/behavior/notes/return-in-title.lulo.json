@@ -3,8 +3,8 @@
   "scenario": "notes/return-in-title",
   "observations": {
     "continued": {
-      "focus": {"role": "text-field", "label": "Body", "value": "- [ ] Buy milk"},
-      "note_body": {"value": "- [ ] Buy milk"}
+      "focus": {"role": "text-field", "label": "Body", "value": "Buy milk"},
+      "note_body": {"value": "Buy milk"}
     }
   }
 }

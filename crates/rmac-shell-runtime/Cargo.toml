@@ -29,11 +29,6 @@ rmac-shell-status.workspace = true
 rmac-shell-status-linux.workspace = true
 rmac-sound.workspace = true
 
-# The menu bar's stop button follows the screen recording state file
-# (SHOT-01) through inotify.
-[target.'cfg(not(windows))'.dependencies]
-notify.workspace = true
-
 # Windows' own status sources (`windows.rs`): WLAN, power and Core Audio.
 [target.'cfg(windows)'.dependencies]
 # `#[implement]` (the volume callback) names `windows_core` directly.

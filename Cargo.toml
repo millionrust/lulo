@@ -159,6 +159,7 @@ rmac-shell-settings = { version = "=0.9.0-beta.2", path = "crates/rmac-shell-set
 # views".
 rmac-shell-app-switcher = { version = "=0.9.0-beta.2", path = "shell/bins/rmac-app-switcher" }
 rmac-shell-dock = { version = "=0.9.0-beta.2", path = "shell/bins/rmac-dock" }
+rmac-shell-screenshot = { version = "=0.9.0-beta.2", path = "shell/bins/rmac-screenshot" }
 rmac-shell-mission-control = { version = "=0.9.0-beta.2", path = "shell/bins/rmac-mission-control" }
 rmac-shell-layer = { version = "=0.9.0-beta.2", path = "shell/crates/rmac-shell-layer" }
 rmac-shell-menubar = { version = "=0.9.0-beta.2", path = "shell/bins/rmac-menubar" }
@@ -223,6 +224,7 @@ spellbook = "0.4"
 sysinfo = "0.33"
 tar = { version = "0.4", default-features = false }
 trash = "5"
+unicode-bidi = "0.3.18"
 unicode-segmentation = "1.13"
 url = "2"
 uuid = { version = "1", features = ["v4"] }

@@ -22,10 +22,8 @@ pub const DRAG_EDGE: u32 = 0xFFFF_FFFF;
 /// Window mode: black reads 88,107,129 and white 200,219,241.
 pub const WINDOW_HIGHLIGHT: u32 = 0x92B8_E480;
 
-// ⇧⌘5 toolbar. The record group follows the capture group's own spacing
-// (pitch 48, 30.25 either side of a separator): the Mac's record glyph
-// positions were not measured, so they are derived.
-pub const TOOLBAR_WIDTH: f32 = 474.5;
+// ⇧⌘5 toolbar (record group omitted: rmac has no screen recorder).
+pub const TOOLBAR_WIDTH: f32 = 364.5;
 pub const TOOLBAR_HEIGHT: f32 = 50.0;
 /// Bottom edge above the screen bottom (7 above the 90 pt Dock).
 pub const TOOLBAR_BOTTOM: f32 = 97.0;
@@ -36,20 +34,17 @@ pub const TOOLBAR_GLYPH_SELECTED: u32 = 0xB0B0_B3FF;
 pub const TOOLBAR_PLATE: u32 = 0x3A3A_42FF;
 pub const CLOSE_CENTER_X: f32 = 22.25;
 pub const CLOSE_SIZE: f32 = 16.0;
-/// Capture entire screen, window, selection; then record entire screen,
-/// selection.
-pub const TARGET_CENTERS: [f32; 5] = [63.75, 111.75, 159.75, 221.75, 269.75];
+/// Entire screen, window, selection.
+pub const TARGET_CENTERS: [f32; 3] = [63.75, 111.75, 159.75];
 pub const GLYPH_WIDTH: f32 = 28.0;
 pub const GLYPH_HEIGHT: f32 = 22.0;
 pub const PLATE_WIDTH: f32 = 44.0;
 pub const PLATE_HEIGHT: f32 = 35.0;
 pub const PLATE_RADIUS: f32 = 7.0;
 pub const SEPARATOR_X: f32 = 190.0;
-/// The separator between the record group and Options.
-pub const SEPARATOR2_X: f32 = 300.0;
 pub const SEPARATOR_TOP: f32 = 13.5;
 pub const SEPARATOR_HEIGHT: f32 = 23.0;
-pub const OPTIONS_X: f32 = 316.0;
+pub const OPTIONS_X: f32 = 206.0;
 pub const OPTIONS_TEXT_SIZE: f32 = 13.0;
 /// The chevron glyph (5 × 4) starts 10 after the text; its 9 pt box has 2
 /// of padding on each side.
@@ -115,8 +110,6 @@ pub enum Command {
     /// ⇧⌘5
     Toolbar,
     Cancel,
-    /// ⌃⌘⎋ and the menu bar's stop button.
-    StopRecording,
 }
 
 impl Command {
@@ -128,7 +121,6 @@ impl Command {
             "selection-to-clipboard" => Self::SelectionToClipboard,
             "toolbar" => Self::Toolbar,
             "cancel" => Self::Cancel,
-            "stop-recording" => Self::StopRecording,
             _ => return None,
         })
     }
@@ -141,7 +133,6 @@ impl Command {
             Self::SelectionToClipboard => "selection-to-clipboard",
             Self::Toolbar => "toolbar",
             Self::Cancel => "cancel",
-            Self::StopRecording => "stop-recording",
         }
     }
 }
@@ -208,28 +199,16 @@ pub enum Target {
     Screen,
     Window,
     Selection,
-    /// Record Entire Screen (SHOT-01).
-    RecordScreen,
-    /// Record Selected Portion.
-    RecordSelection,
 }
 
 impl Target {
-    pub const ALL: [Self; 5] = [
-        Self::Screen,
-        Self::Window,
-        Self::Selection,
-        Self::RecordScreen,
-        Self::RecordSelection,
-    ];
+    pub const ALL: [Self; 3] = [Self::Screen, Self::Window, Self::Selection];
 
     pub const fn label(self) -> &'static str {
         match self {
             Self::Screen => "Capture Entire Screen",
             Self::Window => "Capture Selected Window",
             Self::Selection => "Capture Selected Portion",
-            Self::RecordScreen => "Record Entire Screen",
-            Self::RecordSelection => "Record Selected Portion",
         }
     }
 
@@ -238,8 +217,6 @@ impl Target {
             Self::Screen => "screenshot/capture-screen.svg",
             Self::Window => "screenshot/capture-window.svg",
             Self::Selection => "screenshot/capture-selection.svg",
-            Self::RecordScreen => "screenshot/record-screen.svg",
-            Self::RecordSelection => "screenshot/record-selection.svg",
         }
     }
 
@@ -248,23 +225,6 @@ impl Target {
             Self::Screen => "screen",
             Self::Window => "window",
             Self::Selection => "selection",
-            Self::RecordScreen => "record-screen",
-            Self::RecordSelection => "record-selection",
-        }
-    }
-
-    /// Whether the button at the end of the bar says Record and films.
-    pub const fn is_recording(self) -> bool {
-        matches!(self, Self::RecordScreen | Self::RecordSelection)
-    }
-
-    /// The capture mode whose area handling this target shares: recording
-    /// the screen picks the screen, recording a portion draws a selection.
-    pub const fn shape(self) -> Self {
-        match self {
-            Self::RecordScreen => Self::Screen,
-            Self::RecordSelection => Self::Selection,
-            other => other,
         }
     }
 
@@ -663,6 +623,20 @@ pub fn destination_directory(destination: Destination) -> Option<PathBuf> {
     let home = home()?;
     let user_dirs =
         config_home().and_then(|config| fs::read_to_string(config.join("user-dirs.dirs")).ok());
+    // Windows: a folder Lulo's settings do not name is Windows' own (the
+    // Desktop may live in OneDrive, not under the profile).
+    #[cfg(windows)]
+    {
+        let prefix = format!("{key}=");
+        let named = user_dirs
+            .as_deref()
+            .is_some_and(|dirs| dirs.lines().any(|line| line.trim().starts_with(&prefix)));
+        if !named {
+            if let Some(folder) = crate::capture::known_folder(destination) {
+                return Some(folder);
+            }
+        }
+    }
     Some(resolve_user_dir(&home, user_dirs.as_deref(), key, fallback))
 }
 
@@ -727,14 +701,9 @@ pub fn unique_path(directory: &Path, name: &str, exists: impl Fn(&Path) -> bool)
     if !exists(&candidate) {
         return candidate;
     }
-    let (stem, extension) = name.rsplit_once('.').unwrap_or((name, ""));
-    let extension = if extension.is_empty() {
-        String::new()
-    } else {
-        format!(".{extension}")
-    };
+    let stem = name.strip_suffix(".png").unwrap_or(name);
     (2..)
-        .map(|index| directory.join(format!("{stem} ({index}){extension}")))
+        .map(|index| directory.join(format!("{stem} ({index}).png")))
         .find(|path| !exists(path))
         .expect("an unused numbered name exists")
 }
@@ -963,7 +932,7 @@ mod tests {
 
         let settings = Settings {
             destination: Destination::Downloads,
-            timer_seconds: 3,
+            timer_seconds: 5,
             ..Settings::default()
         };
         settings.save_to(&path).unwrap();
@@ -1078,11 +1047,6 @@ mod tests {
         );
         assert_eq!(Destination::parse("preview"), Some(Destination::Preview));
         assert!(Destination::Preview.user_dir().is_none());
-        assert!(Target::RecordScreen.is_recording() && Target::RecordSelection.is_recording());
-        assert_eq!(Target::RecordSelection.shape(), Target::Selection);
-        assert_eq!(Target::parse("record-screen"), Some(Target::RecordScreen));
-        assert!(TARGET_CENTERS[4] + PLATE_WIDTH / 2.0 < SEPARATOR2_X);
-        assert!(SEPARATOR2_X < OPTIONS_X);
         let (width, height) = thumbnail_size(1470.0, 956.0);
         assert_eq!(width, 155.0);
         assert!((height - 103.6).abs() < 0.1);

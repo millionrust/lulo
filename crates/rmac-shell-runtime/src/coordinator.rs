@@ -132,17 +132,6 @@ impl Coordinator {
         before != self.snapshot()
     }
 
-    /// A screen recording started or ended (SHOT-01).
-    pub fn apply_screen_recording(
-        &mut self,
-        recording: Option<rmac_shell_status::ScreenRecordingIndicator>,
-    ) -> bool {
-        let before = self.snapshot();
-        self.status
-            .apply(rmac_shell_status::Event::ScreenRecording(recording));
-        before != self.snapshot()
-    }
-
     pub fn apply_service_unavailable(&mut self, sources: Sources, detail: String) -> bool {
         let before = self.snapshot();
         set_health(

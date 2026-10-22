@@ -758,10 +758,17 @@
           "separator_before": true,
           "children": [
             {
+              "label": "Show Fonts",
+              "action": "notes::ShowFonts",
+              "shortcut": "⌘T",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Bold",
               "action": "notes::ToggleBold",
               "shortcut": "⌘B",
-              "separator_before": false,
+              "separator_before": true,
               "children": []
             },
             {
@@ -807,25 +814,18 @@
               "children": []
             },
             {
-              "label": "Copy Style",
-              "action": "notes::CopyStyle",
-              "shortcut": "⌥⌘C",
-              "separator_before": true,
-              "children": []
-            },
-            {
-              "label": "Paste Style",
-              "action": "notes::PasteStyle",
-              "shortcut": "⌥⌘V",
-              "separator_before": false,
-              "children": []
-            },
-            {
               "label": "Baseline",
               "action": "notes::FontBaselineMenu",
               "shortcut": "",
               "separator_before": true,
               "children": [
+                {
+                  "label": "Use Default",
+                  "action": "notes::BaselineUseDefault",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
                 {
                   "label": "Superscript",
                   "action": "notes::ToggleSuperscript",
@@ -839,15 +839,29 @@
                   "shortcut": "",
                   "separator_before": false,
                   "children": []
-                },
-                {
-                  "label": "Use Default",
-                  "action": "notes::BaselineUseDefault",
-                  "shortcut": "",
-                  "separator_before": false,
-                  "children": []
                 }
               ]
+            },
+            {
+              "label": "Show Colours",
+              "action": "notes::ShowColours",
+              "shortcut": "⇧⌘C",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Copy Style",
+              "action": "notes::CopyStyle",
+              "shortcut": "⌥⌘C",
+              "separator_before": true,
+              "children": []
+            },
+            {
+              "label": "Paste Style",
+              "action": "notes::PasteStyle",
+              "shortcut": "⌥⌘V",
+              "separator_before": false,
+              "children": []
             },
             {
               "label": "Remove Style",
@@ -879,11 +893,82 @@
               "children": []
             },
             {
+              "label": "Justify",
+              "action": "notes::AlignJustify",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
               "label": "Align Right",
               "action": "notes::AlignRight",
               "shortcut": "⌘}",
               "separator_before": false,
               "children": []
+            },
+            {
+              "label": "Writing Direction",
+              "action": "notes::WritingDirectionMenu",
+              "shortcut": "",
+              "separator_before": true,
+              "children": [
+                {
+                  "label": "Paragraph",
+                  "action": "notes::WritingDirectionParagraphLabel",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Default",
+                  "action": "notes::ParagraphDirectionDefault",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Left to Right",
+                  "action": "notes::ParagraphDirectionLeftToRight",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Right to Left",
+                  "action": "notes::ParagraphDirectionRightToLeft",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Selection",
+                  "action": "notes::WritingDirectionSelectionLabel",
+                  "shortcut": "",
+                  "separator_before": true,
+                  "children": []
+                },
+                {
+                  "label": "Default",
+                  "action": "notes::SelectionDirectionDefault",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Left to Right",
+                  "action": "notes::SelectionDirectionLeftToRight",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                },
+                {
+                  "label": "Right to Left",
+                  "action": "notes::SelectionDirectionRightToLeft",
+                  "shortcut": "",
+                  "separator_before": false,
+                  "children": []
+                }
+              ]
             }
           ]
         },

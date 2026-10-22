@@ -26,10 +26,10 @@ use gpui::{
 };
 use rmac_ui::input_actions as input;
 
-use super::layout::{layout_paragraph, LayoutParams, ParagraphLayout};
+use super::layout::{layout_paragraph, LayoutParams, ListMetrics, ParagraphLayout};
 use super::model::{
     clamp_size, normalize_newlines, Alignment, CharStyle, Document, DocumentAttributes, Ligatures,
-    ListKind, ParagraphStyle, Rgb, WritingDirection, MAX_LIST_LEVEL,
+    ListKind, ParagraphRole, ParagraphStyle, Rgb, WritingDirection, MAX_LIST_LEVEL,
 };
 
 /// Undo steps kept per editor.
@@ -50,7 +50,14 @@ const BLINK_IDLE: Duration = Duration::from_secs(2);
 pub enum RichTextEvent {
     /// The document changed (typing, paste, formatting, undo).
     Changed,
+    /// A checklist item's checkbox was clicked (after its `Changed`).
+    CheckboxToggled,
 }
+
+/// The owner's typeface, size and weight for each [`ParagraphRole`]: what
+/// Format ▸ Title and friends apply, and what Return after a heading
+/// returns to.
+pub type RoleTypography = Rc<dyn Fn(ParagraphRole) -> CharStyle>;
 
 thread_local! {
     /// The styled copy of the last text this process put on the clipboard,
@@ -92,6 +99,8 @@ struct Frame {
     selection: Vec<Bounds<Pixels>>,
     caret: Option<Bounds<Pixels>>,
     marked: Vec<Bounds<Pixels>>,
+    /// Misspelled words' dotted underlines.
+    misspelled: Vec<Bounds<Pixels>>,
     bounds: Bounds<Pixels>,
 }
 
@@ -121,6 +130,20 @@ pub struct RichTextEditor {
     link_color: Hsla,
     padding_x: Pixels,
     page_width: Option<Pixels>,
+    list_metrics: ListMetrics,
+    typography: Option<RoleTypography>,
+    /// Edit ▸ Substitutions ▸ Smart Lists: "- ", "* " and "1. " typed at a
+    /// paragraph's start begin a list.
+    smart_lists: bool,
+    checkbox_ring: Hsla,
+    checkbox_fill: Hsla,
+    quote_bar_color: Hsla,
+    show_highlights: bool,
+    /// Tab outside a list item moves focus on instead of typing a tab.
+    tab_navigates: bool,
+    /// Check Spelling While Typing: misspelled ranges, valid for the
+    /// document revision they were found in.
+    misspelled: (u64, Vec<Range<usize>>),
 
     /// Shared with the overlay scroll bar.
     scroll: rmac_ui::ScrollPosition,
@@ -154,7 +177,8 @@ impl Focusable for RichTextEditor {
 impl RichTextEditor {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let default_style = CharStyle::default();
-        let focus = cx.focus_handle();
+        // A tab stop, so Tab and ⇧Tab reach it like any field.
+        let focus = cx.focus_handle().tab_stop(true);
         let focus_subscriptions = vec![
             cx.on_focus(&focus, window, |this, _window, cx| this.restart_blink(cx)),
             cx.on_blur(&focus, window, |this, _window, cx| this.stop_blink(cx)),
@@ -182,6 +206,15 @@ impl RichTextEditor {
             link_color: rmac_ui::mac::system_blue(),
             padding_x: px(10.0),
             page_width: None,
+            list_metrics: ListMetrics::default(),
+            typography: None,
+            smart_lists: false,
+            checkbox_ring: rmac_ui::mac::text_tertiary(),
+            checkbox_fill: rmac_ui::mac::system_orange(),
+            quote_bar_color: rmac_ui::mac::separator(),
+            show_highlights: true,
+            tab_navigates: false,
+            misspelled: (0, Vec::new()),
             scroll: rmac_ui::ScrollPosition::default(),
             params: None,
             layouts: HashMap::new(),
@@ -359,8 +392,198 @@ impl RichTextEditor {
         }
     }
 
+    /// List, checklist and block-quote indents (Notes' differ from
+    /// TextEdit's).
+    pub fn set_list_metrics(&mut self, metrics: ListMetrics, cx: &mut Context<Self>) {
+        if self.list_metrics != metrics {
+            self.list_metrics = metrics;
+            cx.notify();
+        }
+    }
+
+    /// The faces Format ▸ Title / Heading / Subheading / Body / Monostyled
+    /// apply.
+    pub fn set_role_typography(&mut self, typography: RoleTypography) {
+        self.typography = Some(typography);
+    }
+
+    /// Tab outside a list item moves focus to the next field (Notes'
+    /// body, followed by its Tags field) rather than typing a tab.
+    pub fn set_tab_navigates(&mut self, navigates: bool) {
+        self.tab_navigates = navigates;
+    }
+
+    /// Edit ▸ Substitutions ▸ Smart Lists.
+    pub fn set_smart_lists(&mut self, smart_lists: bool) {
+        self.smart_lists = smart_lists;
+    }
+
+    /// View ▸ Show Highlights.
+    pub fn set_show_highlights(&mut self, show: bool, cx: &mut Context<Self>) {
+        if self.show_highlights != show {
+            self.show_highlights = show;
+            cx.notify();
+        }
+    }
+
+    /// Format ▸ Indentation ▸ Increase / Decrease: list items nest one
+    /// level deeper or shallower; other paragraphs indent.
+    pub fn change_indent(&mut self, delta: i8, cx: &mut Context<Self>) {
+        self.change_paragraph_style(cx, move |style| {
+            style.list_level =
+                (style.list_level as i8 + delta).clamp(0, MAX_LIST_LEVEL as i8) as u8;
+        });
+    }
+
+    /// Linked text's colour.
+    pub fn set_link_color(&mut self, color: Hsla, cx: &mut Context<Self>) {
+        if self.link_color != color {
+            self.link_color = color;
+            cx.notify();
+        }
+    }
+
+    /// A checkbox's ring and ticked fill, and a block quote's bar.
+    pub fn set_decoration_colors(
+        &mut self,
+        checkbox_ring: Hsla,
+        checkbox_fill: Hsla,
+        quote_bar: Hsla,
+        cx: &mut Context<Self>,
+    ) {
+        if (self.checkbox_ring, self.checkbox_fill, self.quote_bar_color)
+            != (checkbox_ring, checkbox_fill, quote_bar)
+        {
+            self.checkbox_ring = checkbox_ring;
+            self.checkbox_fill = checkbox_fill;
+            self.quote_bar_color = quote_bar;
+            cx.notify();
+        }
+    }
+
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus, cx);
+    }
+
+    pub fn is_focused(&self, window: &Window) -> bool {
+        self.focus.is_focused(window)
+    }
+
+    /// The document's revision: it changes with every edit.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Edit ▸ Spelling and Grammar ▸ Check Spelling While Typing: mark
+    /// these ranges of the document as it was at `revision` with a dotted
+    /// red underline. Any later edit drops them until the owner checks
+    /// again.
+    pub fn set_misspelled(
+        &mut self,
+        revision: u64,
+        ranges: Vec<Range<usize>>,
+        cx: &mut Context<Self>,
+    ) {
+        if revision == self.revision && self.misspelled != (revision, ranges.clone()) {
+            self.misspelled = (revision, ranges);
+            cx.notify();
+        }
+    }
+
+    /// The insertion point's rectangle in the window, as last drawn.
+    pub fn caret_bounds(&self) -> Option<Bounds<Pixels>> {
+        let (index, local) = self.document.locate(self.head());
+        let placed = self.placed.iter().find(|placed| placed.index == index)?;
+        let (x, top, height) = placed.layout.caret(local);
+        Some(Bounds::new(
+            point(placed.origin.x + x, placed.origin.y + top),
+            size(px(1.0), height),
+        ))
+    }
+
+    /// Replace the whole document as one undoable edit and select
+    /// `selection` (a checklist's Move Ticked to Bottom, Delete Ticked).
+    pub fn replace_document(
+        &mut self,
+        document: Document,
+        selection: Range<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.editable || document == self.document {
+            return;
+        }
+        self.begin_edit(EditKind::Other);
+        self.document = document;
+        self.selection = self.document.clamp_range(selection);
+        self.reversed = false;
+        self.marked = None;
+        self.typing_style = None;
+        self.finish_edit(cx);
+    }
+
+    /// Format ▸ Title / Heading / Subheading / Body / Monostyled: the
+    /// selected paragraphs take the role and its typeface, size and weight.
+    pub fn set_paragraph_role(&mut self, role: ParagraphRole, cx: &mut Context<Self>) {
+        if !self.editable {
+            return;
+        }
+        let indices = self.document.paragraph_indices(self.selection.clone());
+        let base = self.typography.as_ref().map(|typography| typography(role));
+        let mut document = self.document.clone();
+        document.update_paragraph_style(self.selection.clone(), |style| style.role = role);
+        if let Some(base) = &base {
+            document.update_paragraph_chars(indices, |style| apply_role_face(style, base));
+        }
+        if document == self.document {
+            return;
+        }
+        self.begin_edit(EditKind::Other);
+        self.document = document;
+        self.typing_style = None;
+        self.finish_edit(cx);
+    }
+
+    /// The role of the paragraph holding the selection's start.
+    pub fn paragraph_role(&self) -> ParagraphRole {
+        self.paragraph_style_at_selection().role
+    }
+
+    /// Format ▸ Block Quote: on unless the selection's first paragraph is
+    /// already quoted.
+    pub fn toggle_quote(&mut self, cx: &mut Context<Self>) {
+        let on = !self.paragraph_style_at_selection().quote;
+        self.change_paragraph_style(cx, move |style| style.quote = on);
+    }
+
+    /// Format ▸ Mark as Ticked (⇧⌘U): tick or untick the selected checklist
+    /// items, following the first one.
+    pub fn toggle_checked(&mut self, cx: &mut Context<Self>) {
+        let on = !self.paragraph_style_at_selection().checked;
+        self.change_paragraph_style(cx, move |style| {
+            if style.list == Some(ListKind::Checkbox) {
+                style.checked = on;
+            }
+        });
+    }
+
+    /// A click on paragraph `index`'s checkbox.
+    fn toggle_checkbox_at(&mut self, index: usize, cx: &mut Context<Self>) {
+        if !self.editable || index >= self.document.paragraph_count() {
+            return;
+        }
+        let start = self.document.paragraph_start(index);
+        self.begin_edit(EditKind::Other);
+        self.document.update_paragraph_style(start..start, |style| {
+            style.checked = !style.checked;
+        });
+        self.finish_edit(cx);
+        cx.emit(RichTextEvent::CheckboxToggled);
+    }
+
+    /// Format ▸ Text ▸ Writing Direction ▸ Selection: embed the selection
+    /// left to right or right to left, or remove the embedding.
+    pub fn set_selection_direction(&mut self, direction: WritingDirection, cx: &mut Context<Self>) {
+        self.change_char_style(cx, move |style| style.embedding = direction);
     }
 
     /// Select `range` (UTF-8 bytes) and scroll it into view.
@@ -581,6 +804,24 @@ impl RichTextEditor {
             return;
         }
         self.change_char_style(cx, move |style| style.link = target.clone());
+    }
+
+    /// Link `range` to `target` (or unlink it) without moving the
+    /// selection: Edit ▸ Substitutions ▸ Smart Links.
+    pub fn set_link_in(
+        &mut self,
+        range: Range<usize>,
+        target: Option<std::sync::Arc<str>>,
+        cx: &mut Context<Self>,
+    ) {
+        let range = self.document.clamp_range(range);
+        if !self.editable || range.is_empty() {
+            return;
+        }
+        self.begin_edit(EditKind::Other);
+        self.document
+            .update_char_style(range, |style| style.link = target.clone());
+        self.finish_edit(cx);
     }
 
     /// The link at the selection's start, for Edit ▸ Link…'s field.
@@ -857,6 +1098,8 @@ impl RichTextEditor {
             paper_color: self.paper_color,
             link_color: self.link_color,
             hyphenation: self.document.attributes().hyphenation,
+            metrics: self.list_metrics,
+            show_highlights: self.show_highlights,
         };
         if self.params.as_ref() != Some(&params) {
             self.layouts.clear();
@@ -1001,12 +1244,33 @@ impl RichTextEditor {
                 ));
             }
         }
+        let mut misspelled = Vec::new();
+        if self.misspelled.0 == self.revision {
+            for placed_paragraph in &placed {
+                let paragraph_range = self.document.paragraph_range(placed_paragraph.index);
+                for range in &self.misspelled.1 {
+                    if range.end <= paragraph_range.start || range.start >= paragraph_range.end {
+                        continue;
+                    }
+                    let local = range.start.max(paragraph_range.start) - paragraph_range.start
+                        ..range.end.min(paragraph_range.end) - paragraph_range.start;
+                    let origin = placed_paragraph.origin;
+                    for (x1, _, x2, y2) in placed_paragraph.layout.selection_rects(local, false) {
+                        misspelled.push(Bounds::from_corners(
+                            point(origin.x + x1, origin.y + y2 - px(3.0)),
+                            point(origin.x + x2, origin.y + y2 - px(1.0)),
+                        ));
+                    }
+                }
+            }
+        }
         self.placed = placed.clone();
         Frame {
             placed,
             selection,
             caret,
             marked,
+            misspelled,
             bounds,
         }
     }
@@ -1415,12 +1679,85 @@ impl RichTextEditor {
                 return;
             }
         }
-        self.insert(self.selection.clone(), "\n", EditKind::Typing, cx);
+        let (index, local) = self.document.locate(self.selection.start);
+        let before = self.document.paragraph(index).style();
+        let at_end = local >= self.document.paragraph(index).len();
+        let inserted = self.insert(self.selection.clone(), "\n", EditKind::Typing, cx);
+        // Return after a title or heading carries on in Body, and a new
+        // checklist item starts unticked.
+        let next = self.document.locate(inserted.end).0;
+        let mut adjusted = self.document.clone();
+        if before.role.is_heading() && at_end {
+            adjusted.update_paragraph_style(inserted.end..inserted.end, |style| {
+                style.role = ParagraphRole::Body;
+            });
+            let base = self
+                .typography
+                .as_ref()
+                .map(|typography| typography(ParagraphRole::Body));
+            if let Some(base) = base {
+                adjusted.update_paragraph_chars(next..next + 1, |style| {
+                    apply_role_face(style, &base);
+                });
+            }
+        }
+        if before.checked {
+            adjusted.update_paragraph_style(inserted.end..inserted.end, |style| {
+                style.checked = false;
+            });
+        }
+        if adjusted != self.document {
+            self.document = adjusted;
+            self.revision += 1;
+            cx.notify();
+        }
+    }
+
+    /// Smart Lists: "- ", "* ", "• " or "1. " typed at a paragraph's
+    /// start makes it a list item, and "[ ] " at a dashed or bulleted
+    /// item's start makes it a checklist item. Returns whether it did.
+    fn smart_list(&mut self, range: &Range<usize>, text: &str, cx: &mut Context<Self>) -> bool {
+        if !self.smart_lists || text != " " || !range.is_empty() || self.marked.is_some() {
+            return false;
+        }
+        let (index, local) = self.document.locate(range.start);
+        let paragraph = self.document.paragraph(index);
+        let prefix = &paragraph.text()[..local];
+        let change: Option<(ListKind, bool)> = match (paragraph.style().list, prefix) {
+            (None, "-") => Some((ListKind::Hyphen, false)),
+            (None, "*" | "\u{2022}") => Some((ListKind::Bullet, false)),
+            (None, "1." | "1)") => Some((ListKind::Numbered, false)),
+            (Some(ListKind::Hyphen | ListKind::Bullet), "[ ]" | "[]") => {
+                Some((ListKind::Checkbox, false))
+            }
+            (Some(ListKind::Hyphen | ListKind::Bullet), "[x]" | "[X]") => {
+                Some((ListKind::Checkbox, true))
+            }
+            _ => None,
+        };
+        let Some((list, checked)) = change else {
+            return false;
+        };
+        let start = self.document.paragraph_start(index);
+        self.begin_edit(EditKind::Other);
+        let style_here = self.document.style_at(start);
+        self.document
+            .replace_text(start..start + local, "", &style_here);
+        self.document
+            .update_paragraph_style(start..start, |paragraph| {
+                paragraph.list = Some(list);
+                paragraph.checked = checked;
+            });
+        self.selection = start..start;
+        self.reversed = false;
+        self.typing_style = None;
+        self.finish_edit(cx);
+        true
     }
 
     /// Whether Tab / ⇧Tab change list levels here: the caret at a list
     /// item's start, or a selection across list items.
-    fn at_list_item_start(&self) -> bool {
+    pub fn at_list_item_start(&self) -> bool {
         let (index, local) = self.document.locate(self.selection.start);
         let in_list = self.document.paragraph(index).style().list.is_some();
         if self.selection.is_empty() {
@@ -1441,6 +1778,11 @@ impl RichTextEditor {
         }
         if self.at_list_item_start() {
             self.change_list_level(1, cx);
+            return;
+        }
+        if self.tab_navigates {
+            // Notes: Tab moves on to the next field (the window's Tab).
+            cx.propagate();
             return;
         }
         self.insert(self.selection.clone(), "\t", EditKind::Typing, cx);
@@ -1479,6 +1821,11 @@ impl RichTextEditor {
     }
 
     fn paste(&mut self, _: &input::Paste, _: &mut Window, cx: &mut Context<Self>) {
+        self.paste_from_clipboard(cx);
+    }
+
+    /// Edit ▸ Paste: the clipboard, keeping a rich copy's styles.
+    pub fn paste_from_clipboard(&mut self, cx: &mut Context<Self>) {
         if !self.editable {
             return;
         }
@@ -1585,6 +1932,14 @@ impl RichTextEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A click on a checklist item's checkbox ticks it and leaves the
+        // insertion point where it was, as in Notes.
+        if event.click_count <= 1 && !event.modifiers.shift {
+            if let Some(index) = self.checkbox_at(event.position) {
+                self.toggle_checkbox_at(index, cx);
+                return;
+            }
+        }
         window.focus(&self.focus, cx);
         let offset = self.offset_at(event.position);
         self.goal_x = None;
@@ -1697,6 +2052,21 @@ impl RichTextEditor {
         self.pending_link = None;
     }
 
+    /// The paragraph whose checkbox is under a window position.
+    fn checkbox_at(&self, position: Point<Pixels>) -> Option<usize> {
+        let slop = px(3.0);
+        self.placed.iter().find_map(|placed| {
+            let (x, top, diameter, _) = placed.layout.checkbox_bounds()?;
+            let left = placed.origin.x + x - slop;
+            let upper = placed.origin.y + top - slop;
+            let hit = position.x >= left
+                && position.x <= left + diameter + slop * 2.0
+                && position.y >= upper
+                && position.y <= upper + diameter + slop * 2.0;
+            hit.then_some(placed.index)
+        })
+    }
+
     /// The character under a window position, if any.
     fn char_at(&self, position: Point<Pixels>) -> Option<usize> {
         let target = self.placed.iter().find(|placed| {
@@ -1772,6 +2142,9 @@ impl EntityInputHandler for RichTextEditor {
             .map(|range| self.document.range_from_utf16(&range))
             .or_else(|| self.marked.clone())
             .unwrap_or_else(|| self.selection.clone());
+        if self.smart_list(&range, text, cx) {
+            return;
+        }
         let kind = if self.marked.take().is_some() {
             EditKind::Composing
         } else {
@@ -1838,7 +2211,14 @@ impl EntityInputHandler for RichTextEditor {
     }
 }
 
-/// UTF-16 offset inside `text` → UTF-8 offset.
+/// A paragraph role's face over one run: family, size and weight follow
+/// the role; italic, colour and the rest stay the run's own.
+fn apply_role_face(style: &mut CharStyle, base: &CharStyle) {
+    style.family = base.family.clone();
+    style.size = base.size;
+    style.bold = base.bold;
+}
+
 /// Links a click opens: web and mail addresses. Anything else in a
 /// document (a local file, a custom scheme) stays inert.
 fn is_openable_link(link: &str) -> bool {
@@ -1848,6 +2228,7 @@ fn is_openable_link(link: &str) -> bool {
         .any(|scheme| lower.starts_with(scheme))
 }
 
+/// UTF-16 offset inside `text` → UTF-8 offset.
 fn utf8_offset_in(text: &str, utf16: usize) -> usize {
     let mut units = 0;
     for (index, character) in text.char_indices() {
@@ -2027,6 +2408,14 @@ impl gpui::Element for RichTextElement {
                 editor.focus.is_focused(window),
             )
         };
+        let (checkbox_ring, checkbox_fill, quote_bar_color) = {
+            let editor = self.editor.read(cx);
+            (
+                editor.checkbox_ring,
+                editor.checkbox_fill,
+                editor.quote_bar_color,
+            )
+        };
         window.handle_input(
             &focus,
             ElementInputHandler::new(bounds, self.editor.clone()),
@@ -2066,22 +2455,69 @@ impl gpui::Element for RichTextElement {
                 window.paint_quad(gpui::fill(*quad, selection_color));
             }
             for placed in &frame.placed {
-                if let (Some(marker), Some(first)) =
+                if let Some(bar_x) = placed.layout.quote_bar {
+                    let bar = Bounds::new(
+                        point(placed.origin.x + bar_x, placed.origin.y),
+                        size(px(3.0), placed.layout.height),
+                    );
+                    window.paint_quad(gpui::fill(bar, quote_bar_color));
+                }
+                if let Some((x, top, diameter, checked)) = placed.layout.checkbox_bounds() {
+                    let circle = Bounds::new(
+                        point(placed.origin.x + x, placed.origin.y + top),
+                        size(diameter, diameter),
+                    );
+                    let (background, border) = if checked {
+                        (checkbox_fill, checkbox_fill)
+                    } else {
+                        (gpui::transparent_black(), checkbox_ring)
+                    };
+                    window.paint_quad(gpui::quad(
+                        circle,
+                        diameter / 2.0,
+                        background,
+                        px(1.5),
+                        border,
+                        gpui::BorderStyle::default(),
+                    ));
+                    let check = placed
+                        .layout
+                        .marker
+                        .as_ref()
+                        .and_then(|marker| marker.line.as_ref());
+                    if let Some(check) = check {
+                        let glyph_height = check.ascent + check.descent;
+                        let origin = point(
+                            circle.origin.x + (diameter - check.width) / 2.0,
+                            circle.origin.y + (diameter - glyph_height) / 2.0,
+                        );
+                        let _ = check.paint(
+                            origin,
+                            glyph_height,
+                            gpui::TextAlign::Left,
+                            None,
+                            window,
+                            cx,
+                        );
+                    }
+                } else if let (Some(marker), Some(first)) =
                     (&placed.layout.marker, placed.layout.lines.first())
                 {
-                    let origin = point(
-                        placed.origin.x + marker.x,
-                        placed.origin.y + first.top + first.ascent - marker.line.ascent,
-                    );
-                    let line_height = marker.line.ascent + marker.line.descent;
-                    let _ = marker.line.paint(
-                        origin,
-                        line_height,
-                        gpui::TextAlign::Left,
-                        None,
-                        window,
-                        cx,
-                    );
+                    if let Some(label) = &marker.line {
+                        let origin = point(
+                            placed.origin.x + marker.x,
+                            placed.origin.y + first.top + first.ascent - label.ascent,
+                        );
+                        let line_height = label.ascent + label.descent;
+                        let _ = label.paint(
+                            origin,
+                            line_height,
+                            gpui::TextAlign::Left,
+                            None,
+                            window,
+                            cx,
+                        );
+                    }
                 }
                 for line in &placed.layout.lines {
                     for piece in &line.pieces {
@@ -2134,6 +2570,22 @@ impl gpui::Element for RichTextElement {
             }
             for quad in &frame.marked {
                 window.paint_quad(gpui::fill(*quad, caret_color));
+            }
+            // The Mac's misspelling mark: a row of round red dots.
+            let dot = px(2.0);
+            for underline in &frame.misspelled {
+                let mut x = underline.left();
+                while x + dot <= underline.right() {
+                    window.paint_quad(gpui::quad(
+                        Bounds::new(point(x, underline.top()), size(dot, dot)),
+                        dot / 2.0,
+                        rmac_ui::mac::system_red(),
+                        px(0.0),
+                        gpui::transparent_black(),
+                        gpui::BorderStyle::default(),
+                    ));
+                    x += dot * 2.0;
+                }
             }
             if let Some(caret) = frame.caret {
                 window.paint_quad(gpui::fill(caret, caret_color));

@@ -130,7 +130,76 @@ impl Settings {
                 }
             }
         }
+        // The Mac's Options… at the foot of the pane.
+        if self
+            .lock_policy
+            .is_some_and(|policy| policy.options_supported)
+        {
+            let options_view = view.clone();
+            cards.push(footer_buttons(vec![push_button(
+                "battery-options",
+                "Options…",
+            )
+            .on_click(move |_, _, cx| {
+                options_view.update(cx, |settings, cx| {
+                    settings.set_battery_options_sheet(true, cx)
+                });
+            })
+            .into_any_element()]));
+        }
         self.pane(cards)
+    }
+
+    /// Battery ▸ Options…: the options Lulo OS carries out (the Mac's
+    /// display dimming, disk sleep, Wake for network access and video
+    /// streaming rows have no Lulo OS backend yet).
+    pub(in crate::controller) fn render_battery_options_sheet(
+        &self,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.battery_options_sheet {
+            return None;
+        }
+        let policy = self.lock_policy.filter(|policy| policy.options_supported)?;
+        let view = cx.entity();
+        let toggle_view = view.clone();
+        let row = row_base()
+            .child(text_block(
+                "Prevent automatic sleeping on power adapter when the display is off".into(),
+                None,
+            ))
+            .child(
+                Toggle::new("battery-prevent-sleep")
+                    .checked(policy.prevent_sleep_on_adapter)
+                    .disabled(self.lock_policy_busy)
+                    .on_click(move |value, _, cx| {
+                        toggle_view.update(cx, |settings, cx| {
+                            settings.set_prevent_sleep_on_adapter(*value, cx)
+                        });
+                    }),
+            )
+            .into_any_element();
+        let body = div().v_flex().child(card(vec![row]));
+        let done_view = view.clone();
+        Some(
+            settings_sheet(
+                "battery-options-sheet",
+                520.0,
+                150.0,
+                None,
+                body.into_any_element(),
+                vec![sheet_default_button(
+                    "battery-options-done",
+                    "Done",
+                    move |_, cx| {
+                        done_view.update(cx, |settings, cx| {
+                            settings.set_battery_options_sheet(false, cx)
+                        });
+                    },
+                )],
+            )
+            .into_any_element(),
+        )
     }
 
     fn battery_history_group(&self, battery: &rmac_power::Battery, cx: &Context<Self>) -> Div {

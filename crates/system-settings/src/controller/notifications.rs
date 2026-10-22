@@ -231,16 +231,20 @@ impl Settings {
                 cards.push(card(rows));
             }
         }
-        let refresh_view = view.clone();
-        cards.push(footer_buttons(vec![push_button(
-            "notifications-refresh",
-            "Refresh",
-        )
-        .disabled(self.notifications_loading || self.notification_busy.is_some())
-        .on_click(move |_, _, cx| {
-            refresh_view.update(cx, |settings, cx| settings.refresh_notifications(cx));
-        })
-        .into_any_element()]));
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.notification_error.is_some() || self.notification_stream_error.is_some() {
+            let refresh_view = view.clone();
+            cards.push(footer_buttons(vec![push_button(
+                "notifications-refresh",
+                "Refresh",
+            )
+            .disabled(self.notifications_loading || self.notification_busy.is_some())
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_notifications(cx));
+            })
+            .into_any_element()]));
+        }
         self.pane(cards)
     }
 

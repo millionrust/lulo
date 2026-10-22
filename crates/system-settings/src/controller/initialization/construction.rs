@@ -410,6 +410,7 @@ impl Settings {
             battery_history_long: false,
             battery_health_sheet: false,
             hot_corners_sheet: false,
+            battery_options_sheet: false,
             menu_bar_sheet: None,
             startup_disks: None,
             startup_disk_selected: None,

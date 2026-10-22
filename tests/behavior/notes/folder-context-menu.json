@@ -1,0 +1,14 @@
+{
+  "title": "Notes: right-clicking a folder in the sidebar shows its folder menu (NOTES-26)",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "shift-cmd-n", "settle": 1.5},
+    {"context": "New Folder, 0 notes", "settle": 1},
+    {"observe": "menu", "facts": ["menu"]},
+    {"key": "escape", "settle": 0.5},
+    {"observe": "closed", "facts": ["menu"]}
+  ]
+}

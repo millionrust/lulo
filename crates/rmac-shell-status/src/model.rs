@@ -111,14 +111,6 @@ pub struct MicrophoneIndicator {
     pub apps: Vec<String>,
 }
 
-/// A screen recording is running (SHOT-01): the menu bar shows the stop
-/// button until it ends.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ScreenRecordingIndicator {
-    /// When it started, in Unix milliseconds.
-    pub started_unix_ms: u64,
-}
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     /// Enabled outputs with valid logical geometry, stripped of hardware
@@ -136,8 +128,6 @@ pub struct Snapshot {
     /// Always shown when set, whatever the indicator settings say: like the
     /// Mac's, the privacy indicator cannot be hidden.
     pub microphone: Option<MicrophoneIndicator>,
-    /// Always shown while set, like the privacy indicator.
-    pub screen_recording: Option<ScreenRecordingIndicator>,
     pub clock: rmac_shell_settings::ClockSettings,
 }
 
@@ -153,7 +143,6 @@ pub enum Event {
     Settings(rmac_shell_settings::ShellSettings),
     Notifications(NotificationIndicator),
     Focus(Option<FocusIndicator>),
-    ScreenRecording(Option<ScreenRecordingIndicator>),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

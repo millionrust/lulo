@@ -28,8 +28,14 @@ rmac-sound.workspace = true
 rmac-storage.workspace = true
 uuid.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
-# Screen recording (SHOT-01): niri's screen cast over D-Bus, and SIGINT to
-# the encoder to end the file.
-libc.workspace = true
-zbus.workspace = true
+# Windows: the Lulo layer hosts the service (`service::start`), reading the
+# window list and the screen's pixels itself (`capture`).
+[target.'cfg(windows)'.dependencies]
+image = { workspace = true, features = ["png"] }
+rmac-compositor-system.workspace = true
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+] }

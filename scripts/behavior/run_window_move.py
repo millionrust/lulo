@@ -30,12 +30,12 @@ import run_lulo  # noqa: E402
 import wlinput  # noqa: E402
 
 
-def gtk_window() -> int:
+def gtk_window(app_id: str = "org.example.WindowMoveTest") -> int:
     import gi
     gi.require_version("Gtk", "4.0")
     from gi.repository import Gtk
 
-    app = Gtk.Application(application_id="org.example.WindowMoveTest")
+    app = Gtk.Application(application_id=app_id)
     app.connect("activate", lambda app: _show_gtk(app, Gtk))
     return app.run([])
 
@@ -100,7 +100,8 @@ class Run:
         print(f"{'PASS' if ok else 'FAIL'} {name}{(': ' + detail) if detail else ''}", flush=True)
 
     def niri(self, *args: str):
-        request = {("windows",): "Windows", ("outputs",): "Outputs"}.get(args)
+        request = {("windows",): "Windows", ("outputs",): "Outputs",
+                   ("workspaces",): "Workspaces", ("layers",): "Layers"}.get(args)
         if request is None:
             raise ValueError(f"unsupported niri query: {args}")
         last_error = None
@@ -718,8 +719,98 @@ class Run:
         process.terminate()
         process.wait(10)
 
+    def niri_action(self, action: dict) -> None:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(2.0)
+            connection.connect(self.env["NIRI_SOCKET"])
+            connection.sendall(json.dumps({"Action": action}).encode() + b"\n")
+            with connection.makefile("rb") as stream:
+                stream.readline(1024 * 1024)
+
+    def shell_settings(self, change) -> None:
+        """Change this run's private shell settings the way Settings does:
+        a whole new document renamed into place, which Mission Control's
+        watcher follows."""
+        path = Path(self.env["XDG_CONFIG_HOME"]) / "rmac" / "shell.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            document = json.loads(path.read_text())
+        except (OSError, ValueError):
+            document = {"version": 4, "settings": {}}
+        change(document.setdefault("settings", {}))
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(document))
+        temporary.replace(path)
+
+    def workspace_of(self, app_id: str) -> str | None:
+        window = self.window(app_id)
+        if not window:
+            return None
+        names = {workspace["id"]: workspace.get("name") for workspace in self.niri("workspaces") or []}
+        return names.get(window.get("workspace_id"))
+
+    def placed(self, wanted: dict[str, str]):
+        """Wait until every app's window is on its wanted workspace."""
+        return self.wait_for(lambda: all(self.workspace_of(app) == name
+                                         for app, name in wanted.items()), 10)
+
+    def where(self, *apps: str) -> str:
+        return ", ".join(f"{app.rsplit('.', 1)[-1]}={self.workspace_of(app)}" for app in apps)
+
+    def assert_stage_manager(self) -> None:
+        """ADR 0030: with Stage Manager on, the focused app keeps the
+        stage and the others wait on the hidden rmac-stage workspace,
+        drawn as the strip; choosing a set (the strip, or focus from the
+        Dock or Command-Tab) swaps it in; a wallpaper click sends the stage
+        to the strip; turning it off brings every set back."""
+
+        first, second = "org.example.StageFirst", "org.example.StageSecond"
+        stage, desktop = "rmac-stage", "Desktop"
+        script = str(Path(__file__).resolve())
+        self.spawn([sys.executable, script, "--gtk-window", "--gtk-app-id", first], "stage-first")
+        self.check("the first app's window mapped", bool(self.wait_for(lambda: self.window(first), 40)))
+        time.sleep(1)
+        self.spawn([sys.executable, script, "--gtk-window", "--gtk-app-id", second], "stage-second")
+        self.check("the second app's window mapped", bool(self.wait_for(lambda: self.window(second), 40)))
+        ok = self.placed({first: stage, second: desktop})
+        self.check("opening an app sends the stage's app to the strip", bool(ok), self.where(first, second))
+        strip = self.wait_for(lambda: any(layer.get("namespace") == "rmac-stage-strip"
+                                          for layer in self.niri("layers") or []), 10)
+        self.check("the strip is drawn down the left edge", bool(strip))
+
+        # The strip's one set sits in the middle of its edge, between the
+        # Dock's reserved edge and the top: click its middle.
+        bottom = self.height - 70
+        self.pointer.click(*self.parent_point(70, bottom / 2), self.parent_width, self.parent_height)
+        ok = self.placed({first: desktop, second: stage})
+        self.check("clicking a set in the strip swaps it onto the stage", bool(ok), self.where(first, second))
+
+        # The Dock and Command-Tab focus a waiting window: it comes back.
+        waiting = self.window(second)
+        if waiting:
+            self.niri_action({"FocusWindow": {"id": waiting["id"]}})
+        ok = self.placed({first: stage, second: desktop})
+        self.check("focusing a waiting app's window brings its set back", bool(ok), self.where(first, second))
+
+        subprocess.run([str(Path(self.args.bin_dir) / "mission-control"), "wallpaper-click"],
+                       env=self.env, timeout=10)
+        ok = self.placed({first: stage, second: stage})
+        self.check("a wallpaper click sends the stage to the strip", bool(ok), self.where(first, second))
+
+        self.shell_settings(lambda settings: settings.setdefault("stage_manager", {}).update(enabled=False))
+        ok = self.placed({first: desktop, second: desktop})
+        self.check("turning Stage Manager off brings every set back", bool(ok), self.where(first, second))
+        gone = self.wait_for(lambda: not any(layer.get("namespace") == "rmac-stage-strip"
+                                             for layer in self.niri("layers") or []), 10)
+        self.check("the strip goes with it", bool(gone))
+
     def run(self) -> int:
+        if self.args.stage_manager:
+            self.shell_settings(lambda settings: settings.update(stage_manager={"enabled": True}))
         self.start()
+        if self.args.stage_manager:
+            self.assert_stage_manager()
+            return self.finish()
         if self.args.edge_tiling:
             self.assert_edge_tile()
             return self.finish()
@@ -791,7 +882,8 @@ def outer(args: argparse.Namespace) -> int:
                                 *(["--extra-zoom"] if args.extra_zoom else []),
                                 *(["--frame-only"] if args.frame_only else []),
                                 *(["--geometry-only"] if args.geometry_only else []),
-                                *(["--edge-tiling"] if args.edge_tiling else [])], env=env)
+                                *(["--edge-tiling"] if args.edge_tiling else []),
+                                *(["--stage-manager"] if args.stage_manager else [])], env=env)
     finally:
         runtime = Path(env["XDG_RUNTIME_DIR"])
         if run_lulo.reap(runtime):
@@ -815,11 +907,14 @@ def main() -> int:
     parser.add_argument("--geometry-only", action="store_true", help="capture Settings before and after its screen-fit resize")
     parser.add_argument("--edge-tiling", action="store_true",
                         help="drag a window to the left edge and expect the left half (needs Lulo's niri)")
+    parser.add_argument("--stage-manager", action="store_true",
+                        help="turn Stage Manager on and swap two apps' sets (ADR 0030)")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--gtk-window", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--gtk-app-id", default="org.example.WindowMoveTest", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.gtk_window:
-        return gtk_window()
+        return gtk_window(args.gtk_app_id)
     if args.inner:
         return Run(args, args.inner).run()
     if not args.bin_dir:

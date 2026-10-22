@@ -190,7 +190,7 @@ struct Service {
     stage: crate::stage::Stage,
     /// The strip, with the output and the number of sets it was sized for.
     #[cfg(target_os = "linux")]
-    strip: Option<(WindowHandle<StageStrip>, (Option<OutputId>, usize))>,
+    strip: Option<(WindowHandle<StageStrip>, StripKey)>,
 }
 
 /// Edge-drag tiling's preview: a frosted outline of the tile the window
@@ -1908,6 +1908,10 @@ fn open_edge_preview(
 
 // ---------------------------------------------------------------------
 // Stage Manager's strip (ADR 0030)
+
+/// The output and the number of sets a strip surface was sized for.
+#[cfg(target_os = "linux")]
+type StripKey = (Option<OutputId>, usize);
 
 /// One set in the strip.
 #[cfg(target_os = "linux")]

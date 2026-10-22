@@ -358,6 +358,7 @@ try {
         if (-not $gone) { Stop-Process -Id $note.Id -ErrorAction SilentlyContinue }
     }
     Check 'screenshots: Ctrl+Shift+3 and Ctrl+Shift+4' {
+        $checkStarted = Get-Date
         Front-Calc
         $m = Mark
         [void](Keys @($VK.Ctrl, $VK.Shift, 0x33))
@@ -372,8 +373,12 @@ try {
             $R::Drag($f.X + 20, $f.Y + 40, $f.X + 160, $f.Y + 200)
         }
         $area = Wait-Trace '^screenshot saved (.+)$' $m2 8
-        # The robot's own files on the Desktop go at once.
-        foreach ($line in @($screen, $area)) { if ($line -match '^screenshot saved (.+)$') { Remove-Item -LiteralPath $Matches[1] -ErrorAction SilentlyContinue } }
+        # The robot's own captures on the Desktop go at once (found by the
+        # file system: the trace's file name loses the narrow space).
+        $desk = [Environment]::GetFolderPath('Desktop')
+        Get-ChildItem $desk -Filter 'Screenshot *.png' -ErrorAction SilentlyContinue |
+            Where-Object { $_.CreationTime -gt $checkStarted } |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
         Note 'screenshots: Ctrl+Shift+3 and Ctrl+Shift+4' ($screen -and $area) "screen: $screen; area: $area"
     }
     Check 'volume: the mute key shows the Sound panel' {

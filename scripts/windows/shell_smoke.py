@@ -2897,8 +2897,22 @@ def check_exit_paths(
     started = start()
     if started is not None:
         session, _ = started
-        # This session's own bar, not the last one's.
-        title = log.wait_for(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$", 15.0, after=session_mark)
+        # This session's own bar once it sits in its strip at the top (its
+        # first layout can come while the window is still being placed).
+        def placed_title():
+            strip = None
+            title = None
+            for line in log.lines()[session_mark:]:
+                found = re.match(r"^strip rmac-top-bar-\d+ at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", line)
+                strip = found or strip
+                found = re.match(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$", line)
+                title = found or title
+            if strip is None or title is None:
+                return None
+            top, bottom = int(strip.group(2)), int(strip.group(4))
+            return title if top <= int(title.group(2)) < bottom else None
+
+        title = wait_until(placed_title, 15.0)
         if title is not None:
             time.sleep(2.0)
             on = None

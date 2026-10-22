@@ -23,10 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{
-    Action, Distance, Event, LogicalRect, Output, OutputId, State, Window, WindowId,
-    PARKING_WORKSPACE,
-};
+use crate::{Action, Distance, Event, LogicalRect, Output, OutputId, State, Window, WindowId};
 
 /// Compositor rounding: frames snap to physical pixels.
 const SLACK: f64 = 1.0;
@@ -335,7 +332,7 @@ impl Placer {
             return None;
         }
         let workspace = state.workspaces.get(&window.workspace?)?;
-        if workspace.name.as_deref() == Some(PARKING_WORKSPACE) {
+        if crate::is_hidden_workspace(workspace.name.as_deref()) {
             return None;
         }
         let visible = *self.frames.get(workspace.output.as_ref()?)?;

@@ -135,7 +135,7 @@ fn settings() -> ShellSettings {
             bottom_right: HotCornerAction::Desktop,
             ..HotCornerSettings::default()
         },
-        click_wallpaper_to_reveal: ClickWallpaperToReveal::Never,
+        click_wallpaper_to_reveal: ClickWallpaperToReveal::OnlyInStageManager,
         double_click_title_bar: DoubleClickTitleBarAction::Fill,
         ..ShellSettings::default()
     }
@@ -600,14 +600,21 @@ fn click_wallpaper_to_reveal_defaults_to_always_like_macos() {
     std::fs::remove_dir_all(root).unwrap();
 
     assert_eq!(
-        serde_json::to_value(ClickWallpaperToReveal::Never).unwrap(),
-        "never"
+        serde_json::to_value(ClickWallpaperToReveal::OnlyInStageManager).unwrap(),
+        "only-in-stage-manager"
     );
-    assert!(serde_json::from_str::<ClickWallpaperToReveal>(r#""only-in-stage-manager""#).is_err());
+    // A choice saved before Stage Manager existed reads as its stand-in.
+    assert_eq!(
+        serde_json::from_str::<ClickWallpaperToReveal>(r#""never""#).unwrap(),
+        ClickWallpaperToReveal::OnlyInStageManager
+    );
     assert_eq!(
         ClickWallpaperToReveal::ALL.map(ClickWallpaperToReveal::title),
-        ["Always", "Never"]
+        ["Always", "Only in Stage Manager"]
     );
+    // Stage Manager is off until it is turned on.
+    assert!(!ShellSettings::default().stage_manager.enabled);
+    assert!(ShellSettings::default().stage_manager.show_recent_apps);
 }
 
 #[test]

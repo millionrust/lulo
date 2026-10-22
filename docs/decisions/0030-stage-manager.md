@@ -1,8 +1,8 @@
 # ADR 0030 — Stage Manager on niri
 
-- **Status:** proposed 2026-10-20.
-- **Scope:** a new `rmac-stage-manager` mode inside `shell/bins/rmac-mission-control` (the resident
-  window service), Control Centre's Stage Manager control, Desktop & Dock's "Desktop & Stage
+- **Status:** accepted 2026-10-22; built behind its off-by-default switch (see "As built").
+- **Scope:** a Stage Manager mode inside `shell/bins/rmac-mission-control` (the resident
+  window service, `src/stage.rs`), Control Centre's Stage Manager control, Desktop & Dock's "Desktop & Stage
   Manager" group (docs/parity.md CC-07, DOCK-23), `rmac-compositor` window actions.
 
 ## Context
@@ -50,3 +50,30 @@ parking workspace (ADR 0021) and floating-frame actions (WIN-01).
 - Thumbnails are as fresh as the last time the window was on screen, as on macOS.
 - Work items: settings field and Control Centre circle; strip surface; set model and swap;
   stage margin; Desktop & Dock group (DOCK-23); a nested scenario that swaps two sets.
+
+## As built (2026-10-22)
+
+- **Sets wait on their own hidden workspace, `rmac-stage`**, not the parking workspace: a set's
+  windows are running windows, so the Dock must not show them as minimised and Restore must not
+  pick them up. `shell.kdl` names it after `rmac-parking`; `rmac_compositor::is_hidden_workspace`
+  keeps both out of Spaces, Mission Control, the window placer and the Dock's restore target.
+- **The model** (`stage.rs`, unit-tested) runs on each compositor event while Stage Manager is on:
+  when an app's window on a Space takes the focus, the other apps' windows on that Space move to
+  `rmac-stage`; when a window waiting there takes the focus (the Dock, Command-Tab), its set moves
+  back and the focus follows. Each move is asked once until it lands. A click on a set in the strip
+  moves it straight back, so niri never shows the stage workspace. A wallpaper click with Stage
+  Manager on sends the stage's set to the strip, as on macOS, and "Click wallpaper to reveal
+  desktop" now offers macOS's Always / Only in Stage Manager (a saved "never" reads as the latter).
+  Turning it off, or the service starting with it off, brings every waiting window back.
+- **The strip** is a Top-layer surface anchored to the left edge, centred between the menu bar
+  and the Dock, up to six sets with the most recent at the top: the set's last window picture
+  when Mission Control has one, otherwise its app icon on a window plate, with the app's other
+  windows peeking out behind. It is redrawn only on compositor and settings events.
+- **The switches:** Control Centre's Stage Manager circle (first, as macOS 26 orders it; Low Power
+  moves to the end) and Desktop & Dock's "Stage Manager" and "Show recent apps in Stage Manager"
+  write `stage_manager` in shell settings. Lulo OS only: Windows keeps its own window management.
+- **Not yet:** the stage margin that nudges windows out from under the strip, tilted live
+  thumbnails, "Show windows from an application: One at a Time", dragging a thumbnail onto the
+  stage to group windows, and showing desktop items in Stage Manager. Choosing a set from the Dock
+  or Command-Tab briefly shows the stage workspace before the set comes back (a niri patch that
+  focuses without switching workspace would remove it).

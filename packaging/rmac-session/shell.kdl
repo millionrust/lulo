@@ -136,6 +136,10 @@ workspace "Desktop"
 // Spaces bar, Mission Control, the app switcher, and Dock running counts (§2.2).
 workspace "rmac-parking"
 
+// Stage Manager (ADR 0030) keeps the other apps' sets here while one set is
+// on the stage; the shell hides it like the parking workspace.
+workspace "rmac-stage"
+
 // macOS uses freely movable, overlapping application windows. Keep niri as
 // the Wayland compositor, but make its normal presentation floating instead
 // of exposing the scrolling-tiler layout as the product experience.

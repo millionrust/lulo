@@ -1171,9 +1171,11 @@ class Run:
         idle (no frames are requested once the motion ends)."""
 
         namespace = "rmac-quick-settings"
-        box = (OUTPUT_W - 420, 30, OUTPUT_W, 540)
+        box = (OUTPUT_W - 420, 30, OUTPUT_W, 640)
         has_backlight = self.has_fake_backlight()
-        rows = 5 if has_backlight else 4
+        # Stage Manager's circle makes at least three round controls, which
+        # take two slots and move Focus to a row of its own (ADR 0030).
+        rows = 6 if has_backlight else 5
 
         def bottom(image: Image.Image, baseline_box: Image.Image) -> int:
             """Lowest row, in screen pixels, where `image` (the panel's box)

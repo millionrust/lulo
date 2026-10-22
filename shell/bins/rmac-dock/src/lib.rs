@@ -2145,8 +2145,14 @@ mod dock {
                 Phase::Cancel => self.clear_incoming(cx),
                 Phase::Drop => {
                     let Some(index) = self.drop_destination(position, cx) else {
+                        rmac_shell_layer::windows::trace::trace(|| {
+                            format!("dock apps drop {}: no place", hint.app_id)
+                        });
                         return;
                     };
+                    rmac_shell_layer::windows::trace::trace(|| {
+                        format!("dock apps drop {} at {index}", hint.app_id)
+                    });
                     let pinned = self.model_snapshot(cx).map(|model| {
                         model
                             .items
@@ -3274,6 +3280,15 @@ mod dock {
                 let state = if trash_full { "full" } else { "empty" };
                 lines.push(format!("dock tile trash at {x},{y} {state}"));
                 rmac_shell_layer::windows::trace::trace_changed("dock tiles", || lines.join("\n"));
+                // Whether a drop's order is still being saved (the Dock takes
+                // no new drag until it is), for the Windows checks.
+                rmac_shell_layer::windows::trace::trace_changed("dock pins", || {
+                    if self.pending_pins.is_some() {
+                        "dock pins saving".to_owned()
+                    } else {
+                        "dock pins saved".to_owned()
+                    }
+                });
                 // The open tile menu's rows, for the Windows robot.
                 rmac_shell_layer::windows::trace::trace_changed("dock menu", || {
                     match &self.context_menu {

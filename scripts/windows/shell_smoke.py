@@ -777,6 +777,25 @@ def clear_of_minute(now: float, settle: float, window: float, margin: float = 0.
     return settle
 
 
+def line_index(log: "Log", pattern: str, after: int = 0) -> int | None:
+    """The index of the first trace line from `after` on matching `pattern`."""
+    for index, line in enumerate(log.lines()[after:], after):
+        if re.search(pattern, line):
+            return index
+    return None
+
+
+def trimmed_after(log: "Log", close_pattern: str, after: int, timeout: float = 10.0) -> bool:
+    """Wait until the panel that `close_pattern` reports has closed and the
+    shell has given back its memory (`memory panel closed`, two seconds
+    after a panel closes), so a reading is taken at the same point every
+    run, not before or after the trim by chance."""
+    closed = wait_until(lambda: line_index(log, close_pattern, after), timeout)
+    if closed is None:
+        return False
+    return log.wait_for(r"^memory panel closed:", timeout, after=closed) is not None
+
+
 def wait_until(predicate, timeout: float = STEP_TIMEOUT_SECONDS, interval: float = 0.05):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -1108,6 +1127,15 @@ def check_shell(
                 menus = log.wait_for(r"^menus from org\.rmac\.Calculator", after=before)
                 title = log.wait_for(r"^bar title 1 Calculator at (-?\d+),(-?\d+)$", after=before)
                 if menus is None or title is None:
+                    # The first window's focus can reach the bar before
+                    # Calculator's menu pipe is up on a busy runner: bring it
+                    # to the front again, once, as a user would click it.
+                    print(f"shell: Calculator's menus not in the bar yet (menus {menus is not None}, title {title is not None}); once more")
+                    retry = len(log.lines())
+                    bring_to_front(calculator[1])
+                    menus = menus or log.wait_for(r"^menus from org\.rmac\.Calculator", 15.0, after=retry)
+                    title = log.wait_for(r"^bar title 1 Calculator at (-?\d+),(-?\d+)$", 15.0, after=before)
+                if menus is None or title is None:
                     failures.append("the bar does not show Calculator's menus")
                 else:
                     pid, _ = calculator
@@ -1281,7 +1309,8 @@ def check_shell(
         note_memory(shell_pid, "after Spotlight opened Text Editor and Notepad")
         # 6b. A closed Spotlight lets go of its window and file list.
         released = log.wait_for(r"^layer rmac-launcher closed", 15.0, after=before)
-        time.sleep(2.0)
+        trimmed = trimmed_after(log, r"^layer rmac-launcher closed", before)
+        print(f"shell: the shell gave back Spotlight's memory: {trimmed}")
         memory = memory_mb(shell_pid)
         print(
             f"shell: lulo-shell memory after Spotlight closed: {memory} "
@@ -2169,6 +2198,15 @@ def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | No
             terminate(pid)
         process = subprocess.Popen([str(exe)], env=environment)
         found = wait_until(lambda: app_window(f"{app}.exe"), 20.0)
+        if found is None:
+            # Once more, as a user would click again: say how the first
+            # start ended.
+            print(f"shell: {app} opened no window in 20 s (exit {process.poll()}); once more")
+            for pid in processes_named(f"{app}.exe"):
+                terminate(pid)
+            time.sleep(1.0)
+            process = subprocess.Popen([str(exe)], env=environment)
+            found = wait_until(lambda: app_window(f"{app}.exe"), 20.0)
         time.sleep(1.5)
         if found is None:
             failures.append(f"{app} opened no window for the placement check")
@@ -2562,6 +2600,19 @@ def slow_drag(start: tuple[int, int], end: tuple[int, int], hold: float = 0.4) -
     time.sleep(0.3)
 
 
+def wait_pins_saved(log: Log, timeout: float = 10.0) -> None:
+    """Until the Dock has saved its last drop (`dock pins saved`)."""
+    wait_until(lambda: (log.last(r"^dock pins (saving|saved)$") or [None, "saved"])[1] == "saved", timeout)
+
+
+def stable_line(log: Log, pattern: str, quiet: float):
+    """The last line matching `pattern` once no newer one came for `quiet` s."""
+    before = log.last(pattern)
+    time.sleep(quiet)
+    after = log.last(pattern)
+    return after if after is not None and before is not None and after.group(0) == before.group(0) else None
+
+
 def kept_index(log: Log, app_id: str) -> int | None:
     kept, _ = dock_groups(log)
     return next((index for index, (tile, _, _) in enumerate(kept) if tile == app_id), None)
@@ -2603,7 +2654,7 @@ def check_dock_drag(
         save(screenshots, "dock-drag-kept")
         # The Dock shows a drop's order at once, and takes no new drag until
         # the saved settings confirm it.
-        time.sleep(2.5)
+        wait_pins_saved(log)
         # Reorder: Files, Clock, Apps, Notes… → between Apps and Notes.
         kept, _ = dock_groups(log)
         tile = kept[1]
@@ -2617,7 +2668,7 @@ def check_dock_drag(
             print("shell: dock drag: the kept Clock reorders by dragging")
         # Drag it off the Dock and hold: released there it is no longer
         # kept, and as it runs it stays among the running apps.
-        time.sleep(2.5)
+        wait_pins_saved(log)
         kept, _ = dock_groups(log)
         tile = next((tile for tile in kept if tile[0] == clock_id), None)
         if tile is not None:
@@ -2636,6 +2687,7 @@ def check_dock_drag(
         process.wait(timeout=10)
     # An app dragged out of Apps between the first two kept apps is kept
     # second.
+    wait_pins_saved(log)
     kept, _ = dock_groups(log)
     if len(kept) < 2:
         failures.append("dock drag: the Dock has fewer than two kept apps")
@@ -2655,9 +2707,20 @@ def check_dock_drag(
         return
     app_id = dock_app_id(first.group(1))
     was_kept = kept_index(log, app_id)
-    time.sleep(0.8)
-    slow_drag((int(first.group(2)), int(first.group(3))), between(kept, 0), hold=0.6)
-    kept_second = wait_until(lambda: kept_index(log, app_id) == 1, 10.0)
+    kept_second = None
+    for attempt in range(2):
+        # Apps slides in: drag from where its first tile settles.
+        settled = wait_until(lambda: stable_line(log, r"^apps first tile (\S+) at (-?\d+),(-?\d+)", 0.6), 5.0)
+        first = settled or first
+        mark = len(log.lines())
+        slow_drag((int(first.group(2)), int(first.group(3))), between(kept, 0), hold=0.6)
+        drop = log.wait_for(r"^dock apps drop ", 5.0, after=mark)
+        kept_second = wait_until(lambda: kept_index(log, app_id) == 1, 10.0)
+        print(f"shell: dock drag from Apps, try {attempt + 1}: {drop.group(0) if drop else 'no drop reached the Dock'}")
+        if kept_second is not None or drop is not None:
+            break
+        # A synthetic drag between two windows can be lost on a busy
+        # runner before it reaches the Dock: once more.
     save(screenshots, "dock-drag-from-apps")
     tap(VK_ESCAPE)
     time.sleep(0.5)
@@ -2671,7 +2734,7 @@ def check_dock_drag(
     if was_kept is not None:
         return
     # Leave the Dock as it was: drag it off again.
-    time.sleep(2.5)
+    wait_pins_saved(log)
     kept, _ = dock_groups(log)
     tile = kept[1]
     slow_drag((tile[1], tile[2]), (tile[1], tile[2] - 260), hold=1.0)
@@ -2703,6 +2766,15 @@ def check_memory_after_use(log: Log, shell_pid: int, measurements: dict, failure
         tap(VK_ESCAPE)
     released = log.wait_for(r"^layer rmac-launcher closed", 20.0, after=mark)
     menu_released = log.wait_for(r"^layer rmac-menu-material-\S+ closed", 20.0, after=mark)
+    # The later of the two closes, then its trim, as for the first reading.
+    last_close = max(
+        (index for index in (
+            line_index(log, r"^layer rmac-launcher closed", mark),
+            line_index(log, r"^layer rmac-menu-material-\S+ closed", mark),
+        ) if index is not None),
+        default=mark,
+    )
+    log.wait_for(r"^memory panel closed:", 10.0, after=last_close)
     time.sleep(30.0)
     memory = memory_mb(shell_pid)
     for line in log.lines()[mark:]:
@@ -2821,10 +2893,12 @@ def check_exit_paths(
 
     # Uninstall (the installer runs `lulo-session --uninstall`): Lulo turns
     # off and Use Files for Folders, turned on from the Lulo menu, is undone.
+    session_mark = len(log.lines())
     started = start()
     if started is not None:
         session, _ = started
-        title = log.last(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$")
+        # This session's own bar, not the last one's.
+        title = log.wait_for(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$", 15.0, after=session_mark)
         if title is not None:
             time.sleep(2.0)
             row = None
@@ -2836,11 +2910,17 @@ def check_exit_paths(
                     break
                 tap(VK_ESCAPE)
                 time.sleep(1.0)
+            on = None
             if row:
                 time.sleep(0.8)
                 save(screenshots, "lulo-menu-files-for-folders")
                 click(int(row.group(1)), int(row.group(2)))
-            on = log.wait_for(r"^files for folders on", 5.0, after=mark)
+                on = log.wait_for(r"^files for folders on", 5.0, after=mark)
+                if on is None and log.wait_for(r"^menu closed", 0.5, after=mark) is None:
+                    # The menu was still opening: the click missed the row.
+                    print("shell: Use Files for Folders: the row did not take the click; once more")
+                    click(int(row.group(1)), int(row.group(2)))
+                    on = log.wait_for(r"^files for folders on", 5.0, after=mark)
             print(f"shell: Use Files for Folders: {'on' if on else 'not turned on'}, folder verb {folder_verb()!r}")
             if on is None or folder_verb() != "LuloFiles":
                 failures.append("the Lulo menu's Use Files for Folders did not make Files open folders")

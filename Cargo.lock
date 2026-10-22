@@ -6922,6 +6922,7 @@ dependencies = [
  "rmac-mail-imap",
  "rmac-mail-mime",
  "rmac-mail-storage",
+ "rmac-notifications",
  "rmac-win-toast",
  "rustls",
  "sha2 0.10.9",

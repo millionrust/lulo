@@ -22,4 +22,6 @@ zbus.workspace = true
 rustls.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+# Mail's Dock badge through the Lulo layer's pipe.
+rmac-notifications.workspace = true
 rmac-win-toast.workspace = true

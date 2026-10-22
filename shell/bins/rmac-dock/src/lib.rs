@@ -6576,6 +6576,31 @@ mod dock {
                 })
                 .detach();
             }
+            // Windows: apps' badges and progress through the Lulo layer's
+            // pipe (`rmac_shell_layer::windows::badges`).
+            #[cfg(windows)]
+            {
+                let badges = rmac_shell_layer::windows::badges::subscribe();
+                let launcher_status = status.clone();
+                cx.spawn(async move |cx| {
+                    while let Ok(badge) = badges.recv().await {
+                        let update = rmac_dock::badges::LauncherUpdate {
+                            count: Some(badge.count),
+                            count_visible: Some(badge.count > 0),
+                            progress: badge.progress,
+                            progress_visible: Some(badge.progress.is_some()),
+                            urgent: None,
+                        };
+                        let uri = format!("application://{}.desktop", badge.app_id);
+                        launcher_status.update(cx, |status, cx| {
+                            if status.launcher.apply(&uri, update) {
+                                cx.notify();
+                            }
+                        });
+                    }
+                })
+                .detach();
+            }
             let _ = reconcile_tx.try_send(());
             let windows = Rc::new(std::cell::RefCell::new(DockWindows {
                 status: Some(status.clone()),

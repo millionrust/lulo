@@ -25,6 +25,7 @@
 
 pub mod appbar;
 pub mod backdrop;
+pub mod badges;
 pub mod click_through;
 pub mod desktop_layer;
 pub mod dock_drag;

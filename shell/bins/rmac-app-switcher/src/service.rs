@@ -1285,8 +1285,26 @@ fn quit_front(cx: &mut App) {
         else {
             return;
         };
+        // As the bar's Quit does for an app that is not Lulo's: on Windows
+        // every top-level window of each of its processes is asked to close.
+        let mut pids = std::collections::BTreeSet::new();
         for window in rmac_compositor::windows_of_application(&snapshot, &app_id) {
-            let action = Action::CloseWindow { window };
+            let pid = snapshot
+                .windows
+                .iter()
+                .find(|candidate| candidate.id == window)
+                .and_then(|candidate| candidate.pid);
+            #[cfg(windows)]
+            let action = if pids.insert(pid) {
+                Action::QuitApplication { window }
+            } else {
+                continue;
+            };
+            #[cfg(not(windows))]
+            let action = {
+                let _ = pids.insert(pid);
+                Action::CloseWindow { window }
+            };
             if let Err(error) = rmac_compositor_system::execute_action(&action).await {
                 eprintln!("could not quit {app_id}: {error:?}");
             }

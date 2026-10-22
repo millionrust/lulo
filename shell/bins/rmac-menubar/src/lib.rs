@@ -6524,6 +6524,11 @@ mod bar {
                 }
                 other => eprintln!("unknown app menu action: {other}"),
             }
+            // Recorded before the windows move: a menu opened while they are
+            // still being hidden already offers Show All for them.
+            if let Err(error) = store.save_default() {
+                eprintln!("could not save the parking set: {error}");
+            }
             for action in &actions {
                 if let Err(error) = rmac_compositor_system::execute_action(action).await {
                     eprintln!("could not run app menu action: {error:?}");

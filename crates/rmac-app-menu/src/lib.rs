@@ -2265,6 +2265,8 @@ const MAIL_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Settings…", "mail::ShowSettings", "⌘,"),
             item!("Accounts…", "mail::ShowAccounts", ""),
+            item!("Add Account…", "mail::AddAccount", "", separator),
+            item!("Quit and Keep Windows", "mail::QuitAndKeepWindows", "⌥⌘Q"),
         ],
     },
     MenuSpec {
@@ -2537,11 +2539,33 @@ const MAIL_MENUS: &[MenuSpec] = &[
         items: &[
             // "Send" while a compose window is in front (`compose_window.rs`).
             item!("Send Again", "mail::SendMessage", "⇧⌘D"),
+            // The Mac offers these under the compose window's Send button.
+            submenu!(
+                "Send Later",
+                "mail::SendLaterMenu",
+                [
+                    item!("Send 9:00 PM Tonight", "mail::SendTonight", ""),
+                    item!("Send 8:00 AM Tomorrow", "mail::SendTomorrow", ""),
+                    item!("Send Later…", "mail::SendLater", "", separator),
+                ]
+            ),
             item!("Reply", "mail::Reply", "⌘R", separator),
             item!("Reply All", "mail::ReplyAll", "⇧⌘R"),
             item!("Forward", "mail::Forward", "⇧⌘F"),
             item!("Forward as Attachment", "mail::ForwardAsAttachment", ""),
             item!("Redirect", "mail::Redirect", "⇧⌘E"),
+            submenu!(
+                "Remind Me",
+                "mail::RemindMeMenu",
+                [
+                    item!("Remind Me in 1 Hour", "mail::RemindInOneHour", ""),
+                    item!("Remind Me Tonight", "mail::RemindTonight", ""),
+                    item!("Remind Me Tomorrow", "mail::RemindTomorrow", ""),
+                    item!("Remind Me Later…", "mail::RemindLater", ""),
+                    item!("Clear Reminder", "mail::ClearReminder", "", separator),
+                ],
+                separator
+            ),
             item!("Mark as Unread", "mail::ToggleRead", "⇧⌘U", separator),
             item!("Move to Junk", "mail::Junk", "⇧⌘J"),
             submenu!(

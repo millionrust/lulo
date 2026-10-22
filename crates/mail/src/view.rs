@@ -20,17 +20,18 @@ use crate::{
     ToggleThreads, Undo,
 };
 
+mod keep;
 mod mailboxes;
 mod menu;
 mod people;
+mod remind;
 mod tools;
 mod windows;
 
+pub use keep::{quit_and_keep_windows, restore as restore_kept_windows, take_kept_windows};
 pub use menu::close_all;
 pub use people::rule_destinations;
-#[cfg(any(target_os = "linux", windows))]
-pub use tools::viewers;
-pub use tools::{open_viewer, show_viewer};
+pub use tools::{open_viewer, show_viewer, viewers};
 
 const SIDEBAR: f32 = 220.0;
 const LIST: f32 = 340.0;
@@ -81,6 +82,8 @@ pub struct MailView {
     erase_confirm: Option<Erase>,
     /// Mailbox ▸ New/Rename/Delete Mailbox… or a smart mailbox sheet.
     mailbox_sheet: Option<mailboxes::MailboxSheet>,
+    /// Message ▸ Remind Me ▸ Remind Me Later…: the date-and-time field.
+    remind_sheet: Option<Entity<InputState>>,
     /// A result or failure to show in an alert (a failed save, say).
     notice: Option<SharedString>,
     /// The message viewer's scroll position, for Edit ▸ Find ▸ Jump to Top.
@@ -233,6 +236,9 @@ impl MailView {
             this.active = window.is_window_active();
             if this.active {
                 this.sync_menu(cx);
+                // A Send Later or Remind Me that fell due while the
+                // computer slept runs now.
+                crate::scheduler::check(cx);
             }
         })
         .detach();
@@ -264,6 +270,7 @@ impl MailView {
             highlight_conversations: false,
             erase_confirm: None,
             mailbox_sheet: None,
+            remind_sheet: None,
             notice: None,
             viewer_scroll,
             active: true,
@@ -1697,10 +1704,12 @@ impl Render for MailView {
                 root.child(self.erase_alert(erase, cx))
             })
             .when_some(self.mailbox_sheet_view(cx), |root, sheet| root.child(sheet))
+            .when_some(self.remind_sheet_view(cx), |root, sheet| root.child(sheet))
             .when_some(self.notice.clone(), |root, notice| {
                 root.child(self.notice_alert(notice, cx))
             });
         let root = self.on_mailbox_actions(root, cx);
+        let root = self.on_remind_actions(root, cx);
         let root = self.on_menu_actions(root, cx);
         self.on_people_actions(root, cx).into_any_element()
     }

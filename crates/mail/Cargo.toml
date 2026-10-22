@@ -31,7 +31,7 @@ rmac-print.workspace = true
 rmac-storage.workspace = true
 rmac-contacts.workspace = true
 async-channel.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

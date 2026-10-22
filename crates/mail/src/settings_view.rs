@@ -126,8 +126,8 @@ thread_local! {
     static OPEN: std::cell::Cell<Option<WindowHandle<Root>>> = const { std::cell::Cell::new(None) };
 }
 
-/// Opens Settings on its Accounts pane (when it opens fresh).
-#[cfg(windows)]
+/// Opens Settings on its Accounts pane (when it opens fresh): Mail ▸ Add
+/// Account…, and Mail ▸ Accounts… on Windows.
 pub fn show_accounts(cx: &mut App) {
     ACCOUNTS_FIRST.with(|first| first.set(true));
     show(cx);

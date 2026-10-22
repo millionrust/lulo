@@ -10,6 +10,7 @@ mod delivery;
 mod live;
 mod people;
 mod rules_view;
+mod scheduler;
 mod settings_view;
 mod view;
 
@@ -128,7 +129,20 @@ gpui::actions!(
         Redirect,
         ClearFlag,
         MoveAgain,
-        ShowMessageViewer
+        ShowMessageViewer,
+        RemindInOneHour,
+        RemindTonight,
+        RemindTomorrow,
+        RemindLater,
+        ClearReminder,
+        RemindSheetCancel,
+        RemindSheetConfirm,
+        SendTonight,
+        SendTomorrow,
+        SendLater,
+        SendLaterSheetCancel,
+        AddAccount,
+        QuitAndKeepWindows
     ]
 );
 
@@ -539,6 +553,8 @@ fn main() {
         let (mailboxes, messages) = live::load(&accounts);
         MailState::new(mailboxes, messages)
     };
+    // What the last Mail ▸ Quit and Keep Windows left open.
+    let kept_windows = view::take_kept_windows();
     // `Exec=/usr/bin/rmac-mail %u` (packaging/rmac-apps) hands a `mailto:`
     // URI here as the one argument when the session's mailto handler runs.
     let mailto_draft = std::env::args()
@@ -593,6 +609,10 @@ fn main() {
                 KeyBinding::new("escape", MailboxSheetCancel, Some("MailMailboxSheet")),
                 KeyBinding::new("tab", MailboxSheetNextField, Some("MailMailboxSheet")),
                 KeyBinding::new("enter", MailboxSheetConfirm, Some("MailMailboxSheet")),
+                KeyBinding::new("escape", RemindSheetCancel, Some("MailRemindSheet")),
+                KeyBinding::new("enter", RemindSheetConfirm, Some("MailRemindSheet")),
+                KeyBinding::new("escape", SendLaterSheetCancel, Some("MailSendLaterSheet")),
+                KeyBinding::new("alt-cmd-q", QuitAndKeepWindows, None),
                 KeyBinding::new("cmd-1", GoToFavourite0, Some("Mail")),
                 KeyBinding::new("cmd-2", GoToFavourite1, Some("Mail")),
                 KeyBinding::new("cmd-3", GoToFavourite2, Some("Mail")),
@@ -672,6 +692,8 @@ fn main() {
             rmac_ui::set_menu_hidden("mail::PrintMessage", true, cx);
             cx.on_action(|_: &CloseAll, cx| view::close_all(cx));
             cx.on_action(|_: &ShowMessageViewer, cx| view::show_viewer(cx));
+            cx.on_action(|_: &AddAccount, cx| settings_view::show_accounts(cx));
+            cx.on_action(|_: &QuitAndKeepWindows, cx| view::quit_and_keep_windows(cx));
             cx.on_action(|_: &ToggleCcField, cx| {
                 compose_window::toggle_field(compose_window::Field::Cc, cx)
             });
@@ -733,9 +755,12 @@ fn main() {
             };
             #[cfg(windows)]
             watch_account_changes(runtime.clone());
-            if view::open_viewer(initial_state, accounts, runtime, cx).is_none() {
-                cx.quit();
+            match view::open_viewer(initial_state, accounts, runtime, cx) {
+                Some(first) => view::restore_kept_windows(&first, kept_windows, cx),
+                None => cx.quit(),
             }
+            // Send Later and Remind Me: one timer for the earliest entry.
+            scheduler::check(cx);
             if let Some(draft) = mailto_draft {
                 compose_window::open(
                     ComposeKind::New,

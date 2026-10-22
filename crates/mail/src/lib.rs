@@ -9,6 +9,7 @@
 pub mod ics;
 pub mod mailto;
 pub mod rules;
+pub mod schedule;
 pub mod settings;
 pub mod smart;
 
@@ -523,6 +524,9 @@ pub struct MailState {
     /// Conversations shown message by message while Organise by
     /// Conversation is on (View ▸ Expand All Conversations).
     pub expanded: std::collections::HashSet<String>,
+    /// Messages Message ▸ Remind Me brought back, latest first: they lead
+    /// the list for the rest of the session.
+    pub reminded: Vec<String>,
     undo: Option<Undo>,
     /// The action Undo just reversed, for Edit ▸ Redo.
     redo: Option<(OrganizeAction, String)>,
@@ -559,6 +563,7 @@ impl MailState {
             filter: MessageFilter::default(),
             my_addresses: Vec::new(),
             expanded: std::collections::HashSet::new(),
+            reminded: Vec::new(),
             undo: None,
             redo: None,
             last_move: None,
@@ -806,6 +811,7 @@ impl MailState {
             filter: MessageFilter::default(),
             my_addresses: Vec::new(),
             expanded: std::collections::HashSet::new(),
+            reminded: Vec::new(),
             undo: None,
             redo: None,
             last_move: None,
@@ -1095,6 +1101,16 @@ impl MailState {
             })
             .collect();
         self.sort_indices(&mut shown);
+        if !self.reminded.is_empty() {
+            let rank = |index: &usize| {
+                let id = &self.messages[*index].id;
+                self.reminded
+                    .iter()
+                    .position(|reminded| reminded == id)
+                    .unwrap_or(usize::MAX)
+            };
+            shown.sort_by_key(rank);
+        }
         if self.threads {
             // Each conversation shows as its first message in sort order,
             // unless it is expanded.
@@ -1491,6 +1507,30 @@ impl MailState {
         let message = self.selected_message()?;
         (target.account() == message.mailbox.account() && target != message.mailbox)
             .then_some(target)
+    }
+
+    /// A Remind Me whose time has come: `id` comes back unread at the top
+    /// of the list, as on the Mac. False when the message is gone.
+    pub fn bring_back(&mut self, id: &str) -> bool {
+        let Some(message) = self.messages.iter_mut().find(|message| message.id == id) else {
+            return false;
+        };
+        if !message.unread {
+            message.unread = true;
+            message.raw_flags &= !rmac_mail_storage::FLAG_SEEN;
+            if let (Mailbox::Real(real), Some(row_id)) = (&message.mailbox, message.row_id) {
+                self.last_persist.push(Persist {
+                    account: real.account,
+                    account_path: real.account_path.clone(),
+                    row_id,
+                    change: PersistChange::Flags(message.raw_flags),
+                });
+            }
+        }
+        self.reminded.retain(|reminded| reminded != id);
+        self.reminded.insert(0, id.to_owned());
+        self.revision += 1;
+        true
     }
 
     /// Mailbox ▸ Mark All Messages as Read, for every message the list
@@ -2438,5 +2478,18 @@ mod tests {
         assert_eq!(anna.mailbox.label(), "Inbox");
         assert!(!state.can_undo(), "rules are not undoable");
         assert_eq!(state.selected.as_deref(), Some("anna"));
+    }
+
+    #[test]
+    fn a_reminder_brings_the_message_back_unread_at_the_top() {
+        let mut state = MailState::fixture();
+        state.threads = false;
+        let last = *state.visible().last().unwrap();
+        let id = state.messages[last].id.clone();
+        state.messages[last].unread = false;
+        assert!(state.bring_back(&id));
+        assert_eq!(state.visible().first(), Some(&last));
+        assert!(state.messages[last].unread);
+        assert!(!state.bring_back("no-such-message"));
     }
 }

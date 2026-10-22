@@ -7,8 +7,7 @@
 
 use gpui::{
     div, px, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, Role, Styled as _,
-    Window,
+    ParentElement as _, Render, Role, Styled as _, Window,
 };
 use rmac_editor::rich::{ListKind, ParagraphRole, RichTextEditor, RichTextEvent};
 use rmac_editor::InputState;

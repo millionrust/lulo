@@ -274,6 +274,7 @@ fn the_recent_apps_are_the_last_three_apps_used_that_are_not_kept() {
     for (index, id) in ids.iter().enumerate() {
         coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
             windows: vec![rmac_compositor::Window {
+                always_on_top: false,
                 id: rmac_compositor::WindowId(index as u64 + 1),
                 title: Some((*id).into()),
                 app_id: Some((*id).into()),
@@ -325,6 +326,7 @@ fn an_app_running_before_its_entry_appears_joins_the_recent_apps() {
     }));
     coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
         windows: vec![rmac_compositor::Window {
+            always_on_top: false,
             id: rmac_compositor::WindowId(3),
             title: Some("Edge".into()),
             app_id: Some("msedge.exe".into()),

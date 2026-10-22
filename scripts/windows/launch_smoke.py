@@ -1584,10 +1584,20 @@ def launch(
             measurement["active_ticks"] = round(active_ticks, 3)
             print(f"{app}: CPU over {IDLE_WINDOW_SECONDS:.0f} s while it is the active window = {active_ticks:.2f} ticks")
             ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+            # A window still settling into its first activation can come back
+            # up (the parked reading then measured it refreshing): make sure
+            # it is down, once more if not.
+            deadline = time.monotonic() + 2.0
+            while not ctypes.windll.user32.IsIconic(hwnd) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            if not ctypes.windll.user32.IsIconic(hwnd):
+                print(f"{app}: the window did not stay minimised; minimising again")
+                ctypes.windll.user32.ShowWindow(hwnd, 6)
             # Longer than its slowest refresh period (5 s), so a refresh that
             # was already due when the window went away has run.
             time.sleep(7)
             idle = measure_idle_cpu(process.pid, log=log)
+            print(f"{app}: minimised through the parked reading: {bool(ctypes.windll.user32.IsIconic(hwnd))}")
             ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
         memory = process_memory_mb(process.pid)
         if memory is not None:

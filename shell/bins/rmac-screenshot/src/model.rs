@@ -623,6 +623,20 @@ pub fn destination_directory(destination: Destination) -> Option<PathBuf> {
     let home = home()?;
     let user_dirs =
         config_home().and_then(|config| fs::read_to_string(config.join("user-dirs.dirs")).ok());
+    // Windows: a folder Lulo's settings do not name is Windows' own (the
+    // Desktop may live in OneDrive, not under the profile).
+    #[cfg(windows)]
+    {
+        let prefix = format!("{key}=");
+        let named = user_dirs
+            .as_deref()
+            .is_some_and(|dirs| dirs.lines().any(|line| line.trim().starts_with(&prefix)));
+        if !named {
+            if let Some(folder) = crate::capture::known_folder(destination) {
+                return Some(folder);
+            }
+        }
+    }
     Some(resolve_user_dir(&home, user_dirs.as_deref(), key, fallback))
 }
 
@@ -918,7 +932,7 @@ mod tests {
 
         let settings = Settings {
             destination: Destination::Downloads,
-            timer_seconds: 3,
+            timer_seconds: 5,
             ..Settings::default()
         };
         settings.save_to(&path).unwrap();

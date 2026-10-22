@@ -158,6 +158,16 @@ namespace LuloRobot
             for (int i = 0; i < 2; i++) { Send(new[] { Mouse(LEFTDOWN, x, y, 0) }); Thread.Sleep(30); Send(new[] { Mouse(LEFTUP, x, y, 0) }); Thread.Sleep(60); }
         }
         public static void Wheel(int x, int y, int clicks) { MoveTo(x, y); Send(new[] { Mouse(WHEEL, x, y, unchecked((uint)(clicks * 120))) }); Thread.Sleep(80); }
+        // A hand's drag: press, move in steps, rest over the target, release
+        // (Windows' own drag-and-drop needs the moves to follow the button).
+        public static void SlowDrag(int x0, int y0, int x1, int y1)
+        {
+            MoveTo(x0, y0); Send(new[] { Mouse(LEFTDOWN, x0, y0, 0) }); Thread.Sleep(150);
+            for (int i = 1; i <= 40; i++) { MoveTo(x0 + (x1 - x0) * i / 40, y0 + (y1 - y0) * i / 40); Thread.Sleep(25); }
+            for (int i = 0; i < 6; i++) { MoveTo(x1 + (i % 2), y1); Thread.Sleep(100); }
+            Send(new[] { Mouse(LEFTUP, x1, y1, 0) }); Thread.Sleep(200);
+        }
+
         public static void Drag(int x0, int y0, int x1, int y1)
         {
             MoveTo(x0, y0); Send(new[] { Mouse(LEFTDOWN, x0, y0, 0) }); Thread.Sleep(80);

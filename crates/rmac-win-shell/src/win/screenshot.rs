@@ -1,7 +1,8 @@
 //! Screenshots on Windows, as Lulo OS takes them (docs/decisions/
 //! 0010-screenshots.md): ⇧⌘3 the whole screen under the pointer, ⇧⌘4 an
 //! area dragged out with the crosshair (Ctrl+Shift+3 and Ctrl+Shift+4,
-//! ⌘ being Ctrl), saved to the Desktop as "Screenshot 2026-10-22 at
+//! ⌘ being Ctrl), saved where Lulo's screenshot settings say (the Desktop
+//! by default) as "Screenshot 2026-10-22 at
 //! 1.36.39 PM.png" with the shutter sound. ⇧⌘5 (Ctrl+Shift+5) opens the
 //! area crosshair too; Lulo OS's toolbar is not drawn here yet.
 //!
@@ -229,7 +230,57 @@ fn unique_path(directory: &Path, name: &str, exists: impl Fn(&Path) -> bool) -> 
         .unwrap_or(candidate)
 }
 
-/// Save BGRA pixels to the Desktop as a PNG, with the shutter sound.
+/// Where a capture is saved, from Lulo's own settings as on Lulo OS: the
+/// screenshot settings' `destination` (Desktop, Documents or Downloads;
+/// the Desktop otherwise) in `$XDG_CONFIG_HOME/rmac/screenshot.conf`, and
+/// that folder from `$XDG_CONFIG_HOME/user-dirs.dirs` when it names one,
+/// else Windows' own folder of that kind.
+fn save_folder() -> Option<PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute());
+    let read = |name: &str| {
+        config
+            .as_ref()
+            .and_then(|config| std::fs::read_to_string(config.join(name)).ok())
+    };
+    let (key, known) = folder_for(read("rmac/screenshot.conf").as_deref());
+    user_dir(read("user-dirs.dirs").as_deref(), key).or_else(|| super::catalog::known_folder(known))
+}
+
+/// The `user-dirs.dirs` key and Windows' known folder for the settings'
+/// destination.
+fn folder_for(settings: Option<&str>) -> (&'static str, &'static windows::core::GUID) {
+    use windows::Win32::UI::Shell::{FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads};
+    let destination = settings
+        .into_iter()
+        .flat_map(str::lines)
+        .find_map(|line| line.trim().strip_prefix("destination="))
+        .map(str::trim);
+    match destination {
+        Some("documents") => ("XDG_DOCUMENTS_DIR", &FOLDERID_Documents),
+        Some("downloads") => ("XDG_DOWNLOAD_DIR", &FOLDERID_Downloads),
+        _ => ("XDG_DESKTOP_DIR", &FOLDERID_Desktop),
+    }
+}
+
+/// `KEY="C:/absolute/folder"` from `user-dirs.dirs`; anything else (a
+/// `$HOME`-relative or relative path) leaves the choice to Windows.
+fn user_dir(user_dirs: Option<&str>, key: &str) -> Option<PathBuf> {
+    let prefix = format!("{key}=");
+    let value = user_dirs?.lines().find_map(|line| {
+        let line = line.trim();
+        (!line.starts_with('#'))
+            .then(|| line.strip_prefix(prefix.as_str()))
+            .flatten()
+    })?;
+    let value = value.trim().strip_prefix('"')?.strip_suffix('"')?;
+    let path = PathBuf::from(value);
+    (path.is_absolute() && !value.contains('$')).then_some(path)
+}
+
+/// Save BGRA pixels to Lulo's screenshot folder as a PNG, with the shutter
+/// sound.
 fn save(bgra: &[u8], width: u32, height: u32) -> Option<PathBuf> {
     let mut rgba = bgra.to_vec();
     for pixel in rgba.chunks_exact_mut(4) {
@@ -237,9 +288,10 @@ fn save(bgra: &[u8], width: u32, height: u32) -> Option<PathBuf> {
         pixel[3] = 0xFF;
     }
     let image = image::RgbaImage::from_raw(width, height, rgba)?;
-    let desktop = super::catalog::known_folder(&windows::Win32::UI::Shell::FOLDERID_Desktop)?;
+    let folder = save_folder()?;
+    let _ = std::fs::create_dir_all(&folder);
     let name = file_name(&chrono::Local::now().naive_local());
-    let path = unique_path(&desktop, &name, Path::exists);
+    let path = unique_path(&folder, &name, Path::exists);
     let _ = rmac_sound::play(rmac_sound::Cue::Screenshot);
     match image.save_with_format(&path, image::ImageFormat::Png) {
         Ok(()) => Some(path),
@@ -528,6 +580,23 @@ mod tests {
             unique_path(Path::new("D"), "Shot.png", taken),
             Path::new("D").join("Shot (3).png")
         );
+    }
+
+    #[test]
+    fn captures_go_where_lulos_settings_say() {
+        let dirs =
+            "# comment\nXDG_DESKTOP_DIR=\"E:/lulo/shots\"\nXDG_DOWNLOAD_DIR=\"$HOME/Downloads\"\n";
+        assert_eq!(
+            user_dir(Some(dirs), "XDG_DESKTOP_DIR"),
+            Some(PathBuf::from("E:/lulo/shots"))
+        );
+        assert_eq!(user_dir(Some(dirs), "XDG_DOWNLOAD_DIR"), None);
+        assert_eq!(user_dir(None, "XDG_DESKTOP_DIR"), None);
+        assert_eq!(
+            folder_for(Some("timer=5\ndestination=downloads\n")).0,
+            "XDG_DOWNLOAD_DIR"
+        );
+        assert_eq!(folder_for(None).0, "XDG_DESKTOP_DIR");
     }
 
     #[test]

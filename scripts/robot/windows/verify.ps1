@@ -1,7 +1,8 @@
 # Every Lulo OS shell behaviour docs/parity.md's "Lulo OS → Windows" table
 # marks as working, checked live on a real PC against a running Lulo layer
-# started with LULO_SHELL_TRACE=1 (its trace file is -Trace) and the same
-# private profile (-Profile): the bar's menus and status menus (the
+# started with LULO_SHELL_TRACE=1 by run-private.ps1 (its trace file is
+# -Trace) and the same private profile (-Profile), so nothing it does
+# writes outside E:\lulo: the bar's menus and status menus (the
 # battery's mark and rows), the Dock's tiles, menus and recent apps, the
 # desktop's menu and click-to-reveal, Mission Control, App Exposé, Move &
 # Resize, the switcher, Spotlight, Apps, Control Centre, Notification
@@ -373,13 +374,15 @@ try {
             $R::Drag($f.X + 20, $f.Y + 40, $f.X + 160, $f.Y + 200)
         }
         $area = Wait-Trace '^screenshot saved (.+)$' $m2 8
-        # The robot's own captures on the Desktop go at once (found by the
-        # file system: the trace's file name loses the narrow space).
-        $desk = [Environment]::GetFolderPath('Desktop')
-        Get-ChildItem $desk -Filter 'Screenshot *.png' -ErrorAction SilentlyContinue |
-            Where-Object { $_.CreationTime -gt $checkStarted } |
-            ForEach-Object { Remove-Item -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
-        Note 'screenshots: Ctrl+Shift+3 and Ctrl+Shift+4' ($screen -and $area) "screen: $screen; area: $area"
+        # run-private.ps1's profile sends captures to E:\lulo (Lulo's own
+        # XDG_DESKTOP_DIR); the PC owner's Desktop must get none.
+        $shots = @(Get-ChildItem (Join-Path (Split-Path $Profile) 'desktop') -Filter 'Screenshot *.png' -ErrorAction SilentlyContinue |
+            Where-Object { $_.CreationTime -gt $checkStarted })
+        $ownerDesk = [Environment]::GetFolderPath('Desktop')
+        $strays = @(Get-ChildItem $ownerDesk -Filter 'Screenshot *.png' -ErrorAction SilentlyContinue |
+            Where-Object { $_.CreationTime -gt $checkStarted })
+        foreach ($shot in $shots) { Remove-Item -LiteralPath $shot.FullName -ErrorAction SilentlyContinue }
+        Note 'screenshots: Ctrl+Shift+3 and Ctrl+Shift+4' ($screen -and $area -and $shots.Count -eq 2 -and $strays.Count -eq 0) "screen: $screen; area: $area; in E:\lulo: $($shots.Count); on the owner's Desktop: $($strays.Count)"
     }
     Check 'volume: the mute key shows the Sound panel' {
         # Mute twice: the level ends as it was.

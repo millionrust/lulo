@@ -61,6 +61,8 @@ rmac-shell-app-switcher.workspace = true
 # service Lulo OS runs as its own process.
 rmac-shell-mission-control.workspace = true
 rmac-shell-settings.workspace = true
+# Screenshots' shutter sound (`win::screenshot`).
+rmac-sound.workspace = true
 # The shell's live design tokens (light or dark, accent), as each Lulo OS
 # shell process installs them.
 rmac-shell-ui.workspace = true

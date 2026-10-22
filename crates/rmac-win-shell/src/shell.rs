@@ -439,6 +439,10 @@ pub fn run() -> i32 {
             }
             rmac_quick_settings_app::start(cx);
             requests::register("launcher", rmac_launcher_app::toggle);
+            requests::register("screenshot-screen", |_| crate::win::screenshot::screen());
+            requests::register("screenshot-selection", |_| {
+                crate::win::screenshot::selection()
+            });
             requests::register("quick-settings", rmac_quick_settings_app::toggle);
             // Apps, from the Dock's tile and from its desktop entry
             // (`lulo-shell --app-drawer`, from Spotlight or a shortcut).

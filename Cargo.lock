@@ -8251,6 +8251,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-ui",
  "rmac-shell-wallpaper",
+ "rmac-sound",
  "rmac-ui",
  "rmac-wallpaper",
  "rmac-wallpaper-image",

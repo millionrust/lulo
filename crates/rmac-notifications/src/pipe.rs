@@ -324,13 +324,13 @@ mod tests {
         };
         let line = encode_badge(&badge);
         assert_eq!(line, "badge\t12\t0.250\n");
-        assert_eq!(decode_badge(line.trim_end()), Ok(badge));
+        assert_eq!(decode_badge(line.trim_end_matches('\n')), Ok(badge));
         let none = encode_badge(&Badge {
             count: 0,
             progress: None,
         });
         assert_eq!(
-            decode_badge(none.trim_end()),
+            decode_badge(none.trim_end_matches('\n')),
             Ok(Badge {
                 count: 0,
                 progress: None

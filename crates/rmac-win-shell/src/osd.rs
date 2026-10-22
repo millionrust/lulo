@@ -103,7 +103,7 @@ pub fn start(cx: &mut App) -> bool {
             let shown = blocking::unblock(move || rmac_osd::execute(command)).await;
             match shown {
                 Ok(presentation) => {
-                    let _ = cx.update(|cx| show(presentation, cx));
+                    cx.update(|cx| show(presentation, cx));
                 }
                 Err(error) => eprintln!("lulo-shell: the volume key did nothing: {error}"),
             }
@@ -146,7 +146,7 @@ thread_local! {
 /// Show `presentation` in the panel (opening it if it is not up) and close
 /// it once nothing new came for the Mac's 1.6 s.
 fn show(presentation: rmac_osd::Presentation, cx: &mut App) {
-    let current = PANEL.with(|panel| panel.borrow().clone());
+    let current = PANEL.with(|panel| *panel.borrow());
     let generation = current.as_ref().map_or(1, |(_, generation)| generation + 1);
     let updated = current.is_some_and(|(handle, _)| {
         handle
@@ -170,7 +170,7 @@ fn show(presentation: rmac_osd::Presentation, cx: &mut App) {
         cx.background_executor()
             .timer(rmac_osd::view::HIDE_DELAY)
             .await;
-        let _ = cx.update(|cx| {
+        cx.update(|cx| {
             let still = PANEL.with(|panel| {
                 panel
                     .borrow()

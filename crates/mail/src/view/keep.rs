@@ -3,7 +3,7 @@
 //! restores an app's windows. Compose windows need nothing here: their
 //! drafts are already saved in Drafts.
 
-use gpui::{App, AppContext as _, Entity};
+use gpui::{App, Entity};
 use rmac_mail::MailState;
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +44,7 @@ pub fn quit_and_keep_windows(cx: &mut App) {
     });
     cx.spawn(async move |cx| {
         task.await;
-        let _ = cx.update(|cx| cx.quit());
+        cx.update(|cx| cx.quit());
     })
     .detach();
 }

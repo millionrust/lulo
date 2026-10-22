@@ -53,7 +53,7 @@ pub fn change(cx: &mut App, edit: impl FnOnce(&mut Schedule) + Send + 'static) {
                 let _ = schedule.save(&root);
             })
             .await;
-        let _ = cx.update(check);
+        cx.update(check);
     })
     .detach();
 }
@@ -96,7 +96,7 @@ pub fn check(cx: &mut App) {
                 })
                 .detach();
         }
-        let _ = cx.update(|cx| {
+        cx.update(|cx| {
             cx.default_global::<Armed>().reminders = waiting;
             for view in crate::view::viewers() {
                 view.update(cx, |view, cx| view.reminders_due(&reminders, cx));
@@ -110,7 +110,7 @@ pub fn check(cx: &mut App) {
         cx.background_executor()
             .timer(Duration::from_secs(wait))
             .await;
-        let _ = cx.update(|cx| {
+        cx.update(|cx| {
             if cx.global::<Armed>().generation == generation {
                 check(cx);
             }

@@ -777,12 +777,26 @@ class Run:
         strip = self.wait_for(lambda: any(layer.get("namespace") == "rmac-stage-strip"
                                           for layer in self.niri("layers") or []), 10)
         self.check("the strip is drawn down the left edge", bool(strip))
+        time.sleep(0.5)
+        try:
+            self.capture("stage-strip")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            print(f"no strip picture: {error}", flush=True)
 
-        # The strip's one set sits in the middle of its edge, between the
-        # Dock's reserved edge and the top: click its middle.
-        bottom = self.height - 70
-        self.pointer.click(*self.parent_point(70, bottom / 2), self.parent_width, self.parent_height)
-        ok = self.placed({first: desktop, second: stage})
+        # The strip's one set sits about the middle of the left edge, between
+        # the top and the Dock's reserved edge. Nothing else is under the
+        # pointer that far left (the windows open centred), so hover and
+        # click down the edge's middle until the set answers.
+        ok = None
+        for offset in (0, -30, 30, -60, 60, -90, 90):
+            point = self.parent_point(70, self.height / 2 - 35 + offset)
+            self.pointer.move(*point, self.parent_width, self.parent_height)
+            time.sleep(0.4)
+            self.pointer.click(*point, self.parent_width, self.parent_height)
+            ok = self.wait_for(lambda: self.workspace_of(first) == desktop
+                               and self.workspace_of(second) == stage, 3)
+            if ok:
+                break
         self.check("clicking a set in the strip swaps it onto the stage", bool(ok), self.where(first, second))
 
         # The Dock and Command-Tab focus a waiting window: it comes back.

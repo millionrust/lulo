@@ -38,6 +38,10 @@ pub struct Stage {
     /// Windows already asked to move, and where to: not asked again until
     /// they land (or go away).
     pending: BTreeMap<WindowId, WorkspaceId>,
+    /// A set chosen in the strip, on its way to the stage: niri reports
+    /// its windows landing before it reports the focus moving to them, and
+    /// in between they must not be sent back to the strip.
+    chosen: Option<String>,
 }
 
 /// A window's set: its app, or the window alone when it has no app ID.
@@ -130,6 +134,10 @@ impl Stage {
             return Vec::new();
         }
         let key = set_key(focused);
+        if self.chosen.as_ref() == Some(&key) {
+            self.chosen = None;
+        }
+        let chosen = self.chosen.clone();
         let mut actions = Vec::new();
         if focused.workspace == Some(stage) {
             // A set was chosen (the strip, the Dock, ⌘Tab): bring it back.
@@ -167,6 +175,7 @@ impl Stage {
             .iter()
             .filter(|window| window.workspace == Some(home))
             .filter(|window| is_application(window) && set_key(window) != key)
+            .filter(|window| chosen.as_ref() != Some(&set_key(window)))
             .filter(|window| !self.pending.contains_key(&window.id))
             .map(|window| (window.id, set_key(window)))
             .collect();
@@ -200,6 +209,7 @@ impl Stage {
             actions.push(Action::FocusWindow { window: *window });
         }
         self.order.retain(|candidate| *candidate != set.key);
+        self.chosen = Some(set.key.clone());
         actions
     }
 
@@ -464,6 +474,42 @@ mod tests {
                 window: WindowId(4)
             })
         );
+    }
+
+    #[test]
+    fn a_chosen_set_landing_before_the_focus_stays_on_the_stage() {
+        let mut stage = Stage {
+            enabled: true,
+            ..Default::default()
+        };
+        let staged = snapshot(
+            vec![
+                window(1, "org.rmac.Notes", 1, 9),
+                window(3, "org.rmac.Files", 3, 1),
+            ],
+            1,
+        );
+        stage.step(&staged);
+        let sets = stage.sets(&staged);
+        stage.choose(&staged, &sets[0]);
+        // Files has landed; the focus is still on Notes.
+        let landed = snapshot(
+            vec![
+                window(1, "org.rmac.Notes", 1, 9),
+                window(3, "org.rmac.Files", 1, 1),
+            ],
+            1,
+        );
+        assert!(stage.step(&landed).is_empty());
+        // Then the focus arrives, and Notes goes to the strip.
+        let focused = snapshot(
+            vec![
+                window(1, "org.rmac.Notes", 1, 9),
+                window(3, "org.rmac.Files", 1, 10),
+            ],
+            3,
+        );
+        assert_eq!(moves(&stage.step(&focused)), [(1, 3, false)]);
     }
 
     #[test]

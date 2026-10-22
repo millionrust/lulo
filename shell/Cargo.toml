@@ -84,6 +84,7 @@ unicode-segmentation = "1.13"
 uuid = { version = "1", features = ["v5"] }
 wayland-client = "0.31"
 windows = "0.61"
+windows-core = "0.61"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 # Optimised but quick to relink, for trying changes on the reference PC:

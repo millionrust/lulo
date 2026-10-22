@@ -257,6 +257,95 @@ fn quit_after_running(show_recent_apps: bool) -> Coordinator {
 }
 
 #[test]
+fn the_recent_apps_are_the_last_three_apps_used_that_are_not_kept() {
+    let mut coordinator = Coordinator::default();
+    let ids = ["mail", "maps", "music", "photos"];
+    coordinator.apply_catalog(Ok(ids
+        .iter()
+        .map(|id| app(&format!("{id}.desktop")))
+        .collect()));
+    coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 0)));
+    coordinator.apply_appearance(Ok(false));
+    coordinator.apply_settings(Ok(rmac_shell_settings::ShellSettings {
+        pinned_apps: Vec::new(),
+        ..Default::default()
+    }));
+    // Each app opens a window, is used, and quits; the next one follows.
+    for (index, id) in ids.iter().enumerate() {
+        coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
+            windows: vec![rmac_compositor::Window {
+                id: rmac_compositor::WindowId(index as u64 + 1),
+                title: Some((*id).into()),
+                app_id: Some((*id).into()),
+                pid: None,
+                workspace: None,
+                focused: true,
+                floating: false,
+                urgent: false,
+                focus_timestamp: None,
+                layout: Default::default(),
+            }],
+        });
+        coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
+            windows: Vec::new(),
+        });
+    }
+    let recent: Vec<String> = coordinator
+        .snapshot()
+        .model
+        .items
+        .iter()
+        .filter(|item| !item.pinned)
+        .map(|item| item.id.clone())
+        .collect();
+    assert_eq!(
+        recent,
+        ["maps.desktop", "music.desktop", "photos.desktop"],
+        "the oldest app leaves when a fourth is used"
+    );
+    assert_eq!(
+        coordinator.take_dirty_recents(),
+        Some(vec![
+            "maps.desktop".to_owned(),
+            "music.desktop".to_owned(),
+            "photos.desktop".to_owned()
+        ])
+    );
+}
+
+#[test]
+fn an_app_running_before_its_entry_appears_joins_the_recent_apps() {
+    let mut coordinator = Coordinator::default();
+    coordinator.apply_catalog(Ok(Vec::new()));
+    coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 0)));
+    coordinator.apply_appearance(Ok(false));
+    coordinator.apply_settings(Ok(rmac_shell_settings::ShellSettings {
+        pinned_apps: Vec::new(),
+        ..Default::default()
+    }));
+    coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
+        windows: vec![rmac_compositor::Window {
+            id: rmac_compositor::WindowId(3),
+            title: Some("Edge".into()),
+            app_id: Some("msedge.exe".into()),
+            pid: None,
+            workspace: None,
+            focused: true,
+            floating: false,
+            urgent: false,
+            focus_timestamp: None,
+            layout: Default::default(),
+        }],
+    });
+    assert_eq!(coordinator.take_dirty_recents(), None);
+    coordinator.apply_catalog(Ok(vec![app("msedge.exe.desktop")]));
+    assert_eq!(
+        coordinator.take_dirty_recents(),
+        Some(vec!["msedge.exe.desktop".to_owned()])
+    );
+}
+
+#[test]
 fn show_recent_apps_off_drops_a_quit_application_immediately() {
     let coordinator = quit_after_running(false);
     assert!(coordinator

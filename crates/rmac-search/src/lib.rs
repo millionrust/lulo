@@ -15,6 +15,8 @@ mod ranked;
 pub mod tag_index;
 #[cfg(test)]
 mod tests;
+#[cfg(windows)]
+mod windows_index;
 #[cfg(any(windows, test))]
 mod windows_recent;
 

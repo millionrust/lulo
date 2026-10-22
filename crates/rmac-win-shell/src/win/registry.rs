@@ -1,7 +1,8 @@
 //! The Lulo layer's few per-user settings under `HKCU\Software\Lulo\Shell`,
 //! whether Lulo mode is on under `HKCU\Software\Lulo\Session`, and its
-//! opt-in sign-in entry under the user's `Run` key. Lulo never writes
-//! anywhere else in the registry.
+//! opt-in sign-in switch: the user's own `Winlogon\Shell` value, which makes
+//! Lulo their shell instead of Explorer (an older Lulo used the `Run` key,
+//! which is cleared). Lulo never writes anywhere else in the registry.
 
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::ERROR_SUCCESS;
@@ -21,6 +22,9 @@ const LULO_MODE: &str = "LuloMode";
 const LAST_STARTED: &str = "LastStarted";
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "Lulo";
+/// The user's own shell (Windows reads it before the machine's).
+const WINLOGON_KEY: &str = r"Software\Microsoft\Windows NT\CurrentVersion\Winlogon";
+const SHELL_VALUE: &str = "Shell";
 
 pub fn get_dword(name: &str) -> Option<u32> {
     get_user_dword(SHELL_KEY, name)
@@ -136,7 +140,12 @@ fn set_user_dword(path: &str, name: &str, value: u32) -> bool {
 
 /// A string value under `HKCU\Software\Lulo\Shell`.
 pub fn get_string(name: &str) -> Option<String> {
-    let path = HSTRING::from(SHELL_KEY);
+    get_user_string(SHELL_KEY, name)
+}
+
+/// A string value under `HKEY_CURRENT_USER\<path>`.
+fn get_user_string(path: &str, name: &str) -> Option<String> {
+    let path = HSTRING::from(path);
     let name = HSTRING::from(name);
     let mut size = 0u32;
     // SAFETY: asks for the size first, then reads into a buffer that size.
@@ -213,8 +222,19 @@ pub fn delete_value(name: &str) {
     delete_value_in(SHELL_KEY, name);
 }
 
-/// Whether Lulo starts when the user signs in.
+/// The user's own shell, when they have one (`Winlogon\Shell`).
+pub fn user_shell() -> Option<String> {
+    get_user_string(WINLOGON_KEY, SHELL_VALUE)
+}
+
+/// Whether Lulo is the user's shell at sign-in.
 pub fn starts_at_sign_in() -> bool {
+    user_shell().is_some_and(|shell| crate::model::startup::is_lulo_shell(&shell))
+        || runs_at_sign_in()
+}
+
+/// An older Lulo's `Run` entry.
+fn runs_at_sign_in() -> bool {
     let mut size = 0u32;
     // SAFETY: asks only for the size of a string value.
     let status = unsafe {
@@ -231,26 +251,40 @@ pub fn starts_at_sign_in() -> bool {
     status == ERROR_SUCCESS && size > 2
 }
 
-/// Start `command` when the user signs in, or stop (`None`). Opt-in only:
-/// Lulo's menu has the switch; nothing turns it on by itself.
-pub fn set_starts_at_sign_in(command: Option<&str>) -> bool {
-    match command {
-        Some(command) => with_key(RUN_KEY, |key| {
-            let data = command
-                .encode_utf16()
-                .chain(Some(0))
-                .flat_map(u16::to_le_bytes)
-                .collect::<Vec<u8>>();
-            // SAFETY: a NUL-terminated UTF-16 string value.
-            let status = unsafe {
-                RegSetValueExW(key, &HSTRING::from(RUN_VALUE), None, REG_SZ, Some(&data))
-            };
-            status == ERROR_SUCCESS
-        })
-        .unwrap_or(false),
+/// Make Lulo (`session`, `lulo-session.exe`) the user's shell at sign-in,
+/// instead of Explorer, or give the sign-in back to Explorer (`None`).
+/// Opt-in only: Lulo's menu has the switch; nothing turns it on by itself.
+/// A shell value that is not Lulo's is never removed.
+pub fn set_starts_at_sign_in(session: Option<&std::path::Path>) -> bool {
+    // An older Lulo's Run entry is replaced either way.
+    remove_run_entry();
+    match session {
+        Some(session) => {
+            let command = crate::model::startup::shell_command(&session.display().to_string());
+            with_key(WINLOGON_KEY, |key| {
+                let data = command
+                    .encode_utf16()
+                    .chain(Some(0))
+                    .flat_map(u16::to_le_bytes)
+                    .collect::<Vec<u8>>();
+                // SAFETY: a NUL-terminated UTF-16 string value.
+                let status = unsafe {
+                    RegSetValueExW(key, &HSTRING::from(SHELL_VALUE), None, REG_SZ, Some(&data))
+                };
+                status == ERROR_SUCCESS
+            })
+            .unwrap_or(false)
+        }
         None => {
-            delete_value_in(RUN_KEY, RUN_VALUE);
+            if user_shell().is_some_and(|shell| crate::model::startup::is_lulo_shell(&shell)) {
+                delete_value_in(WINLOGON_KEY, SHELL_VALUE);
+            }
             true
         }
     }
+}
+
+/// Remove an older Lulo's `Run` entry.
+fn remove_run_entry() {
+    delete_value_in(RUN_KEY, RUN_VALUE);
 }

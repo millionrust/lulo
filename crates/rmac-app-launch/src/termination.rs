@@ -67,9 +67,75 @@ fn terminate_blocking(pids: &[u32], kind: TerminationKind) -> Result<(), Termina
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn terminate_blocking(_pids: &[u32], _kind: TerminationKind) -> Result<(), TerminationError> {
     Err(TerminationError::Unsupported)
+}
+
+/// Windows: every process is opened before any is ended, as on Linux.
+/// Force Quit ends them (`TerminateProcess`); Quit asks each one's windows
+/// to close (`WM_CLOSE`), as their close buttons would, so they may ask to
+/// save.
+#[cfg(windows)]
+fn terminate_blocking(pids: &[u32], kind: TerminationKind) -> Result<(), TerminationError> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, WPARAM};
+    use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowThreadProcessId, IsWindowVisible, PostMessageW, WM_CLOSE,
+    };
+
+    match kind {
+        TerminationKind::ForceQuit => {
+            let mut handles: Vec<HANDLE> = Vec::with_capacity(pids.len());
+            for pid in pids {
+                // SAFETY: opens a process for termination only.
+                match unsafe { OpenProcess(PROCESS_TERMINATE, false, *pid) } {
+                    Ok(handle) => handles.push(handle),
+                    Err(_) => {
+                        for handle in handles {
+                            // SAFETY: closes the handles opened above.
+                            let _ = unsafe { CloseHandle(handle) };
+                        }
+                        return Err(TerminationError::Missing);
+                    }
+                }
+            }
+            let mut failed = false;
+            for handle in handles {
+                // SAFETY: ends a process this call opened, then closes it.
+                unsafe {
+                    failed |= TerminateProcess(handle, 1).is_err();
+                    let _ = CloseHandle(handle);
+                }
+            }
+            if failed {
+                Err(TerminationError::Rejected)
+            } else {
+                Ok(())
+            }
+        }
+        TerminationKind::Quit => {
+            unsafe extern "system" fn close(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
+                // SAFETY: `lparam` is the PID list passed below, alive for
+                // the whole enumeration.
+                let pids = unsafe { &*(lparam.0 as *const Vec<u32>) };
+                let mut pid = 0u32;
+                // SAFETY: reads properties of the window being enumerated
+                // and posts it WM_CLOSE.
+                unsafe {
+                    GetWindowThreadProcessId(hwnd, Some(&mut pid as *mut u32));
+                    if pids.contains(&pid) && IsWindowVisible(hwnd).as_bool() {
+                        let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+                    }
+                }
+                true.into()
+            }
+            let pids = pids.to_vec();
+            // SAFETY: the callback only reads `pids`, which outlives the call.
+            let _ = unsafe { EnumWindows(Some(close), LPARAM(&pids as *const Vec<u32> as isize)) };
+            Ok(())
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]

@@ -10,6 +10,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The Apps tile (rmac_apps::identity::APP_DRAWER).
+const APP_DRAWER_ID: &str = "org.rmac.AppDrawer";
+
 /// Duration of one bounce, lift-off to landing.
 pub const BOUNCE_PERIOD_MS: u64 = 680;
 /// Peak lift as a fraction of the tile size (18 of 64 pt).
@@ -71,7 +74,10 @@ impl BounceTracker {
     /// not bounce on macOS, so it is ignored here.
     pub fn launch(&mut self, app_id: &str, now_ms: u64) {
         let key = canonical(app_id);
-        if self.running.contains(&key)
+        // Apps opens an overlay, never a window, so a launch bounce would
+        // never land; the Mac's Apps/Launchpad tile does not bounce at all.
+        if key == canonical(APP_DRAWER_ID)
+            || self.running.contains(&key)
             || self
                 .launches
                 .get(&key)
@@ -208,6 +214,14 @@ mod tests {
             bounce_lift(BOUNCE_PERIOD_MS + 100, 64.0),
             bounce_lift(100, 64.0)
         );
+    }
+
+    #[test]
+    fn the_apps_tile_never_bounces() {
+        let mut tracker = BounceTracker::default();
+        tracker.launch("org.rmac.AppDrawer.desktop", 0);
+        tracker.launch("org.rmac.AppDrawer", 0);
+        assert!(tracker.launches.is_empty());
     }
 
     #[test]

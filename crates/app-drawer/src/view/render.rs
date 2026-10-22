@@ -49,7 +49,7 @@ impl Render for AppDrawer {
             && self.query.read(cx).value().trim().is_empty())
         .then(|| self.recent_indices())
         .filter(|indices| !indices.is_empty())
-        .map(|indices| self.recents_row(&indices, cx));
+        .map(|indices| self.recents_row(&indices, window, cx));
 
         #[cfg(windows)]
         if !self.loading && !self.apps.is_empty() && !self.ready_traced.replace(true) {
@@ -106,6 +106,7 @@ impl Render for AppDrawer {
                         &self.apps[index],
                         position,
                         self.selection_visible && position == selected,
+                        window,
                         cx,
                     )
                 })

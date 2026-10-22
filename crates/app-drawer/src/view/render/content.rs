@@ -207,8 +207,10 @@ impl AppDrawer {
         app: &App,
         position: usize,
         selected: bool,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let lines = name_lines(window, &app.name);
         let launch = app.launch.clone();
         let id = app.id.clone();
         div()
@@ -274,8 +276,14 @@ impl AppDrawer {
                     .line_height(px(14.0))
                     .h(px(28.0))
                     .overflow_hidden()
-                    .line_clamp(2)
-                    .child(app.name.clone()),
+                    .children(lines.into_iter().map(|line| {
+                        div()
+                            .h(px(14.0))
+                            .w_full()
+                            .whitespace_nowrap()
+                            .overflow_hidden()
+                            .child(line)
+                    })),
             )
             // On Windows, have the app's exe scanned while the pointer
             // rests on it, not after the click (WIN-OS-99).
@@ -330,8 +338,10 @@ impl AppDrawer {
         &self,
         app: &App,
         position: usize,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let lines = name_lines(window, &app.name);
         let launch = app.launch.clone();
         let id = app.id.clone();
         div()
@@ -359,8 +369,14 @@ impl AppDrawer {
                     .line_height(px(14.0))
                     .h(px(28.0))
                     .overflow_hidden()
-                    .line_clamp(2)
-                    .child(app.name.clone()),
+                    .children(lines.into_iter().map(|line| {
+                        div()
+                            .h(px(14.0))
+                            .w_full()
+                            .whitespace_nowrap()
+                            .overflow_hidden()
+                            .child(line)
+                    })),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = position;
@@ -401,11 +417,12 @@ impl AppDrawer {
     pub(super) fn recents_row(
         &self,
         indices: &[usize],
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let tiles = indices
             .iter()
-            .map(|&index| self.recent_tile(&self.apps[index], index, cx))
+            .map(|&index| self.recent_tile(&self.apps[index], index, window, cx))
             .collect::<Vec<_>>();
         div()
             .v_flex()
@@ -604,6 +621,24 @@ fn fallback_icon(app: &App, edge: f32, text_basis: f32) -> gpui::AnyElement {
         .text_size(rmac_ui::text_px(text_basis * 0.43))
         .child(initial)
         .into_any_element()
+}
+
+/// The two name lines for a tile, measured with the window's UI font at the
+/// scaled 12 pt size so the break matches what is drawn.
+fn name_lines(window: &Window, name: &str) -> [String; 2] {
+    let text_system = window.text_system();
+    let font_id = text_system.resolve_font(&window.text_style().font());
+    let size = rmac_ui::text_px(12.0);
+    let measure = |text: &str| -> f32 {
+        text.chars()
+            .map(|ch| {
+                text_system
+                    .advance(font_id, size, ch)
+                    .map_or(f32::from(size) * 0.55, |a| f32::from(a.width))
+            })
+            .sum()
+    };
+    super::super::name_wrap::wrap_name(name, TILE_W - 8.0 - 1.0, &measure)
 }
 
 #[cfg(test)]

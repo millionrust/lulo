@@ -285,6 +285,18 @@ class TraceParsingTests(unittest.TestCase):
         )
 
 
+class LaunchBudgetRetryTests(unittest.TestCase):
+    def test_only_budget_misses_are_launched_again(self) -> None:
+        only = launch_smoke.only_budget_errors
+        self.assertTrue(only("first frame 1319 ms after start, over the 1200 ms launch budget"))
+        self.assertTrue(only("no first-frame phase in the start-up trace"))
+        self.assertFalse(
+            only("first frame 1319 ms after start, over the 1200 ms launch budget; menu strip: no File menu")
+        )
+        self.assertFalse(only("opened no visible window within 20 s"))
+        self.assertFalse(only(""))
+
+
 class ShellTraceTests(unittest.TestCase):
     def test_the_log_finds_the_latest_dock_tile_and_waits_from_a_line(self) -> None:
         import tempfile

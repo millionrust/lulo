@@ -197,10 +197,12 @@ pub struct Captured {
 }
 
 /// Width of the Space thumbnail picture: 138 pt at up to 4× density.
+#[cfg(unix)]
 const THUMBNAIL_PIXELS: u32 = 552;
 
 /// Read the scene's output once and cut out its uncovered windows. A
 /// failed capture leaves every window to its icon card.
+#[cfg(unix)]
 pub fn capture_scene(scene: &crate::model::Scene) -> Captured {
     let picture = match grab_output(&scene.output.0) {
         Ok(picture) => picture,
@@ -222,6 +224,11 @@ pub fn capture_scene(scene: &crate::model::Scene) -> Captured {
         windows,
     }
 }
+
+#[cfg(windows)]
+mod print_window;
+#[cfg(windows)]
+pub use print_window::capture_scene;
 
 #[cfg(test)]
 mod tests {

@@ -5467,6 +5467,7 @@ dependencies = [
  "rmac-storage",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -5631,6 +5632,7 @@ dependencies = [
  "async-channel",
  "blocking",
  "futures-util",
+ "image",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
@@ -5906,6 +5908,7 @@ dependencies = [
 name = "rmac-osd"
 version = "0.9.0-beta.2"
 dependencies = [
+ "gpui",
  "libc",
  "rmac-audio",
  "rmac-sound",
@@ -6030,6 +6033,7 @@ dependencies = [
  "rustix 1.1.4",
  "url",
  "walkdir",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6084,6 +6088,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-locale",
  "rmac-login-items-linux",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-places",
  "rmac-places-system",
@@ -6099,6 +6104,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -6145,6 +6151,7 @@ dependencies = [
  "rmac-hardware",
  "uuid",
  "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -6182,6 +6189,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-locale",
  "rmac-network",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-places",
  "rmac-power",
@@ -6201,6 +6209,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -6218,6 +6227,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-dock",
  "rmac-shell-layer",
  "rmac-shell-settings",
@@ -6520,6 +6530,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-design",
  "rmac-dock",
  "rmac-recent-documents",

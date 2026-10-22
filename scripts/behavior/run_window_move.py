@@ -214,7 +214,7 @@ class Run:
         self.env.update({"WAYLAND_DISPLAY": self.display, "NIRI_SOCKET": str(self.socket),
                          "RMAC_BEHAVIOR_NESTED": "1"})
         outputs = self.niri("outputs") or {}
-        output = next(iter(outputs.values()), {}).get("logical", {})
+        output = next(iter(outputs.values()), {}).get("logical") or {}
         self.width, self.height = output.get("width", 1440), output.get("height", 900)
         tree = self.swaymsg("-t", "get_tree") or {}
         stack = [tree]
@@ -247,7 +247,7 @@ class Run:
         time.sleep(3)
         if self.args.frame_only:
             def settled_output():
-                logical = next(iter((self.niri("outputs") or {}).values()), {}).get("logical", {})
+                logical = next(iter((self.niri("outputs") or {}).values()), {}).get("logical") or {}
                 if logical.get("width") == self.parent_width and logical.get("height") == self.parent_height:
                     return logical
                 return None
@@ -589,7 +589,7 @@ class Run:
             self.check("Calculator title-bar double-click preserves fixed size", fixed,
                        f"{(width, height)} -> {after[2:]}")
             outputs = self.niri("outputs") or {}
-            logical = next(iter(outputs.values()), {}).get("logical", {})
+            logical = next(iter(outputs.values()), {}).get("logical") or {}
             output_width = logical.get("width", self.width)
             output_height = logical.get("height", self.height)
             on_screen = (after[0] >= -1 and after[1] >= -1
@@ -650,7 +650,7 @@ class Run:
             zoomed = self.window(app_id) or zoomed
         zoomed_geometry = self.geometry(zoomed) if zoomed else (x, y, width, height)
         outputs = self.niri("outputs") or {}
-        live_output = next(iter(outputs.values()), {}).get("logical", {})
+        live_output = next(iter(outputs.values()), {}).get("logical") or {}
         output_width = live_output.get("width", self.width)
         output_height = live_output.get("height", self.height)
         grew = (zoomed_geometry[2] > width + 80 or zoomed_geometry[3] > height + 80)

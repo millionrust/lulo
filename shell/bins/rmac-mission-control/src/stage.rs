@@ -330,6 +330,7 @@ mod tests {
             focused: false,
             floating: true,
             urgent: false,
+            always_on_top: false,
             focus_timestamp: Some(Timestamp {
                 seconds: focused_at,
                 nanoseconds: 0,

@@ -4344,6 +4344,23 @@ mod bar {
                         .collect();
                 }
             }
+            // An open Battery menu follows the battery as the bar does
+            // (charger in or out, a percent gone, charged), as on the Mac:
+            // the bar's reading at once, then a full one for the time left.
+            if self.status_menu == Some(StatusMenuKind::Battery) {
+                let live = self
+                    .status
+                    .read(cx)
+                    .update
+                    .snapshot
+                    .status
+                    .battery
+                    .map(|live| (live.percentage, live.state, live.on_battery));
+                if live != self.battery_menu_live {
+                    self.battery_menu_live = live;
+                    self.load_status_menu(StatusMenuKind::Battery, false, cx);
+                }
+            }
             let now = clock_now();
             let status = self.status.read(cx);
             let snapshot = &status.update.snapshot.status;
@@ -4582,23 +4599,6 @@ mod bar {
             let open_levels = submenu_panels.len();
             self.menu_scroll.retain(|depth, _| *depth <= open_levels);
             self.scroll_reveal = None;
-            // An open Battery menu follows the battery as the bar does
-            // (charger in or out, a percent gone, charged), as on the Mac:
-            // the bar's reading at once, then a full one for the time left.
-            if self.status_menu == Some(StatusMenuKind::Battery) {
-                let live = self
-                    .status
-                    .read(cx)
-                    .update
-                    .snapshot
-                    .status
-                    .battery
-                    .map(|live| (live.percentage, live.state, live.on_battery));
-                if live != self.battery_menu_live {
-                    self.battery_menu_live = live;
-                    self.load_status_menu(StatusMenuKind::Battery, false, cx);
-                }
-            }
             // The Wi-Fi or Battery menu opens under its own status item.
             let status_panel = self.status_menu.map(|kind| {
                 let rows = self.status_rows(kind);

@@ -1032,8 +1032,27 @@ class Run:
 
         # Back to fake_hardware.py's 80%, discharging battery.
         set_state(True, 2, 80.0, 0)
+        discharging = battery_item("Battery 80%, Discharging")
         self.check("Top bar: battery indicator follows UPower back to discharging",
-                   battery_item("Battery 80%, Discharging") is not None)
+                   discharging is not None)
+
+        # An open Battery menu follows the battery while it stays open, as
+        # on the Mac: the charger goes in under it.
+        if discharging is not None:
+            opened = self.retry_until(lambda: self.click_node(discharging),
+                                      lambda: self.find_menu("Battery") is not None)
+            set_state(False, 1, 85.0, 3900)
+            followed = opened and all(
+                self.wait_for(lambda row=row: self.find_node(
+                    ("label", "text", "static", "menu item", "push button"),
+                    lambda name: name == row), 8) is not None
+                for row in ("85%", "Power Source: Power Adapter", "Charging: 1:05 until full")
+            )
+            self.check("Battery menu: follows the charger going in while it is open", followed)
+            self.keys.key("escape")
+            self.wait_for(lambda: self.find_menu("Battery") is None, 5)
+            set_state(True, 2, 80.0, 0)
+            battery_item("Battery 80%, Discharging")
 
     def control_centre_detail_panels(self) -> None:
         """Display and Sound expand into detail views inside Control

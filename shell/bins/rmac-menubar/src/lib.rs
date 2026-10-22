@@ -1154,6 +1154,8 @@ mod bar {
         /// fresh mutation starts.
         wifi_error: Option<String>,
         battery_menu: Option<rmac_power::Snapshot>,
+        /// The bar's battery reading the open Battery menu last followed.
+        battery_menu_live: Option<(u8, rmac_power::BatteryState, bool)>,
         /// Apps using significant energy, sampled when the Battery menu
         /// opens (BAR-05).
         battery_energy: Option<Vec<String>>,
@@ -1377,6 +1379,7 @@ mod bar {
                 wifi_joining: None,
                 wifi_error: None,
                 battery_menu: None,
+                battery_menu_live: None,
                 battery_energy: None,
                 battery_error: None,
                 sound_menu: None,
@@ -2621,6 +2624,8 @@ mod bar {
                     // opens, as on the Mac, and the full reading (time left,
                     // energy modes) fills in when it arrives.
                     let live = self.status.read(cx).update.snapshot.status.battery;
+                    self.battery_menu_live =
+                        live.map(|live| (live.percentage, live.state, live.on_battery));
                     if let Some(live) = live {
                         let snapshot = self.battery_menu.get_or_insert_with(Default::default);
                         match snapshot.battery.as_mut() {
@@ -4577,6 +4582,23 @@ mod bar {
             let open_levels = submenu_panels.len();
             self.menu_scroll.retain(|depth, _| *depth <= open_levels);
             self.scroll_reveal = None;
+            // An open Battery menu follows the battery as the bar does
+            // (charger in or out, a percent gone, charged), as on the Mac:
+            // the bar's reading at once, then a full one for the time left.
+            if self.status_menu == Some(StatusMenuKind::Battery) {
+                let live = self
+                    .status
+                    .read(cx)
+                    .update
+                    .snapshot
+                    .status
+                    .battery
+                    .map(|live| (live.percentage, live.state, live.on_battery));
+                if live != self.battery_menu_live {
+                    self.battery_menu_live = live;
+                    self.load_status_menu(StatusMenuKind::Battery, false, cx);
+                }
+            }
             // The Wi-Fi or Battery menu opens under its own status item.
             let status_panel = self.status_menu.map(|kind| {
                 let rows = self.status_rows(kind);

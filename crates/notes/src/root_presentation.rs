@@ -57,6 +57,9 @@ impl NotesView {
                 if self.applied_window_title != list_title {
                     window.set_window_title(&list_title);
                     self.applied_window_title = list_title;
+                    // The accessibility tree takes the new title on the
+                    // next frame; draw one so it is never left stale.
+                    cx.notify();
                 }
                 div()
                     .size_full()

@@ -337,6 +337,26 @@ try {
         Shot 'notification-centre'
         Note 'notification centre: opens from the clock' ($shown) "clock: $($node.Name); $shown"
     }
+    Check 'quit: Ctrl+Q quits a Windows app' {
+        # Windows' own Notepad, a window of the robot's own, unmodified.
+        $before = @(Get-Process Notepad -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+        Start-Process notepad.exe | Out-Null
+        $deadline = (Get-Date).AddSeconds(10)
+        $note = $null
+        while (-not $note -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 300
+            $note = Get-Process Notepad -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+        }
+        if (-not $note) { Note 'quit: Ctrl+Q quits a Windows app' $false 'Notepad did not open'; return }
+        [void]$R::Activate($note.MainWindowHandle)
+        Start-Sleep -Milliseconds 600
+        $front = $R::PidOf($R::Foreground()) -eq $note.Id
+        if ($front) { $R::Chord(@($VK.Ctrl, 0x51)) }
+        Start-Sleep -Seconds 2
+        $gone = -not (Get-Process -Id $note.Id -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
+        Note 'quit: Ctrl+Q quits a Windows app' ($front -and $gone) "Notepad in front: $front; quit: $gone"
+        if (-not $gone) { Stop-Process -Id $note.Id -ErrorAction SilentlyContinue }
+    }
     Check 'force quit: Ctrl+Alt+Esc' {
         [void]$R::Activate((@($R::WindowsOf($calc.Id, $true)) | Select-Object -First 1)); Start-Sleep -Milliseconds 400
         $before = @($R::ZOrder())

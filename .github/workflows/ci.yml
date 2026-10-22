@@ -566,6 +566,11 @@ jobs:
             # and 59.0 MB after use, ADR 0023). Idle, from its `settled`
             # mark and over a window without a minute boundary, lulo-shell
             # wakes at most 4 times (ADR 0023 "Idle from the settled mark").
+            # The second use may keep up to 6 MB more than the first: both
+            # readings are taken after the closed panels' trim, and across
+            # runs the first one alone varies by 5 MB (51.6 to 56.9) with
+            # Spotlight's catalogue and the heap compaction; a panel that
+            # kept its Direct3D memory keeps far more (WIN-OS-43).
             # After the switcher and Notification Centre (and the Dock drags
             # and Apps before them), 64 MB: Apps shows three more Lulo apps
             # since op/win-parity-3 (Calendar, System Monitor, Media Player),
@@ -573,7 +578,7 @@ jobs:
             # runner by about 10 MB (it reads 62-63 MB there).
             gate: >-
               --shell-memory-mb 60 --shell-idle-private-mb 60
-              --shell-after-use-private-mb 60 --shell-after-use-growth-mb 4
+              --shell-after-use-private-mb 60 --shell-after-use-growth-mb 6
               --shell-max-wakes 4
               --shell-after-panels-private-mb 64
             expect: lulo-shell lulo-session

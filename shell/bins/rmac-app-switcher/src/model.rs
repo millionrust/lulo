@@ -126,6 +126,9 @@ pub enum Command {
     QuitSelected,
     /// ⌘H (Alt+H on Windows) while the panel is open.
     HideSelected,
+    /// ⌘Q (Ctrl+Q) in an app that is not Lulo's (Windows): quit the app in
+    /// front, as on the Mac, by closing each of its windows.
+    QuitFront,
 }
 
 impl Command {
@@ -138,6 +141,7 @@ impl Command {
             "commit" => Some(Self::Commit),
             "quit-selected" => Some(Self::QuitSelected),
             "hide-selected" => Some(Self::HideSelected),
+            "quit-front" => Some(Self::QuitFront),
             _ => None,
         }
     }
@@ -151,6 +155,7 @@ impl Command {
             Self::Commit => "commit",
             Self::QuitSelected => "quit-selected",
             Self::HideSelected => "hide-selected",
+            Self::QuitFront => "quit-front",
         }
     }
 }
@@ -683,6 +688,7 @@ mod tests {
             Command::Commit,
             Command::QuitSelected,
             Command::HideSelected,
+            Command::QuitFront,
         ] {
             assert_eq!(Command::parse(command.as_str()), Some(command));
             // Every word fits the Lulo OS endpoint's datagram.

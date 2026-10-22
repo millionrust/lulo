@@ -5,6 +5,17 @@ Versions follow [Cargo/semver](https://semver.org) pre-release syntax
 (`X.Y.Z-beta.N`); see [docs/beta-checklist.md](docs/beta-checklist.md) for
 what each release gate actually verified before a tag went out.
 
+## [0.9.0-beta.3] - 2026-10-22
+
+"Lulo 0.9.0 Beta 3 (Ubuntu) + Windows Preview", with the first Lulo OS USB
+image (`lulo-os-0.9.0-beta.3-amd64.iso`, attached by `lulo-os-iso.yml`).
+See [docs/release-notes/0.9.0-beta.3.md](docs/release-notes/0.9.0-beta.3.md).
+Highlights: Stage Manager (off by default), the Dock's Genie/Scale minimise
+into tiles and recent documents, Control Centre's Edit Controls, edge
+tiling, Notes rich text and tags, Mail Send Later and Remind Me, Mission
+Control, Force Quit, screenshots and Media Player's bundled libmpv on
+Windows, and rustls-webpki 0.103.16 (RUSTSEC-2026-0382).
+
 ## [0.9.0-beta.2] - 2026-10-14
 
 The first public beta, for Ubuntu and Windows: "Lulo 0.9.0 Beta 2

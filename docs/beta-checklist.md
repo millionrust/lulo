@@ -1,5 +1,22 @@
 # Beta release checklist
 
+## 0.9.0-beta.3: Lulo 0.9.0 Beta 3 (Ubuntu) + Windows Preview
+
+Branch `op/beta3-release`. Owner approved publishing ("go with beta 3").
+One `release.yml` run on the tag ships Ubuntu and the Windows MSI together
+(`RMAC_WINDOWS_WITH_RELEASE` unset); `lulo-os-iso.yml` then builds, boot-
+and install-tests and attaches `lulo-os-0.9.0-beta.3-amd64.iso` and its
+`.sha256`.
+
+- [x] Version 0.9.0-beta.3 in both workspaces, both lockfiles, the 15
+      AppStream metainfo files and the package verifier.
+- [x] The Windows job builds all 17 exes in `packaging/windows/apps.json`
+      and bundles libmpv (checked by `scripts/test_release_workflows.py`).
+- [x] Release notes `docs/release-notes/0.9.0-beta.3.md` and
+      `packaging/release-notes/0.9.0~beta.3.txt`; known limitations updated.
+- [ ] CI green on the branch.
+- [ ] Tag `v0.9.0-beta.3` pushed; Release, then ISO, attached.
+
 ## 0.9.0-beta.2: Lulo 0.9.0 Beta 2 (Ubuntu) + Windows Preview
 
 The first public beta, for Ubuntu and Windows together. `v0.9.0-beta.1`

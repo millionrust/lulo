@@ -1,8 +1,10 @@
 # Known limitations
 
-This page is for **0.9.0 Beta 2**: the first public beta, released as
-"Lulo 0.9.0 Beta 2 (Ubuntu) + Windows Preview". Lulo OS on Ubuntu is the
-beta; Lulo for Windows is an early preview (see [Windows preview](#windows-preview)).
+This page is for **0.9.0 Beta 3**, released as "Lulo 0.9.0 Beta 3
+(Ubuntu) + Windows Preview", with the first Lulo OS USB image. Lulo OS on
+Ubuntu is the beta; Lulo for Windows is an early preview (see
+[Windows preview](#windows-preview)); the USB image has its own section
+([Lulo OS USB image](#lulo-os-usb-image)).
 
 Lulo OS is under active development and is not yet a supported daily-driver
 release. The application and service domains are broad, but many final claims
@@ -130,6 +132,15 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Feature limits
 
+- **Stage Manager is off by default.** It is built (ADR 0030) and switches on
+  from Control Centre or Desktop & Dock, but it is still being polished.
+- **No screen recording.** Screenshots work (including the capture
+  toolbar), but recording the screen, as the Mac's toolbar and QuickTime do,
+  is not in this release (SHOT-01, PLAYER-01).
+- **No emoji and symbols picker yet.** Control-Command-Space and Edit ▸ Emoji
+  & Symbols do nothing so far; the picker is planned for the next release
+  (KB-02, OTHER-15).
+
 - Mail's Google and Microsoft sign-in (OAuth in the browser) is built and
   tested against recorded protocol fixtures, but has not yet been tried
   against real Google or Microsoft accounts. IMAP/SMTP accounts with an app
@@ -207,9 +218,10 @@ Windows 11 laptop and in GitHub's Windows runners; Windows 10 is untested.
   this free project, so SmartScreen warns on first run: choose **More info**,
   then **Run anyway**. The MSI's SHA-256 is in the Release's `SHA256SUMS`
   and it carries a GitHub build-provenance attestation.
-- **Media Player needs libmpv.** Playback goes through `libmpv-2.dll` beside
-  the app; it is not bundled yet (it needs a pinned LGPL download), so
-  without it Player says it needs libmpv (WIN-OS-88).
+- **Media Player** now ships its LGPL libmpv and FFmpeg beside the app
+  (built in CI from pinned tags, with their licences). It has not yet been
+  checked on the Windows test PC, and there is no media-key or Now Playing
+  integration (WIN-OS-88).
 - **Bluetooth** connects only audio devices whose endpoint Windows already
   has, and there is no "discoverable" switch, because Windows apps cannot
   make the PC discoverable (WIN-SET-06). Control Centre's Bluetooth module
@@ -227,6 +239,23 @@ Windows 11 laptop and in GitHub's Windows runners; Windows 10 is untested.
 - Some Windows-reserved shortcuts (several Win+Ctrl chords) cannot be used
   for the Mac's ⌃⌘ shortcuts (WIN-OS-02). Spotlight is Alt+Space, because
   Win+Space switches the input language.
+
+## Lulo OS USB image
+
+`lulo-os-<version>-amd64.iso` (ADR 0031) is attached for the first time in
+Beta 3. `lulo-os-iso.yml` builds it after the tagged Release, boots it in
+QEMU (UEFI with Secure Boot, and BIOS), installs it with Calamares and boots
+the installed disk before it attaches the ISO, so it reaches the Release an
+hour or two after the other files.
+
+- It needs a GPU with a Mesa hardware driver: niri refuses software
+  rendering, so with `nomodeset`, a plain framebuffer or a VM without 3D the
+  session starts but shows nothing. There is no "safe graphics" boot entry.
+- NVIDIA's proprietary driver is not on the image (the open driver works);
+  the installed system can add it the Ubuntu way.
+- Tested only in virtual machines in CI so far, not on a range of real PCs.
+- Branding and live-session files are copied into the image, not packaged,
+  so later releases change them only for new installs.
 
 ## Compatibility limits
 

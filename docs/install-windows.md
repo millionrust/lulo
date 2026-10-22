@@ -1,6 +1,6 @@
 # Install Lulo on Windows (preview)
 
-Lulo 0.9.0 Beta 2 for Windows is an **early preview**. It runs on top of
+Lulo 0.9.0 Beta 3 for Windows is an **early preview**. It runs on top of
 Windows: the Lulo apps are normal Windows programs, and the optional Lulo
 layer puts Lulo's menu bar, Dock and Spotlight over the Windows desktop.
 Windows itself is not replaced. Expect rough edges.
@@ -13,8 +13,8 @@ Windows itself is not replaced. Expect rough edges.
 
 ## Install
 
-1. Download **`Lulo-Setup-0.9.0-beta.2-x64.msi`** from the
-   [release page](https://github.com/millionrust/lulo/releases/tag/v0.9.0-beta.2).
+1. Download **`Lulo-Setup-0.9.0-beta.3-x64.msi`** from the
+   [release page](https://github.com/millionrust/lulo/releases/tag/v0.9.0-beta.3).
 2. Open the downloaded file.
 3. **Windows warns you, because the installer is not signed.** (Code signing
    costs money; Lulo is a free project.) On "Windows protected your PC",

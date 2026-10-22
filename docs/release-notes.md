@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-No user-visible changes recorded yet since 0.9.0-beta.2.
+No user-visible changes recorded yet since 0.9.0-beta.3.
+
+## 0.9.0-beta.3 - 2026-10-22
+
+Ubuntu + Windows Preview, and the first Lulo OS USB image. See
+[0.9.0-beta.3 release notes](release-notes/0.9.0-beta.3.md).
 
 ## 0.9.0-beta.2 - 2026-10-14
 

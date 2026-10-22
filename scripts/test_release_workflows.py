@@ -439,12 +439,9 @@ def test_ubuntu_first_release_skips_the_msi_and_windows_release_adds_it():
     assert "needs.windows-installer.result == 'skipped' && vars.RMAC_WINDOWS_WITH_RELEASE == 'false'" in attach["if"]
     steps = {step.get("name", ""): step for step in attach["steps"]}
     assert steps["Download the Windows installer"]["if"] == "needs.windows-installer.result == 'success'"
+    # <version>.ubuntu.md is needed only for a Ubuntu-first tag (the
+    # variable set to false); release.yml stops if it is missing then.
     assert ".ubuntu.md" in steps["Prepare the release notes"]["run"]
-    version = re.search(
-        r'(?ms)^\[workspace\.package\]\s*$.*?^version\s*=\s*"([^"]+)"',
-        (REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8"),
-    ).group(1)
-    assert (REPO_ROOT / f"docs/release-notes/{version}.ubuntu.md").is_file()
     later = _load(REPO_ROOT / ".github/workflows/windows-release.yml")
     trigger = later.get("on", later.get(True))
     assert set(trigger) == {"workflow_dispatch"}

@@ -345,7 +345,7 @@ class NativePackageContractTests(unittest.TestCase):
         )
         for _, runtime_crates in contract.SHIPPING_SHELL_SOURCES.values():
             for crate in runtime_crates:
-                self.assertIn(f'{crate} = {{ version = "=0.9.0-beta.2",', manifest)
+                self.assertIn(f'{crate} = {{ version = "=0.9.0-beta.3",', manifest)
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 15)
@@ -485,21 +485,21 @@ class NativePackageContractTests(unittest.TestCase):
             with self.subTest(value=invalid):
                 with self.assertRaises(contract.ContractError):
                     contract.source_date_epoch(invalid)
-        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.9.0~beta.2-38")
+        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.9.0~beta.3-38")
         self.assertEqual(contract.debian_upstream_version("0.9.0-beta.1"), "0.9.0~beta.1")
         self.assertEqual(contract.debian_upstream_version("0.9.0"), "0.9.0")
 
     def test_candidate_build_metadata_tags_the_version_without_disturbing_a_release(self):
         # A real Beta/stable release (no build_metadata) is byte-for-byte what
         # it always was.
-        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.9.0~beta.2-38")
+        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.9.0~beta.3-38")
         # A candidate build's cargo profile name becomes "+<profile>" build
         # metadata ahead of the Debian revision, so the rmac-apps/rmac-session
         # version pair still matches each other and dpkg still orders the
         # version, while the filename and manifest are visibly a candidate.
         self.assertEqual(
             contract.native_version(builder.REPO_ROOT, build_metadata="iterate"),
-            "0.9.0~beta.2+iterate-38",
+            "0.9.0~beta.3+iterate-38",
         )
         for invalid in ("", "Iterate", "iterate-1", "iter ate", "iter+ate", "ÿterate"):
             with self.subTest(value=invalid):
@@ -671,7 +671,7 @@ class NativePackageContractTests(unittest.TestCase):
                 ):
                     self.assertEqual(package_verifier.main(), 0)
         self.assertEqual(
-            captured["expected_version"], "0.9.0~beta.2+iterate-38"
+            captured["expected_version"], "0.9.0~beta.3+iterate-38"
         )
 
         # An explicit --version still wins over --build-metadata.

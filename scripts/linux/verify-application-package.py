@@ -586,7 +586,7 @@ def _verify_metainfo(root: Path, identity: str, specification: dict[str, object]
         or developer.attrib != {"id": "org.rmac"}
         or developer.findtext("name") != "Lulo OS contributors"
         or release is None
-        or release.attrib != {"version": "0.9.0-beta.2", "date": "2026-10-14"}
+        or release.attrib != {"version": "0.9.0-beta.3", "date": "2026-10-22"}
         or rating is None
         or rating.attrib != {"type": "oars-1.1"}
     ):

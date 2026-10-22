@@ -1,0 +1,19 @@
+Lulo 0.9.0 Beta 3 brings Stage Manager, a smarter Dock and Control Centre, and the first Lulo OS USB stick image.
+
+# What's new since Beta 2
+
+- Stage Manager, off by default: turn it on in Control Centre or Desktop & Dock.
+- Dock: minimised windows pour into their own tile with the Genie or Scale effect, app menus list recent documents, and the Files and System Settings tiles have their Mac menus.
+- Control Centre: Edit Controls and the round controls in macOS order. Notification Centre: Clear All and banner Options menus.
+- Control-F8 moves the keyboard to the status menus, and the battery shows a bolt while charging.
+- Drop a window at a screen edge to fill that half.
+- Notes rich text and tags, Mail Send Later and Remind Me, and many more menu items in Files and Preview.
+- Security: rustls-webpki updated for RUSTSEC-2026-0382.
+
+# Known limitations
+
+Screen recording is not in this release, and the emoji and symbols picker comes next. Tested on Intel graphics only. Mail's Google and Microsoft sign-in has not been tested against real accounts.
+
+# Feedback
+
+Report problems at github.com/millionrust/lulo/issues.

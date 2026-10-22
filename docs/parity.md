@@ -948,7 +948,7 @@ Every user-visible shell behaviour Lulo OS gained (from `git log --no-merges` ov
 | Menu bar | Clock Options… and Battery Options… sheets | shared |
 | Menu bar | ⌃F2 menu focus, ⌃F8 status-item focus, ⌃F3 Dock focus (ACC-05, CC-05) | fixed (op/win-parity-2: Ctrl+F2, Ctrl+F8, Ctrl+F3); Ctrl+F2 then ↓ verified live |
 | Menu bar | Hides over full-screen windows, reveal strip at the top edge | works (WIN-OS-90) |
-| Menu bar | ⌘Q/⌘W close third-party apps' windows | missing: Windows apps keep their own keys; needs a keyboard hook |
+| Menu bar | ⌘Q/⌘W close third-party apps' windows | ⌘Q fixed (op/win-smoke): Ctrl+Q quits the Windows app in front (each of its processes asked to close, so unsaved work still asks), except Lulo's apps and apps whose Ctrl+Q does something else (Office, VS Code, JetBrains, terminals, Firefox); verified live with Notepad. ⌘W: Windows apps already close a tab or window on Ctrl+W |
 | Menu bar | Other apps' status icons (menu extras) | fixed when Lulo is the shell (WIN-OS-103); over Explorer they stay in Explorer's hidden tray |
 | Menu bar | Battery warnings at 10 % and 5 % | shared |
 | Dock | Pinned and running apps, dots, click brings every window forward | works |

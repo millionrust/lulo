@@ -257,6 +257,38 @@ impl Settings {
 
     /// Save "Click wallpaper to reveal desktop" through the shell-settings
     /// store that `rmac-mission-control` watches.
+    /// Desktop & Dock's Stage Manager switches (ADR 0030).
+    pub(super) fn apply_stage_manager(
+        &mut self,
+        value: rmac_shell_settings::StageManagerSettings,
+        cx: &mut Context<Self>,
+    ) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        if snapshot.settings.stage_manager == value {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::StageManager(value))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_shell_settings_mutation(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn apply_click_wallpaper_to_reveal(
         &mut self,
         value: rmac_shell_settings::ClickWallpaperToReveal,

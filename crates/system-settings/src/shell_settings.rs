@@ -315,6 +315,9 @@ pub(super) enum ShellSettingsMutation {
     /// Desktop & Dock › Click wallpaper to reveal desktop.
     /// `rmac-mission-control` reads it on every wallpaper click.
     ClickWallpaperToReveal(rmac_shell_settings::ClickWallpaperToReveal),
+    /// Desktop & Dock › Stage Manager and "Show recent apps in Stage
+    /// Manager", which `rmac-mission-control` follows (ADR 0030).
+    StageManager(rmac_shell_settings::StageManagerSettings),
     /// Desktop & Dock › "Double-click a window's title bar to". Every app's
     /// shared title bar reads it on every double-click (SET-33).
     DoubleClickTitleBar(rmac_shell_settings::DoubleClickTitleBarAction),
@@ -332,6 +335,7 @@ impl ShellSettingsMutation {
             Self::MenuBar(change) => change.apply(settings),
             Self::HotCorner(change) => change.apply(settings),
             Self::ClickWallpaperToReveal(value) => settings.click_wallpaper_to_reveal = value,
+            Self::StageManager(value) => settings.stage_manager = value,
             Self::DoubleClickTitleBar(value) => settings.double_click_title_bar = value,
         }
     }

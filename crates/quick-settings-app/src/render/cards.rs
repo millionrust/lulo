@@ -18,6 +18,7 @@ const SCREENSHOT: Glyph = ("cc/screenshot.svg", 22.0, 20.0);
 const LOW_POWER: Glyph = ("cc/low-power.svg", 24.0, 12.0);
 const MIRRORING: Glyph = ("cc/display.svg", 22.0, 19.0);
 const DARK_MODE: Glyph = ("cc/dark-mode.svg", 22.0, 22.0);
+const STAGE_MANAGER: Glyph = ("cc/stage-manager.svg", 24.0, 20.0);
 
 /// The 36 pt icon circle sits 14 in from the pill's rounded end.
 const BADGE: f32 = 36.0;
@@ -283,6 +284,16 @@ impl QuickSettingsView {
     ) -> AnyElement {
         match module {
             Module::LowPower => self.low_power_circle(x, y, &self.state.view().power, cx),
+            Module::StageManager => self.circle(
+                "stage-manager",
+                Module::StageManager,
+                x,
+                y,
+                STAGE_MANAGER,
+                self.stage_manager,
+                |this, _, cx| this.toggle_stage_manager(cx),
+                cx,
+            ),
             Module::ScreenMirroring => self.circle(
                 "screen-mirroring",
                 Module::ScreenMirroring,
@@ -328,12 +339,16 @@ impl QuickSettingsView {
         let pointer_action = action.clone();
         let label = match module_kind {
             Module::LowPower => "Low Power Mode",
+            Module::StageManager => "Stage Manager",
             Module::Screenshot => "Screenshot",
             Module::ScreenMirroring => "Screen Mirroring",
             Module::DarkMode => "Dark Mode",
             _ => id,
         };
-        let switch = matches!(module_kind, Module::LowPower | Module::DarkMode);
+        let switch = matches!(
+            module_kind,
+            Module::LowPower | Module::DarkMode | Module::StageManager
+        );
         module(x, y, CELL, CELL, CELL / 2.0)
             .when(ring, |circle| circle.shadow(mac::focus_ring_shadow()))
             .when(on, |circle| circle.bg(mac::white()))

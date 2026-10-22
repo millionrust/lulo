@@ -109,6 +109,8 @@ pub(crate) struct QuickSettingsView {
     pub(crate) mirroring: bool,
     /// Round controls Edit Controls took out (CC-03), from shell settings.
     pub(crate) hidden_controls: Vec<String>,
+    /// Stage Manager's switch (shell settings `stage_manager.enabled`).
+    pub(crate) stage_manager: bool,
     /// Edit Controls is open: each control shows − to remove it, and the
     /// removed ones wait under the grid with + (CC-03).
     pub(crate) editing: bool,
@@ -179,6 +181,13 @@ pub(crate) fn hardware_now() -> rmac_hardware::Adaptations {
 /// GNOME Network Displays, from the distribution's own archive.
 const MIRRORING_SENDER: &str = "/usr/bin/gnome-network-displays";
 
+/// Whether Stage Manager can run here: Lulo OS's window service drives
+/// it (ADR 0030); Windows has its own window management, and the fixed
+/// shell scenes, which compare the two, never show it.
+pub(crate) fn stage_manager_available() -> bool {
+    cfg!(target_os = "linux") && !rmac_shell_runtime::scene::active()
+}
+
 /// Whether Screen Mirroring has a sender to open. One `stat`, read when
 /// Control Centre opens; the fixed shell scenes never show it.
 pub(crate) fn mirroring_available() -> bool {
@@ -228,9 +237,10 @@ pub(crate) fn initial_surface_height(display: bool, hidden_pills: usize) -> f32 
         banners: 0,
         hidden_pills,
         edit_rows: 1,
-        // Dark Mode and Screenshot always, Screen Mirroring when its sender
-        // is installed; Low Power joins once power-profiles-daemon answers.
-        circles: 2 + usize::from(mirroring_available()),
+        // Dark Mode and Screenshot always, Stage Manager on Lulo OS, Screen
+        // Mirroring when its sender is installed; Low Power joins once
+        // power-profiles-daemon answers.
+        circles: 2 + usize::from(mirroring_available()) + usize::from(stage_manager_available()),
     }
     .surface_height() as f32
 }
@@ -378,6 +388,7 @@ impl QuickSettingsView {
             focus_toggle_focus,
             mirroring: mirroring_available(),
             hidden_controls: Vec::new(),
+            stage_manager: false,
             editing: false,
             display_title_focus,
             sound_title_focus,
@@ -603,6 +614,7 @@ impl QuickSettingsView {
             Module::LowPower => self.toggle_low_power(cx),
             Module::Screenshot => self.screenshot(window, cx),
             Module::ScreenMirroring => self.open_screen_mirroring(cx),
+            Module::StageManager => self.toggle_stage_manager(cx),
             Module::DarkMode => self.toggle_dark_mode(cx),
             Module::Focus => {
                 let focus = self.state.view().focus;
@@ -914,19 +926,26 @@ impl QuickSettingsView {
         .detach();
     }
 
-    /// Read which controls Edit Controls took out, off the UI thread.
+    /// Read which controls Edit Controls took out, and whether Stage
+    /// Manager is on, off the UI thread.
     pub(crate) fn load_hidden_controls(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let hidden = blocking::unblock(|| {
+            let (hidden, stage_manager) = blocking::unblock(|| {
                 rmac_shell_settings::ShellSettingsStore::from_environment()
                     .and_then(|store| store.load())
-                    .map(|snapshot| snapshot.settings.control_centre.hidden_controls)
+                    .map(|snapshot| {
+                        (
+                            snapshot.settings.control_centre.hidden_controls,
+                            snapshot.settings.stage_manager.enabled,
+                        )
+                    })
                     .unwrap_or_default()
             })
             .await;
             let _ = this.update(cx, |this, cx| {
-                if this.hidden_controls != hidden {
+                if this.hidden_controls != hidden || this.stage_manager != stage_manager {
                     this.hidden_controls = hidden;
+                    this.stage_manager = stage_manager;
                     cx.notify();
                 }
             });
@@ -934,20 +953,44 @@ impl QuickSettingsView {
         .detach();
     }
 
-    /// Every round control this PC can show, in macOS 26's order: Low Power
-    /// (in Stage Manager's place), Screen Mirroring, Dark Mode, Screenshot.
+    /// Stage Manager's circle: turn it on or off in shell settings, which
+    /// Lulo's window service follows (ADR 0030). Saved off the UI thread.
+    pub(crate) fn toggle_stage_manager(&mut self, cx: &mut Context<Self>) {
+        self.stage_manager = !self.stage_manager;
+        let enabled = self.stage_manager;
+        cx.notify();
+        blocking::unblock(move || {
+            let result =
+                rmac_shell_settings::ShellSettingsStore::from_environment().and_then(|store| {
+                    let mut settings = store.load()?.settings;
+                    settings.stage_manager.enabled = enabled;
+                    store.save(&settings)
+                });
+            if let Err(error) = result {
+                eprintln!("Control Centre could not save Stage Manager: {error}");
+            }
+        })
+        .detach();
+    }
+
+    /// Every round control this PC can show, in macOS 26's order: Stage
+    /// Manager, Screen Mirroring, Dark Mode, Screenshot, then Low Power
+    /// (a control macOS adds at the end).
     fn available_circles(&self) -> Vec<Module> {
         let view = self.state.view();
         let mut circles = Vec::new();
-        if rmac_quick_settings::layout::low_power_available(&view.power.value)
-            && view.power.available
-        {
-            circles.push(Module::LowPower);
+        if stage_manager_available() {
+            circles.push(Module::StageManager);
         }
         if self.mirroring {
             circles.push(Module::ScreenMirroring);
         }
         circles.extend([Module::DarkMode, Module::Screenshot]);
+        if rmac_quick_settings::layout::low_power_available(&view.power.value)
+            && view.power.available
+        {
+            circles.push(Module::LowPower);
+        }
         circles
     }
 
@@ -1427,7 +1470,9 @@ mod tests {
                     banners: 0,
                     hidden_pills,
                     edit_rows: 1,
-                    circles: 2 + usize::from(mirroring_available()),
+                    circles: 2
+                        + usize::from(mirroring_available())
+                        + usize::from(stage_manager_available()),
                 };
                 assert_eq!(
                     initial_surface_height(display, hidden_pills),

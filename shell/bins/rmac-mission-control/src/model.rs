@@ -8,7 +8,7 @@
 
 use rmac_compositor::{
     window_is_parked, Action, OutputId, Snapshot, TileRegion, Timestamp, Window, WindowId,
-    Workspace, WorkspaceId, PARKING_WORKSPACE,
+    Workspace, WorkspaceId,
 };
 use rmac_shell_settings::{HotCornerAction, HotCornerSettings};
 
@@ -697,7 +697,7 @@ fn workspaces_on<'a>(snapshot: &'a Snapshot, output: &OutputId) -> Vec<&'a Works
         .workspaces
         .iter()
         .filter(|workspace| workspace.output.as_ref() == Some(output))
-        .filter(|workspace| workspace.name.as_deref() != Some(PARKING_WORKSPACE))
+        .filter(|workspace| !rmac_compositor::is_hidden_workspace(workspace.name.as_deref()))
         .collect();
     workspaces.sort_by_key(|workspace| workspace.index);
     workspaces
@@ -1024,7 +1024,7 @@ mod tests {
             outputs: vec![output()],
             workspaces: vec![
                 workspace(1, 1, Some("Desktop"), true),
-                workspace(2, 2, Some(PARKING_WORKSPACE), false),
+                workspace(2, 2, Some(rmac_compositor::PARKING_WORKSPACE), false),
                 workspace(3, 3, Some("rmac-space-3"), false),
                 workspace(4, 4, None, false),
             ],

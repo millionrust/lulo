@@ -356,7 +356,7 @@ pub(crate) fn restore_target(
     snapshot: &rmac_compositor::Snapshot,
 ) -> Option<rmac_compositor::WorkspaceId> {
     let usable = |workspace: &&rmac_compositor::Workspace| {
-        workspace.name.as_deref() != Some(rmac_compositor::PARKING_WORKSPACE)
+        !rmac_compositor::is_hidden_workspace(workspace.name.as_deref())
     };
     snapshot
         .workspaces

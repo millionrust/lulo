@@ -1458,9 +1458,20 @@ mod tests {
         let with_backlight = initial_surface_height(true, 0);
         let without_backlight = initial_surface_height(false, 0);
         // Five rows of 64 pt and four 12 pt gaps, the Edit Controls pill
-        // (12 pt gap, 26 pt), then the 12 pt padding.
-        assert_eq!(with_backlight, 5.0 * 64.0 + 4.0 * 12.0 + 38.0 + 24.0);
-        assert_eq!(without_backlight, 4.0 * 64.0 + 3.0 * 12.0 + 38.0 + 24.0);
+        // (12 pt gap, 26 pt), then the 12 pt padding. A third round control
+        // (Stage Manager on Lulo OS, Screen Mirroring) takes another slot,
+        // which moves Focus to a row of its own.
+        let circles =
+            2 + usize::from(mirroring_available()) + usize::from(stage_manager_available());
+        let extra = if circles > 2 { 1.0 } else { 0.0 };
+        assert_eq!(
+            with_backlight,
+            (5.0 + extra) * 64.0 + (4.0 + extra) * 12.0 + 38.0 + 24.0
+        );
+        assert_eq!(
+            without_backlight,
+            (4.0 + extra) * 64.0 + (3.0 + extra) * 12.0 + 38.0 + 24.0
+        );
         assert_eq!(with_backlight - without_backlight, 64.0 + 12.0);
         for display in [true, false] {
             for hidden_pills in 0..=2 {

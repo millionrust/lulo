@@ -1335,7 +1335,7 @@ def check_shell(
 
         # 6e. Every Lulo app opens inside the work area the bar and the
         # Dock leave (WIN-OS-50).
-        check_app_placement(bin_dir, environment, screenshots, failures)
+        check_app_placement(bin_dir, environment, screenshots, failures, log)
         print(f"shell: lulo-shell memory after the apps' placement: {memory_mb(shell_pid)}")
         # 6e1. The Dock's recent apps are the last three used that are not
         # kept; the bar's battery and its menu (macOS 26's bolt, "Charging").
@@ -2185,7 +2185,9 @@ def check_foreign_windows(screenshots: Path | None, failures: list[str]) -> None
         time.sleep(0.5)
 
 
-def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str]) -> None:
+def check_app_placement(
+    bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str], log: "Log"
+) -> None:
     """Each Lulo app's first window lies inside the work area: below the
     bar and above the Dock (System Settings once opened with its bottom
     under the Dock on a 1366 × 768 PC)."""
@@ -2196,6 +2198,7 @@ def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | No
             continue
         for pid in processes_named(f"{app}.exe"):
             terminate(pid)
+        launched = len(log.lines())
         process = subprocess.Popen([str(exe)], env=environment)
         found = wait_until(lambda: app_window(f"{app}.exe"), 20.0)
         if found is None:
@@ -2207,6 +2210,14 @@ def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | No
             time.sleep(1.0)
             process = subprocess.Popen([str(exe)], env=environment)
             found = wait_until(lambda: app_window(f"{app}.exe"), 20.0)
+        if found is not None:
+            # Until the Dock shows the app running: it counts among the
+            # recent apps from then on (check_dock_recents), whatever the
+            # runner's load.
+            app_id = "org.rmac." + "".join(part.title() for part in app.removeprefix("rmac-").split("-"))
+            running = log.wait_for(rf"^dock tile {re.escape(app_id)}(?:\.desktop)? .* running$", 10.0, after=launched)
+            if running is None:
+                print(f"shell: {app}: the Dock did not show it running within 10 s")
         time.sleep(1.5)
         if found is None:
             failures.append(f"{app} opened no window for the placement check")

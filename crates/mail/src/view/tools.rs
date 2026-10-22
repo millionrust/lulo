@@ -491,6 +491,9 @@ impl MailView {
                 "mail::PriorityHigh",
                 "mail::AddLink",
                 "mail::RemoveLink",
+                "mail::SendTonight",
+                "mail::SendTomorrow",
+                "mail::SendLater",
                 "mail::ShowSpellingAndGrammar",
                 "mail::CheckDocumentNow",
             ] {

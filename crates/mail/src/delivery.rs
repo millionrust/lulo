@@ -12,6 +12,7 @@ use rmac_accounts_linux::{
     winstore::{Kind, WinAccounts},
     GoaApi,
 };
+use rmac_mail::schedule::{Schedule, ScheduledSend};
 use rmac_mail_mime::{build, draft_source, guess_content_type, Draft, Priority};
 #[cfg(any(target_os = "linux", windows))]
 use rmac_mail_runtime::account_id;
@@ -377,6 +378,24 @@ pub fn deliver(
         Ok(message) => message,
         Err(_) => return DeliveryResult::Failed("Check the message fields and attachments"),
     };
+    send_built(
+        account,
+        &built.envelope_from,
+        &built.envelope_to,
+        &built.bytes,
+        saved,
+    )
+}
+
+/// Queues a finished message in the account's Outbox, removes its draft and
+/// tries to send it right away.
+fn send_built(
+    account: &ComposeAccount,
+    envelope_from: &str,
+    envelope_to: &[String],
+    bytes: &[u8],
+    saved: Option<DraftLocation>,
+) -> DeliveryResult {
     let Some(root) = data_root() else {
         return DeliveryResult::Failed("Mail could not find its data folder");
     };
@@ -385,7 +404,7 @@ pub fn deliver(
         Err(_) => return DeliveryResult::Failed("Mail could not open the Outbox"),
     };
     if storage
-        .queue_outbox(&built.envelope_from, &built.envelope_to, &built.bytes)
+        .queue_outbox(envelope_from, envelope_to, bytes)
         .is_err()
     {
         return DeliveryResult::Failed("Mail could not save the message to Outbox");
@@ -408,6 +427,73 @@ pub fn deliver(
         Ok(_) => DeliveryResult::Sent,
         Err(_) => DeliveryResult::Queued,
     }
+}
+
+/// Message ▸ Send Later: builds the message now (so later edits to the
+/// window cannot change it), keeps it beside Mail's schedule and adds it
+/// there. Its draft stays in Drafts until it is sent.
+pub fn schedule_send(
+    account: &ComposeAccount,
+    mut draft: Draft,
+    saved: Option<DraftLocation>,
+    at: i64,
+) -> Result<ScheduledSend, &'static str> {
+    draft.from.clone_from(&account.address);
+    let built = build(&draft).map_err(|_| "Check the message fields and attachments")?;
+    let root = data_root().ok_or("Mail could not find its data folder")?;
+    let entry = ScheduledSend {
+        id: Uuid::new_v4(),
+        account: account.id,
+        at,
+        subject: draft.subject.clone(),
+        envelope_from: built.envelope_from,
+        envelope_to: built.envelope_to,
+        draft: saved.map(|location| (location.mailbox_id, location.uid)),
+    };
+    let path = Schedule::message_path(&root, entry.id);
+    std::fs::create_dir_all(path.parent().unwrap_or(&root))
+        .and_then(|_| std::fs::write(&path, &built.bytes))
+        .map_err(|_| "Mail could not save the message for later")?;
+    let mut schedule = Schedule::load(&root);
+    schedule.sends.push(entry.clone());
+    schedule
+        .save(&root)
+        .map_err(|_| "Mail could not save the message for later")?;
+    Ok(entry)
+}
+
+/// Sends one Send Later message whose time has come. Its file is removed
+/// once the message is in the Outbox.
+pub fn send_scheduled(accounts: &[ComposeAccount], entry: &ScheduledSend) -> DeliveryResult {
+    let Some(root) = data_root() else {
+        return DeliveryResult::Failed("Mail could not find its data folder");
+    };
+    let path = Schedule::message_path(&root, entry.id);
+    let Ok(bytes) = std::fs::read(&path) else {
+        return DeliveryResult::Failed("The scheduled message is missing");
+    };
+    let Some(account) = accounts.iter().find(|account| account.id == entry.account) else {
+        return DeliveryResult::Failed("The account for this message was removed");
+    };
+    let saved = entry
+        .draft
+        .map(|(mailbox_id, uid)| DraftLocation { mailbox_id, uid });
+    let result = send_built(
+        account,
+        &entry.envelope_from,
+        &entry.envelope_to,
+        &bytes,
+        saved,
+    );
+    if !matches!(result, DeliveryResult::Failed(_)) {
+        let _ = std::fs::remove_file(path);
+    }
+    result
+}
+
+/// Where Mail keeps its Send Later and Remind Me schedule.
+pub fn schedule_root() -> Option<PathBuf> {
+    data_root()
 }
 
 #[cfg(test)]
@@ -582,5 +668,63 @@ mod tests {
             .message_by_uid(draft_location.mailbox_id, draft_location.uid)
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn send_later_keeps_the_draft_until_its_time_then_queues_it() {
+        let home = TempDataHome::new("later");
+        let account = account();
+        let draft_location = save_draft(
+            &account,
+            None,
+            &account.address,
+            &["anna@example.test".to_owned()],
+            &[],
+            &["sam@example.test".to_owned()],
+            "Later",
+            "Hi Anna",
+            &[],
+            &DraftHeaders::default(),
+        )
+        .unwrap();
+        let draft = Draft {
+            to: vec!["anna@example.test".to_owned()],
+            bcc: vec!["sam@example.test".to_owned()],
+            subject: "Later".to_owned(),
+            text: "Hi Anna".to_owned(),
+            ..Draft::default()
+        };
+        let entry = schedule_send(&account, draft, Some(draft_location), 1_000).unwrap();
+        let root = home.root.join("lulo/mail");
+        let schedule = Schedule::load(&root);
+        assert_eq!(schedule.sends, vec![entry.clone()]);
+        // Bcc goes in the envelope only, as for an immediate send.
+        assert!(entry.envelope_to.contains(&"sam@example.test".to_owned()));
+        let storage = MailStorage::open(&root, account.id).unwrap();
+        assert_eq!(
+            storage
+                .outbox_count(rmac_mail_storage::OutboxState::Queued)
+                .unwrap(),
+            0
+        );
+        assert!(storage
+            .message_by_uid(draft_location.mailbox_id, draft_location.uid)
+            .unwrap()
+            .is_some());
+
+        let result = send_scheduled(std::slice::from_ref(&account), &entry);
+        assert!(matches!(result, DeliveryResult::Queued));
+        let storage = MailStorage::open(&root, account.id).unwrap();
+        assert_eq!(
+            storage
+                .outbox_count(rmac_mail_storage::OutboxState::Queued)
+                .unwrap(),
+            1
+        );
+        assert!(storage
+            .message_by_uid(draft_location.mailbox_id, draft_location.uid)
+            .unwrap()
+            .is_none());
+        assert!(!Schedule::message_path(&root, entry.id).exists());
     }
 }

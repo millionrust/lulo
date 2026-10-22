@@ -237,6 +237,8 @@ struct ComposeView {
     priority: Priority,
     /// Edit ▸ Add Link…'s address field, while its sheet is open.
     link_sheet: Option<Entity<InputState>>,
+    /// Message ▸ Send Later ▸ Send Later…: the date-and-time field.
+    send_later_sheet: Option<Entity<InputState>>,
     /// Check Spelling ▸ Before Sending found misspelt words: ask first.
     spelling_warning: bool,
     subject: Entity<InputState>,
@@ -433,6 +435,9 @@ impl ComposeView {
                     "mail::PriorityHigh",
                     "mail::AddLink",
                     "mail::RemoveLink",
+                    "mail::SendTonight",
+                    "mail::SendTomorrow",
+                    "mail::SendLater",
                     "mail::ShowSpellingAndGrammar",
                     "mail::CheckDocumentNow",
                 ] {
@@ -460,6 +465,7 @@ impl ComposeView {
             reply_to,
             priority,
             link_sheet: None,
+            send_later_sheet: None,
             spelling_warning: false,
             subject,
             body,
@@ -533,6 +539,165 @@ impl ComposeView {
         let checker = rmac_spelling::shared();
         let grammar = assist(cx).settings.check_grammar_with_spelling;
         rmac_ui::text_assist::check_document_now(&field, checker.as_ref(), grammar, window, cx);
+    }
+
+    /// Message ▸ Send Later ▸ Send Later…: asks for the date and time,
+    /// starting at 8:00 tomorrow.
+    fn open_send_later_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending || self.sent {
+            return;
+        }
+        let start = rmac_mail::schedule::format_when(
+            rmac_mail::schedule::Preset::TomorrowMorning.at(crate::scheduler::now()),
+        );
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("23 Oct 2026 08:00")
+                .default_value(start)
+        });
+        cx.subscribe_in(&input, window, |this, _, event: &InputEvent, window, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                this.confirm_send_later(window, cx);
+            }
+        })
+        .detach();
+        input.update(cx, |state, cx| {
+            state.focus(window, cx);
+            let end = state.value().len();
+            state.set_selected_range(0..end, cx);
+        });
+        self.send_later_sheet = Some(input);
+        cx.notify();
+    }
+
+    fn confirm_send_later(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(input) = self.send_later_sheet.clone() else {
+            return;
+        };
+        let Some(at) = rmac_mail::schedule::parse_when(&input.read(cx).value()) else {
+            self.status = Some("Enter a date and time, such as 23 Oct 2026 08:00".into());
+            cx.notify();
+            return;
+        };
+        self.send_later_sheet = None;
+        self.send_later(at, window, cx);
+    }
+
+    /// Message ▸ Send Later: the message is kept and sent at `at` (now, if
+    /// that has passed). The window closes, as on the Mac.
+    fn send_later(&mut self, at: i64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending || self.sent {
+            return;
+        }
+        let Ok(draft) = self.draft(cx) else {
+            self.status = Some("Check the recipient addresses".into());
+            cx.notify();
+            return;
+        };
+        if draft.to.is_empty() && draft.cc.is_empty() && draft.bcc.is_empty() {
+            self.status = Some("Add at least one recipient".into());
+            cx.notify();
+            return;
+        }
+        let Some(account) = self.accounts.get(self.selected_account).cloned() else {
+            self.status = Some("Add an Internet Account to send mail".into());
+            cx.notify();
+            return;
+        };
+        self.pending = true;
+        self.status = Some("Scheduling…".into());
+        cx.notify();
+        let saved = self.draft_location;
+        let window_handle = window.window_handle();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { crate::delivery::schedule_send(&account, draft, saved, at) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.pending = false;
+                match result {
+                    Ok(_) => {
+                        this.sent = true;
+                        this.draft_location = None;
+                        crate::scheduler::check(cx);
+                        let _ = window_handle.update(cx, |_, window, _| window.remove_window());
+                    }
+                    Err(message) => this.status = Some(message.to_owned()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn send_later_sheet_view(
+        &self,
+        input: &Entity<InputState>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .id("compose-send-later-sheet")
+            .key_context("MailSendLaterSheet")
+            .role(Role::Dialog)
+            .aria_label("Send Later")
+            .absolute()
+            .top(px(52.0))
+            .left(px(120.0))
+            .right(px(120.0))
+            .p(px(16.0))
+            .flex()
+            .flex_col()
+            .gap(px(10.0))
+            .rounded(px(mac::radius_card()))
+            .bg(mac::raised())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .text_color(mac::text())
+                    .child("Send this message on:"),
+            )
+            .child(
+                div()
+                    .id("compose-send-later-when")
+                    .role(Role::TextInput)
+                    .aria_label("Date and time")
+                    .accessible_text_input(input, cx)
+                    .h(px(24.0))
+                    .rounded(px(mac::radius_control()))
+                    .bg(mac::control_fill())
+                    .child(TextField::new(input).appearance(false).small()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        rmac_ui::dialog_button(
+                            "compose-send-later-cancel",
+                            "Cancel",
+                            DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.send_later_sheet = None;
+                            cx.notify();
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "compose-send-later-ok",
+                            "Schedule",
+                            DialogButtonKind::Primary,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.confirm_send_later(window, cx)),
+                        ),
+                    ),
+            )
     }
 
     /// Edit ▸ Add Link… (⌘K): asks for the address.
@@ -1210,6 +1375,21 @@ impl Render for ComposeView {
             .track_focus(&self.focus)
             .key_context("MailCompose")
             .on_action(cx.listener(|this, _: &SendMessage, _, cx| this.send(cx)))
+            .on_action(cx.listener(|this, _: &crate::SendTonight, window, cx| {
+                let at = rmac_mail::schedule::Preset::Tonight.at(crate::scheduler::now());
+                this.send_later(at, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &crate::SendTomorrow, window, cx| {
+                let at = rmac_mail::schedule::Preset::TomorrowMorning.at(crate::scheduler::now());
+                this.send_later(at, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &crate::SendLater, window, cx| {
+                this.open_send_later_sheet(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &crate::SendLaterSheetCancel, _, cx| {
+                this.send_later_sheet = None;
+                cx.notify();
+            }))
             .on_action(
                 cx.listener(|this, _: &PriorityLow, _, cx| this.set_priority(Priority::Low, cx)),
             )
@@ -1396,6 +1576,9 @@ impl Render for ComposeView {
             .child(self.writing_tools.clone())
             .when_some(self.link_sheet.clone(), |root, input| {
                 root.child(self.link_sheet_view(&input, cx))
+            })
+            .when_some(self.send_later_sheet.clone(), |root, input| {
+                root.child(self.send_later_sheet_view(&input, cx))
             })
             .when(self.spelling_warning, |root| {
                 root.child(rmac_ui::alert_cancel_default(

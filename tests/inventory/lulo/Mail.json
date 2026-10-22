@@ -27,6 +27,13 @@
           "children": []
         },
         {
+          "label": "Add Account…",
+          "action": "mail::AddAccount",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
           "label": "Services",
           "action": "app::services",
           "shortcut": "",
@@ -59,6 +66,13 @@
           "action": "app::quit",
           "shortcut": "⌘Q",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "action": "mail::QuitAndKeepWindows",
+          "shortcut": "⌥⌘Q",
+          "separator_before": false,
           "children": []
         }
       ]
@@ -990,6 +1004,35 @@
           "children": []
         },
         {
+          "label": "Send Later",
+          "action": "mail::SendLaterMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Send 9:00 PM Tonight",
+              "action": "mail::SendTonight",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Send 8:00 AM Tomorrow",
+              "action": "mail::SendTomorrow",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Send Later…",
+              "action": "mail::SendLater",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            }
+          ]
+        },
+        {
           "label": "Reply",
           "action": "mail::Reply",
           "shortcut": "⌘R",
@@ -1023,6 +1066,49 @@
           "shortcut": "⇧⌘E",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "Remind Me",
+          "action": "mail::RemindMeMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Remind Me in 1 Hour",
+              "action": "mail::RemindInOneHour",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Remind Me Tonight",
+              "action": "mail::RemindTonight",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Remind Me Tomorrow",
+              "action": "mail::RemindTomorrow",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Remind Me Later…",
+              "action": "mail::RemindLater",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Clear Reminder",
+              "action": "mail::ClearReminder",
+              "shortcut": "",
+              "separator_before": true,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Mark as Unread",

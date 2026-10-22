@@ -126,13 +126,19 @@ def flatten_menu_items(
     def walk(items: list[dict], path: tuple[str, ...]) -> None:
         for item in items:
             label = item.get("label")
+            shortcut = item.get("shortcut", "")
+            if label is None and len(shortcut) > 2 and shortcut.startswith("\u2318"):
+                # An indented item under a menu's section label (Notes'
+                # Writing Direction ▸ Paragraph ▸ Default): AX reports no
+                # title and puts the text, after a stray ⌘, in the shortcut.
+                label, shortcut = shortcut[1:], ""
             if label is None:
                 continue  # separator
             norm_label = norm.normalize_label(label) or ""
             item_path = path + (norm_label,)
             out[item_path] = {
                 "label": label,
-                "shortcut": item.get("shortcut", ""),
+                "shortcut": shortcut,
                 "children_omitted": bool(item.get("children_omitted")),
             }
             children = item.get("children") or []

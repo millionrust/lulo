@@ -703,6 +703,7 @@ impl<'a> Parser<'a> {
             baseline_offset: self.run.baseline_half_points as f32 / 2.0,
             traditional: self.run.traditional,
             link: self.run.link.clone(),
+            ..CharStyle::default()
         }
     }
 
@@ -779,6 +780,7 @@ impl<'a> Parser<'a> {
             list,
             list_level: if list.is_some() { level } else { 0 },
             line_spacing,
+            ..ParagraphStyle::default()
         };
         let mut runs = std::mem::take(&mut self.runs);
         if runs.is_empty() {

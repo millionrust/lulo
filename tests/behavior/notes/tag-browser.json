@@ -1,0 +1,22 @@
+{
+  "title": "Notes: a #tag typed in the body appears in the sidebar's Tags browser, and choosing it selects it until a folder is chosen",
+  "app": "notes",
+  "launch": {},
+  "lulo_only": true,
+  "steps": [
+    {"wait": 2},
+    {"key": "cmd-n", "settle": 1},
+    {"type": "Tagged"},
+    {"key": "tab"},
+    {"type": "Plan #work today"},
+    {"wait": 1.5},
+    {"select": "#work", "settle": 0.7},
+    {"observe": "filtered", "facts": ["selection"]},
+    {"select": "All Notes, 1 note", "settle": 0.7},
+    {"observe": "unfiltered", "facts": ["selection"]}
+  ],
+  "tolerance": {
+    "filtered.selection.items": "subset",
+    "unfiltered.selection.items": "subset"
+  }
+}

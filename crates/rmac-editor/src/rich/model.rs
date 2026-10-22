@@ -81,6 +81,9 @@ pub struct CharStyle {
     pub traditional: bool,
     /// Edit ▸ Link…: the address the text links to.
     pub link: Option<Arc<str>>,
+    /// Format ▸ Text ▸ Writing Direction ▸ Selection: a bidi embedding
+    /// around the run (NSWritingDirectionAttributeName); `Default` is none.
+    pub embedding: WritingDirection,
 }
 
 /// Format ▸ Font ▸ Kern ▸ Tighten / Loosen's step, in points.
@@ -121,6 +124,7 @@ impl Default for CharStyle {
             baseline_offset: 0.0,
             traditional: false,
             link: None,
+            embedding: WritingDirection::Default,
         }
     }
 }
@@ -171,26 +175,45 @@ pub enum WritingDirection {
 
 impl WritingDirection {
     /// Whether a paragraph with this direction and `text` reads right to
-    /// left. Default looks at the first letter that has a direction.
+    /// left. Default takes the first strongly directional character
+    /// (Unicode bidi rule P2), as AppKit's natural direction does.
     pub fn is_rtl(self, text: &str) -> bool {
         match self {
             Self::LeftToRight => false,
             Self::RightToLeft => true,
-            Self::Default => text
-                .chars()
-                .find(|character| character.is_alphabetic())
-                .is_some_and(is_rtl_letter),
+            Self::Default => first_strong_is_rtl(text).unwrap_or(false),
         }
     }
 }
 
-/// Hebrew, Arabic, Syriac, Thaana, N'Ko, Samaritan and Mandaic letters and
-/// their presentation forms.
-fn is_rtl_letter(character: char) -> bool {
-    matches!(
-        u32::from(character),
-        0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF
-    )
+/// The direction of the first strongly directional character in `text`
+/// (`Some(true)` for right to left), or `None` when there is none.
+pub fn first_strong_is_rtl(text: &str) -> Option<bool> {
+    use unicode_bidi::BidiClass;
+    text.chars()
+        .find_map(|character| match unicode_bidi::bidi_class(character) {
+            BidiClass::L => Some(false),
+            BidiClass::R | BidiClass::AL => Some(true),
+            _ => None,
+        })
+}
+
+/// Whether `text` holds anything that can read right to left, so layout
+/// needs the bidi algorithm at all.
+pub fn has_rtl(text: &str) -> bool {
+    use unicode_bidi::BidiClass;
+    text.chars().any(|character| {
+        u32::from(character) >= 0x0590
+            && matches!(
+                unicode_bidi::bidi_class(character),
+                BidiClass::R
+                    | BidiClass::AL
+                    | BidiClass::RLE
+                    | BidiClass::RLO
+                    | BidiClass::RLI
+                    | BidiClass::AN
+            )
+    })
 }
 
 /// Where a line's free space goes: the share of it placed before the line,
@@ -239,6 +262,9 @@ pub enum ListKind {
     UpperAlpha,
     /// "a." "b." … (`{lower-alpha}`).
     LowerAlpha,
+    /// Notes' checklist: a round checkbox the reader ticks
+    /// ([`ParagraphStyle::checked`]). Not one of TextEdit's markers.
+    Checkbox,
 }
 
 impl ListKind {
@@ -271,6 +297,7 @@ impl ListKind {
             Self::LowerRoman => "lower-roman",
             Self::UpperAlpha => "upper-alpha",
             Self::LowerAlpha => "lower-alpha",
+            Self::Checkbox => "checkbox",
         }
     }
 
@@ -287,6 +314,7 @@ impl ListKind {
             "lower-roman" => Self::LowerRoman,
             "upper-alpha" | "upper-latin" => Self::UpperAlpha,
             "lower-alpha" | "lower-latin" => Self::LowerAlpha,
+            "checkbox" => Self::Checkbox,
             _ => return None,
         })
     }
@@ -317,6 +345,7 @@ impl ListKind {
             Self::LowerRoman => format!("{}.", roman(number).to_lowercase()),
             Self::UpperAlpha => format!("{}.", alpha(number)),
             Self::LowerAlpha => format!("{}.", alpha(number).to_lowercase()),
+            Self::Checkbox => "\u{25CB}".to_owned(),
         }
     }
 }
@@ -366,6 +395,27 @@ fn alpha(number: u32) -> String {
 /// Deepest list nesting level (NSTextList nests nine deep).
 pub const MAX_LIST_LEVEL: u8 = 8;
 
+/// Notes' paragraph styles (Format ▸ Title / Heading / Subheading / Body /
+/// Monostyled). The role picks the paragraph's typeface, size and weight
+/// (the owner's typography); TextEdit's own paragraphs are all Body.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ParagraphRole {
+    #[default]
+    Body,
+    Title,
+    Heading,
+    Subheading,
+    Monostyled,
+}
+
+impl ParagraphRole {
+    /// Whether Return at the end of such a paragraph starts a Body one, as
+    /// Notes does after a title or heading.
+    pub fn is_heading(self) -> bool {
+        matches!(self, Self::Title | Self::Heading | Self::Subheading)
+    }
+}
+
 /// Paragraph attributes: Format ▸ Text and Format ▸ List….
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ParagraphStyle {
@@ -378,6 +428,12 @@ pub struct ParagraphStyle {
     pub list_level: u8,
     /// Line-height multiple (Format ▸ Text ▸ Spacing…).
     pub line_spacing: f32,
+    /// Notes' paragraph style.
+    pub role: ParagraphRole,
+    /// Format ▸ Block Quote: indented behind a bar.
+    pub quote: bool,
+    /// A [`ListKind::Checkbox`] item's tick.
+    pub checked: bool,
 }
 
 impl Default for ParagraphStyle {
@@ -388,6 +444,9 @@ impl Default for ParagraphStyle {
             list: None,
             list_level: 0,
             line_spacing: 1.0,
+            role: ParagraphRole::Body,
+            quote: false,
+            checked: false,
         }
     }
 }
@@ -606,6 +665,11 @@ impl Paragraph {
             });
         }
         result
+    }
+
+    /// This paragraph with another paragraph style.
+    pub fn with_style(&self, style: ParagraphStyle) -> Paragraph {
+        Paragraph::new(self.text.clone(), self.runs.clone(), style)
     }
 
     /// A copy of `range` (local) as its own paragraph.
@@ -1033,6 +1097,36 @@ impl Document {
         }
     }
 
+    /// Apply `change` to every character style of the paragraphs at
+    /// `indices`, an empty paragraph's typing style included (a paragraph
+    /// style such as Title restyles the whole paragraph).
+    pub fn update_paragraph_chars(
+        &mut self,
+        indices: Range<usize>,
+        mut change: impl FnMut(&mut CharStyle),
+    ) {
+        let end = indices.end.min(self.paragraphs.len());
+        for index in indices.start.min(end)..end {
+            let paragraph = &self.paragraphs[index];
+            let runs = paragraph
+                .runs
+                .iter()
+                .map(|run| {
+                    let mut style = run.style.clone();
+                    change(&mut style);
+                    StyledRun {
+                        len: run.len,
+                        style,
+                    }
+                })
+                .collect();
+            if runs != paragraph.runs {
+                let rebuilt = Paragraph::new(paragraph.text.clone(), runs, paragraph.style);
+                self.paragraphs[index] = Arc::new(rebuilt);
+            }
+        }
+    }
+
     /// Format ▸ Font ▸ Styles…' document styles: each distinct pairing of
     /// character and paragraph style the text uses, in reading order, at
     /// most `limit` of them. A link is content, not style, so it is left
@@ -1065,6 +1159,8 @@ impl Document {
     pub fn list_numbers(&self) -> Vec<u32> {
         let mut numbers = Vec::with_capacity(self.paragraphs.len());
         let mut counters = [0_u32; MAX_LIST_LEVEL as usize + 1];
+        let mut kinds: [Option<ListKind>; MAX_LIST_LEVEL as usize + 1] =
+            [None; MAX_LIST_LEVEL as usize + 1];
         for paragraph in &self.paragraphs {
             let style = paragraph.style();
             if style.list.is_some() {
@@ -1072,10 +1168,16 @@ impl Document {
                 for deeper in &mut counters[level + 1..] {
                     *deeper = 0;
                 }
+                // A different marker at the same level starts a new list.
+                if kinds[level] != style.list {
+                    counters[level] = 0;
+                    kinds[level] = style.list;
+                }
                 counters[level] += 1;
                 numbers.push(counters[level]);
             } else {
                 counters = [0; MAX_LIST_LEVEL as usize + 1];
+                kinds = [None; MAX_LIST_LEVEL as usize + 1];
                 numbers.push(0);
             }
         }

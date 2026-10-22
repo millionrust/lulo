@@ -37,8 +37,7 @@ impl NotesView {
             cx.notify();
             return;
         }
-        let (title, text) =
-            printable_note(&self.title.read(cx).value(), &self.body.read(cx).value());
+        let (title, text) = printable_note(&self.title.read(cx).value(), &self.body_text(cx));
         #[cfg(target_os = "linux")]
         {
             use std::sync::atomic::Ordering;
@@ -109,8 +108,7 @@ impl NotesView {
             cx.notify();
             return;
         }
-        let (title, text) =
-            printable_note(&self.title.read(cx).value(), &self.body.read(cx).value());
+        let (title, text) = printable_note(&self.title.read(cx).value(), &self.body_text(cx));
         let suggested_name = format!("{}.pdf", safe_export_stem(&title));
         let directory = crate::file_choosers::documents_directory();
 

@@ -692,14 +692,14 @@ impl NotesView {
         };
         let name = name.to_string();
         let chip = format!("📎 {name}");
-        self.body.update(cx, |state, cx| {
-            let value = state.value().to_string();
-            let cursor = state.cursor();
+        self.body.update(cx, |editor, cx| {
+            let value = editor.text();
+            let cursor = editor.cursor();
             let needs_newline = cursor > 0 && !value[..cursor].ends_with('\n');
             let text = format!("{}{chip}\n", if needs_newline { "\n" } else { "" });
-            state.set_selected_range(cursor..cursor, cx);
-            state.replace(text, window, cx);
+            editor.replace_range(cursor..cursor, &text, cx);
         });
+        let _ = window;
         self.attachment_chip_paths
             .entry(note_id)
             .or_default()

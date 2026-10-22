@@ -9,4 +9,5 @@ authors.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 rmac-ui.workspace = true
+unicode-bidi.workspace = true
 unicode-segmentation.workspace = true

@@ -223,6 +223,7 @@ spellbook = "0.4"
 sysinfo = "0.33"
 tar = { version = "0.4", default-features = false }
 trash = "5"
+unicode-bidi = "0.3.18"
 unicode-segmentation = "1.13"
 url = "2"
 uuid = { version = "1", features = ["v4"] }

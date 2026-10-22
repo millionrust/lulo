@@ -1408,9 +1408,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Copy", "input::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
             item!("Paste and Match Style", "notes::PastePlainText", "⌥⇧⌘V"),
-            // NOT-MENU-006: Notes' body is plain Markdown source with no
-            // separate rich-text clipboard representation to retain, so
-            // this behaves like an ordinary paste (see docs/parity.md).
+            // NOT-MENU-006: pastes the clipboard's rich copy with its styles.
             item!("Paste and Retain Style", "notes::PasteAndRetainStyle", ""),
             item!("Delete Note", "notes::DeleteSelectedNote", "⌫", separator),
             item!("Rename", "notes::RenameSelectedFolder", ""),
@@ -1500,65 +1498,71 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 "",
                 separator
             ),
+            // Format ▸ Font and Format ▸ Text work on the body's rich-text
+            // model (`rmac_editor::rich`, NOTES-01/03/24), in the Mac's order.
             submenu!(
                 "Font",
                 "notes::FontMenu",
                 [
-                    item!("Bold", "notes::ToggleBold", "⌘B"),
+                    item!("Show Fonts", "notes::ShowFonts", "⌘T"),
+                    item!("Bold", "notes::ToggleBold", "⌘B", separator),
                     item!("Italic", "notes::ToggleItalic", "⌘I"),
                     item!("Underline", "notes::ToggleUnderline", "⌘U"),
                     item!("Strikethrough", "notes::ToggleStrikethrough", ""),
-                    // NOT-MENU-030: a `==marker==` highlight span.
                     item!("Highlight", "notes::ToggleHighlight", "⇧⌘E"),
-                    // NOT-MENU-031/032: reuse the same note-wide text scale
-                    // View ▸ Zoom In/Out already drives (NOTES-12); Notes
-                    // has no per-character font size model to grow or
-                    // shrink just the selection.
                     item!("Bigger", "notes::FontBigger", "⌘+", separator),
                     item!("Smaller", "notes::FontSmaller", "⌘-"),
-                    // NOT-MENU-038/039: copy/paste the selection's bold,
-                    // italic, strikethrough, underline and highlight
-                    // marker combination (`note_format_controller::
-                    // CopiedStyle`) — Notes has no other character
-                    // attribute to carry.
-                    item!("Copy Style", "notes::CopyStyle", "⌥⌘C", separator),
-                    item!("Paste Style", "notes::PasteStyle", "⌥⌘V"),
                     submenu!(
                         "Baseline",
                         "notes::FontBaselineMenu",
                         [
+                            item!("Use Default", "notes::BaselineUseDefault", ""),
                             item!("Superscript", "notes::ToggleSuperscript", ""),
                             item!("Subscript", "notes::ToggleSubscript", ""),
-                            item!("Use Default", "notes::BaselineUseDefault", ""),
                         ],
                         separator
                     ),
+                    item!("Show Colours", "notes::ShowColours", "⇧⌘C", separator),
+                    item!("Copy Style", "notes::CopyStyle", "⌥⌘C", separator),
+                    item!("Paste Style", "notes::PasteStyle", "⌥⌘V"),
                     item!("Remove Style", "notes::RemoveStyle", ""),
                 ],
                 separator
             ),
-            // NOT-MENU-041..045: Notes' body is Markdown source with no
-            // native paragraph-alignment construct, so Align Left/Centre/
-            // Align Right write a trailing ` :center:`/` :right:` line
-            // marker the preview strips and renders as real flex alignment
-            // (`markdown_preview::strip_trailing_alignment_marker`). There
-            // is no Justify: GPUI's text layout has no justified
-            // line-breaking API, so it is left out rather than faked.
-            // Writing Direction is Edit-submenu-shared territory and is
-            // left for that pass.
             submenu!(
                 "Text",
                 "notes::TextMenu",
                 [
                     item!("Align Left", "notes::AlignLeft", "⌘{"),
                     item!("Centre", "notes::AlignCentre", "⌘|"),
+                    item!("Justify", "notes::AlignJustify", ""),
                     item!("Align Right", "notes::AlignRight", "⌘}"),
+                    // The Mac's two greyed section labels, each over its
+                    // three directions.
+                    submenu!(
+                        "Writing Direction",
+                        "notes::WritingDirectionMenu",
+                        [
+                            item!("Paragraph", "notes::WritingDirectionParagraphLabel", ""),
+                            item!("Default", "notes::ParagraphDirectionDefault", ""),
+                            item!("Left to Right", "notes::ParagraphDirectionLeftToRight", ""),
+                            item!("Right to Left", "notes::ParagraphDirectionRightToLeft", ""),
+                            item!(
+                                "Selection",
+                                "notes::WritingDirectionSelectionLabel",
+                                "",
+                                separator
+                            ),
+                            item!("Default", "notes::SelectionDirectionDefault", ""),
+                            item!("Left to Right", "notes::SelectionDirectionLeftToRight", ""),
+                            item!("Right to Left", "notes::SelectionDirectionRightToLeft", ""),
+                        ],
+                        separator
+                    ),
                 ]
             ),
-            // NOT-MENU-049..052: real, distinct, persisted-for-the-session
-            // settings (`view_model::MathsResultsMode`); only Off has a
-            // visible effect today since Notes has no expression evaluator
-            // wired to the editor yet (docs/parity.md).
+            // NOT-MENU-049..052: Off, Suggest Results (an inline offer
+            // Return accepts) and Insert Results (`maths_results.rs`).
             submenu!(
                 "Maths Results",
                 "notes::MathsResultsMenu",

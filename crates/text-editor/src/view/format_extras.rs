@@ -46,6 +46,7 @@ pub(super) fn list_marker_name(kind: ListKind) -> &'static str {
         ListKind::LowerRoman => "Lower-case Roman numerals",
         ListKind::UpperAlpha => "Upper-case letters",
         ListKind::LowerAlpha => "Lower-case letters",
+        ListKind::Checkbox => "Checklist",
     }
 }
 

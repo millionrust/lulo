@@ -72,6 +72,7 @@ fn list_tag(kind: ListKind) -> (&'static str, &'static str) {
         ListKind::Diamond => ("ul", "'\\25C6  '"),
         ListKind::Hyphen => ("ul", "'\\2043  '"),
         ListKind::Check => ("ul", "'\\2713  '"),
+        ListKind::Checkbox => ("ul", "'\\25CB  '"),
     }
 }
 

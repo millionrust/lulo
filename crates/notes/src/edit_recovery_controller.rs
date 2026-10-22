@@ -2,54 +2,58 @@ use super::*;
 
 impl NotesView {
     pub(super) fn sync_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The same note again (its own save coming back): leave fields that
+        // already hold the saved text alone, so the caret, selection and
+        // undo history survive.
+        let same_note = self.last_editor_note.is_some()
+            && self.last_editor_note == self.session.selected_note_id();
         self.record_recent_note();
-        // A different note's body makes any in-note Find state stale.
-        self.note_find_open = false;
-        self.note_find_matches.clear();
+        if !same_note {
+            // A different note's body makes any in-note Find state stale.
+            self.note_find_open = false;
+            self.note_find_matches.clear();
+        }
         let (title, tags, body) = self
             .session
             .selected_note()
-            .map(|note| (note.title.clone(), note.tags.join(", "), note.body.clone()))
+            .map(|note| (note.title.clone(), note.tags.clone(), note.body.clone()))
             .unwrap_or_default();
+        let document = note_format_controller::body_document(&body);
+        // The Tags field holds the tags the body's own `#tags` do not
+        // (those stay in the body, where they were typed).
+        let inline: std::collections::BTreeSet<String> = if self.smart_tags {
+            tag_browser::inline_tags(&document.text())
+                .into_iter()
+                .map(|tag| tag.to_lowercase())
+                .collect()
+        } else {
+            Default::default()
+        };
+        let tags = tags
+            .into_iter()
+            .filter(|tag| !inline.contains(&tag.to_lowercase()))
+            .collect::<Vec<_>>()
+            .join(", ");
         self.applying_snapshot = true;
-        self.title
-            .update(cx, |state, cx| state.set_value(title, window, cx));
-        self.tags
-            .update(cx, |state, cx| state.set_value(tags, window, cx));
-        self.body
-            .update(cx, |state, cx| state.set_value(body, window, cx));
+        if !same_note || self.title.read(cx).value() != title {
+            self.title
+                .update(cx, |state, cx| state.set_value(title, window, cx));
+        }
+        let tags_shown = parse_tags(&self.tags.read(cx).value()).unwrap_or_default();
+        if !same_note || tags_shown != parse_tags(&tags).unwrap_or_default() {
+            self.tags
+                .update(cx, |state, cx| state.set_value(tags, window, cx));
+        }
+        let shown = note_format_controller::body_markdown(self.body.read(cx).document());
+        if !same_note || shown != body {
+            self.body
+                .update(cx, |editor, cx| editor.set_document(document, cx));
+            self.maths_suggestion = None;
+            self.schedule_spell_check(cx);
+        }
         self.applying_snapshot = false;
         self.sync_attachment_preview(false, cx);
         self.sync_markdown_preview(cx);
-    }
-
-    /// Format ▸ Checklist (⇧⌘L): start a Markdown checklist item on its own
-    /// line at the caret. The preview draws it as Notes' round checkbox.
-    pub(super) fn insert_checklist(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let editable = self.is_interactive_ready()
-            && !self.markdown_preview_visible
-            && !self.selected_note_closed()
-            && self
-                .session
-                .selected_note()
-                .is_some_and(|note| !note.deleted);
-        if !editable {
-            return;
-        }
-        self.body.update(cx, |state, cx| {
-            let cursor = state.cursor();
-            let value = state.value();
-            let at_line_start = cursor == 0
-                || value
-                    .get(..cursor)
-                    .is_some_and(|before| before.ends_with('\n'));
-            let item = if at_line_start { "- [ ] " } else { "\n- [ ] " };
-            state.insert(item, window, cx);
-            state.focus(window, cx);
-        });
-        // `insert` is silent, so record the edit explicitly.
-        self.schedule_current_edit(cx);
-        cx.notify();
     }
 
     /// Whether title/tags/body accept edits right now — mirrors
@@ -131,8 +135,11 @@ impl NotesView {
                 if !this.assistive_fields_editable() {
                     return;
                 }
-                this.body
-                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                this.body.update(cx, |editor, cx| {
+                    let end = editor.document().len();
+                    editor.replace_range(0..end, &text, cx);
+                });
+                let _ = window;
                 this.schedule_current_edit(cx);
             });
         }
@@ -146,39 +153,70 @@ impl NotesView {
         if self.applying_snapshot || !self.is_interactive_ready() {
             return;
         }
-        let Some(note) = self.session.selected_note() else {
+        let Some(note_id) = self.session.selected_note_id() else {
             return;
         };
+        let title = self.title.read(cx).value().to_string();
+        let body = note_format_controller::body_markdown(self.body.read(cx).document());
+        let body_text = self.body_text(cx);
+        let tag_text = self.tags.read(cx).value().to_string();
+        if let Some(generation) =
+            self.schedule_note_edit(note_id, title, &tag_text, body, &body_text, cx)
+        {
+            self.latest_local_generation = Some(generation);
+        }
+    }
+
+    /// Schedule a save of note `note_id` with this title, Tags field text
+    /// and body (stored form, and its plain text for `#tags`), from any
+    /// window's editor. Returns the edit's generation once sent.
+    pub(super) fn schedule_note_edit(
+        &mut self,
+        note_id: NoteId,
+        title: String,
+        tag_text: &str,
+        body: String,
+        body_text: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<EditGeneration> {
+        if !self.is_interactive_ready() {
+            return None;
+        }
+        let note = self
+            .session
+            .snapshot()?
+            .notes
+            .iter()
+            .find(|note| note.id == note_id)?;
         // A closed locked note shows no editor; never send its empty view.
         if note.deleted || self.session.is_note_closed(note) {
-            return;
+            return None;
         }
         self.last_activity = std::time::Instant::now();
-        let note_id = note.id;
         let expected_revision = note.revision;
         let created_unix_ms = note.created_unix_ms;
         let previous_modified = note.modified_unix_ms;
+        let unchanged_title = title == note.title;
+        let unchanged_body = body == note.body;
         let accepted_tags = note.tags.clone();
-        let title = self.title.read(cx).value().to_string();
-        let body = self.body.read(cx).value().to_string();
-        let tag_text = self.tags.read(cx).value().to_string();
-        let tags = match parse_tags(&tag_text) {
-            Ok(tags) => tags,
+        let inline = if self.smart_tags {
+            tag_browser::inline_tags(body_text)
+        } else {
+            Vec::new()
+        };
+        let tags = match parse_tags(tag_text) {
+            Ok(tags) => tag_browser::merged_tags(tags, inline),
             Err(message) => {
                 self.message = Some(message.into());
                 cx.notify();
-                return;
+                return None;
             }
         };
-        if title == note.title && body == note.body && tags == accepted_tags {
-            return;
+        if unchanged_title && unchanged_body && tags == accepted_tags {
+            return None;
         }
-        let Some(request_id) = self.take_request_id() else {
-            return;
-        };
-        let Some(generation) = self.take_edit_generation() else {
-            return;
-        };
+        let request_id = self.take_request_id()?;
+        let generation = self.take_edit_generation()?;
         let modified_unix_ms = now_unix_ms().max(created_unix_ms).max(previous_modified);
         let edit = ScheduledEdit::new(
             request_id,
@@ -193,14 +231,13 @@ impl NotesView {
             },
         );
         match edit {
-            Ok(edit) => {
-                if self.send(WorkerCommand::ScheduleEdit(edit), cx) {
-                    self.latest_local_generation = Some(generation);
-                }
-            }
+            Ok(edit) => self
+                .send(WorkerCommand::ScheduleEdit(edit), cx)
+                .then_some(generation),
             Err(error) => {
                 self.message = Some(error.to_string().into());
                 cx.notify();
+                None
             }
         }
     }
@@ -253,9 +290,9 @@ impl NotesView {
         self.tags.update(cx, |state, cx| {
             state.set_value(changes.tags.join(", "), window, cx)
         });
-        self.body.update(cx, |state, cx| {
-            state.set_value(changes.body.clone(), window, cx)
-        });
+        let document = note_format_controller::body_document(&changes.body);
+        self.body
+            .update(cx, |editor, cx| editor.set_document(document, cx));
         self.applying_snapshot = false;
 
         let Some(request_id) = self.take_request_id() else {

@@ -224,7 +224,20 @@ pub(super) const TITLE_SIZE: f32 = 20.0;
 pub(super) const TITLE_LINE: f32 = 24.0;
 pub(super) const TITLE_TOP: f32 = 9.0;
 pub(super) const BODY_SIZE: f32 = 13.0;
-pub(super) const BODY_LINE: f32 = 17.0;
+/// Format ▸ Heading, Subheading and Monostyled faces.
+pub(super) const HEADING_SIZE: f32 = 17.0;
+pub(super) const SUBHEADING_SIZE: f32 = 15.0;
+pub(super) const MONOSTYLED_SIZE: f32 = 12.0;
+
+/// Notes' accent: links and ticked checkboxes.
+pub(super) fn notes_accent() -> Hsla {
+    measured(0xe2a841, mac::system_yellow())
+}
+
+/// An unticked checkbox's ring and a block quote's bar.
+pub(super) fn checkbox_ring() -> Hsla {
+    measured(0x8a8a8a, mac::text_tertiary())
+}
 
 pub(super) fn editor_fill() -> Hsla {
     measured(0x1e1e1e, mac::window())

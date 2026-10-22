@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "notes/tag-browser",
+  "observations": {
+    "filtered": {"selection": {"items": ["#work"]}},
+    "unfiltered": {"selection": {"items": ["All Notes, 1 note"]}}
+  }
+}

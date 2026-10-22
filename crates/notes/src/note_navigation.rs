@@ -91,6 +91,9 @@ impl NotesView {
             })
         });
         let current = self.session.folder_selection();
+        // A Smart Folder or tag choice is what is selected then, not the
+        // folder underneath it.
+        let narrowed = self.smart_folder_filter.is_some() || self.tag_selection.is_some();
         let has_selected_folder = matches!(current, FolderSelection::Folder(_));
         let view = cx.entity();
         let mut rows = div()
@@ -160,7 +163,7 @@ impl NotesView {
                 "All Notes",
                 glyphs::FOLDER,
                 self.show_note_count.then_some(all_count),
-                current == FolderSelection::All,
+                current == FolderSelection::All && !narrowed,
                 cx.listener(|this, _, window, cx| {
                     this.select_folder(FolderSelection::All, window, cx)
                 }),
@@ -174,7 +177,7 @@ impl NotesView {
                 glyphs::FOLDER,
                 self.show_note_count
                     .then_some(self.session.folder_count(folder_id)),
-                current == FolderSelection::Folder(folder_id),
+                current == FolderSelection::Folder(folder_id) && !narrowed,
                 cx.listener(move |this, _, window, cx| {
                     this.select_folder(FolderSelection::Folder(folder_id), window, cx)
                 }),
@@ -216,7 +219,7 @@ impl NotesView {
                 smart_folder.name.clone(),
                 glyphs::FOLDER,
                 self.show_note_count.then_some(count),
-                self.smart_folder_filter == Some(smart_folder_id),
+                self.smart_folder_filter == Some(smart_folder_id) && self.tag_selection.is_none(),
                 cx.listener(move |this, _, window, cx| {
                     this.select_smart_folder(smart_folder_id, window, cx)
                 }),
@@ -233,6 +236,7 @@ impl NotesView {
                 this.select_folder(FolderSelection::Trash, window, cx)
             }),
         ));
+        rows = rows.child(self.render_tag_browser(cx));
 
         // The traffic lights live inside the floating panel (window-relative
         // centres 26 / 49 / 72, y 26), so place the cluster by its centre.
@@ -406,27 +410,10 @@ impl NotesView {
             } else if search_active {
                 Vec::new()
             } else {
-                let smart_folder_tag = self
-                    .smart_folder_filter
-                    .and_then(|id| {
-                        self.session
-                            .smart_folders()
-                            .into_iter()
-                            .find(|folder| folder.id == id)
-                    })
-                    .map(|folder| folder.tag.to_lowercase());
                 self.session
                     .visible_notes()
                     .into_iter()
-                    .filter(|note| {
-                        smart_folder_tag.as_deref().is_none_or(|tag| {
-                            note.lock.is_none()
-                                && note
-                                    .tags
-                                    .iter()
-                                    .any(|note_tag| note_tag.to_lowercase() == tag)
-                        })
-                    })
+                    .filter(|note| self.note_listed(note))
                     .map(|note| (note, None))
                     .collect()
             };
@@ -882,7 +869,21 @@ impl NotesView {
                 .into(),
             )
         } else {
+            let smart_folder_name = self.smart_folder_filter.and_then(|id| {
+                self.session
+                    .smart_folders()
+                    .into_iter()
+                    .find(|folder| folder.id == id)
+                    .map(|folder| SharedString::from(folder.name.clone()))
+            });
             let title: SharedString = match self.session.folder_selection() {
+                _ if self.tag_selection.is_some() => self
+                    .tag_selection
+                    .as_ref()
+                    .map(|selection| selection.title(&self.library_tags()))
+                    .unwrap_or_default()
+                    .into(),
+                _ if smart_folder_name.is_some() => smart_folder_name.unwrap_or_default(),
                 rmac_notes_runtime::FolderSelection::All => "All Notes".into(),
                 rmac_notes_runtime::FolderSelection::Trash => "Recently Deleted".into(),
                 rmac_notes_runtime::FolderSelection::Folder(folder_id) => self

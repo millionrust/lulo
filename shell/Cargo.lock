@@ -6313,13 +6313,16 @@ dependencies = [
  "chrono",
  "gpui",
  "gpui_platform",
+ "image",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-shell-layer",
  "rmac-shell-ui",
  "rmac-sound",
  "rmac-storage",
  "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]

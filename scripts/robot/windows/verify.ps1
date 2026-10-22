@@ -395,6 +395,36 @@ try {
         foreach ($shot in $shots) { Remove-Item -LiteralPath $shot.FullName -ErrorAction SilentlyContinue }
         Note 'screenshots: Ctrl+Shift+3, 4 and 5' ($screen -and $area -and $toolbar -and $shots.Count -eq 3 -and $strays.Count -eq 0) "screen: $screen; area: $area; toolbar: $toolbar; in E:\lulo: $($shots.Count); on the owner's Desktop: $($strays.Count)"
     }
+    Check 'desktop: drag an icon out to an app' {
+        # A scratch file on Lulo's desktop (run-private.ps1 points it at
+        # E:\lulo), dragged onto the robot's own Notepad, which opens it.
+        $desk = Join-Path (Split-Path $Profile) 'desktop'
+        $file = Join-Path $desk 'lulo drag test.txt'
+        Set-Content -Encoding ASCII $file 'Dragged out of the Lulo desktop.'
+        $icon = Wait-Trace '^desktop icon lulo drag test\.txt at (\d+),(\d+)' 0 10
+        $before = @(Get-Process Notepad -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+        Start-Process notepad.exe | Out-Null
+        Start-Sleep -Seconds 2
+        $note = Get-Process Notepad -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+        $opened = $false
+        $dropped = $null
+        if ($icon -and $note) {
+            $p = Point-Of $icon
+            $f = $R::Frame($note.MainWindowHandle)
+            $m = Mark
+            if (Ours ($R::PidAt($p[0], $p[1]))) {
+                $R::Drag($p[0], $p[1], [int]($f.X + $f.Width / 2), [int]($f.Y + $f.Height / 2))
+            }
+            $dropped = Wait-Trace '^desktop drag out of 1 files: dropped' $m 8
+            Start-Sleep -Seconds 2
+            $opened = [bool]($R::Title($note.MainWindowHandle) -match 'lulo drag test')
+            Shot 'drag-out'
+        }
+        $title = if ($note) { $R::Title($note.MainWindowHandle) } else { 'no Notepad' }
+        Note 'desktop: drag an icon out to an app' $opened "icon: $icon; $dropped; Notepad title: $title"
+        if ($note) { Stop-Process -Id $note.Id -ErrorAction SilentlyContinue }
+        Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue
+    }
     Check 'volume: the mute key shows the Sound panel' {
         # Mute twice: the level ends as it was.
         $m = Mark

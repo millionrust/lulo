@@ -156,6 +156,14 @@ impl Settings {
     }
     /// The right-aligned Refresh under Keyboard, Mouse and Trackpad.
     pub(super) fn input_refresh_button(&self, cx: &Context<Self>) -> Div {
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.input_error.is_none()
+            && self.input_stream_error.is_none()
+            && self.mac_keyboard_error.is_none()
+        {
+            return div();
+        }
         let view = cx.entity();
         footer_buttons(vec![push_button("input-refresh", "Refresh")
             .busy(self.input_busy)

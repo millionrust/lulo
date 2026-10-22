@@ -71,7 +71,21 @@ pub fn settings() -> Result<Snapshot, Error> {
         display_off_on_battery_seconds: battery,
         display_off_on_adapter_seconds: adapter,
         display_off_supported: true,
+        // Windows asks for the password on wake by its own sign-in policy,
+        // and sleeps by the power scheme's AC/DC timeouts; Settings hides
+        // these Lulo OS options there.
+        require_password_after_seconds: None,
+        prevent_sleep_on_adapter: false,
+        options_supported: false,
     })
+}
+
+pub fn set_require_password(_seconds: Option<u32>) -> Result<Snapshot, Error> {
+    Err(Error::Call)
+}
+
+pub fn set_prevent_sleep_on_adapter(_prevent: bool) -> Result<Snapshot, Error> {
+    Err(Error::Call)
 }
 
 /// The active scheme's "Turn off the display after" on battery (DC) and on
@@ -140,6 +154,8 @@ pub fn set_lock_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
                 suspend_after_seconds: None,
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             }
             .validate()
             .map_err(|_| Error::Invalid)?;
@@ -166,6 +182,8 @@ pub fn set_suspend_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
             suspend_after_seconds: Some(seconds),
             display_off_on_battery_seconds: None,
             display_off_on_adapter_seconds: None,
+            require_password_after_seconds: Some(0),
+            prevent_sleep_on_adapter: false,
         }
         .validate()
         .map_err(|_| Error::Invalid)?;

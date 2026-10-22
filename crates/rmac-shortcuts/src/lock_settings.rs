@@ -39,7 +39,19 @@ pub struct Snapshot {
     /// The authority reports display-off timeouts (an older Lock Screen
     /// service does not).
     pub display_off_supported: bool,
+    /// Require password after the display is turned off (`Some(0)` is
+    /// Immediately, `None` is Never).
+    pub require_password_after_seconds: Option<u32>,
+    /// Battery ▸ Options… ▸ Prevent automatic sleeping on power adapter
+    /// when the display is off.
+    pub prevent_sleep_on_adapter: bool,
+    /// The authority has the two options above.
+    pub options_supported: bool,
 }
+
+/// `RequirePassword` on the wire: this value is Never.
+#[cfg(target_os = "linux")]
+const REQUIRE_PASSWORD_NEVER: u32 = u32::MAX;
 
 #[cfg(any(target_os = "linux", test))]
 fn encode(policy: IdlePolicy, capability: SuspendCapability) -> WirePolicy {
@@ -64,6 +76,8 @@ fn decode(policy: WirePolicy) -> Result<IdlePolicy, Error> {
         suspend_after_seconds: (policy.2 != 0).then_some(policy.2),
         display_off_on_battery_seconds: None,
         display_off_on_adapter_seconds: None,
+        require_password_after_seconds: Some(0),
+        prevent_sleep_on_adapter: false,
     }
     .validate()
     .map_err(|_| Error::Invalid)
@@ -86,7 +100,20 @@ fn snapshot(policy: WirePolicy) -> Result<Snapshot, Error> {
         display_off_on_battery_seconds: None,
         display_off_on_adapter_seconds: None,
         display_off_supported: false,
+        require_password_after_seconds: Some(0),
+        prevent_sleep_on_adapter: false,
+        options_supported: false,
     })
+}
+
+/// Add the password and sleep options (`(require_password, prevent_sleep)`).
+#[cfg(target_os = "linux")]
+fn with_options(mut snapshot: Snapshot, options: (u32, bool)) -> Snapshot {
+    snapshot.require_password_after_seconds =
+        (options.0 != REQUIRE_PASSWORD_NEVER).then_some(options.0);
+    snapshot.prevent_sleep_on_adapter = options.1;
+    snapshot.options_supported = true;
+    snapshot
 }
 
 /// Add the display-off timeouts (`(battery, adapter)`, 0 meaning Never).
@@ -110,6 +137,9 @@ trait LockScreen {
     fn set_suspend_after(&self, seconds: u32) -> zbus::Result<WirePolicy>;
     fn display_off(&self) -> zbus::Result<(u32, u32)>;
     fn set_display_off(&self, on_battery: bool, seconds: u32) -> zbus::Result<(u32, u32)>;
+    fn options(&self) -> zbus::Result<(u32, bool)>;
+    fn set_require_password(&self, seconds: u32) -> zbus::Result<(u32, bool)>;
+    fn set_prevent_sleep_on_adapter(&self, prevent: bool) -> zbus::Result<(u32, bool)>;
 
     #[zbus(signal)]
     fn changed(&self, policy: WirePolicy) -> zbus::Result<()>;
@@ -238,6 +268,38 @@ mod service {
             Ok(display_off_wire(next))
         }
 
+        /// `(require password delay, prevent sleep on adapter)`; a delay of
+        /// `u32::MAX` is Never.
+        async fn options(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<(u32, bool)> {
+            authenticated_sender(&header)?;
+            let policy = self.policy.clone();
+            blocking::unblock(move || current(&policy))
+                .await
+                .map_err(mutation_error)
+                .map(|(policy, _)| options_wire(policy))
+        }
+
+        async fn set_require_password(
+            &self,
+            seconds: u32,
+            #[zbus(header)] header: Header<'_>,
+            #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        ) -> fdo::Result<(u32, bool)> {
+            let delay = (seconds != super::REQUIRE_PASSWORD_NEVER).then_some(seconds);
+            self.mutate_option(Mutation::RequirePassword(delay), &header, &emitter)
+                .await
+        }
+
+        async fn set_prevent_sleep_on_adapter(
+            &self,
+            prevent: bool,
+            #[zbus(header)] header: Header<'_>,
+            #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        ) -> fdo::Result<(u32, bool)> {
+            self.mutate_option(Mutation::PreventSleepOnAdapter(prevent), &header, &emitter)
+                .await
+        }
+
         async fn request_suspend(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<()> {
             authenticated_sender(&header)?;
             blocking::unblock(perform_suspend)
@@ -247,6 +309,29 @@ mod service {
 
         #[zbus(signal)]
         async fn changed(emitter: &SignalEmitter<'_>, policy: WirePolicy) -> zbus::Result<()>;
+    }
+
+    impl LockScreenInterface {
+        async fn mutate_option(
+            &self,
+            mutation: Mutation,
+            header: &Header<'_>,
+            emitter: &SignalEmitter<'_>,
+        ) -> fdo::Result<(u32, bool)> {
+            authenticated_sender(header)?;
+            let policy = self.policy.clone();
+            let policy_path = self.policy_path.clone();
+            let (next, changed, capability) =
+                blocking::unblock(move || apply(&policy, &policy_path, mutation))
+                    .await
+                    .map_err(mutation_error)?;
+            if changed {
+                Self::changed(emitter, encode(next, capability))
+                    .await
+                    .map_err(bus_error)?;
+            }
+            Ok(options_wire(next))
+        }
     }
 
     pub async fn serve(policy_path: &Path) -> Result<Connection, super::Error> {
@@ -284,6 +369,17 @@ mod service {
             on_battery: bool,
             seconds: Option<u32>,
         },
+        RequirePassword(Option<u32>),
+        PreventSleepOnAdapter(bool),
+    }
+
+    fn options_wire(policy: IdlePolicy) -> (u32, bool) {
+        (
+            policy
+                .require_password_after_seconds
+                .unwrap_or(super::REQUIRE_PASSWORD_NEVER),
+            policy.prevent_sleep_on_adapter,
+        )
     }
 
     fn display_off_wire(policy: IdlePolicy) -> (u32, u32) {
@@ -319,6 +415,8 @@ mod service {
                 on_battery: false,
                 seconds,
             } => next.display_off_on_adapter_seconds = seconds,
+            Mutation::RequirePassword(seconds) => next.require_password_after_seconds = seconds,
+            Mutation::PreventSleepOnAdapter(prevent) => next.prevent_sleep_on_adapter = prevent,
         }
         next.validate().map_err(|_| MutationError::Invalid)?;
         let capability = suspend_capability();
@@ -435,6 +533,9 @@ mod service {
             assert!(xml.contains("method name=\"RequestSuspend\""));
             assert!(xml.contains("method name=\"DisplayOff\""));
             assert!(xml.contains("method name=\"SetDisplayOff\""));
+            assert!(xml.contains("method name=\"Options\""));
+            assert!(xml.contains("method name=\"SetRequirePassword\""));
+            assert!(xml.contains("method name=\"SetPreventSleepOnAdapter\""));
             assert!(xml.contains("signal name=\"Changed\""));
             assert_eq!(super::super::INTERFACE_NAME, BUS_NAME);
 
@@ -462,7 +563,10 @@ pub async fn serve(_policy_path: &std::path::Path) -> Result<(), Error> {
 // Windows keeps the policy in its own screen saver and power settings
 // rather than a session service.
 #[cfg(windows)]
-pub use crate::lock_windows::{set_display_off, set_lock_after, set_suspend_after, settings};
+pub use crate::lock_windows::{
+    set_display_off, set_lock_after, set_prevent_sleep_on_adapter, set_require_password,
+    set_suspend_after, settings,
+};
 
 /// The snapshot with the display-off timeouts, when the service has them.
 #[cfg(target_os = "linux")]
@@ -470,11 +574,49 @@ fn full_snapshot(
     proxy: &LockScreenProxyBlocking<'_>,
     policy: WirePolicy,
 ) -> Result<Snapshot, Error> {
-    let snapshot = snapshot(policy)?;
-    Ok(match proxy.display_off() {
-        Ok(display_off) => with_display_off(snapshot, display_off),
-        Err(_) => snapshot,
-    })
+    let mut snapshot = snapshot(policy)?;
+    if let Ok(display_off) = proxy.display_off() {
+        snapshot = with_display_off(snapshot, display_off);
+    }
+    if let Ok(options) = proxy.options() {
+        snapshot = with_options(snapshot, options);
+    }
+    Ok(snapshot)
+}
+
+/// Lock Screen ▸ Require password after the display is turned off.
+#[cfg(target_os = "linux")]
+pub fn set_require_password(seconds: Option<u32>) -> Result<Snapshot, Error> {
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
+    let proxy = LockScreenProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
+    proxy
+        .set_require_password(seconds.unwrap_or(REQUIRE_PASSWORD_NEVER))
+        .map_err(call_error)?;
+    let policy = proxy.settings().map_err(|_| Error::Call)?;
+    full_snapshot(&proxy, policy)
+}
+
+/// Battery ▸ Options… ▸ Prevent automatic sleeping on power adapter when
+/// the display is off.
+#[cfg(target_os = "linux")]
+pub fn set_prevent_sleep_on_adapter(prevent: bool) -> Result<Snapshot, Error> {
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
+    let proxy = LockScreenProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
+    proxy
+        .set_prevent_sleep_on_adapter(prevent)
+        .map_err(call_error)?;
+    let policy = proxy.settings().map_err(|_| Error::Call)?;
+    full_snapshot(&proxy, policy)
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
+pub fn set_require_password(_seconds: Option<u32>) -> Result<Snapshot, Error> {
+    Err(Error::Connect)
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
+pub fn set_prevent_sleep_on_adapter(_prevent: bool) -> Result<Snapshot, Error> {
+    Err(Error::Connect)
 }
 
 #[cfg(target_os = "linux")]
@@ -554,11 +696,14 @@ pub async fn watch(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error
                     .await
                     .map_err(|_| Error::Subscribe)?;
                 let read = || async {
-                    let snapshot = snapshot(proxy.settings().await.map_err(call_error)?)?;
-                    Ok::<Snapshot, Error>(match proxy.display_off().await {
-                        Ok(display_off) => with_display_off(snapshot, display_off),
-                        Err(_) => snapshot,
-                    })
+                    let mut snapshot = snapshot(proxy.settings().await.map_err(call_error)?)?;
+                    if let Ok(display_off) = proxy.display_off().await {
+                        snapshot = with_display_off(snapshot, display_off);
+                    }
+                    if let Ok(options) = proxy.options().await {
+                        snapshot = with_options(snapshot, options);
+                    }
+                    Ok::<Snapshot, Error>(snapshot)
                 };
                 publish(&sender, read().await?).await?;
                 while changes.next().await.is_some() {
@@ -695,6 +840,8 @@ mod tests {
                 suspend_after_seconds: None,
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             },
             IdlePolicy {
                 version: 1,
@@ -702,6 +849,8 @@ mod tests {
                 suspend_after_seconds: Some(30 * 60),
                 display_off_on_battery_seconds: None,
                 display_off_on_adapter_seconds: None,
+                require_password_after_seconds: Some(0),
+                prevent_sleep_on_adapter: false,
             },
         ] {
             let wire = encode(policy, SuspendCapability::Authorized);

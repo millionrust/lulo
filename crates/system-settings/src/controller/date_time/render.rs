@@ -221,7 +221,11 @@ impl Settings {
                 "The installed time-zone list was too long to check completely.",
             ));
         }
-        cards.push(footer_buttons(vec![refresh]));
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.time_error.is_some() || self.time_stream_error.is_some() {
+            cards.push(footer_buttons(vec![refresh]));
+        }
         self.pane(cards)
     }
 }

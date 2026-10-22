@@ -219,8 +219,14 @@ impl Settings {
                     .into_any_element(),
             );
         }
-        buttons.push(refresh);
-        cards.push(footer_buttons(buttons));
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.locale_error.is_some() || self.locale_stream_error.is_some() {
+            buttons.push(refresh);
+        }
+        if !buttons.is_empty() {
+            cards.push(footer_buttons(buttons));
+        }
         self.pane(cards)
     }
 }

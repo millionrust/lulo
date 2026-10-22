@@ -25,24 +25,28 @@ impl Settings {
         if let Some(detail) = &self.privacy_stream_error {
             cards.push(note_card(detail.clone()));
         }
-        let refresh_view = view;
-        cards.push(footer_buttons(vec![push_button(
-            "privacy-refresh",
-            "Refresh",
-        )
-        .disabled(
-            self.privacy_loading
-                || self.privacy_busy.is_some()
-                || self.privacy_stream_refreshing
-                || self.security_coverage_loading,
-        )
-        .on_click(move |_, _, cx| {
-            refresh_view.update(cx, |settings, cx| {
-                settings.refresh_privacy(cx);
-                settings.refresh_security_coverage(cx);
-            });
-        })
-        .into_any_element()]));
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.privacy_error.is_some() || self.privacy_stream_error.is_some() {
+            let refresh_view = view;
+            cards.push(footer_buttons(vec![push_button(
+                "privacy-refresh",
+                "Refresh",
+            )
+            .disabled(
+                self.privacy_loading
+                    || self.privacy_busy.is_some()
+                    || self.privacy_stream_refreshing
+                    || self.security_coverage_loading,
+            )
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| {
+                    settings.refresh_privacy(cx);
+                    settings.refresh_security_coverage(cx);
+                });
+            })
+            .into_any_element()]));
+        }
         self.pane(cards)
     }
 }

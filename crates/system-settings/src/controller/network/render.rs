@@ -55,6 +55,11 @@ fn service_name(
 
 impl Settings {
     fn network_refresh_footer(&self, cx: &Context<Self>) -> Div {
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.network_error.is_none() && self.network_stream_error.is_none() {
+            return div();
+        }
         let view = cx.entity();
         footer_buttons(vec![push_button("network-refresh", "Refresh")
             .busy(self.network_busy)

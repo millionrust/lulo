@@ -263,7 +263,11 @@ impl Settings {
         if let Some(detail) = &self.sharing_stream_error {
             cards.push(note_card(detail.clone()));
         }
-        cards.push(refresh);
+        // The Mac's panes update live and have no Refresh: it appears only
+        // when the pane's read or live updates failed (SET-56).
+        if self.sharing_error.is_some() || self.sharing_stream_error.is_some() {
+            cards.push(refresh);
+        }
         self.pane(cards)
     }
 }

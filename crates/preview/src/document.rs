@@ -21,9 +21,24 @@ pub enum ImageKind {
     Webp,
     Bmp,
     Tiff,
+    /// HEIC/HEIF (PREV-09), through the system libheif.
+    Heic,
+    Avif,
+    Svg,
+    /// Photoshop document: its flattened composite.
+    Psd,
+    /// Camera RAW (CR2, NEF, ARW, DNG and the like), through libraw.
+    Raw,
 }
 
 impl ImageKind {
+    /// Whether Save can write the document back in its own format.
+    /// Vector, Photoshop and RAW documents are read-only here: Save As
+    /// writes a PNG instead, as Preview's Export does.
+    pub fn is_writable(self) -> bool {
+        !matches!(self, ImageKind::Svg | ImageKind::Psd | ImageKind::Raw)
+    }
+
     /// Get Info "Document Type".
     pub fn document_type(self) -> &'static str {
         match self {
@@ -33,6 +48,11 @@ impl ImageKind {
             ImageKind::Webp => "WebP image",
             ImageKind::Bmp => "BMP image",
             ImageKind::Tiff => "TIFF image",
+            ImageKind::Heic => "HEIC image",
+            ImageKind::Avif => "AVIF image",
+            ImageKind::Svg => "SVG image",
+            ImageKind::Psd => "Adobe Photoshop image",
+            ImageKind::Raw => "Camera RAW image",
         }
     }
 }
@@ -64,11 +84,44 @@ pub fn sniff(bytes: &[u8]) -> Option<Kind> {
     if let Some(kind) = image {
         return Some(Kind::Image(kind));
     }
+    if let Some(kind) = sniff_extended(bytes) {
+        return Some(Kind::Image(kind));
+    }
     // PDF readers accept the header anywhere in the first 1 KiB.
     let head = &bytes[..bytes.len().min(1024)];
     head.windows(5)
         .any(|window| window == b"%PDF-")
         .then_some(Kind::Pdf)
+}
+
+/// The formats beyond the `image` crate's own: HEIC and AVIF (an ISO base
+/// media file whose brands name them), Photoshop and SVG.
+fn sniff_extended(bytes: &[u8]) -> Option<ImageKind> {
+    if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        let size = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+        let end = size.clamp(12, bytes.len().min(256));
+        let brands: Vec<&[u8]> = std::iter::once(&bytes[8..12])
+            .chain(bytes[16.min(end)..end].chunks_exact(4))
+            .collect();
+        const HEIC_BRANDS: [&[u8]; 10] = [
+            b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs", b"mif1",
+            b"msf1",
+        ];
+        if brands
+            .iter()
+            .any(|brand| *brand == b"avif" || *brand == b"avis")
+        {
+            return Some(ImageKind::Avif);
+        }
+        if brands.iter().any(|brand| HEIC_BRANDS.contains(brand)) {
+            return Some(ImageKind::Heic);
+        }
+        return None;
+    }
+    if crate::psd::is_psd(bytes) {
+        return Some(ImageKind::Psd);
+    }
+    crate::vector::is_svg(bytes).then_some(ImageKind::Svg)
 }
 
 /// Extensions of the images Preview steps through in a folder. The file is
@@ -79,8 +132,20 @@ pub fn has_image_extension(name: &str) -> bool {
     };
     matches!(
         extension.to_ascii_lowercase().as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tif" | "tiff"
-    )
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "bmp"
+            | "tif"
+            | "tiff"
+            | "heic"
+            | "heif"
+            | "avif"
+            | "svg"
+            | "psd"
+    ) || crate::libraw::has_raw_extension(name)
 }
 
 /// PDF files, by extension.
@@ -253,6 +318,51 @@ pub fn display_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ftyp(major: &[u8; 4], compatible: &[&[u8; 4]]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let size = 16 + compatible.len() * 4;
+        bytes.extend_from_slice(&(size as u32).to_be_bytes());
+        bytes.extend_from_slice(b"ftyp");
+        bytes.extend_from_slice(major);
+        bytes.extend_from_slice(&0_u32.to_be_bytes());
+        for brand in compatible {
+            bytes.extend_from_slice(*brand);
+        }
+        bytes.extend_from_slice(&[0; 32]);
+        bytes
+    }
+
+    #[test]
+    fn heic_avif_photoshop_and_svg_are_recognised_from_their_bytes() {
+        assert_eq!(
+            sniff(&ftyp(b"heic", &[b"mif1", b"heic"])),
+            Some(Kind::Image(ImageKind::Heic))
+        );
+        assert_eq!(
+            sniff(&ftyp(b"avif", &[b"mif1", b"miaf"])),
+            Some(Kind::Image(ImageKind::Avif))
+        );
+        // A generic HEIF container that lists avif is an AVIF.
+        assert_eq!(
+            sniff(&ftyp(b"mif1", &[b"avif", b"miaf"])),
+            Some(Kind::Image(ImageKind::Avif))
+        );
+        // A QuickTime movie is not an image.
+        assert_eq!(sniff(&ftyp(b"qt  ", &[b"qt  "])), None);
+        assert_eq!(
+            sniff(b"8BPS\0\x01\0\0\0\0\0\0"),
+            Some(Kind::Image(ImageKind::Psd))
+        );
+        assert_eq!(
+            sniff(br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#),
+            Some(Kind::Image(ImageKind::Svg))
+        );
+        assert!(!ImageKind::Svg.is_writable() && ImageKind::Heic.is_writable());
+        for name in ["a.HEIC", "a.avif", "a.svg", "a.psd", "IMG_1.CR2", "x.nef"] {
+            assert!(has_image_extension(name), "{name}");
+        }
+    }
 
     #[test]
     fn only_pdfs_and_images_are_taken_from_a_drop() {

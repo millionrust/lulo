@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "preview/open-svg",
+  "observations": {
+    "opened": {
+      "open_error": {
+        "shown": false
+      }
+    }
+  }
+}

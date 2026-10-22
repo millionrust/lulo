@@ -66,6 +66,30 @@ pub struct BatteryIndicator {
     pub on_battery: bool,
 }
 
+/// What sits over the menu bar's battery body, as on macOS 26.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BatteryMark {
+    /// On battery: the body alone.
+    None,
+    /// Charging: a bolt.
+    Charging,
+    /// On power but not charging (fully charged, or held below full): a
+    /// plug.
+    PluggedIn,
+}
+
+impl BatteryIndicator {
+    pub fn mark(&self) -> BatteryMark {
+        if self.state == rmac_power::BatteryState::Charging {
+            BatteryMark::Charging
+        } else if !self.on_battery {
+            BatteryMark::PluggedIn
+        } else {
+            BatteryMark::None
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FocusIndicator {
     pub enabled: bool,

@@ -113,5 +113,28 @@ class InstallBringsLuloBack(unittest.TestCase):
         self.assertNotIn(r"Software\Lulo\Shell", removed)
 
 
+class BundledLibrariesTests(unittest.TestCase):
+    def test_player_s_libraries_and_their_licences_are_installed(self) -> None:
+        import tempfile
+
+        spec = importlib.util.spec_from_file_location("generate_apps_wxs", WINDOWS / "generate_apps_wxs.py")
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            exe_dir = Path(directory)
+            (exe_dir / "libmpv-2.dll").write_bytes(b"")
+            (exe_dir / "avcodec-61.dll").write_bytes(b"")
+            (exe_dir / "licenses" / "libmpv").mkdir(parents=True)
+            (exe_dir / "licenses" / "libmpv" / "SOURCES.txt").write_text("x")
+            rendered = module.render_libraries(exe_dir)
+            self.assertIn('Directory="INSTALLFOLDER"', rendered)
+            self.assertIn("libmpv-2.dll", rendered)
+            self.assertIn("avcodec-61.dll", rendered)
+            self.assertIn('Directory="LuloLibmpvLicenses"', rendered)
+            ElementTree.fromstring(f"<Fragment>{rendered}</Fragment>")
+            self.assertEqual(module.render_libraries(exe_dir / "licenses"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

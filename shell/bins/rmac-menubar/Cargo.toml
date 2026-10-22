@@ -49,6 +49,12 @@ rmac-updates.workspace = true
 rmac-ui.workspace = true
 uuid.workspace = true
 
+# Windows: notices go to the Notification Centre lulo-shell hosts; the
+# Battery menu reads apps' CPU time (`energy`).
+[target.'cfg(windows)'.dependencies]
+rmac-notifications.workspace = true
+windows = { workspace = true, features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 # Lulo OS only: the session's notification server, the shortcut dispatch
 # sockets, and what the `top-bar` binary has always linked.
 [target.'cfg(target_os = "linux")'.dependencies]

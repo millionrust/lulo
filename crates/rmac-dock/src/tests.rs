@@ -1293,3 +1293,66 @@ fn minimized_tiles_lead_the_right_group_before_the_trash() {
     );
     assert_eq!(tile.label, "jacob@Jake: ~");
 }
+
+#[test]
+fn an_apps_tile_menu_lists_its_recent_documents_under_its_windows() {
+    let catalog = [application("org.rmac.TextEditor.desktop", "Text Editor")];
+    let compositor = rmac_compositor::Snapshot {
+        windows: vec![window(4, "org.rmac.TextEditor", true, false, 1)],
+        ..Default::default()
+    };
+    let documents = BTreeMap::from([(
+        "org.rmac.TextEditor".to_owned(),
+        vec![
+            PathBuf::from("/home/alex/test.rtf"),
+            PathBuf::from("/home/alex/Notes/plan.md"),
+        ],
+    )]);
+    let model = Model::build(&[], &Default::default(), &catalog, &compositor)
+        .with_recent_documents(&documents);
+    let menu = model
+        .context_menu("org.rmac.TextEditor.desktop")
+        .expect("running item exists");
+    let names = menu
+        .recent_documents
+        .iter()
+        .map(|document| document.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["test.rtf", "plan.md"]);
+    let ContextAction::LaunchNew { spec, .. } = &menu.recent_documents[1].action else {
+        panic!("a document row opens the document");
+    };
+    assert!(matches!(
+        spec,
+        rmac_apps::LaunchSpec::Command { args, .. } if args == &["/home/alex/Notes/plan.md"]
+    ));
+    assert!(model.authorizes_context_action(&menu.recent_documents[0].action));
+
+    let session = crate::menu::Session::context(&menu).unwrap();
+    let sections = session
+        .rows()
+        .iter()
+        .map(|row| row.section)
+        .collect::<Vec<_>>();
+    assert_eq!(sections[0], crate::menu::Section::Windows);
+    assert_eq!(sections[1..3], [crate::menu::Section::Documents; 2]);
+
+    // An app with no documents of its own lists none.
+    let plain = Model::build(&[], &Default::default(), &catalog, &compositor);
+    assert!(plain
+        .context_menu("org.rmac.TextEditor.desktop")
+        .unwrap()
+        .recent_documents
+        .is_empty());
+}
+
+#[test]
+fn minimized_tiles_name_their_application_not_its_id() {
+    rmac_apps::windows_apps::register_display_name("windowsterminal.exe", "Windows Terminal");
+    assert_eq!(
+        presentation::application_name("windowsterminal.exe"),
+        "Windows Terminal"
+    );
+    assert_eq!(presentation::application_name("org.rmac.Notes"), "Notes");
+    assert_eq!(presentation::application_name("unknown.exe"), "unknown.exe");
+}

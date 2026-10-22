@@ -2163,6 +2163,95 @@ Centre's right edge; the bar over a full-screen Text Editor, revealed at the top
 Full-Screen Tile; Hide Others and Show All) and `launch_smoke.py` (Notes at 683 px wide:
 nothing outside the window under UI Automation, and the » menu is there).
 
+## Mission Control on Windows (branch `op/win-parity`)
+
+Mission Control, App Exposé, Show Desktop and the hot corners were the largest Lulo OS
+surface missing on Windows: Ctrl+Up, Ctrl+Down and every hot corner did nothing. They now
+run in `lulo-shell` from the same code as Lulo OS, as the app switcher does: the
+`rmac-shell-mission-control` crate is a library (`service.rs`) that Lulo OS's
+`mission-control` binary and `lulo-shell` both run. What differs underneath:
+
+| | Lulo OS | Windows |
+| --- | --- | --- |
+| Window list and actions | niri IPC | `rmac-compositor-system`'s Win32 backend |
+| Window pictures | one screencopy of the output, cut per uncovered window; covered windows keep their last picture | `PrintWindow` with `PW_RENDERFULLCONTENT` per window, in parallel, 400 ms at most; covered windows get their real picture, and nothing is kept between opens |
+| Overlay and hot corners | layer surfaces, the overlay kept unmapped between opens | `rmac-shell-layer` windows, opened per showing |
+| Wallpaper under the overlay | niri's layer-rule xray | a half-size unblurred copy of the desktop's wallpaper (≈ 1 MB), fading in with the windows |
+| Commands | niri binds and a datagram socket | Ctrl+Up and Ctrl+Down (`RegisterHotKey`, left alone when another app holds them), the Dock's Show All Windows and the hot corners, through `requests` |
+| Spaces | niri workspaces: +, ×, switching | the current Desktop only |
+
+Windows' virtual desktops cannot be created, removed or switched through a public API
+(`IVirtualDesktopManager` only tells whether a window is on the current desktop; the
+interfaces that manage desktops are undocumented and change between Windows builds), so
+the Spaces bar shows the current Desktop without + or ×, and windows on other virtual
+desktops (DWM cloaks them) are not shown. Edge-drag tiling's preview stays Lulo OS's:
+Windows' own Snap draws its preview.
+
+The in-window Move & Resize popover and Window menu (`rmac-ui`'s `native`) tile through the
+same Win32 list: the halves and quarters, Fill & Arrange's three layouts (the front window
+first, then the app's others) and ⌥⌘H Hide Others, which before printed "not available on
+Windows yet".
+
+## Lulo as the shell (branch `op/win-parity-2`)
+
+Lulo mode ran over Explorer, which stayed loaded with its Start, Search and shell hosts: 320 MB
+private on Ruban's laptop under Lulo's own 64 MB. Start Lulo at Sign-In now makes Lulo the
+user's shell instead, through their own `HKCU\...\Winlogon\Shell` value
+(`"<install>\lulo-session.exe" --as-shell`), so Explorer never loads. Turning the switch off,
+Turn Off Lulo and the uninstaller remove that value, and only when it is Lulo's; an older Run
+entry is replaced. What Explorer did for the session, Lulo does in that mode:
+
+| Explorer's part | As the shell |
+| --- | --- |
+| Other apps' tray icons (`Shell_NotifyIcon`) | `lulo-shell` opens a hidden `Shell_TrayWnd`, broadcasts `TaskbarCreated`, keeps the icons from their `WM_COPYDATA` (`windows::tray`); the menu bar shows them left of Lulo's items and posts clicks back by protocol version, letting the app take the foreground for its menu |
+| The work area (AppBars) | the bar and the Dock reserve it directly with `SPI_SETWORKAREA` (`windows::work_area`); other apps' AppBar messages are not answered |
+| Startup apps | `lulo-session` starts the `Run` and `RunOnce` keys (user, machine, 32-bit) and both Startup folders once the layer is on screen, skipping what Task Manager turned off (`StartupApproved`) and Lulo itself |
+| Being there | a shell that stops by itself twice within two minutes, or cannot start, makes the session start Explorer, which then becomes the shell; nothing starts while Windows is signing out |
+
+Not done in that mode: Windows' own toasts of other apps (their host is Explorer's), the Win
+key's Start menu, and other apps' AppBars.
+
+## Focus on Windows (branch `op/win-parity-2`)
+
+Lulo's Focus is a session-bus service on Lulo OS. On Windows `lulo-shell` installs the same
+runtime in-process (`rmac_focus_linux::local`): the same store, modes, schedules and delivery
+rules, with one sleeping thread for a timed Focus's end. The focus client in that process,
+the bar's Focus input and Notification Centre's delivery policy use it, so Focus silences
+Lulo's banners. Windows' own Do Not Disturb has no public API; Control Centre's Focus panel says
+"Silences Lulo notifications".
+
+## Player's libmpv (branch `op/win-parity-2`)
+
+`packaging/windows/build-libmpv.sh` builds FFmpeg (no GPL or nonfree parts) and mpv
+(`-Dgpl=false`) from pinned release tags under MSYS2 UCRT64, bundles every DLL libmpv loads,
+refuses a GPL-only library, and writes the licences and `SOURCES.txt`. `windows-libmpv.yml`
+runs it once per version of the script (cached); the installers put the DLLs beside
+`rmac-player.exe` and the licences in `licenses\libmpv`.
+
+## Lulo OS's shell behaviours on Windows (branch `op/win-parity-2`)
+
+docs/parity.md's "Lulo OS → Windows" table lists every shell behaviour Lulo OS gained and
+where Windows stands. Ported in this round:
+
+- **Click wallpaper to reveal the desktop**: the desktop view hands the click to Mission
+  Control in `lulo-shell`, which pushes the windows to the edges as on Lulo OS; the slide is
+  stepped by `rmac-compositor-system` (niri's 300 ms, ease-out), since Windows moves a window
+  at once, and the list is read again after it so a second click or a click on a sliver
+  brings them back exactly. Desktop & Dock shows the setting, Hot Corners and the title-bar
+  double-click again; Minimise and Do Nothing take the caption double-click from Windows.
+- **System shortcuts**: one hotkey table (Ctrl for ⌃, Ctrl+Alt for ⌥⌘): Ctrl+↑/↓, Ctrl+F2,
+  Ctrl+F3, Ctrl+F8, Ctrl+Alt+D, Ctrl+Alt+Esc, and Win+D for Show Desktop when Lulo is the
+  shell. A hotkey another app holds stays theirs.
+- **Force Quit Applications** is Lulo's own window (it ends processes through
+  `rmac-app-launch`, which gained Windows termination), following the window list while open.
+- **Minimised tiles and the Genie or Scale effect**: the window list keeps a picture of each
+  window shortly after it comes to the front and when it leaves the front (PNG, at most 12),
+  and stores it as the parking store's thumbnail when Windows reports the minimise.
+- **Attention**: a window that flashes its taskbar button (`HSHELL_FLASH`) bounces its tile.
+- **Battery ▸ Using Significant Energy** reads CPU time with `GetProcessTimes`; **Open at
+  Login** is the user's Run key; **Return to Previous Size** restores the frame recorded before
+  the first tile or centre; the switcher's ↑/↓ opens App Exposé.
+
 ## Phase plan
 
 The goal is "usable on Windows without Linux". Phases are ordered by how much value they

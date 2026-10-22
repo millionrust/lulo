@@ -200,6 +200,10 @@ class Run:
             self.real_audio.start()
             self.real_audio.set_sinks(REAL_SINKS[:1])
 
+        # Installed apps the Dock does not keep, for its recent apps
+        # (dock_recent_apps_follow_use), there before the Dock reads them.
+        write_recent_probes(Path(self.env["XDG_DATA_HOME"]) / "applications",
+                            shutil.which("foot", path=self.env.get("PATH")) or "foot")
         self.dock = self.spawn([str(bins / "dock")], "dock", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.top_bar = self.spawn([str(bins / "top-bar")], "top-bar", {"VK_ICD_FILENAMES": LAVAPIPE})
         self.wallpaper = self.spawn([str(bins / "wallpaper")], "wallpaper", {"VK_ICD_FILENAMES": LAVAPIPE})
@@ -862,6 +866,7 @@ class Run:
             ("push button", "button", "label"), lambda name: name.startswith("Battery 80%")), 10)
         self.check("Top bar: battery indicator shows the fake 80%, discharging battery",
                    battery is not None)
+        self.battery_states_follow_upower()
 
         self.dispatch("quick-settings")
         opened = self.wait_for(lambda: self.has_layer("rmac-quick-settings"), 10)
@@ -921,6 +926,133 @@ class Run:
                 toggled = False
         self.check("Control Centre: the Wi-Fi toggle switches without crashing", toggled)
         self.close_everything()
+
+    def dock_recent_apps_follow_use(self) -> None:
+        """The Dock's recent apps, as on macOS 26: four installed apps the
+        Dock does not keep are opened and quit in turn; the section then
+        holds the last three, oldest first, as tiles after the kept apps
+        and in the Dock's state file, and the first one has left."""
+        foot = shutil.which("foot", path=self.env.get("PATH"))
+        if foot is None:
+            self.check("Dock recent apps: the last three used", False, "foot is required")
+            return
+        ids = RECENT_PROBES
+        for app_id in ids:
+            window = self.spawn([foot, f"--app-id={app_id}", "sleep", "60"], f"recent-{app_id}")
+            shown = self.wait_for(lambda app_id=app_id: any(
+                item.get("app_id") == app_id for item in self.niri("windows") or []), 10)
+            time.sleep(0.8)
+            window.terminate()
+            window.wait(timeout=5)
+            self.wait_for(lambda app_id=app_id: not any(
+                item.get("app_id") == app_id for item in self.niri("windows") or []), 10)
+            self.check(f"Dock recent apps: {app_id} opened", bool(shown))
+        state = Path(self.env["XDG_STATE_HOME"]) / "rmac" / "dock-recents"
+        wanted = [f"{app_id}.desktop" for app_id in ids[1:]]
+
+        def recents() -> list[str]:
+            try:
+                return [line.strip() for line in state.read_text().splitlines() if line.strip()]
+            except OSError:
+                return []
+
+        saved = self.wait_for(lambda: [entry for entry in recents() if "RecentProbe" in entry] == wanted, 10)
+        self.check("Dock recent apps: the last three used, oldest first, and the first has left",
+                   bool(saved), f"state={recents()}")
+        tiles = self.wait_for(lambda: all(
+            self.find_node(("push button", "button"), lambda name, label=f"Recent Probe {index}": name.startswith(label))
+            for index in (2, 3, 4)
+        ) and self.find_node(("push button", "button"), lambda name: name.startswith("Recent Probe 1")) is None, 10)
+        self.check("Dock recent apps: their tiles show after the kept apps", bool(tiles))
+
+    def set_upower(self, path: str, interface: str, name: str, kind: str, value: str) -> bool:
+        """Change one property of fake_hardware.py's UPower mock; dbusmock
+        emits PropertiesChanged, as the real UPower does."""
+        address = os.environ.get("DBUS_SYSTEM_BUS_ADDRESS", "")
+        if not address:
+            return False
+        return subprocess.run(
+            ["busctl", f"--address={address}", "set-property", "org.freedesktop.UPower",
+             path, interface, name, kind, value],
+            capture_output=True, timeout=10,
+        ).returncode == 0
+
+    def battery_states_follow_upower(self) -> None:
+        """macOS 26's battery item and menu for each power state, live from
+        UPower's signals: a bolt and "Charging: 1:05 until full" while it
+        charges, the plug and "Fully Charged" on power when full, and back
+        to the plain body on battery. The bar's accessible name carries the
+        state; the menu's rows are read from its tree."""
+        device = "/org/freedesktop/UPower/devices/DisplayDevice"
+        upower_device = "org.freedesktop.UPower.Device"
+
+        def set_state(on_battery: bool, state: int, percentage: float, to_full: int) -> bool:
+            return all([
+                self.set_upower("/org/freedesktop/UPower", "org.freedesktop.UPower",
+                                "OnBattery", "b", "true" if on_battery else "false"),
+                self.set_upower(device, upower_device, "TimeToFull", "x", str(to_full)),
+                self.set_upower(device, upower_device, "Percentage", "d", str(percentage)),
+                self.set_upower(device, upower_device, "State", "u", str(state)),
+            ])
+
+        def battery_item(prefix: str):
+            return self.wait_for(lambda: self.find_node(
+                ("push button", "button", "label"), lambda name: name.startswith(prefix)), 10)
+
+        def menu_rows(item, *rows: str) -> bool:
+            if item is None:
+                return False
+            opened = self.retry_until(lambda: self.click_node(item),
+                                      lambda: self.find_menu("Battery") is not None)
+            found = opened and all(
+                self.wait_for(lambda row=row: self.find_node(
+                    ("label", "text", "static", "menu item", "push button"),
+                    lambda name: name == row), 5) is not None
+                for row in rows
+            )
+            self.keys.key("escape")
+            self.wait_for(lambda: self.find_menu("Battery") is None, 5)
+            return found
+
+        changed = set_state(False, 1, 85.0, 3900)
+        self.check("Battery: the fake UPower changes to charging", changed)
+        if not changed:
+            return
+        charging = battery_item("Battery 85%, Charging")
+        self.check("Top bar: battery indicator follows UPower to 85%, charging", charging is not None)
+        self.check("Battery menu: Power Adapter, Charging: 1:05 until full",
+                   menu_rows(charging, "85%", "Power Source: Power Adapter",
+                             "Charging: 1:05 until full"))
+
+        set_state(False, 4, 100.0, 0)
+        full = battery_item("Battery 100%, Fully Charged")
+        self.check("Top bar: battery indicator follows UPower to fully charged", full is not None)
+        self.check("Battery menu: Power Adapter, Fully Charged",
+                   menu_rows(full, "100%", "Power Source: Power Adapter", "Fully Charged"))
+
+        # Back to fake_hardware.py's 80%, discharging battery.
+        set_state(True, 2, 80.0, 0)
+        discharging = battery_item("Battery 80%, Discharging")
+        self.check("Top bar: battery indicator follows UPower back to discharging",
+                   discharging is not None)
+
+        # An open Battery menu follows the battery while it stays open, as
+        # on the Mac: the charger goes in under it.
+        if discharging is not None:
+            opened = self.retry_until(lambda: self.click_node(discharging),
+                                      lambda: self.find_menu("Battery") is not None)
+            set_state(False, 1, 85.0, 3900)
+            followed = opened and all(
+                self.wait_for(lambda row=row: self.find_node(
+                    ("label", "text", "static", "menu item", "push button"),
+                    lambda name: name == row), 8) is not None
+                for row in ("85%", "Power Source: Power Adapter", "Charging: 1:05 until full")
+            )
+            self.check("Battery menu: follows the charger going in while it is open", followed)
+            self.keys.key("escape")
+            self.wait_for(lambda: self.find_menu("Battery") is None, 5)
+            set_state(True, 2, 80.0, 0)
+            battery_item("Battery 80%, Discharging")
 
     def control_centre_detail_panels(self) -> None:
         """Display and Sound expand into detail views inside Control
@@ -1795,6 +1927,8 @@ class Run:
                 self.desktop_menu_appearance()
             elif self.args.only == "fake-hardware":
                 self.fake_hardware_shows_real_data()
+            elif self.args.only == "dock-recents":
+                self.dock_recent_apps_follow_use()
             elif self.args.only == "focus-return":
                 self.escape_returns_focus_to_window()
             elif self.args.only == "option-alternate":
@@ -1840,6 +1974,7 @@ class Run:
         self.control_centre_sound_outputs()
         self.desktop_menu_appearance()
         self.fake_hardware_shows_real_data()
+        self.dock_recent_apps_follow_use()
         self.clock_popover_dismissal()
         self.notification_center_shrunk_wallpaper_click()
         self.launcher_expanded_row_press()
@@ -1867,6 +2002,18 @@ class Run:
         failed = [result for result in self.results if not result[1]]
         print(f"\n{len(self.results) - len(failed)}/{len(self.results)} checks passed", flush=True)
         return 1 if failed else 0
+
+
+RECENT_PROBES = [f"org.rmac.RecentProbe{index}" for index in range(1, 5)]
+
+
+def write_recent_probes(applications: Path, foot: str) -> None:
+    applications.mkdir(parents=True, exist_ok=True)
+    for index, app_id in enumerate(RECENT_PROBES, 1):
+        (applications / f"{app_id}.desktop").write_text(
+            "[Desktop Entry]\nType=Application\n"
+            f"Name=Recent Probe {index}\nExec={foot} --app-id={app_id}\n"
+        )
 
 
 def outer(args: argparse.Namespace, argv: list[str]) -> int:
@@ -1952,7 +2099,7 @@ def main() -> int:
                                            "combined", "control-centre-list",
                                            "control-centre-detail", "control-centre-sound",
                                            "control-centre-grow",
-                                           "appearance", "fake-hardware",
+                                           "appearance", "fake-hardware", "dock-recents",
                                            "focus-return", "option-alternate",
                                            "notification-center-shrink", "launcher-expanded"))
     parser.add_argument(

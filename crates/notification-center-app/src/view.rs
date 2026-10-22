@@ -38,6 +38,8 @@ pub(crate) struct NotificationCenterView {
     /// The app the last card menu was opened for. It outlives the menu
     /// itself: choosing an item dismisses the menu before its action runs.
     pub(crate) menu_target: Option<AppMenuTarget>,
+    /// The ✕ button's Clear menu under the list (NC-09).
+    pub(crate) clear_menu: Option<rmac_ui::ContextMenuState>,
     /// The panel slides in from the right edge from here (NC-11) …
     pub(crate) opened: std::time::Instant,
     /// … and out again from here.
@@ -65,7 +67,8 @@ gpui::actions!(
         MuteForHour,
         MuteForToday,
         TurnOffApp,
-        OpenNotificationSettings
+        OpenNotificationSettings,
+        ClearAllNotifications
     ]
 );
 
@@ -164,6 +167,47 @@ impl NotificationCenterView {
         .detach();
     }
 
+    /// The ✕ button under the list opens its Clear menu (NC-09).
+    pub(crate) fn open_clear_menu(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.clear_menu = Some(rmac_ui::ContextMenuState::open(
+            position,
+            &self.focus,
+            window,
+            cx,
+        ));
+        cx.notify();
+    }
+
+    /// Clear All Notifications: every card of every app leaves the Center.
+    pub(crate) fn clear_all(&mut self, cx: &mut Context<Self>) {
+        if self.busy.is_some() {
+            return;
+        }
+        self.busy = Some(Busy::ClearGroup(String::new()));
+        self.expanded.clear();
+        self.hovered = None;
+        self.operation_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result =
+                blocking::unblock(|| rmac_notifications_linux::center::clear(None).map(drop)).await;
+            let _ = this.update(cx, |this, cx| {
+                this.busy = None;
+                if result.is_err() {
+                    this.operation_error =
+                        Some("Could not clear Notification Center history".into());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Removes a single card, like its × on macOS.
     pub(crate) fn remove(&mut self, id: NotificationId, cx: &mut Context<Self>) {
         if self.busy.is_some() {
@@ -216,7 +260,8 @@ impl NotificationCenterView {
 
     pub(crate) fn dismiss_app_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut state = self.app_menu.take().map(|(state, _)| state);
-        if rmac_ui::ContextMenuState::dismiss(&mut state, window, cx) {
+        let clear = rmac_ui::ContextMenuState::dismiss(&mut self.clear_menu, window, cx);
+        if rmac_ui::ContextMenuState::dismiss(&mut state, window, cx) || clear {
             cx.notify();
         }
     }

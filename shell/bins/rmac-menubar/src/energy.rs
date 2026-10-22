@@ -1,7 +1,8 @@
 //! The Battery menu's "Using Significant Energy" section (BAR-05).
 //!
 //! macOS lists the apps whose recent energy impact is high. Lulo has no
-//! per-app power meter, so it uses the best stand-in Linux offers: CPU time.
+//! per-app power meter, so it uses the best stand-in Linux and Windows
+//! offer: CPU time (`/proc/<pid>/stat`; `GetProcessTimes`).
 //! When the menu opens, the processes of every app with a window are read
 //! twice, `SAMPLE` apart, off the UI thread; an app whose processes kept
 //! more than `THRESHOLD` of one core busy is listed. Nothing runs while the
@@ -15,14 +16,15 @@ const SAMPLE: Duration = Duration::from_millis(400);
 const THRESHOLD: f64 = 0.25;
 /// Linux's user-visible clock tick (`sysconf(_SC_CLK_TCK)`), 100 on every
 /// supported kernel configuration.
+#[cfg(not(windows))]
 const CLOCK_TICKS: f64 = 100.0;
 /// The Mac lists a handful of apps at most.
 const MAX_APPS: usize = 5;
 
 /// The display names of apps using significant energy, busiest first; `None`
-/// where CPU time cannot be read (not Linux).
+/// where CPU time cannot be read (neither Linux nor Windows).
 pub fn significant(windows: &[(i32, String)]) -> Option<Vec<String>> {
-    if !cfg!(target_os = "linux") {
+    if !cfg!(any(target_os = "linux", windows)) {
         return None;
     }
     let mut apps: BTreeMap<&str, Vec<i32>> = BTreeMap::new();
@@ -32,14 +34,14 @@ pub fn significant(windows: &[(i32, String)]) -> Option<Vec<String>> {
             pids.push(*pid);
         }
     }
-    let before = cpu_ticks(&apps);
+    let before = cpu_seconds(&apps);
     std::thread::sleep(SAMPLE);
-    let after = cpu_ticks(&apps);
+    let after = cpu_seconds(&apps);
     let mut busy = apps
         .keys()
         .filter_map(|app| {
-            let used = after.get(app)?.saturating_sub(*before.get(app)?) as f64;
-            let share = used / CLOCK_TICKS / SAMPLE.as_secs_f64();
+            let used = (after.get(app)? - before.get(app)?).max(0.0);
+            let share = used / SAMPLE.as_secs_f64();
             (share >= THRESHOLD).then_some((*app, share))
         })
         .collect::<Vec<_>>();
@@ -52,21 +54,52 @@ pub fn significant(windows: &[(i32, String)]) -> Option<Vec<String>> {
     )
 }
 
-fn cpu_ticks<'a>(apps: &BTreeMap<&'a str, Vec<i32>>) -> BTreeMap<&'a str, u64> {
+/// Each app's processes' CPU time so far, in seconds.
+fn cpu_seconds<'a>(apps: &BTreeMap<&'a str, Vec<i32>>) -> BTreeMap<&'a str, f64> {
     apps.iter()
         .map(|(app, pids)| {
-            let ticks = pids
-                .iter()
-                .filter_map(|pid| std::fs::read_to_string(format!("/proc/{pid}/stat")).ok())
-                .filter_map(|stat| process_ticks(&stat))
-                .sum();
-            (*app, ticks)
+            let seconds = pids.iter().filter_map(|pid| process_seconds(*pid)).sum();
+            (*app, seconds)
         })
         .collect()
 }
 
+#[cfg(not(windows))]
+fn process_seconds(pid: i32) -> Option<f64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    Some(process_ticks(&stat)? as f64 / CLOCK_TICKS)
+}
+
+/// Kernel and user time from `GetProcessTimes`, in 100 ns units.
+#[cfg(windows)]
+fn process_seconds(pid: i32) -> Option<f64> {
+    use windows::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    let pid = u32::try_from(pid).ok()?;
+    // SAFETY: opens a process for a limited query, reads its times into
+    // FILETIMEs and closes it.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let (mut created, mut exited, mut kernel, mut user) = (
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+        );
+        let read = GetProcessTimes(process, &mut created, &mut exited, &mut kernel, &mut user);
+        let _ = CloseHandle(process);
+        read.ok()?;
+        let units =
+            |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
+        Some((units(kernel) + units(user)) as f64 / 10_000_000.0)
+    }
+}
+
 /// utime + stime from one `/proc/<pid>/stat` line. The command name may
 /// hold spaces and parentheses, so fields are counted after its last ')'.
+#[cfg(any(not(windows), test))]
 fn process_ticks(stat: &str) -> Option<u64> {
     let rest = &stat[stat.rfind(')')? + 1..];
     let mut fields = rest.split_whitespace();
@@ -77,6 +110,13 @@ fn process_ticks(stat: &str) -> Option<u64> {
 }
 
 fn display_name(app_id: &str) -> String {
+    #[cfg(windows)]
+    if let Some(name) = rmac_apps::windows_apps::app(app_id)
+        .map(|app| app.name.to_owned())
+        .or_else(|| rmac_apps::windows_apps::display_name_for(app_id))
+    {
+        return name;
+    }
     rmac_apps::identity::window_title(app_id)
         .map(str::to_owned)
         .or_else(|| {

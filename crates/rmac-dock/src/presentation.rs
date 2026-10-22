@@ -624,15 +624,30 @@ fn application_accessible_label(item: &Item, enabled: bool) -> String {
     parts.join(", ")
 }
 
+/// An application's name for people, never its id or executable: a Lulo
+/// app's own name, a Windows app's name as the window list read it (its
+/// description, `windowsterminal.exe` → "Windows Terminal"), else the id.
+pub(crate) fn application_name(app_id: &str) -> String {
+    if let Some(app) = rmac_apps::windows_apps::app(app_id) {
+        return app.name.to_owned();
+    }
+    if let Some(name) = rmac_apps::windows_apps::display_name_for(app_id) {
+        return name;
+    }
+    rmac_apps::identity::window_title(app_id)
+        .map(str::to_owned)
+        .unwrap_or_else(|| app_id.to_owned())
+}
+
 fn minimized_entry(item: &crate::MinimizedItem) -> Entry {
     let label = item
         .title
         .clone()
-        .or_else(|| item.app_id.clone())
+        .or_else(|| item.app_id.as_deref().map(application_name))
         .unwrap_or_else(|| format!("Window {}", item.window.0));
     let mut accessible = vec![label.clone(), "minimized window".into()];
     if let Some(app_id) = &item.app_id {
-        accessible.push(app_id.clone());
+        accessible.push(application_name(app_id));
     }
     Entry {
         id: EntryId::Minimized(item.window),

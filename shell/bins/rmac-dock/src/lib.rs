@@ -4,8 +4,12 @@
 //! `lulo-shell`, each through `rmac-shell-layer`'s surfaces and
 //! `rmac-compositor-system`'s window list.
 
+#[cfg(any(all(target_os = "linux", feature = "wayland"), windows))]
+mod genie;
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod ipc;
+#[cfg(windows)]
+mod login_windows;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 pub use dock::run;
@@ -166,6 +170,109 @@ mod dock {
         launcher: rmac_dock::badges::LauncherEntries,
     }
 
+    /// DOCK-11: each window minimised into a Dock tile since `previous`
+    /// pours into it with Desktop & Dock's effect (Genie or Scale), from its
+    /// last frame on screen to the new tile. Reduced motion skips it, and so
+    /// does a window minimised before its picture was taken.
+    fn play_minimize_effects(
+        previous: &rmac_dock_runtime::Snapshot,
+        next: &rmac_dock_runtime::Snapshot,
+        cx: &mut App,
+    ) {
+        if next.reduced_motion {
+            return;
+        }
+        let effect = match next.settings.minimize_effect {
+            rmac_shell_settings::DockMinimizeEffect::Genie => crate::genie::Effect::Genie,
+            rmac_shell_settings::DockMinimizeEffect::Scale => crate::genie::Effect::Scale,
+        };
+        let Ok(surfaces) = &next.surface_plan else {
+            return;
+        };
+        for item in &next.model.minimized {
+            if previous
+                .model
+                .minimized
+                .iter()
+                .any(|known| known.window == item.window)
+            {
+                continue;
+            }
+            let Some(picture) = item.thumbnail.clone() else {
+                continue;
+            };
+            let Some(window) = previous
+                .compositor
+                .windows
+                .iter()
+                .find(|window| window.id == item.window)
+            else {
+                continue;
+            };
+            let Some(position) = window.layout.tile_position_in_view else {
+                continue;
+            };
+            let Some(output) = window.workspace.and_then(|workspace| {
+                previous
+                    .compositor
+                    .workspaces
+                    .iter()
+                    .find(|candidate| candidate.id == workspace)
+                    .and_then(|workspace| workspace.output.clone())
+            }) else {
+                continue;
+            };
+            let Some(surface) = surfaces.iter().find(|surface| surface.output == output) else {
+                continue;
+            };
+            if surface.placement != rmac_shell_settings::DockPlacement::Bottom {
+                continue;
+            }
+            let Some(height) = next
+                .compositor
+                .outputs
+                .iter()
+                .find(|candidate| candidate.id == output)
+                .and_then(|candidate| candidate.logical.as_ref())
+                .map(|logical| logical.size.height as f32)
+            else {
+                continue;
+            };
+            let Some(slot) = next.content.layout(surface, None).ok().and_then(|layout| {
+                layout.slots.into_iter().find(|slot| {
+                    slot.id == rmac_dock::presentation::EntryId::Minimized(item.window)
+                })
+            }) else {
+                continue;
+            };
+            let from = crate::genie::Frame {
+                x: position.x as f32,
+                y: position.y as f32,
+                width: window.layout.tile_size.width as f32,
+                height: window.layout.tile_size.height as f32,
+            };
+            // The tile keeps the window's proportions inside its square.
+            let aspect = (from.width / from.height.max(1.0)).max(f32::EPSILON);
+            let (width, tile_height) = if aspect >= 1.0 {
+                (slot.size, slot.size / aspect)
+            } else {
+                (slot.size * aspect, slot.size)
+            };
+            let centre_y = height - surface.base_thickness / 2.0;
+            let to = crate::genie::Frame {
+                x: slot.center - width / 2.0,
+                y: centre_y - tile_height / 2.0,
+                width,
+                height: tile_height,
+            };
+            let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
+            let display = displays
+                .get(&rmac_shell_layer::stable_output_uuid(&output))
+                .map(|display| display.id());
+            crate::genie::play(display, picture, from, to, effect, cx);
+        }
+    }
+
     impl DockStatus {
         fn new(
             updates: async_channel::Receiver<rmac_dock_runtime::Update>,
@@ -199,6 +306,9 @@ mod dock {
                                 );
                             }
                             this.outputs = outputs;
+                            if let Some(previous) = &this.snapshot {
+                                play_minimize_effects(previous, &update.snapshot, cx);
+                            }
                             this.snapshot = Some(update.snapshot);
                         })
                         .is_err()
@@ -2035,8 +2145,14 @@ mod dock {
                 Phase::Cancel => self.clear_incoming(cx),
                 Phase::Drop => {
                     let Some(index) = self.drop_destination(position, cx) else {
+                        rmac_shell_layer::windows::trace::trace(|| {
+                            format!("dock apps drop {}: no place", hint.app_id)
+                        });
                         return;
                     };
+                    rmac_shell_layer::windows::trace::trace(|| {
+                        format!("dock apps drop {} at {index}", hint.app_id)
+                    });
                     let pinned = self.model_snapshot(cx).map(|model| {
                         model
                             .items
@@ -2098,12 +2214,11 @@ mod dock {
             };
             let invoker = rmac_dock::presentation::EntryId::Application(app_id.to_owned());
             let lookup = id.clone();
-            // Windows: Options shows no Open at Login row yet.
+            // Windows: the user's Run key (`login_windows`).
             #[cfg(windows)]
-            let task = cx.background_executor().spawn(async move {
-                let _ = lookup;
-                None::<bool>
-            });
+            let task = cx
+                .background_executor()
+                .spawn(async move { Some(crate::login_windows::enabled(&lookup)) });
             #[cfg(target_os = "linux")]
             let task = cx.background_executor().spawn(async move {
                 rmac_login_items_linux::snapshot().ok().map(|snapshot| {
@@ -2140,7 +2255,21 @@ mod dock {
             self.input_region = None;
             cx.notify();
             #[cfg(windows)]
-            let _ = login;
+            cx.background_executor()
+                .spawn(async move {
+                    let program = if login.enabled {
+                        None
+                    } else {
+                        rmac_apps::windows_apps::desktop_entry_program(&login.desktop_entry)
+                    };
+                    if (login.enabled || program.is_some())
+                        && crate::login_windows::set(&login.id, program.as_deref())
+                    {
+                        return;
+                    }
+                    eprintln!("could not change Open at Login");
+                })
+                .detach();
             #[cfg(target_os = "linux")]
             cx.background_executor()
                 .spawn(async move {
@@ -2830,11 +2959,11 @@ mod dock {
 
     /// A transient notice through the session's notification server.
     fn post_notice(summary: String, body: String, cx: &mut Context<Dock>) {
-        // Windows: no notification server of Lulo's own yet; logged.
+        // Windows: the Notification Centre lulo-shell hosts (its pipe).
         #[cfg(windows)]
         {
             let _ = cx;
-            eprintln!("{summary}: {body}");
+            rmac_notifications::pipe::post_notice(summary, body);
         }
         #[cfg(target_os = "linux")]
         cx.background_executor()
@@ -3151,6 +3280,30 @@ mod dock {
                 let state = if trash_full { "full" } else { "empty" };
                 lines.push(format!("dock tile trash at {x},{y} {state}"));
                 rmac_shell_layer::windows::trace::trace_changed("dock tiles", || lines.join("\n"));
+                // Whether a drop's order is still being saved (the Dock takes
+                // no new drag until it is), for the Windows checks.
+                rmac_shell_layer::windows::trace::trace_changed("dock pins", || {
+                    if self.pending_pins.is_some() {
+                        "dock pins saving".to_owned()
+                    } else {
+                        "dock pins saved".to_owned()
+                    }
+                });
+                // The open tile menu's rows, for the Windows robot.
+                rmac_shell_layer::windows::trace::trace_changed("dock menu", || {
+                    match &self.context_menu {
+                        Some(menu) => format!(
+                            "dock menu: {}",
+                            menu.session
+                                .rows()
+                                .iter()
+                                .map(|row| row.label.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" | ")
+                        ),
+                        None => "dock menu closed".to_owned(),
+                    }
+                });
             }
             let menu_anchor = self.context_menu.as_ref().map(|menu| menu.anchor);
             // (menu start along the Dock axis, pointer tip from that start,
@@ -6423,6 +6576,31 @@ mod dock {
                 })
                 .detach();
             }
+            // Windows: apps' badges and progress through the Lulo layer's
+            // pipe (`rmac_shell_layer::windows::badges`).
+            #[cfg(windows)]
+            {
+                let badges = rmac_shell_layer::windows::badges::subscribe();
+                let launcher_status = status.clone();
+                cx.spawn(async move |cx| {
+                    while let Ok(badge) = badges.recv().await {
+                        let update = rmac_dock::badges::LauncherUpdate {
+                            count: Some(badge.count),
+                            count_visible: Some(badge.count > 0),
+                            progress: badge.progress,
+                            progress_visible: Some(badge.progress.is_some()),
+                            urgent: None,
+                        };
+                        let uri = format!("application://{}.desktop", badge.app_id);
+                        launcher_status.update(cx, |status, cx| {
+                            if status.launcher.apply(&uri, update) {
+                                cx.notify();
+                            }
+                        });
+                    }
+                })
+                .detach();
+            }
             let _ = reconcile_tx.try_send(());
             let windows = Rc::new(std::cell::RefCell::new(DockWindows {
                 status: Some(status.clone()),
@@ -6439,6 +6617,21 @@ mod dock {
                     }
                 });
                 system::requests::register("dock-toggle-hiding", toggle_dock_hiding);
+                // Show All Windows: App Exposé, in this same process.
+                let (expose_tx, expose_rx) = async_channel::bounded::<()>(1);
+                rmac_dock_system::app_windows::set_handler(move || {
+                    expose_tx.try_send(()).is_ok() || expose_tx.is_full()
+                });
+                cx.spawn(async move |cx| {
+                    while expose_rx.recv().await.is_ok() {
+                        cx.update(|cx| {
+                            if !system::requests::run("app-windows", cx) {
+                                eprintln!("Show All Windows: Mission Control is not running");
+                            }
+                        });
+                    }
+                })
+                .detach();
                 // An app dragged out of Apps (same process on Windows) opens
                 // a kept-app slot in the Dock under the pointer.
                 let windows = shared.clone();

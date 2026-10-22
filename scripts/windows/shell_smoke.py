@@ -777,6 +777,25 @@ def clear_of_minute(now: float, settle: float, window: float, margin: float = 0.
     return settle
 
 
+def line_index(log: "Log", pattern: str, after: int = 0) -> int | None:
+    """The index of the first trace line from `after` on matching `pattern`."""
+    for index, line in enumerate(log.lines()[after:], after):
+        if re.search(pattern, line):
+            return index
+    return None
+
+
+def trimmed_after(log: "Log", close_pattern: str, after: int, timeout: float = 10.0) -> bool:
+    """Wait until the panel that `close_pattern` reports has closed and the
+    shell has given back its memory (`memory panel closed`, two seconds
+    after a panel closes), so a reading is taken at the same point every
+    run, not before or after the trim by chance."""
+    closed = wait_until(lambda: line_index(log, close_pattern, after), timeout)
+    if closed is None:
+        return False
+    return log.wait_for(r"^memory panel closed:", timeout, after=closed) is not None
+
+
 def wait_until(predicate, timeout: float = STEP_TIMEOUT_SECONDS, interval: float = 0.05):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -884,6 +903,9 @@ def check_shell(
     # Closed panels let go of their windows after 3 s instead of 30, so the
     # memory they give back can be measured here.
     environment["LULO_PANEL_RELEASE_SECONDS"] = "3"
+    # CI runners have no battery: a stand-in charging one for the battery
+    # check (crates/rmac-power/src/win.rs).
+    environment["LULO_FAKE_BATTERY"] = FAKE_BATTERY
     for folder in ("Roaming", "Local"):
         (profile / folder).mkdir(parents=True, exist_ok=True)
     # Lulo OS's default Dock (Files, Notes, Text Editor, Terminal, System
@@ -1105,6 +1127,15 @@ def check_shell(
                 menus = log.wait_for(r"^menus from org\.rmac\.Calculator", after=before)
                 title = log.wait_for(r"^bar title 1 Calculator at (-?\d+),(-?\d+)$", after=before)
                 if menus is None or title is None:
+                    # The first window's focus can reach the bar before
+                    # Calculator's menu pipe is up on a busy runner: bring it
+                    # to the front again, once, as a user would click it.
+                    print(f"shell: Calculator's menus not in the bar yet (menus {menus is not None}, title {title is not None}); once more")
+                    retry = len(log.lines())
+                    bring_to_front(calculator[1])
+                    menus = menus or log.wait_for(r"^menus from org\.rmac\.Calculator", 15.0, after=retry)
+                    title = log.wait_for(r"^bar title 1 Calculator at (-?\d+),(-?\d+)$", 15.0, after=before)
+                if menus is None or title is None:
                     failures.append("the bar does not show Calculator's menus")
                 else:
                     pid, _ = calculator
@@ -1278,7 +1309,8 @@ def check_shell(
         note_memory(shell_pid, "after Spotlight opened Text Editor and Notepad")
         # 6b. A closed Spotlight lets go of its window and file list.
         released = log.wait_for(r"^layer rmac-launcher closed", 15.0, after=before)
-        time.sleep(2.0)
+        trimmed = trimmed_after(log, r"^layer rmac-launcher closed", before)
+        print(f"shell: the shell gave back Spotlight's memory: {trimmed}")
         memory = memory_mb(shell_pid)
         print(
             f"shell: lulo-shell memory after Spotlight closed: {memory} "
@@ -1303,7 +1335,12 @@ def check_shell(
 
         # 6e. Every Lulo app opens inside the work area the bar and the
         # Dock leave (WIN-OS-50).
-        check_app_placement(bin_dir, environment, screenshots, failures)
+        check_app_placement(bin_dir, environment, screenshots, failures, log)
+        print(f"shell: lulo-shell memory after the apps' placement: {memory_mb(shell_pid)}")
+        # 6e1. The Dock's recent apps are the last three used that are not
+        # kept; the bar's battery and its menu (macOS 26's bolt, "Charging").
+        check_dock_recents(log, profile, failures)
+        print(f"shell: lulo-shell memory after the recent apps: {memory_mb(shell_pid)}")
 
         # 6e2. Control Centre inside the screen; the bar over a full-screen
         # window; the Window menu's Full-Screen Tile and the app menu's
@@ -1311,6 +1348,7 @@ def check_shell(
         check_control_centre(log, shell_pid, screenshots, failures)
         check_full_screen_bar(log, bin_dir, environment, screenshots, failures)
         check_window_menu(log, bin_dir, environment, screenshots, failures)
+        print(f"shell: lulo-shell memory after Control Centre and the Window menu: {memory_mb(shell_pid)}")
 
         # 6f. ⌘Tab (Alt+Tab) and Notification Centre, the shared views
         # lulo-shell hosts; then their memory once they have closed.
@@ -1320,12 +1358,21 @@ def check_shell(
         # dragged across the separator, a reorder, a drag off to remove,
         # and an app dragged in from Apps.
         check_dock_drag(log, bin_dir, environment, screenshots, failures)
+        print(f"shell: lulo-shell memory after the Dock drags: {memory_mb(shell_pid)}")
         check_apps_open_speed(log, bin_dir, environment, failures)
+        print(f"shell: lulo-shell memory after Apps opened again and again: {memory_mb(shell_pid)}")
         time.sleep(5.0)
         memory = memory_mb(shell_pid)
         print(f"shell: lulo-shell memory after the switcher and Notification Centre closed: {memory}")
         if memory is not None:
             measurements["lulo-shell"]["after_switcher_nc_private_mb"] = memory["private_mb"]
+
+        # 6f2. The bar's battery and its menu (after the memory readings:
+        # the menu's full power reading is not part of the idle shell).
+        check_battery(log, screenshots, failures)
+        check_screenshot(log, failures)
+        memory = memory_mb(shell_pid)
+        print(f"shell: lulo-shell memory after the Battery menu: {memory}")
 
         # 6g. A third-party window that opens at 0,0 and 4000 × 4000 is put
         # inside the work area (macOS's visible frame); a full-screen one is
@@ -2139,7 +2186,9 @@ def check_foreign_windows(screenshots: Path | None, failures: list[str]) -> None
         time.sleep(0.5)
 
 
-def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str]) -> None:
+def check_app_placement(
+    bin_dir: Path, environment: dict, screenshots: Path | None, failures: list[str], log: "Log"
+) -> None:
     """Each Lulo app's first window lies inside the work area: below the
     bar and above the Dock (System Settings once opened with its bottom
     under the Dock on a 1366 × 768 PC)."""
@@ -2150,8 +2199,26 @@ def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | No
             continue
         for pid in processes_named(f"{app}.exe"):
             terminate(pid)
+        launched = len(log.lines())
         process = subprocess.Popen([str(exe)], env=environment)
         found = wait_until(lambda: app_window(f"{app}.exe"), 20.0)
+        if found is None:
+            # Once more, as a user would click again: say how the first
+            # start ended.
+            print(f"shell: {app} opened no window in 20 s (exit {process.poll()}); once more")
+            for pid in processes_named(f"{app}.exe"):
+                terminate(pid)
+            time.sleep(1.0)
+            process = subprocess.Popen([str(exe)], env=environment)
+            found = wait_until(lambda: app_window(f"{app}.exe"), 20.0)
+        if found is not None:
+            # Until the Dock shows the app running: it counts among the
+            # recent apps from then on (check_dock_recents), whatever the
+            # runner's load.
+            app_id = "org.rmac." + "".join(part.title() for part in app.removeprefix("rmac-").split("-"))
+            running = log.wait_for(rf"^dock tile {re.escape(app_id)}(?:\.desktop)? .* running$", 10.0, after=launched)
+            if running is None:
+                print(f"shell: {app}: the Dock did not show it running within 10 s")
         time.sleep(1.5)
         if found is None:
             failures.append(f"{app} opened no window for the placement check")
@@ -2172,6 +2239,97 @@ def check_app_placement(bin_dir: Path, environment: dict, screenshots: Path | No
         except subprocess.TimeoutExpired:
             process.kill()
         time.sleep(0.5)
+
+
+#: The stand-in battery: 85%, charging, 1:05 until full.
+FAKE_BATTERY = "85,charging,3900"
+
+#: The Lulo apps check_app_placement opens that the smoke Dock does not
+#: keep, in the order it opens them: the Dock's recent apps afterwards.
+RECENT_APPS = ("org.rmac.Preview.desktop", "org.rmac.Clock.desktop", "org.rmac.Weather.desktop")
+
+
+def check_dock_recents(log: Log, profile: Path, failures: list[str]) -> None:
+    """After check_app_placement opened and quit every Lulo app, the Dock's
+    recent apps (as on the Mac and Lulo OS) are the last three it opened
+    that the Dock does not keep, oldest first, kept in the Dock's state
+    file and shown as tiles after the kept apps."""
+    state = profile / "Local" / "Lulo" / "State" / "rmac" / "dock-recents"
+
+    def recents() -> list[str]:
+        try:
+            return [line.strip() for line in state.read_text(encoding="utf-8").splitlines() if line.strip()]
+        except OSError:
+            return []
+
+    # The last two opened are the newest; the third may have given its
+    # place to an app still open from an earlier check (running apps are
+    # never dropped, as on the Mac).
+    newest = list(RECENT_APPS[-2:])
+    saved = wait_until(lambda: recents()[-2:] == newest and len(recents()) <= 4, 10.0)
+    print(f"shell: the Dock's recent apps after opening the Lulo apps: {recents()}")
+    if saved is None:
+        failures.append(f"the Dock's recent apps are {recents()}, not ending with the last used {newest}")
+    _, running = dock_groups(log)
+    shown = [app_id for app_id, _, _ in running if app_id != "trash"]
+    wanted = [dock_app_id(app_id) for app_id in newest]
+    print(f"shell: Dock tiles after the separator: {shown}")
+    if [app_id for app_id in shown if app_id in wanted] != wanted:
+        failures.append(f"the Dock shows {shown} after its kept apps, not the recent apps {wanted}")
+
+
+def check_screenshot(log: Log, failures: list[str]) -> None:
+    """⇧⌘3 (Ctrl+Shift+3) saves the screen to the Desktop as
+    "Screenshot <date> at <time>.png", as on the Mac; the file is removed
+    again."""
+    mark = len(log.lines())
+    key(VK_CONTROL)
+    key(VK_SHIFT)
+    tap(0x33)
+    key(VK_SHIFT, up=True)
+    key(VK_CONTROL, up=True)
+    saved = log.wait_for(r"^screenshot saved (.+\.png)$", 10.0, after=mark)
+    path = Path(saved.group(1)) if saved else None
+    print(f"shell: Ctrl+Shift+3 saved {path.name if path else 'nothing'}")
+    if path is None or not path.is_file() or not path.name.startswith("Screenshot "):
+        failures.append("Ctrl+Shift+3 (⇧⌘3) saved no screenshot to the Desktop")
+        return
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def check_battery(log: Log, screenshots: Path | None, failures: list[str]) -> None:
+    """The bar's battery while it charges, as macOS 26 draws it: the bolt,
+    "Battery 85%, Charging" to a screen reader, and its menu: the
+    percentage, Power Source: Power Adapter and "Charging: 1:05 until
+    full" (the stand-in FAKE_BATTERY)."""
+    item = log.wait_for(r"^battery item Battery 85%, Charging, mark Some\(Charging\)", 10.0)
+    print(f"shell: the bar's battery: {item.group(0) if item else log.last(r'^battery item .*')}")
+    if item is None:
+        failures.append("the bar's battery does not show the charging bolt for a charging battery")
+        return
+    spot = log.last(r"^battery status at (-?\d+),(-?\d+)")
+    if spot is None:
+        failures.append("the bar did not say where its battery is")
+        return
+    before = len(log.lines())
+    click(int(spot.group(1)), int(spot.group(2)))
+    # The charge and power source show at once (from the bar); the time to
+    # full arrives with the full reading.
+    first = log.wait_for(r"^status menu Battery: (.+)$", 5.0, after=before)
+    menu = log.wait_for(r"^status menu Battery: (.*until full.*)$", 5.0, after=before)
+    save(screenshots, "battery-menu")
+    text = (menu or first).group(1) if (menu or first) else ""
+    if first is not None and "Battery 85%" not in first.group(1).split(" | "):
+        failures.append(f"the Battery menu opened without its charge: {first.group(1)!r}")
+    print(f"shell: the Battery menu: {text}")
+    for row in ("Battery 85%", "Power Source: Power Adapter", "Charging: 1:05 until full", "Battery Settings…"):
+        if row not in text.split(" | "):
+            failures.append(f"the Battery menu has no \"{row}\" row: {text!r}")
+    tap(VK_ESCAPE)
+    time.sleep(0.5)
 
 
 VK_TAB = 0x09
@@ -2476,6 +2634,19 @@ def slow_drag(start: tuple[int, int], end: tuple[int, int], hold: float = 0.4) -
     time.sleep(0.3)
 
 
+def wait_pins_saved(log: Log, timeout: float = 10.0) -> None:
+    """Until the Dock has saved its last drop (`dock pins saved`)."""
+    wait_until(lambda: (log.last(r"^dock pins (saving|saved)$") or [None, "saved"])[1] == "saved", timeout)
+
+
+def stable_line(log: Log, pattern: str, quiet: float):
+    """The last line matching `pattern` once no newer one came for `quiet` s."""
+    before = log.last(pattern)
+    time.sleep(quiet)
+    after = log.last(pattern)
+    return after if after is not None and before is not None and after.group(0) == before.group(0) else None
+
+
 def kept_index(log: Log, app_id: str) -> int | None:
     kept, _ = dock_groups(log)
     return next((index for index, (tile, _, _) in enumerate(kept) if tile == app_id), None)
@@ -2517,7 +2688,7 @@ def check_dock_drag(
         save(screenshots, "dock-drag-kept")
         # The Dock shows a drop's order at once, and takes no new drag until
         # the saved settings confirm it.
-        time.sleep(2.5)
+        wait_pins_saved(log)
         # Reorder: Files, Clock, Apps, Notes… → between Apps and Notes.
         kept, _ = dock_groups(log)
         tile = kept[1]
@@ -2531,7 +2702,7 @@ def check_dock_drag(
             print("shell: dock drag: the kept Clock reorders by dragging")
         # Drag it off the Dock and hold: released there it is no longer
         # kept, and as it runs it stays among the running apps.
-        time.sleep(2.5)
+        wait_pins_saved(log)
         kept, _ = dock_groups(log)
         tile = next((tile for tile in kept if tile[0] == clock_id), None)
         if tile is not None:
@@ -2550,6 +2721,7 @@ def check_dock_drag(
         process.wait(timeout=10)
     # An app dragged out of Apps between the first two kept apps is kept
     # second.
+    wait_pins_saved(log)
     kept, _ = dock_groups(log)
     if len(kept) < 2:
         failures.append("dock drag: the Dock has fewer than two kept apps")
@@ -2569,9 +2741,20 @@ def check_dock_drag(
         return
     app_id = dock_app_id(first.group(1))
     was_kept = kept_index(log, app_id)
-    time.sleep(0.8)
-    slow_drag((int(first.group(2)), int(first.group(3))), between(kept, 0), hold=0.6)
-    kept_second = wait_until(lambda: kept_index(log, app_id) == 1, 10.0)
+    kept_second = None
+    for attempt in range(2):
+        # Apps slides in: drag from where its first tile settles.
+        settled = wait_until(lambda: stable_line(log, r"^apps first tile (\S+) at (-?\d+),(-?\d+)", 0.6), 5.0)
+        first = settled or first
+        mark = len(log.lines())
+        slow_drag((int(first.group(2)), int(first.group(3))), between(kept, 0), hold=0.6)
+        drop = log.wait_for(r"^dock apps drop ", 5.0, after=mark)
+        kept_second = wait_until(lambda: kept_index(log, app_id) == 1, 10.0)
+        print(f"shell: dock drag from Apps, try {attempt + 1}: {drop.group(0) if drop else 'no drop reached the Dock'}")
+        if kept_second is not None or drop is not None:
+            break
+        # A synthetic drag between two windows can be lost on a busy
+        # runner before it reaches the Dock: once more.
     save(screenshots, "dock-drag-from-apps")
     tap(VK_ESCAPE)
     time.sleep(0.5)
@@ -2585,7 +2768,7 @@ def check_dock_drag(
     if was_kept is not None:
         return
     # Leave the Dock as it was: drag it off again.
-    time.sleep(2.5)
+    wait_pins_saved(log)
     kept, _ = dock_groups(log)
     tile = kept[1]
     slow_drag((tile[1], tile[2]), (tile[1], tile[2] - 260), hold=1.0)
@@ -2617,6 +2800,15 @@ def check_memory_after_use(log: Log, shell_pid: int, measurements: dict, failure
         tap(VK_ESCAPE)
     released = log.wait_for(r"^layer rmac-launcher closed", 20.0, after=mark)
     menu_released = log.wait_for(r"^layer rmac-menu-material-\S+ closed", 20.0, after=mark)
+    # The later of the two closes, then its trim, as for the first reading.
+    last_close = max(
+        (index for index in (
+            line_index(log, r"^layer rmac-launcher closed", mark),
+            line_index(log, r"^layer rmac-menu-material-\S+ closed", mark),
+        ) if index is not None),
+        default=mark,
+    )
+    log.wait_for(r"^memory panel closed:", 10.0, after=last_close)
     time.sleep(30.0)
     memory = memory_mb(shell_pid)
     for line in log.lines()[mark:]:
@@ -2735,26 +2927,67 @@ def check_exit_paths(
 
     # Uninstall (the installer runs `lulo-session --uninstall`): Lulo turns
     # off and Use Files for Folders, turned on from the Lulo menu, is undone.
+    session_mark = len(log.lines())
     started = start()
     if started is not None:
         session, _ = started
-        title = log.last(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$")
+        # This session's own bar once it sits in its strip at the top (its
+        # first layout can come while the window is still being placed).
+        def placed_title():
+            strip = None
+            title = None
+            for line in log.lines()[session_mark:]:
+                found = re.match(r"^strip rmac-top-bar-\d+ at (-?\d+),(-?\d+),(-?\d+),(-?\d+)", line)
+                strip = found or strip
+                found = re.match(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$", line)
+                title = found or title
+            if strip is None or title is None:
+                return None
+            top, bottom = int(strip.group(2)), int(strip.group(4))
+            if top <= int(title.group(2)) < bottom:
+                return title
+            # Laid out before the window reached the top: the logo keeps its
+            # place along the bar, in the middle of the strip.
+            return re.match(
+                r"^bar title 0 \S+ at (-?\d+),(-?\d+)$",
+                f"bar title 0 logo at {title.group(1)},{(top + bottom) // 2}",
+            ) if not waiting[0] else None
+
+        waiting = [True]
+        title = wait_until(placed_title, 10.0)
+        if title is None:
+            waiting[0] = False
+            title = placed_title()
         if title is not None:
             time.sleep(2.0)
-            row = None
-            for _ in range(3):
+            on = None
+            for attempt in range(3):
                 mark = len(log.lines())
                 click(int(title.group(1)), int(title.group(2)))
                 row = log.wait_for(r"^menu 0 row Use Files for Folders at (\d+),(\d+)", 5.0, after=mark)
-                if row:
+                if row is None:
+                    seen = [line for line in log.lines()[mark:] if not line.startswith(("memory ", "gpui"))][-6:]
+                    print(
+                        f"shell: Use Files for Folders, try {attempt + 1}: the Lulo menu did not open "
+                        f"(clicked {title.group(1)},{title.group(2)}; front {foreground_pid_and_class()}; trace {seen})"
+                    )
+                    tap(VK_ESCAPE)
+                    time.sleep(1.0)
+                    continue
+                # The menu drops open: click the row where it settles.
+                time.sleep(0.8)
+                row = log.last(r"^menu 0 row Use Files for Folders at (\d+),(\d+)") or row
+                save(screenshots, "lulo-menu-files-for-folders")
+                click(int(row.group(1)), int(row.group(2)))
+                on = log.wait_for(r"^files for folders on", 5.0, after=mark)
+                print(
+                    f"shell: Use Files for Folders, try {attempt + 1}: row at {row.group(1)},{row.group(2)}, "
+                    f"{'turned on' if on else 'no change'}"
+                )
+                if on is not None:
                     break
                 tap(VK_ESCAPE)
                 time.sleep(1.0)
-            if row:
-                time.sleep(0.8)
-                save(screenshots, "lulo-menu-files-for-folders")
-                click(int(row.group(1)), int(row.group(2)))
-            on = log.wait_for(r"^files for folders on", 5.0, after=mark)
             print(f"shell: Use Files for Folders: {'on' if on else 'not turned on'}, folder verb {folder_verb()!r}")
             if on is None or folder_verb() != "LuloFiles":
                 failures.append("the Lulo menu's Use Files for Folders did not make Files open folders")

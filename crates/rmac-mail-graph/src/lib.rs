@@ -34,7 +34,9 @@ use rmac_accounts::Secret;
 use rmac_mail_runtime::{
     Account, Backend, BackendFactory, Error, NewMail, RemoteFailure, Transport,
 };
-use rmac_mail_storage::{Change, MailStorage, NewMessage, FLAG_FLAGGED, FLAG_SEEN};
+use rmac_mail_storage::{
+    split_mailbox_name, Change, MailStorage, NewMessage, PendingMailboxOp, FLAG_FLAGGED, FLAG_SEEN,
+};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -263,6 +265,28 @@ impl Client {
         }
     }
 
+    /// POSTs a JSON body and parses the reply.
+    fn post_json<T: DeserializeOwned>(
+        &self,
+        url: String,
+        value: serde_json::Value,
+    ) -> Result<T, Error> {
+        let response = self
+            .send(
+                Method::Post,
+                url,
+                Some(("application/json", value.to_string().into_bytes())),
+                None,
+                MAX_JSON_BYTES,
+            )
+            .map_err(http_error)?;
+        if success(response.status) {
+            parse(&response.body)
+        } else {
+            Err(status_error(response.status))
+        }
+    }
+
     /// The message's complete RFC 5322 source. Reading it never marks the
     /// message read on the server.
     pub fn mime(&self, message_id: &str) -> Result<Option<Vec<u8>>, Error> {
@@ -452,6 +476,7 @@ impl GraphBackend {
                     id
                 }
             };
+            store.set_mailbox_delimiter(mailbox_id, Some('/'))?;
             let cursor = store
                 .remote_mailbox(&remote_id)?
                 .and_then(|bound| bound.sync_cursor);
@@ -469,6 +494,87 @@ impl GraphBackend {
             }
         }
         Ok(folders)
+    }
+
+    /// Sends New, Rename and Delete Mailbox as mailFolders calls, oldest
+    /// first. A change the server refuses (4xx) is dropped; a refused New
+    /// Mailbox also leaves the cache, and the folder sync that follows puts
+    /// renames back in step.
+    fn replay_mailbox_changes(&self, store: &mut MailStorage) -> Result<(), Error> {
+        for pending in store.pending_mailbox_changes()? {
+            let sent = match &pending.op {
+                PendingMailboxOp::Create {
+                    name,
+                    parent_remote_id,
+                } => {
+                    let (_, leaf) = split_mailbox_name(name, Some('/'));
+                    let url = match parent_remote_id {
+                        Some(parent) => format!(
+                            "{GRAPH_ROOT}/me/mailFolders/{}/childFolders",
+                            segment(parent)
+                        ),
+                        None => format!("{GRAPH_ROOT}/me/mailFolders"),
+                    };
+                    match self
+                        .client
+                        .post_json::<Folder>(url, json!({ "displayName": leaf }))
+                    {
+                        Ok(folder) => {
+                            if let Some(local) = store.mailbox(name)? {
+                                store.bind_remote_mailbox(local.id, &folder.id)?;
+                            }
+                            Ok(())
+                        }
+                        Err(Error::Remote(RemoteFailure::Rejected)) => {
+                            if let Some(local) = store.mailbox(name)? {
+                                store.remove_mailbox(local.id)?;
+                            }
+                            Ok(())
+                        }
+                        Err(error) => Err(error),
+                    }
+                }
+                PendingMailboxOp::Rename { to, remote_id, .. } => {
+                    let remote_id = match remote_id {
+                        Some(id) => Some(id.clone()),
+                        None => match store.mailbox(to)? {
+                            Some(local) => store.remote_id_of_mailbox(local.id)?,
+                            None => None,
+                        },
+                    };
+                    match remote_id {
+                        Some(remote_id) => self
+                            .client
+                            .call_json(
+                                Method::Patch,
+                                format!("{GRAPH_ROOT}/me/mailFolders/{}", segment(&remote_id)),
+                                json!({ "displayName": split_mailbox_name(to, Some('/')).1 }),
+                            )
+                            .map(|_| ()),
+                        None => Ok(()),
+                    }
+                }
+                PendingMailboxOp::Delete { remote_id, .. } => match remote_id {
+                    Some(remote_id) => self
+                        .client
+                        .call_json(
+                            Method::Delete,
+                            format!("{GRAPH_ROOT}/me/mailFolders/{}", segment(remote_id)),
+                            serde_json::Value::Null,
+                        )
+                        .map(|_| ()),
+                    // Never reached the server: nothing to delete there.
+                    None => Ok(()),
+                },
+            };
+            match sent {
+                Ok(()) | Err(Error::Remote(RemoteFailure::Rejected)) => {
+                    store.acknowledge_mailbox_change(pending.id)?;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
     }
 
     /// Sends queued read/flag/move/delete changes. A change to a message the
@@ -710,6 +816,7 @@ impl GraphBackend {
 
 impl Backend for GraphBackend {
     fn sync(&mut self, store: &mut MailStorage, account: Uuid) -> Result<Vec<NewMail>, Error> {
+        self.replay_mailbox_changes(store)?;
         let folders = self.sync_folders(store)?;
         self.replay(store, &folders)?;
         // Best effort: a held or throttled send must not stop receiving.

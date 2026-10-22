@@ -6064,6 +6064,7 @@ dependencies = [
  "rmac-storage",
  "serde",
  "serde_json",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -6343,10 +6344,20 @@ dependencies = [
  "async-channel",
  "blocking",
  "futures-util",
+ "image",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "rmac-contacts"
+version = "0.9.0-beta.2"
+dependencies = [
+ "rmac-storage",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6431,6 +6442,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-places",
  "rmac-places-system",
+ "rmac-recent-documents",
  "rmac-shell-settings",
  "rmac-storage",
  "rmac-theme",
@@ -6503,6 +6515,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_linux",
+ "image",
  "libc",
  "notify",
  "raw-window-handle",
@@ -6837,6 +6850,7 @@ dependencies = [
  "raw-window-handle",
  "rmac-accounts",
  "rmac-accounts-linux",
+ "rmac-contacts",
  "rmac-editor",
  "rmac-mail-graph",
  "rmac-mail-imap",
@@ -6908,6 +6922,7 @@ dependencies = [
  "rmac-mail-imap",
  "rmac-mail-mime",
  "rmac-mail-storage",
+ "rmac-notifications",
  "rmac-win-toast",
  "rustls",
  "sha2 0.10.9",
@@ -7055,6 +7070,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-system",
+ "rmac-design",
  "rmac-desktop",
  "rmac-desktop-widgets",
  "rmac-hardware",
@@ -7127,6 +7143,7 @@ dependencies = [
 name = "rmac-osd"
 version = "0.9.0-beta.2"
 dependencies = [
+ "gpui",
  "libc",
  "rmac-audio",
  "rmac-sound",
@@ -7237,8 +7254,10 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "image",
+ "libloading 0.8.9",
  "lopdf",
  "raw-window-handle",
+ "resvg",
  "rmac-portal",
  "rmac-print-linux",
  "rmac-recent-documents",
@@ -7360,6 +7379,7 @@ dependencies = [
  "rmac-shell-activation-runtime",
  "rmac-shell-layer",
  "rmac-shell-runtime",
+ "rmac-shell-settings",
  "rmac-shortcuts",
  "rmac-theme",
  "rmac-ui",
@@ -7411,6 +7431,7 @@ dependencies = [
  "rustix 1.1.4",
  "url",
  "walkdir",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -7518,6 +7539,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-locale",
  "rmac-login-items-linux",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-places",
  "rmac-places-system",
@@ -7533,6 +7555,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "windows 0.61.3",
  "zbus",
 ]
 
@@ -7574,6 +7597,7 @@ dependencies = [
  "rmac-hardware",
  "uuid",
  "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -7602,6 +7626,7 @@ dependencies = [
  "rmac-dock-system",
  "rmac-locale",
  "rmac-network",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-places",
  "rmac-power",
@@ -7621,7 +7646,31 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "windows 0.61.3",
  "zbus",
+]
+
+[[package]]
+name = "rmac-shell-mission-control"
+version = "0.9.0-beta.2"
+dependencies = [
+ "async-channel",
+ "blocking",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "libc",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-compositor-system",
+ "rmac-dock",
+ "rmac-shell-layer",
+ "rmac-shell-settings",
+ "rmac-shell-ui",
+ "uuid",
+ "wayland-client",
+ "wayland-protocols-wlr",
 ]
 
 [[package]]
@@ -8036,6 +8085,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-compositor-system",
  "rmac-design",
  "rmac-dock",
  "rmac-recent-documents",
@@ -8188,18 +8238,23 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-system",
  "rmac-desktop",
+ "rmac-focus-linux",
+ "rmac-focus-store",
  "rmac-hardware",
  "rmac-launcher-app",
  "rmac-notification-center-app",
+ "rmac-notifications",
  "rmac-osd",
  "rmac-quick-settings-app",
  "rmac-shell-app-switcher",
  "rmac-shell-dock",
  "rmac-shell-layer",
  "rmac-shell-menubar",
+ "rmac-shell-mission-control",
  "rmac-shell-settings",
  "rmac-shell-ui",
  "rmac-shell-wallpaper",
+ "rmac-sound",
  "rmac-ui",
  "rmac-wallpaper",
  "rmac-wallpaper-image",
@@ -8516,9 +8571,9 @@ checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",

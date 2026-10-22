@@ -1,0 +1,21 @@
+#!/bin/sh
+# "Install Lulo OS" in the live session's Dock (ADR 0031). Calamares needs
+# root; casper leaves the live user's sudo passwordless. The Wayland socket is
+# passed by absolute path so the root process can reach the live session.
+set -eu
+
+if pgrep -x calamares >/dev/null 2>&1; then
+    exit 0
+fi
+
+runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+display=${WAYLAND_DISPLAY:-wayland-1}
+case "$display" in
+    /*) ;;
+    *) display=$runtime/$display ;;
+esac
+
+exec sudo --preserve-env=XDG_RUNTIME_DIR,XDG_SESSION_TYPE,DISPLAY,XAUTHORITY \
+    WAYLAND_DISPLAY="$display" QT_QPA_PLATFORM="wayland;xcb" \
+    QT_WAYLAND_DISABLE_WINDOWDECORATION=0 \
+    /usr/bin/calamares -D6

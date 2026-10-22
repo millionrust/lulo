@@ -26,13 +26,18 @@ use crate::model::{
     DIM_HEIGHT, PANEL_WIDTH,
 };
 use crate::view::{
-    MuteForHour, MuteForToday, NotificationCenterView, OpenNotificationSettings, TurnOffApp,
+    ClearAllNotifications, MuteForHour, MuteForToday, NotificationCenterView,
+    OpenNotificationSettings, TurnOffApp,
 };
 use history::{card, Clock};
 
 const MUTE_HOUR_LABEL: &str = "Mute for 1 Hour";
 const MUTE_TODAY_LABEL: &str = "Mute for Today";
 const TURN_OFF_LABEL: &str = "Turn Off";
+const CLEAR_ALL_NOTIFICATIONS_LABEL: &str = "Clear All Notifications";
+/// The ✕ button beside Edit Widgets: the pill's height, round (NC-09).
+const CLEAR_BUTTON: f32 = EDIT_HEIGHT;
+const CLEAR_GAP: f32 = 8.0;
 
 /// The column's right inset; the × on a card overhangs its left edge, so the
 /// scroll area is widened by the same amount to keep it unclipped.
@@ -327,7 +332,19 @@ impl Render for NotificationCenterView {
         let app_menu = self
             .app_menu
             .as_ref()
-            .map(|(state, target)| (app_menu(state.position(), &target.name), state.clone()));
+            .map(|(state, target)| (app_menu(state.position(), &target.name), state.clone()))
+            .or_else(|| {
+                self.clear_menu.as_ref().map(|state| {
+                    (
+                        rmac_ui::ContextMenu::new(state.position()).item(
+                            CLEAR_ALL_NOTIFICATIONS_LABEL,
+                            Box::new(ClearAllNotifications),
+                        ),
+                        state.clone(),
+                    )
+                })
+            });
+        let clear_view = cx.entity();
 
         div()
             .id("notification-center")
@@ -355,10 +372,14 @@ impl Render for NotificationCenterView {
                     this.open_notification_settings(window, cx);
                 }),
             )
+            .on_action(cx.listener(|this, _: &ClearAllNotifications, window, cx| {
+                this.dismiss_app_menu(window, cx);
+                this.clear_all(cx);
+            }))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
                     cx.stop_propagation();
-                    if this.app_menu.is_some() {
+                    if this.app_menu.is_some() || this.clear_menu.is_some() {
                         this.dismiss_app_menu(window, cx);
                         return;
                     }
@@ -410,7 +431,12 @@ impl Render for NotificationCenterView {
                                     div()
                                         .flex()
                                         .justify_center()
-                                        .child(edit_pill(edit_view.clone())),
+                                        .items_center()
+                                        .gap(px(CLEAR_GAP))
+                                        .child(edit_pill(edit_view.clone()))
+                                        .when(has_records, |row| {
+                                            row.child(clear_button(clear_view.clone()))
+                                        }),
                                 )
                             })
                             .child(measure),
@@ -420,6 +446,35 @@ impl Render for NotificationCenterView {
                 root.child(menu.render(&state))
             })
     }
+}
+
+/// The ✕ beside Edit Widgets: its menu clears every notification (NC-09).
+fn clear_button(view: Entity<NotificationCenterView>) -> impl IntoElement {
+    let (fill, border, text) = edit_colours();
+    div()
+        .id("notification-center-clear")
+        .role(Role::Button)
+        .aria_label(CLEAR_ALL_NOTIFICATIONS_LABEL)
+        .size(px(CLEAR_BUTTON))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .bg(rgba(fill))
+        .border_1()
+        .border_color(rgba(border))
+        .text_color(rgba(text))
+        .text_size(rmac_ui::text_px(11.0))
+        .child("\u{2715}")
+        .on_mouse_down(
+            MouseButton::Left,
+            move |event: &MouseDownEvent, window, cx| {
+                cx.stop_propagation();
+                view.update(cx, |this, cx| {
+                    this.open_clear_menu(event.position, window, cx)
+                });
+            },
+        )
 }
 
 /// A card's right-click menu, as macOS 26 shows it.

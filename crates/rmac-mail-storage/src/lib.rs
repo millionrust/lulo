@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 pub const FLAG_SEEN: i64 = 1;
 pub const FLAG_ANSWERED: i64 = 2;
 pub const FLAG_FLAGGED: i64 = 4;
@@ -31,6 +31,13 @@ pub enum Error {
     InvalidBlob,
     UnsupportedSchema(i32),
     StaleUidValidity,
+    /// New or Rename Mailbox: a mailbox with that name already exists.
+    MailboxExists,
+    /// Inbox, Drafts, Sent, Junk, Bin and Archive cannot be renamed or
+    /// deleted, as on the Mac.
+    ProtectedMailbox,
+    /// The name is empty or contains the hierarchy delimiter.
+    InvalidMailboxName,
 }
 
 impl std::fmt::Display for Error {
@@ -45,6 +52,9 @@ impl std::fmt::Display for Error {
             Self::StaleUidValidity => {
                 write!(f, "mailbox UIDVALIDITY changed; resync before replay")
             }
+            Self::MailboxExists => write!(f, "a mailbox with that name already exists"),
+            Self::ProtectedMailbox => write!(f, "this mailbox cannot be renamed or deleted"),
+            Self::InvalidMailboxName => write!(f, "that is not a valid mailbox name"),
         }
     }
 }
@@ -113,6 +123,54 @@ pub struct MailboxListing {
     pub id: i64,
     pub name: String,
     pub special_use: Option<String>,
+    /// The server's hierarchy delimiter for this mailbox, if known.
+    pub delimiter: Option<char>,
+}
+
+/// A folder change made in Mail, applied to the cache at once and queued
+/// for the server ([`MailStorage::queue_mailbox_change`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MailboxChange {
+    /// New Mailbox…: `name` inside `parent` (a mailbox id), or at the top.
+    Create { parent: Option<i64>, name: String },
+    /// Rename Mailbox…: the mailbox keeps its parent; `name` is its new
+    /// last component.
+    Rename { mailbox_id: i64, name: String },
+    /// Delete Mailbox…: the mailbox, its submailboxes and their messages.
+    Delete { mailbox_id: i64 },
+}
+
+/// One queued folder change, as the server must see it: full mailbox names
+/// for IMAP, and for Microsoft Graph the folder ids known when it was made.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PendingMailboxOp {
+    Create {
+        name: String,
+        parent_remote_id: Option<String>,
+    },
+    Rename {
+        from: String,
+        to: String,
+        remote_id: Option<String>,
+    },
+    Delete {
+        name: String,
+        remote_id: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingMailboxChange {
+    pub id: i64,
+    pub op: PendingMailboxOp,
+}
+
+/// `name` split at its last `delimiter`: (parent path, last component).
+pub fn split_mailbox_name(name: &str, delimiter: Option<char>) -> (Option<&str>, &str) {
+    match delimiter.and_then(|delimiter| name.rsplit_once(delimiter)) {
+        Some((parent, leaf)) => (Some(parent), leaf),
+        None => (None, name),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -250,6 +308,14 @@ impl MailStorage {
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)?;
             tx.execute_batch(include_str!("schema_v6.sql"))?;
+            tx.pragma_update(None, "user_version", 6)?;
+            tx.commit()?;
+        }
+        if version < 7 {
+            let tx = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(include_str!("schema_v7.sql"))?;
             tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             tx.commit()?;
         }
@@ -468,12 +534,15 @@ impl MailStorage {
     pub fn all_mailboxes(&self) -> Result<Vec<MailboxListing>> {
         let mut statement = self
             .connection
-            .prepare("SELECT id,name,special_use FROM mailboxes ORDER BY id")?;
+            .prepare("SELECT id,name,special_use,delimiter FROM mailboxes ORDER BY id")?;
         let rows = statement.query_map([], |row| {
             Ok(MailboxListing {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 special_use: row.get(2)?,
+                delimiter: row
+                    .get::<_, Option<String>>(3)?
+                    .and_then(|value| value.chars().next()),
             })
         })?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -981,6 +1050,236 @@ impl MailStorage {
         Ok(())
     }
 
+    /// Records the hierarchy delimiter LIST reported for a mailbox.
+    pub fn set_mailbox_delimiter(
+        &mut self,
+        mailbox_id: i64,
+        delimiter: Option<char>,
+    ) -> Result<()> {
+        self.connection.execute(
+            "UPDATE mailboxes SET delimiter=?1 WHERE id=?2",
+            params![delimiter.map(String::from), mailbox_id],
+        )?;
+        Ok(())
+    }
+
+    /// Applies a New, Rename or Delete Mailbox to the cache at once and
+    /// queues it for the server, as message changes are. Returns the
+    /// mailbox's id (the new mailbox's for `Create`).
+    ///
+    /// A change to a mailbox whose creation has not reached the server yet
+    /// edits or drops that creation instead of queuing a second step.
+    pub fn queue_mailbox_change(&mut self, change: MailboxChange) -> Result<i64> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let id = match change {
+            MailboxChange::Create { parent, name } => {
+                let leaf = name.trim();
+                let (prefix, delimiter, parent_remote) = match parent {
+                    Some(parent) => {
+                        let parent_row = mailbox_row(&tx, parent)?;
+                        let remote: Option<String> = tx
+                            .query_row(
+                                "SELECT remote_id FROM remote_mailboxes WHERE mailbox_id=?1",
+                                [parent],
+                                |row| row.get(0),
+                            )
+                            .optional()?;
+                        (
+                            Some(parent_row.name),
+                            Some(parent_row.delimiter.unwrap_or('/')),
+                            remote,
+                        )
+                    }
+                    None => (None, account_delimiter(&tx)?, None),
+                };
+                check_leaf(leaf, delimiter)?;
+                let full = match (prefix, delimiter) {
+                    (Some(prefix), Some(delimiter)) => format!("{prefix}{delimiter}{leaf}"),
+                    _ => leaf.to_owned(),
+                };
+                if full.eq_ignore_ascii_case("INBOX") || mailbox_exists(&tx, &full)? {
+                    return Err(Error::MailboxExists);
+                }
+                tx.execute(
+                    "INSERT INTO mailboxes(name,uidvalidity,special_use,delimiter) VALUES (?1,0,NULL,?2)",
+                    params![full, delimiter.map(String::from)],
+                )?;
+                let id = tx.last_insert_rowid();
+                tx.execute(
+                    "INSERT INTO mailbox_changes(kind,name,parent_remote_id) VALUES ('create',?1,?2)",
+                    params![full, parent_remote],
+                )?;
+                id
+            }
+            MailboxChange::Rename { mailbox_id, name } => {
+                let row = mailbox_row(&tx, mailbox_id)?;
+                row.protect()?;
+                let leaf = name.trim();
+                check_leaf(leaf, row.delimiter)?;
+                let (parent, _) = split_mailbox_name(&row.name, row.delimiter);
+                let renamed = match (parent, row.delimiter) {
+                    (Some(parent), Some(delimiter)) => format!("{parent}{delimiter}{leaf}"),
+                    _ => leaf.to_owned(),
+                };
+                if renamed == row.name {
+                    return Ok(mailbox_id);
+                }
+                if renamed.eq_ignore_ascii_case("INBOX") || mailbox_exists(&tx, &renamed)? {
+                    return Err(Error::MailboxExists);
+                }
+                tx.execute(
+                    "UPDATE mailboxes SET name=?1 WHERE id=?2",
+                    params![renamed, mailbox_id],
+                )?;
+                let child_prefix = row
+                    .delimiter
+                    .map(|delimiter| format!("{}{delimiter}", row.name));
+                let old_length = row.name.chars().count() as i64;
+                if let Some(child_prefix) = &child_prefix {
+                    tx.execute(
+                        "UPDATE mailboxes SET name=?1 || substr(name, ?2) WHERE substr(name, 1, ?3)=?4",
+                        params![
+                            renamed,
+                            old_length + 1,
+                            child_prefix.chars().count() as i64,
+                            child_prefix
+                        ],
+                    )?;
+                }
+                let pending_create: Option<i64> = tx
+                    .query_row(
+                        "SELECT id FROM mailbox_changes WHERE kind='create' AND name=?1",
+                        [&row.name],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if pending_create.is_some() {
+                    // Not on the server yet: create it, and anything queued
+                    // inside it, under the new name instead.
+                    tx.execute(
+                        "UPDATE mailbox_changes SET name=?1 WHERE kind='create' AND name=?2",
+                        params![renamed, row.name],
+                    )?;
+                    if let Some(child_prefix) = &child_prefix {
+                        tx.execute(
+                            "UPDATE mailbox_changes SET name=?1 || substr(name, ?2) \
+                             WHERE kind='create' AND substr(name, 1, ?3)=?4",
+                            params![
+                                renamed,
+                                old_length + 1,
+                                child_prefix.chars().count() as i64,
+                                child_prefix
+                            ],
+                        )?;
+                    }
+                } else {
+                    let remote: Option<String> = tx
+                        .query_row(
+                            "SELECT remote_id FROM remote_mailboxes WHERE mailbox_id=?1",
+                            [mailbox_id],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    tx.execute(
+                        "INSERT INTO mailbox_changes(kind,name,new_name,remote_id) VALUES ('rename',?1,?2,?3)",
+                        params![row.name, renamed, remote],
+                    )?;
+                }
+                mailbox_id
+            }
+            MailboxChange::Delete { mailbox_id } => {
+                let row = mailbox_row(&tx, mailbox_id)?;
+                row.protect()?;
+                let mut doomed = vec![(mailbox_id, row.name.clone())];
+                if let Some(delimiter) = row.delimiter {
+                    let child_prefix = format!("{}{delimiter}", row.name);
+                    let mut statement =
+                        tx.prepare("SELECT id,name FROM mailboxes WHERE substr(name, 1, ?1)=?2")?;
+                    let children = statement.query_map(
+                        params![child_prefix.chars().count() as i64, child_prefix],
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+                    )?;
+                    for child in children {
+                        doomed.push(child?);
+                    }
+                }
+                // Deepest first, so the server never sees a parent go before
+                // its children.
+                doomed.sort_by_key(|(_, name)| std::cmp::Reverse(name.chars().count()));
+                for (id, name) in doomed {
+                    let pending_create: Option<i64> = tx
+                        .query_row(
+                            "SELECT id FROM mailbox_changes WHERE kind='create' AND name=?1",
+                            [&name],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    if let Some(create) = pending_create {
+                        tx.execute("DELETE FROM mailbox_changes WHERE id=?1", [create])?;
+                    } else {
+                        let remote: Option<String> = tx
+                            .query_row(
+                                "SELECT remote_id FROM remote_mailboxes WHERE mailbox_id=?1",
+                                [id],
+                                |row| row.get(0),
+                            )
+                            .optional()?;
+                        tx.execute(
+                            "INSERT INTO mailbox_changes(kind,name,remote_id) VALUES ('delete',?1,?2)",
+                            params![name, remote],
+                        )?;
+                    }
+                    tx.execute("DELETE FROM mailboxes WHERE id=?1", [id])?;
+                }
+                mailbox_id
+            }
+        };
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// Folder changes still to send, oldest first.
+    pub fn pending_mailbox_changes(&self) -> Result<Vec<PendingMailboxChange>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id,kind,name,new_name,remote_id,parent_remote_id FROM mailbox_changes ORDER BY id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let kind: String = row.get(1)?;
+            let name: String = row.get(2)?;
+            let new_name: Option<String> = row.get(3)?;
+            let remote_id: Option<String> = row.get(4)?;
+            let parent_remote_id: Option<String> = row.get(5)?;
+            let op = match (kind.as_str(), new_name) {
+                ("create", _) => PendingMailboxOp::Create {
+                    name,
+                    parent_remote_id,
+                },
+                ("rename", Some(to)) => PendingMailboxOp::Rename {
+                    from: name,
+                    to,
+                    remote_id,
+                },
+                ("delete", _) => PendingMailboxOp::Delete { name, remote_id },
+                _ => return Err(rusqlite::Error::InvalidQuery),
+            };
+            Ok(PendingMailboxChange {
+                id: row.get(0)?,
+                op,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::from)
+    }
+
+    /// The server has the folder change, or refused it for good.
+    pub fn acknowledge_mailbox_change(&mut self, id: i64) -> Result<()> {
+        self.connection
+            .execute("DELETE FROM mailbox_changes WHERE id=?1", [id])?;
+        Ok(())
+    }
+
     /// The cached message bound to a Graph message id, in any mailbox.
     pub fn message_by_remote_id(&self, remote_id: &str) -> Result<Option<MessageSummary>> {
         self.connection.query_row(
@@ -1098,6 +1397,68 @@ fn private_new_file(path: &Path) -> Result<File> {
         options.mode(0o600);
     }
     Ok(options.open(path)?)
+}
+
+struct MailboxRow {
+    name: String,
+    special_use: Option<String>,
+    delimiter: Option<char>,
+}
+
+impl MailboxRow {
+    fn protect(&self) -> Result<()> {
+        if self.special_use.is_some() || self.name.eq_ignore_ascii_case("INBOX") {
+            Err(Error::ProtectedMailbox)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn mailbox_row(connection: &Connection, id: i64) -> Result<MailboxRow> {
+    Ok(connection.query_row(
+        "SELECT name,special_use,delimiter FROM mailboxes WHERE id=?1",
+        [id],
+        |row| {
+            Ok(MailboxRow {
+                name: row.get(0)?,
+                special_use: row.get(1)?,
+                delimiter: row
+                    .get::<_, Option<String>>(2)?
+                    .and_then(|value| value.chars().next()),
+            })
+        },
+    )?)
+}
+
+fn mailbox_exists(connection: &Connection, name: &str) -> Result<bool> {
+    Ok(connection
+        .query_row("SELECT 1 FROM mailboxes WHERE name=?1", [name], |_| Ok(()))
+        .optional()?
+        .is_some())
+}
+
+/// The delimiter this account's server uses, from any mailbox that knows it.
+fn account_delimiter(connection: &Connection) -> Result<Option<char>> {
+    Ok(connection
+        .query_row(
+            "SELECT delimiter FROM mailboxes WHERE delimiter IS NOT NULL LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|value| value.chars().next()))
+}
+
+fn check_leaf(leaf: &str, delimiter: Option<char>) -> Result<()> {
+    if leaf.is_empty()
+        || leaf.chars().any(char::is_control)
+        || delimiter.is_some_and(|delimiter| leaf.contains(delimiter))
+    {
+        Err(Error::InvalidMailboxName)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

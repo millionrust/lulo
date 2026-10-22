@@ -25,14 +25,19 @@
 
 pub mod appbar;
 pub mod backdrop;
+pub mod badges;
+pub mod click_through;
 pub mod desktop_layer;
 pub mod dock_drag;
+pub mod file_drag;
 pub mod layer_types;
 pub mod material;
 pub mod power;
 pub mod surface;
 pub mod trace;
+pub mod tray;
 pub mod wallpaper_layer;
+pub mod work_area;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

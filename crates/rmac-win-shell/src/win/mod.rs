@@ -10,9 +10,11 @@ pub mod icons;
 pub mod launch;
 pub mod memory;
 pub mod registry;
+pub mod screenshot;
 pub mod session;
 pub mod settle;
 pub mod shell_icons;
+pub mod startup;
 pub mod taskbar;
 pub mod wallpaper;
 

@@ -439,6 +439,7 @@ fn journal_replays_read_move_delete_and_outbox_sends_mime_with_bcc() {
     h.fake
         .on(Method::Delete, &url("/me/messages/AAMkOld%3D"), 204, b"");
     h.fake.on(Method::Get, EMPTY_CURSOR, 200, EMPTY_DELTA);
+    h.fake.on(Method::Get, INBOX_CURSOR_1, 200, EMPTY_DELTA);
     h.fake.clear_log();
     h.sync().unwrap();
     let writes = h.fake.writes();
@@ -689,4 +690,105 @@ fn bcc_and_model_helpers() {
     assert!(first_sync_done(Some(INBOX_CURSOR_1)));
     assert!(!first_sync_done(Some(NEXT_PAGE2)));
     assert!(!first_sync_done(None));
+}
+
+#[test]
+fn mailbox_changes_become_mail_folder_calls_before_the_folder_sync() {
+    let mut h = Harness::new();
+    h.sync().unwrap();
+    let projects = h.store.mailbox("Projects").unwrap().unwrap().id;
+    let year = h.store.mailbox("Projects/2026").unwrap().unwrap().id;
+    h.store
+        .queue_mailbox_change(rmac_mail_storage::MailboxChange::Create {
+            parent: Some(projects),
+            name: "Clients".into(),
+        })
+        .unwrap();
+    h.store
+        .queue_mailbox_change(rmac_mail_storage::MailboxChange::Create {
+            parent: None,
+            name: "Taken".into(),
+        })
+        .unwrap();
+    h.store
+        .queue_mailbox_change(rmac_mail_storage::MailboxChange::Rename {
+            mailbox_id: year,
+            name: "2027".into(),
+        })
+        .unwrap();
+    h.fake.on(
+        Method::Post,
+        &url("/me/mailFolders/AAMkProjects%3D/childFolders"),
+        201,
+        br#"{"id":"AAMkClients=","displayName":"Clients"}"#,
+    );
+    h.fake.on(Method::Post, &url("/me/mailFolders"), 409, b"{}");
+    h.fake.on(
+        Method::Patch,
+        &url("/me/mailFolders/AAMkProjects2026%3D"),
+        200,
+        b"{}",
+    );
+    h.fake.on(Method::Get, INBOX_CURSOR_1, 200, EMPTY_DELTA);
+    h.fake.clear_log();
+    h.sync().unwrap();
+    let bodies: Vec<(Method, String, String)> = h
+        .fake
+        .writes()
+        .into_iter()
+        .map(|(method, url, _, body)| (method, url, String::from_utf8(body).unwrap()))
+        .collect();
+    assert_eq!(
+        bodies[..3],
+        [
+            (
+                Method::Post,
+                url("/me/mailFolders/AAMkProjects%3D/childFolders"),
+                r#"{"displayName":"Clients"}"#.to_owned()
+            ),
+            (
+                Method::Post,
+                url("/me/mailFolders"),
+                r#"{"displayName":"Taken"}"#.to_owned()
+            ),
+            (
+                Method::Patch,
+                url("/me/mailFolders/AAMkProjects2026%3D"),
+                r#"{"displayName":"2027"}"#.to_owned()
+            ),
+        ]
+    );
+    assert!(h.store.pending_mailbox_changes().unwrap().is_empty());
+    // The refused New Mailbox left the cache.
+    assert!(h.store.mailbox("Taken").unwrap().is_none());
+    // Graph folders use "/" paths.
+    assert!(h
+        .store
+        .all_mailboxes()
+        .unwrap()
+        .iter()
+        .all(|mailbox| mailbox.delimiter == Some('/')));
+}
+
+#[test]
+fn deleting_a_folder_deletes_it_on_the_server() {
+    let mut h = Harness::new();
+    h.sync().unwrap();
+    let year = h.store.mailbox("Projects/2026").unwrap().unwrap().id;
+    h.store
+        .queue_mailbox_change(rmac_mail_storage::MailboxChange::Delete { mailbox_id: year })
+        .unwrap();
+    h.fake.on(
+        Method::Delete,
+        &url("/me/mailFolders/AAMkProjects2026%3D"),
+        204,
+        b"",
+    );
+    h.fake.on(Method::Get, INBOX_CURSOR_1, 200, EMPTY_DELTA);
+    h.fake.clear_log();
+    h.sync().unwrap();
+    let writes = h.fake.writes();
+    assert_eq!(writes[0].0, Method::Delete);
+    assert_eq!(writes[0].1, url("/me/mailFolders/AAMkProjects2026%3D"));
+    assert!(h.store.pending_mailbox_changes().unwrap().is_empty());
 }

@@ -116,9 +116,9 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
 
 /// Publish coherent shell snapshots until the receiving side closes. On
 /// Windows the compositor is `rmac-compositor-system`'s Win32 backend and
-/// the status sources are Windows' own (`crate::windows`); Windows has no
-/// Focus authority or Notification Center service for the bar yet, so those
-/// two inputs stay open and quiet.
+/// the status sources are Windows' own (`crate::windows`), and Focus is the one
+/// `lulo-shell` runs (`rmac_focus_linux::local`). Notification Center's
+/// indicator input stays open and quiet.
 #[cfg(windows)]
 pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     if crate::scene::active() {
@@ -127,10 +127,11 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     let (service_tx, service_rx) = async_channel::bounded(8);
     let (settings_tx, settings_rx) = async_channel::bounded(2);
-    let (_focus_tx, focus_rx) = async_channel::bounded(1);
+    let (focus_tx, focus_rx) = async_channel::bounded(4);
     let (_notification_tx, notification_rx) = async_channel::bounded(1);
 
     let compositor = watch_compositor(compositor_tx);
+    let focus = watch_focus(focus_tx);
     let services = crate::windows::watch(service_tx);
     let settings = watch_settings(settings_tx);
     let consumer = consume(
@@ -143,7 +144,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         rmac_hardware::subscribe(),
         crate::windows::WindowsServiceReader,
     );
-    futures_util::try_join!(compositor, services, settings, consumer)?;
+    futures_util::try_join!(compositor, services, settings, focus, consumer)?;
     Ok(())
 }
 
@@ -195,10 +196,16 @@ async fn watch_notifications(
         .map_err(|error| Error::new("watch Notification Center", error.to_string()))
 }
 
-#[cfg(not(windows))]
 async fn watch_focus(
     sender: Sender<Result<rmac_focus_runtime::Projection, String>>,
 ) -> Result<(), Error> {
+    // Windows: Focus runs in this process once `lulo-shell` started it;
+    // without it the bar's Focus input stays quiet (no bus to retry).
+    #[cfg(windows)]
+    if rmac_focus_linux::local::get().is_none() {
+        sender.closed().await;
+        return Ok(());
+    }
     rmac_focus_linux::client::watch(sender)
         .await
         .map_err(|error| Error::new("watch Focus authority", error.to_string()))

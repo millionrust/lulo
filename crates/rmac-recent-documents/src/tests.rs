@@ -226,3 +226,28 @@ fn concurrent_writers_preserve_every_document() {
     assert_eq!(store.load().unwrap().paths.len(), 8);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn documents_load_grouped_by_the_app_that_opened_them() {
+    let root = root("by-app");
+    std::fs::create_dir_all(&root).unwrap();
+    let store = store(&root);
+    let notes = root.join("notes.txt");
+    let photo = root.join("photo.png");
+    let generic = root.join("generic.txt");
+    for path in [&notes, &photo, &generic] {
+        std::fs::write(path, b"x").unwrap();
+    }
+    store.record_for_app(&notes, "org.rmac.TextEditor").unwrap();
+    store.record_for_app(&photo, "org.rmac.Preview").unwrap();
+    store.record(&generic).unwrap();
+    let by_app = store.load_by_app().unwrap();
+    assert_eq!(by_app.len(), 2);
+    assert_eq!(
+        by_app["org.rmac.TextEditor"],
+        [notes.canonicalize().unwrap()]
+    );
+    assert_eq!(by_app["org.rmac.Preview"], [photo.canonicalize().unwrap()]);
+    assert_eq!(store.file(), root.join("state/recent-documents.json"));
+    std::fs::remove_dir_all(root).unwrap();
+}

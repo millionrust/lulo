@@ -31,6 +31,9 @@ const ENTRIES: &[(&str, &[u8])] = files! {
     "org.rmac.Weather" => "../../../packaging/rmac-apps/applications/org.rmac.Weather.desktop",
     "org.rmac.Preview" => "../../../packaging/rmac-apps/applications/org.rmac.Preview.desktop",
     "org.rmac.Mail" => "../../../packaging/rmac-apps/applications/org.rmac.Mail.desktop",
+    "org.rmac.Calendar" => "../../../packaging/rmac-apps/applications/org.rmac.Calendar.desktop",
+    "org.rmac.SystemMonitor" => "../../../packaging/rmac-apps/applications/org.rmac.SystemMonitor.desktop",
+    "org.rmac.Player" => "../../../packaging/rmac-apps/applications/org.rmac.Player.desktop",
 };
 
 /// Apps' entry: Apps runs inside `lulo-shell`, so its entry asks the
@@ -54,6 +57,17 @@ const APP_ICONS: &[(&str, &[u8])] = files! {
     "org.rmac.Calendar.svg" => "../../../packaging/rmac-apps/icons/org.rmac.Calendar.svg",
     "org.rmac.SystemMonitor.svg" => "../../../packaging/rmac-apps/icons/org.rmac.SystemMonitor.svg",
     "org.rmac.Player.svg" => "../../../packaging/rmac-apps/icons/org.rmac.Player.svg",
+};
+
+/// The volume OSD's glyphs, as `rmac/osd/<name>` (`osd`).
+const OSD_GLYPHS: &[(&str, &[u8])] = files! {
+    "speaker-low.svg" => "../../../shell/assets/osd/speaker-low.svg",
+    "speaker-high.svg" => "../../../shell/assets/osd/speaker-high.svg",
+    "muted.svg" => "../../../shell/assets/osd/muted.svg",
+    "microphone-low.svg" => "../../../shell/assets/osd/microphone-low.svg",
+    "microphone-high.svg" => "../../../shell/assets/osd/microphone-high.svg",
+    "brightness-low.svg" => "../../../shell/assets/osd/brightness-low.svg",
+    "brightness-high.svg" => "../../../shell/assets/osd/brightness-high.svg",
 };
 
 /// The Dock's own artwork, as `rmac/dock/icons/<name>`.
@@ -186,6 +200,10 @@ pub fn install_into(share: &Path, install_dir: &Path, scene: bool) {
     for (name, contents) in DOCK_ICONS {
         write_if_changed(&dock.join(name), contents);
     }
+    let osd = share.join("rmac").join("osd");
+    for (name, contents) in OSD_GLYPHS {
+        write_if_changed(&osd.join(name), contents);
+    }
 }
 
 /// The folder `lulo-shell.exe` runs from, where the Lulo apps are.
@@ -207,6 +225,13 @@ mod tests {
         assert!(windows.contains("TryExec=C:/Program Files/Lulo/rmac-files.exe\n"));
         assert!(windows.contains("Exec=\"C:/Program Files/Lulo/rmac-files.exe\" %U\n"));
         assert!(windows.contains("Icon=org.rmac.Files\n"));
+    }
+
+    #[test]
+    fn every_osd_glyph_is_installed() {
+        for file in rmac_osd::view::GLYPH_FILES {
+            assert!(OSD_GLYPHS.iter().any(|(name, _)| *name == file), "{file}");
+        }
     }
 
     #[test]

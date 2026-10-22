@@ -9,6 +9,9 @@ pub(super) async fn consume(
     catalog: async_channel::Receiver<Result<Vec<rmac_apps::Application>, String>>,
     places: async_channel::Receiver<Result<rmac_places_system::Report, String>>,
     appearance: async_channel::Receiver<Result<bool, String>>,
+    documents: async_channel::Receiver<
+        Result<std::collections::BTreeMap<String, Vec<std::path::PathBuf>>, String>,
+    >,
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
     coordinator.restore_recents(blocking::unblock(load_recents).await);
@@ -19,6 +22,7 @@ pub(super) async fn consume(
         let catalog_event = futures_util::FutureExt::fuse(catalog.recv());
         let places_event = futures_util::FutureExt::fuse(places.recv());
         let appearance_event = futures_util::FutureExt::fuse(appearance.recv());
+        let documents_event = futures_util::FutureExt::fuse(documents.recv());
         let closed = futures_util::FutureExt::fuse(sender.closed());
         futures_util::pin_mut!(
             compositor_event,
@@ -26,6 +30,7 @@ pub(super) async fn consume(
             catalog_event,
             places_event,
             appearance_event,
+            documents_event,
             closed
         );
         futures_util::select! {
@@ -58,6 +63,10 @@ pub(super) async fn consume(
             event = appearance_event => {
                 let event = event.map_err(|_| Error::new("receive Dock appearance", "watcher stopped"))?;
                 coordinator.apply_appearance(event);
+            },
+            event = documents_event => {
+                let event = event.map_err(|_| Error::new("receive recent documents", "watcher stopped"))?;
+                coordinator.apply_documents(event);
             },
             _ = closed => return Ok(()),
         }

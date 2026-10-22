@@ -7,6 +7,10 @@
 > comes after Beta. See
 > [Known limitations](known-limitations.md) for what's untested.
 
+> **New: a bootable USB image.** To try Lulo OS on a Windows PC, or install
+> it next to or in place of Windows without installing Ubuntu first, see
+> [Install Lulo OS from a USB stick](install-lulo-os-usb.md).
+
 The repository contains the applications, session integration payload, and
 native package assembly contract, but the signed APT repository and clean-PC
 install gates are still pending. Do not install Lulo OS on your only machine

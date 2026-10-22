@@ -26,7 +26,9 @@ impl Coordinator {
                 )
             },
         );
-        let model = model.with_recent_applications(&self.recents, &self.catalog, &self.superseded);
+        let model = model
+            .with_recent_applications(&self.recents, &self.catalog, &self.superseded)
+            .with_recent_documents(&self.documents);
         let outputs = rmac_dock::surface_outputs(
             &compositor,
             &self.settings.dock.outputs,
@@ -168,6 +170,12 @@ impl Coordinator {
                 // upgrade, not on every render.
                 self.superseded = rmac_apps::superseded_desktop_ids();
                 self.health.catalog = SourceHealth::Healthy;
+                // An app already running when its entry first appears (a
+                // Windows app's entry is written after the shell starts)
+                // joins the recent apps now, not at the next window change.
+                if self.ready() {
+                    self.advance_recents();
+                }
             }
             Err(detail) => self.health.catalog = SourceHealth::Unavailable { detail },
         }
@@ -190,6 +198,25 @@ impl Coordinator {
             Err(detail) => self.health.places = SourceHealth::Unavailable { detail },
         }
         before != self.snapshot()
+    }
+
+    /// The recent-documents store changed (DOCK-15). A store that cannot
+    /// be read keeps the last list; documents are a convenience.
+    pub fn apply_documents(
+        &mut self,
+        result: Result<std::collections::BTreeMap<String, Vec<std::path::PathBuf>>, String>,
+    ) -> bool {
+        match result {
+            Ok(documents) if documents != self.documents => {
+                self.documents = documents;
+                true
+            }
+            Ok(_) => false,
+            Err(detail) => {
+                eprintln!("the Dock could not read recent documents: {detail}");
+                false
+            }
+        }
     }
 
     pub fn apply_appearance(&mut self, result: Result<bool, String>) -> bool {

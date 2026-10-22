@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "scenario": "preview/open-psd",
+  "observations": {
+    "opened": {
+      "open_error": {
+        "shown": false
+      }
+    }
+  }
+}

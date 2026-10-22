@@ -23,6 +23,9 @@ enum WindowAction {
     /// it has no recorded pre-zoom frame, or put it back if it does.
     Zoom,
     Tile(TileRegion),
+    /// Fill & Arrange: this window and the app's others side by side,
+    /// stacked, or in quarters (DESK-03).
+    Arrange(&'static str),
     Minimize,
 }
 
@@ -85,6 +88,7 @@ fn mission_control_command(action: WindowAction) -> Option<&'static str> {
         WindowAction::Tile(TileRegion::Right) => "tile-right",
         WindowAction::Tile(TileRegion::Top) => "tile-top",
         WindowAction::Tile(TileRegion::Bottom) => "tile-bottom",
+        WindowAction::Arrange(command) => command,
         WindowAction::Tile(_) | WindowAction::ToggleFullscreen | WindowAction::Minimize => {
             return None
         }
@@ -150,7 +154,10 @@ async fn perform_window_action(action: WindowAction) {
             }
             return;
         }
-        WindowAction::Fill | WindowAction::Zoom | WindowAction::Tile(_) => {
+        WindowAction::Fill
+        | WindowAction::Zoom
+        | WindowAction::Tile(_)
+        | WindowAction::Arrange(_) => {
             unreachable!("Fill, Zoom and Tile run through Mission Control; see send_window_action")
         }
     };
@@ -711,12 +718,18 @@ impl ZoomMenu {
 /// A Move & Resize icon: a 25 × 20 rounded outline holding the filled part
 /// of the screen the window will take.
 fn tile_icon(fill: (f32, f32, f32, f32)) -> gpui::Div {
+    tile_icon_parts(&[fill])
+}
+
+/// A tile icon with several filled parts, for the Arrange layouts.
+fn tile_icon_parts(fills: &[(f32, f32, f32, f32)]) -> gpui::Div {
     let metrics = rmac_design::Metrics::default();
     let (width, height) = (metrics.tile_icon_width, metrics.tile_icon_height);
-    let (x, y, w, h) = fill;
-    // The fill sits 3 pt inside the outline, as drawn by macOS.
+    // The fill sits 3 pt inside the outline, as drawn by macOS; parts of
+    // an arrangement keep a 1 pt gap between them.
     let inner_w = width - 6.0;
     let inner_h = height - 6.0;
+    let gap = if fills.len() > 1 { 0.5 } else { 0.0 };
     div()
         .relative()
         .w(px(width))
@@ -724,22 +737,21 @@ fn tile_icon(fill: (f32, f32, f32, f32)) -> gpui::Div {
         .rounded(px(4.0))
         .border(px(1.5))
         .border_color(mac::text())
-        .child(
+        .children(fills.iter().map(|(x, y, w, h)| {
             div()
                 .absolute()
-                .left(px(1.5 + x * inner_w))
-                .top(px(1.5 + y * inner_h))
-                .w(px(w * inner_w))
-                .h(px(h * inner_h))
+                .left(px(1.5 + x * inner_w + gap))
+                .top(px(1.5 + y * inner_h + gap))
+                .w(px(w * inner_w - 2.0 * gap))
+                .h(px(h * inner_h - 2.0 * gap))
                 .rounded(px(1.5))
-                .bg(mac::text()),
-        )
+                .bg(mac::text())
+        }))
 }
 
-/// The popover the green button shows on hover: Move & Resize halves, Fill,
-/// and Full Screen, each a compositor action on this window. The Mac's
-/// multi-window Arrange layouts and the Full Screen tiling submenu need a
-/// window arranger rmac does not have, so they are not drawn.
+/// The popover the green button shows on hover: Move & Resize halves, Fill
+/// and the Arrange layouts (this window and the app's others, through
+/// Mission Control's window service), and Full Screen.
 fn zoom_menu(menu: Entity<ZoomMenu>) -> impl IntoElement {
     let metrics = rmac_design::Metrics::default();
     let pitch = metrics.tile_icon_pitch;
@@ -813,13 +825,44 @@ fn zoom_menu(menu: Entity<ZoomMenu>) -> impl IntoElement {
         .child(row(halves))
         .child(div().pt(px(6.0)).child(separator()))
         .child(div().pt(px(11.0)).child(header("Fill & Arrange")))
-        .child(row(vec![item(
-            "tile-fill",
-            tile_icon((0.0, 0.0, 1.0, 1.0)),
-            WindowAction::Fill,
-            menu.clone(),
-        )
-        .into_any_element()]))
+        .child(row({
+            let fill_and_arrange = vec![
+                item(
+                    "tile-fill",
+                    tile_icon((0.0, 0.0, 1.0, 1.0)),
+                    WindowAction::Fill,
+                    menu.clone(),
+                )
+                .into_any_element(),
+                item(
+                    "tile-arrange-left-right",
+                    tile_icon_parts(&[(0.0, 0.0, 0.5, 1.0), (0.5, 0.0, 0.5, 1.0)]),
+                    WindowAction::Arrange("arrange-left-right"),
+                    menu.clone(),
+                )
+                .into_any_element(),
+                item(
+                    "tile-arrange-top-bottom",
+                    tile_icon_parts(&[(0.0, 0.0, 1.0, 0.5), (0.0, 0.5, 1.0, 0.5)]),
+                    WindowAction::Arrange("arrange-top-bottom"),
+                    menu.clone(),
+                )
+                .into_any_element(),
+                item(
+                    "tile-arrange-quarters",
+                    tile_icon_parts(&[
+                        (0.0, 0.0, 0.5, 0.5),
+                        (0.5, 0.0, 0.5, 0.5),
+                        (0.0, 0.5, 0.5, 0.5),
+                        (0.5, 0.5, 0.5, 0.5),
+                    ]),
+                    WindowAction::Arrange("arrange-quarters"),
+                    menu.clone(),
+                )
+                .into_any_element(),
+            ];
+            fill_and_arrange
+        }))
         .child(div().pt(px(6.0)).child(separator()))
         .child(
             div()
@@ -1011,9 +1054,31 @@ pub fn traffic_lights_fixed_size(active: bool) -> TrafficLights {
 /// callback runs on the second press while the compositor still owns the
 /// pointer grab, so its frame request can be acknowledged without applying.
 pub fn title_bar_drag_region(id: &'static str) -> Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .window_control_area(WindowControlArea::Drag)
+    let region = div().id(id).window_control_area(WindowControlArea::Drag);
+    // Windows maximises or restores on a caption double-click by itself;
+    // Desktop & Dock's "Double-click a window's title bar to" (WIN-OS-08)
+    // decides instead: Zoom and Fill keep Windows' own toggle, Minimise and
+    // Do Nothing take the click so Windows does not.
+    #[cfg(windows)]
+    let region = region.on_mouse_down(MouseButton::Left, |event, window, cx| {
+        if event.click_count != 2 {
+            return;
+        }
+        let setting = rmac_shell_settings::ShellSettingsStore::from_environment()
+            .and_then(|store| store.load())
+            .map(|snapshot| snapshot.settings.double_click_title_bar)
+            .unwrap_or_default();
+        match setting {
+            rmac_shell_settings::DoubleClickTitleBarAction::Zoom
+            | rmac_shell_settings::DoubleClickTitleBarAction::Fill => {}
+            rmac_shell_settings::DoubleClickTitleBarAction::Minimize => {
+                cx.stop_propagation();
+                window.minimize_window();
+            }
+            rmac_shell_settings::DoubleClickTitleBarAction::DoNothing => cx.stop_propagation(),
+        }
+    });
+    region
         // Child toolbar controls can stop bubbling. Observe the release in
         // capture so a double-click on title text still reaches the bar.
         .capture_any_mouse_up(|event, _, cx| {
@@ -1168,17 +1233,53 @@ pub fn toolbar_group(children: impl IntoElement) -> impl IntoElement {
 }
 
 /// Windows: GPUI's own window calls, which Windows' window manager carries
-/// out (ADR 0023). There is no Mission Control or parking workspace there yet.
+/// out, and the Win32 window list (`rmac-compositor-system`) for what needs
+/// a frame or other apps' windows (ADR 0023).
 #[cfg(not(unix))]
 mod native {
     use gpui::App;
+    use rmac_compositor::{Action, TileRegion, WindowId};
 
     use super::WindowAction;
+
+    /// This window as the Win32 window list names it (its HWND).
+    fn window_id(window: &gpui::Window) -> Option<WindowId> {
+        crate::window_frame_windows::hwnd(window).map(|hwnd| WindowId(hwnd.0 as isize as u64))
+    }
+
+    /// Run `actions` in order off the UI thread.
+    fn run(actions: Vec<Action>, cx: &mut App) {
+        if actions.is_empty() {
+            return;
+        }
+        cx.background_executor()
+            .spawn(async move {
+                for action in &actions {
+                    if let Err(error) = rmac_compositor_system::execute_action(action).await {
+                        eprintln!("could not perform window action: {error:?}");
+                    }
+                }
+            })
+            .detach();
+    }
+
+    /// The regions an Arrange command fills, the front window first
+    /// (Mission Control's `Command::arrangement` on Lulo OS).
+    fn arrangement(command: &str) -> &'static [TileRegion] {
+        use TileRegion::*;
+        match command {
+            "arrange-left-right" => &[Left, Right],
+            "arrange-top-bottom" => &[Top, Bottom],
+            "arrange-quarters" => &[TopLeft, TopRight, BottomLeft, BottomRight],
+            _ => &[],
+        }
+    }
 
     pub(super) fn perform(action: WindowAction, cx: &mut App) {
         let Some(handle) = cx.active_window() else {
             return;
         };
+        let mut tiles: Vec<(WindowId, TileRegion)> = Vec::new();
         let _ = handle.update(cx, |_, window, _| match action {
             WindowAction::Minimize => window.minimize_window(),
             WindowAction::ToggleFullscreen => window.toggle_fullscreen(),
@@ -1186,16 +1287,61 @@ mod native {
             // caption restores the window.
             WindowAction::Fill | WindowAction::Zoom => window.zoom_window(),
             WindowAction::Tile(region) => {
-                eprintln!("tiling a window to {region:?} is not available on Windows yet");
+                if let Some(id) = window_id(window) {
+                    tiles.push((id, region));
+                }
             }
+            WindowAction::Arrange(_) => {}
         });
+        if let WindowAction::Arrange(command) = action {
+            // Fill & Arrange (DESK-03): the front window takes the first
+            // region and the app's other windows the rest, as on Lulo OS.
+            let mut windows = cx.windows();
+            windows.sort_by_key(|other| (*other != handle, other.window_id()));
+            for (other, region) in windows
+                .into_iter()
+                .zip(arrangement(command).iter().copied())
+            {
+                if let Ok(Some(id)) = other.update(cx, |_, window, _| window_id(window)) {
+                    tiles.push((id, region));
+                }
+            }
+        }
+        run(
+            tiles
+                .into_iter()
+                .map(|(window, region)| Action::TileWindow { window, region })
+                .collect(),
+            cx,
+        );
     }
 
-    /// ⌘H minimises this app's windows. ⌥⌘H needs other apps' windows,
-    /// which only a Win32 window backend can reach.
+    /// ⌘H minimises this app's windows; ⌥⌘H minimises every other app's
+    /// visible windows through the Win32 window list (which leaves this
+    /// process's own windows out).
     pub(super) fn hide_application(others: bool, cx: &mut App) {
         if others {
-            eprintln!("hiding other applications is not available on Windows yet");
+            cx.background_executor()
+                .spawn(async move {
+                    let snapshot = match rmac_compositor_system::snapshot().await {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            eprintln!("could not read windows to hide others: {error}");
+                            return;
+                        }
+                    };
+                    for window in snapshot
+                        .windows
+                        .iter()
+                        .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
+                    {
+                        let action = Action::MinimizeWindow { window: window.id };
+                        if let Err(error) = rmac_compositor_system::execute_action(&action).await {
+                            eprintln!("could not hide a window: {error:?}");
+                        }
+                    }
+                })
+                .detach();
             return;
         }
         for handle in cx.windows() {

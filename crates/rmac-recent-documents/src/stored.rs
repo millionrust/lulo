@@ -68,6 +68,24 @@ impl StoredFile {
             .collect()
     }
 
+    /// Every app's own documents ([`Self::live_paths_for_app`] for each app
+    /// that recorded one), newest first within each app.
+    pub(super) fn live_paths_by_app(self) -> std::collections::BTreeMap<String, Vec<PathBuf>> {
+        let mut apps = std::collections::BTreeMap::<String, StoredFile>::new();
+        for entry in &self.entries {
+            if let Some(app) = &entry.app {
+                apps.entry(app.clone())
+                    .or_insert_with(|| StoredFile::cleared(self.cleared_before_unix_ms))
+                    .entries
+                    .push(entry.clone());
+            }
+        }
+        apps.into_iter()
+            .map(|(app, stored)| (app, stored.live_paths()))
+            .filter(|(_, paths)| !paths.is_empty())
+            .collect()
+    }
+
     /// [`Self::live_paths`] filtered to the documents `app_id` itself
     /// recorded (see [`super::Store::record_for_app`]).
     pub(super) fn live_paths_for_app(mut self, app_id: &str) -> Vec<PathBuf> {

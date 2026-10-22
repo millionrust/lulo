@@ -58,6 +58,9 @@ SCENE_PINS = [
     "org.rmac.Weather",
     "org.rmac.Preview",
 ]
+# Every Lulo app that runs on Windows (rmac_apps::windows_apps), as Apps
+# lists them on both sides.
+SCENE_APPS = [*SCENE_PINS, "org.rmac.Mail", "org.rmac.Calendar", "org.rmac.SystemMonitor", "org.rmac.Player"]
 # rmac-shell-settings' DEFAULT_PINNED_APPS, and the pins among them whose
 # app Lulo on Windows does not ship (none now: Mail ships there too).
 DEFAULT_PINS = [
@@ -94,7 +97,7 @@ def prepare_profile(home: Path, default_dock: bool = False) -> None:
     (icons / "scalable/apps").mkdir(parents=True, exist_ok=True)
     (icons / "index.theme").write_text(HICOLOR_INDEX)
     # Apps' own entry too, as Lulo OS installs it (and lulo-shell writes it).
-    for app in [*SCENE_PINS, "org.rmac.AppDrawer"]:
+    for app in [*SCENE_APPS, "org.rmac.AppDrawer"]:
         entry = REPO / "packaging/rmac-apps/applications" / f"{app}.desktop"
         (applications / entry.name).write_text(scene_entry(entry.read_text(encoding="utf-8")))
     for icon in (REPO / "packaging/rmac-apps/icons").glob("*.svg"):

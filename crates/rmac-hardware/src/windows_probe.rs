@@ -387,7 +387,12 @@ fn cpu_cores() -> u32 {
 pub fn facts() -> Facts {
     let mut power = SYSTEM_POWER_STATUS::default();
     // SAFETY: plain out-parameter.
-    let battery_flag = if unsafe { GetSystemPowerStatus(&mut power) }.is_ok() {
+    let read = unsafe { GetSystemPowerStatus(&mut power) }.is_ok();
+    let battery_flag = if std::env::var_os("LULO_FAKE_BATTERY").is_some() {
+        // The Windows shell checks' stand-in battery on CI runners, which
+        // have none (`rmac_power`'s `LULO_FAKE_BATTERY`): a laptop's.
+        1
+    } else if read {
         power.BatteryFlag
     } else {
         255

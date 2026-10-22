@@ -2901,26 +2901,30 @@ def check_exit_paths(
         title = log.wait_for(r"^bar title 0 \S+ at (-?\d+),(-?\d+)$", 15.0, after=session_mark)
         if title is not None:
             time.sleep(2.0)
-            row = None
-            for _ in range(3):
+            on = None
+            for attempt in range(3):
                 mark = len(log.lines())
                 click(int(title.group(1)), int(title.group(2)))
                 row = log.wait_for(r"^menu 0 row Use Files for Folders at (\d+),(\d+)", 5.0, after=mark)
-                if row:
-                    break
-                tap(VK_ESCAPE)
-                time.sleep(1.0)
-            on = None
-            if row:
+                if row is None:
+                    print(f"shell: Use Files for Folders, try {attempt + 1}: the Lulo menu did not open")
+                    tap(VK_ESCAPE)
+                    time.sleep(1.0)
+                    continue
+                # The menu drops open: click the row where it settles.
                 time.sleep(0.8)
+                row = log.last(r"^menu 0 row Use Files for Folders at (\d+),(\d+)") or row
                 save(screenshots, "lulo-menu-files-for-folders")
                 click(int(row.group(1)), int(row.group(2)))
                 on = log.wait_for(r"^files for folders on", 5.0, after=mark)
-                if on is None and log.wait_for(r"^menu closed", 0.5, after=mark) is None:
-                    # The menu was still opening: the click missed the row.
-                    print("shell: Use Files for Folders: the row did not take the click; once more")
-                    click(int(row.group(1)), int(row.group(2)))
-                    on = log.wait_for(r"^files for folders on", 5.0, after=mark)
+                print(
+                    f"shell: Use Files for Folders, try {attempt + 1}: row at {row.group(1)},{row.group(2)}, "
+                    f"{'turned on' if on else 'no change'}"
+                )
+                if on is not None:
+                    break
+                tap(VK_ESCAPE)
+                time.sleep(1.0)
             print(f"shell: Use Files for Folders: {'on' if on else 'not turned on'}, folder verb {folder_verb()!r}")
             if on is None or folder_verb() != "LuloFiles":
                 failures.append("the Lulo menu's Use Files for Folders did not make Files open folders")

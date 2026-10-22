@@ -2907,7 +2907,11 @@ def check_exit_paths(
                 click(int(title.group(1)), int(title.group(2)))
                 row = log.wait_for(r"^menu 0 row Use Files for Folders at (\d+),(\d+)", 5.0, after=mark)
                 if row is None:
-                    print(f"shell: Use Files for Folders, try {attempt + 1}: the Lulo menu did not open")
+                    seen = [line for line in log.lines()[mark:] if not line.startswith(("memory ", "gpui"))][-6:]
+                    print(
+                        f"shell: Use Files for Folders, try {attempt + 1}: the Lulo menu did not open "
+                        f"(clicked {title.group(1)},{title.group(2)}; front {foreground_pid_and_class()}; trace {seen})"
+                    )
                     tap(VK_ESCAPE)
                     time.sleep(1.0)
                     continue

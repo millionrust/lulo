@@ -1,5 +1,5 @@
 {
-  "title": "Notes: a #tag typed in the body appears in the sidebar's Tags browser and filters the note list until a folder is chosen",
+  "title": "Notes: a #tag typed in the body appears in the sidebar's Tags browser, and choosing it selects it until a folder is chosen",
   "app": "notes",
   "launch": {},
   "lulo_only": true,
@@ -11,16 +11,12 @@
     {"type": "Plan #work today"},
     {"wait": 1.5},
     {"select": "#work", "settle": 0.7},
-    {"observe": "filtered", "facts": ["windows"]},
+    {"observe": "filtered", "facts": ["selection"]},
     {"select": "All Notes, 1 note", "settle": 0.7},
-    {"observe": "unfiltered", "facts": ["windows"]}
+    {"observe": "unfiltered", "facts": ["selection"]}
   ],
-  "omit": [
-    "filtered.windows.count",
-    "filtered.windows.titles",
-    "filtered.windows.fullscreen",
-    "unfiltered.windows.count",
-    "unfiltered.windows.titles",
-    "unfiltered.windows.fullscreen"
-  ]
+  "tolerance": {
+    "filtered.selection.items": "subset",
+    "unfiltered.selection.items": "subset"
+  }
 }

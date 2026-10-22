@@ -2910,9 +2910,20 @@ def check_exit_paths(
             if strip is None or title is None:
                 return None
             top, bottom = int(strip.group(2)), int(strip.group(4))
-            return title if top <= int(title.group(2)) < bottom else None
+            if top <= int(title.group(2)) < bottom:
+                return title
+            # Laid out before the window reached the top: the logo keeps its
+            # place along the bar, in the middle of the strip.
+            return re.match(
+                r"^bar title 0 \S+ at (-?\d+),(-?\d+)$",
+                f"bar title 0 logo at {title.group(1)},{(top + bottom) // 2}",
+            ) if not waiting[0] else None
 
-        title = wait_until(placed_title, 15.0)
+        waiting = [True]
+        title = wait_until(placed_title, 10.0)
+        if title is None:
+            waiting[0] = False
+            title = placed_title()
         if title is not None:
             time.sleep(2.0)
             on = None

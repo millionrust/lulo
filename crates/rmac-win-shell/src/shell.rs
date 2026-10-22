@@ -438,6 +438,18 @@ pub fn run() -> i32 {
                 crate::win::shell_icons::watch_running(cx);
             }
             rmac_quick_settings_app::start(cx);
+            // The volume keys and Lulo's volume panel (KB-04).
+            let volume_keys = crate::osd::start(cx);
+            trace(|| {
+                format!(
+                    "volume keys: {}",
+                    if volume_keys {
+                        "Lulo's panel"
+                    } else {
+                        "Windows' flyout"
+                    }
+                )
+            });
             requests::register("launcher", rmac_launcher_app::toggle);
             requests::register("screenshot-screen", |_| crate::win::screenshot::screen());
             requests::register("screenshot-selection", |_| {

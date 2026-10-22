@@ -20,6 +20,8 @@
 pub mod model;
 
 #[cfg(windows)]
+mod osd;
+#[cfg(windows)]
 pub mod share;
 #[cfg(windows)]
 mod shell;

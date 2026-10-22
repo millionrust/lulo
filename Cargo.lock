@@ -7142,6 +7142,7 @@ dependencies = [
 name = "rmac-osd"
 version = "0.9.0-beta.2"
 dependencies = [
+ "gpui",
  "libc",
  "rmac-audio",
  "rmac-sound",

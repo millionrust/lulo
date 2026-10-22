@@ -363,7 +363,8 @@ try {
         Front-Calc
         $m = Mark
         [void](Keys @($VK.Ctrl, $VK.Shift, 0x33))
-        $screen = Wait-Trace '^screenshot saved (.+)$' $m 8
+        # Saved once the floating thumbnail slides away (5 s).
+        $screen = Wait-Trace '^screenshot saved (.+)$' $m 15
         # Ctrl+Shift+4: drag an area over Calculator's own window.
         $m2 = Mark
         $f = $R::Frame((@($R::WindowsOf($calc.Id, $true)) | Select-Object -First 1))
@@ -373,7 +374,17 @@ try {
             Shot 'screenshot-area'
             $R::Drag($f.X + 20, $f.Y + 40, $f.X + 160, $f.Y + 200)
         }
-        $area = Wait-Trace '^screenshot saved (.+)$' $m2 8
+        $area = Wait-Trace '^screenshot saved (.+)$' $m2 15
+        # Ctrl+Shift+5: the toolbar over the remembered selection; Return
+        # takes it.
+        $m3 = Mark
+        Front-Calc
+        if (Keys @($VK.Ctrl, $VK.Shift, 0x35)) {
+            Start-Sleep -Milliseconds 1200
+            Shot 'screenshot-toolbar'
+            $R::Chord(@($VK.Return))
+        }
+        $toolbar = Wait-Trace '^screenshot saved (.+)$' $m3 15
         # run-private.ps1's profile sends captures to E:\lulo (Lulo's own
         # XDG_DESKTOP_DIR); the PC owner's Desktop must get none.
         $shots = @(Get-ChildItem (Join-Path (Split-Path $Profile) 'desktop') -Filter 'Screenshot *.png' -ErrorAction SilentlyContinue |
@@ -382,7 +393,7 @@ try {
         $strays = @(Get-ChildItem $ownerDesk -Filter 'Screenshot *.png' -ErrorAction SilentlyContinue |
             Where-Object { $_.CreationTime -gt $checkStarted })
         foreach ($shot in $shots) { Remove-Item -LiteralPath $shot.FullName -ErrorAction SilentlyContinue }
-        Note 'screenshots: Ctrl+Shift+3 and Ctrl+Shift+4' ($screen -and $area -and $shots.Count -eq 2 -and $strays.Count -eq 0) "screen: $screen; area: $area; in E:\lulo: $($shots.Count); on the owner's Desktop: $($strays.Count)"
+        Note 'screenshots: Ctrl+Shift+3, 4 and 5' ($screen -and $area -and $toolbar -and $shots.Count -eq 3 -and $strays.Count -eq 0) "screen: $screen; area: $area; toolbar: $toolbar; in E:\lulo: $($shots.Count); on the owner's Desktop: $($strays.Count)"
     }
     Check 'volume: the mute key shows the Sound panel' {
         # Mute twice: the level ends as it was.

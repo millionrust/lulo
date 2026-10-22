@@ -68,10 +68,10 @@ const SHORTCUTS: [(i32, HOT_KEY_MODIFIERS, VIRTUAL_KEY, &str); 11] = [
     // Show Desktop (the Mac's F11): Win+D, which is free when Lulo is the
     // shell; over Explorer, Explorer keeps it.
     (0x4C5D, MOD_WIN, VK_D, "show-desktop"),
-    // ⇧⌘3 the screen, ⇧⌘4 an area, ⇧⌘5 (the area too, for now).
+    // ⇧⌘3 the screen, ⇧⌘4 an area, ⇧⌘5 the toolbar.
     (0x4C5E, CTRL_SHIFT, VK_3, "screenshot-screen"),
     (0x4C5F, CTRL_SHIFT, VK_4, "screenshot-selection"),
-    (0x4C60, CTRL_SHIFT, VK_5, "screenshot-selection"),
+    (0x4C60, CTRL_SHIFT, VK_5, "screenshot-toolbar"),
 ];
 
 /// Ctrl+Shift, the Windows keys for the Mac's ⇧⌘.

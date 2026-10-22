@@ -413,7 +413,7 @@ try {
             $f = $R::Frame($note.MainWindowHandle)
             $m = Mark
             if (Ours ($R::PidAt($p[0], $p[1]))) {
-                $R::Drag($p[0], $p[1], [int]($f.X + $f.Width / 2), [int]($f.Y + $f.Height / 2))
+                $R::SlowDrag($p[0], $p[1], [int]($f.X + $f.Width / 2), [int]($f.Y + $f.Height / 2))
             }
             $dropped = Wait-Trace '^desktop drag out of 1 files: dropped' $m 8
             Start-Sleep -Seconds 2
